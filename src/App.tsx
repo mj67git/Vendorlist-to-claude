@@ -194,6 +194,7 @@ export default function App() {
       })
       .catch(err => console.error("Error fetching dynamic configuration weights:", err))
       .finally(() => {
+        setIsSyncing(true);
         authFetch('/api/vendors')
           .then(res => {
             if (!res.ok) throw new Error('API response failed');
@@ -204,9 +205,14 @@ export default function App() {
               const filtered = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
               setDb(filtered);
             }
+            setLoadError(null);
           })
           .catch(err => {
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
+            setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
+          })
+          .finally(() => {
+            setIsSyncing(false);
           });
       });
   }, []);
@@ -295,6 +301,8 @@ export default function App() {
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
@@ -1163,13 +1171,36 @@ export default function App() {
 
         </main>
 
-        {/* Global Toast */}
-        {toastMsg && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-white border border-[#E5E5EA] text-[#1D1D1F] px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] interactive-element">
-            <CheckCircle className="w-4 h-4 flex-shrink-[#86868B] text-emerald-500 bounce-in" />
-            <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+        {/* Top sync progress bar (non-blocking; shown while syncing with the server) */}
+        {isSyncing && (
+          <div className="fixed top-0 inset-x-0 z-[60] h-0.5 overflow-hidden bg-[var(--primary)]/15" role="progressbar" aria-label="در حال همگام‌سازی">
+            <div className="h-full w-1/3 bg-[var(--primary)] rounded-full animate-[syncSlide_1.1s_ease-in-out_infinite]" />
           </div>
         )}
+
+        {/* Data load error banner (server unreachable) */}
+        {loadError && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg" dir="rtl">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
+            <span className="font-medium text-xs font-sans text-right">{loadError}</span>
+            <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Global Toast (theme-aware; error vs. success styling) */}
+        {toastMsg && (() => {
+          const isError = /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف/.test(toastMsg);
+          return (
+            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
+              {isError
+                ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
+                : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
+              <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+            </div>
+          );
+        })()}
 
         {/* Change Password Modal */}
         {showChangePasswordModal && (
