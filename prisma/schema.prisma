@@ -1,0 +1,122 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // This can be changed to mysql, sqlite, etc., depending on the production environment.
+  url      = env("DATABASE_URL")
+}
+
+model Vendor {
+  id               String           @id @map("id") @db.VarChar(50)
+  name             String           @map("name")
+  nameEn           String           @map("name_en")
+  country          String           @map("country")
+  contactInfo      String?          @map("contact_info")
+  registrationDate String?          @map("registration_date")
+  status           String           @default("new") @map("status")
+  grade            String?          @map("grade")
+  initialSampleStatus String?       @map("initial_sample_status")
+  riskAssessment   String?          @map("risk_assessment") @db.Text
+  analysisRecords  String?          @map("analysis_records") @db.Text
+  materials        VendorMaterial[]
+  evaluations      Evaluation[]
+  auditLogs        AuditLog[]
+
+  @@map("vendors")
+}
+
+model Material {
+  id               String           @id @map("id") @db.VarChar(50)
+  name             String           @map("name")
+  nameEn           String           @map("name_en")
+  cas              String           @map("cas")
+  irc              String           @map("irc")
+  vendors          VendorMaterial[]
+  evaluations      Evaluation[]
+
+  @@map("materials")
+}
+
+model VendorMaterial {
+  id         String   @id @map("id") @db.VarChar(50)
+  vendorId   String   @map("vendor_id") @db.VarChar(50)
+  materialId String   @map("material_id") @db.VarChar(50)
+  isSample   Boolean  @default(false) @map("is_sample")
+  category   String   @map("category")
+
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, materialId])
+  @@map("vendor_materials")
+}
+
+model Evaluation {
+  id              String   @id @map("id") @db.VarChar(50)
+  vendorId        String   @map("vendor_id") @db.VarChar(50)
+  materialId      String   @map("material_id") @db.VarChar(50)
+  period          String   @map("period")
+  commercialScore Float    @default(0) @map("commercial_score")
+  qaScore         Float    @default(0) @map("qa_score")
+  planningScore   Float    @default(0) @map("planning_score")
+  financeScore    Float    @default(0) @map("finance_score")
+  totalScore      Float    @default(0) @map("total_score")
+  grade           String   @map("grade")
+  scores          String?  @map("scores") @db.Text
+  rawScores       String?  @map("raw_scores") @db.Text
+  rejectionReasons String? @map("rejection_reasons") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  vendor          Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  material        Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@map("evaluations")
+}
+
+model AuditLog {
+  id        String   @id @map("id") @db.VarChar(50)
+  vendorId  String?  @map("vendor_id") @db.VarChar(50)
+  user      String   @map("user")
+  action    String   @map("action")
+  details   String   @map("details")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vendor    Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Audit_Log {
+  id              String   @id @default(uuid()) @map("id") @db.VarChar(50)
+  auditId         String   @unique @map("audit_id") @db.VarChar(50)
+  correlationId   String?  @map("correlation_id") @db.VarChar(50)
+  timestamp       DateTime @default(now()) @map("timestamp")
+  userId          String?  @map("user_id") @db.VarChar(50)
+  userName        String?  @map("user_name") @db.VarChar(100)
+  role            String?  @map("role") @db.VarChar(50)
+  module          String   @map("module") @db.VarChar(100)
+  entityType      String?  @map("entity_type") @db.VarChar(100)
+  entityId        String?  @map("entity_id") @db.VarChar(50)
+  entityName      String?  @map("entity_name") @db.VarChar(200)
+  action          String   @map("action") @db.VarChar(50)
+  severity        String   @map("severity") @db.VarChar(50)
+  description     String?  @map("description") @db.Text
+  reasonForChange String?  @map("reason_for_change") @db.Text
+  beforeData      Json?    @map("before_data")
+  afterData       Json?    @map("after_data")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([timestamp])
+  @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([severity])
+  @@index([entityId])
+  @@index([correlationId])
+  @@map("audit_log")
+}
+

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  pharma-app:
+    build: .
+    container_name: pharma_regulatory_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://pharma_admin:SecurePassword123@postgres_server:5432/pharma_regulatory_db?schema=public
+      - JWT_SECRET=PharmaRegRegulatorySecretKey2026Enterprise
+    depends_on:
+      - postgres_server
+
+  postgres_server:
+    image: postgres:15-alpine
+    container_name: pharma_postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: pharma_admin
+      POSTGRES_PASSWORD: SecurePassword123
+      POSTGRES_DB: pharma_regulatory_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

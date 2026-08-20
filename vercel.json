@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/handler"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/handler.ts": {
+      "memory": 1024,
+      "maxDuration": 10,
+      "includeFiles": "{dist,database}/**"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Vendorlist to claude",
+  "description": "Vlse to claude",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

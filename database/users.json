@@ -1,0 +1,32 @@
+{
+  "admin": {
+    "username": "admin",
+    "password": "123",
+    "role": "admin",
+    "name": "مدیر سیستم"
+  },
+  "commercial": {
+    "username": "commercial",
+    "password": "123",
+    "role": "commercial",
+    "name": "واحد بازرگانی"
+  },
+  "qa": {
+    "username": "qa",
+    "password": "123",
+    "role": "qa",
+    "name": "واحد کیفیت"
+  },
+  "planning": {
+    "username": "planning",
+    "password": "123",
+    "role": "planning",
+    "name": "واحد برنامه‌ریزی و انبار"
+  },
+  "finance": {
+    "username": "finance",
+    "password": "123",
+    "role": "finance",
+    "name": "واحد مالی"
+  }
+}

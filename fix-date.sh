@@ -1,0 +1,1 @@
+sed -i "s/faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),/faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).replace\/،\/g, ' '),/g" src/App.tsx
