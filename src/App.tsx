@@ -6215,10 +6215,27 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
   const [comments, setComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
 
-  const visibleFormLayout = currentUser?.role === 'admin' 
-    ? FORM_LAYOUT 
+  const visibleFormLayout = currentUser?.role === 'admin'
+    ? FORM_LAYOUT
     : FORM_LAYOUT.filter(d => d.id === currentUser?.role);
+
+  // Wizard steps: one per visible department, plus a final review/submit step.
+  const wizardSteps = [
+    ...visibleFormLayout.map(d => ({ kind: 'dept' as const, id: d.id, title: d.title, dept: d })),
+    { kind: 'review' as const, id: 'review', title: 'بازبینی و ثبت', dept: null as any },
+  ];
+  const lastIndex = wizardSteps.length - 1;
+  const safeStep = Math.min(stepIndex, lastIndex);
+  const activeStep = wizardSteps[safeStep];
+  const isReview = activeStep.kind === 'review';
+
+  const deptAverageDisplay = (deptId: string) => {
+    const modified = modifiedDepts[deptId];
+    const prev = (vendor.scores?.[deptId as keyof Scores] as number) || 0;
+    return modified ? calculateDeptAverage(deptId, scores[deptId]) : prev;
+  };
 
   const handleSlider = (deptId: string, critKey: string, val: string) => {
     setScores(prev => ({
@@ -6325,118 +6342,174 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
     );
   }
 
+  // Preview of the final department averages + overall for the review step.
+  const previewScores = {
+    commercial: deptAverageDisplay('commercial'),
+    qa: deptAverageDisplay('qa'),
+    planning: deptAverageDisplay('planning'),
+    finance: deptAverageDisplay('finance'),
+  };
+  const previewOverall = calculateOverallScore(previewScores) ?? 0;
+  const previewGrade = previewOverall >= 80 ? 'A' : previewOverall >= 60 ? 'B' : previewOverall >= 40 ? 'C' : 'rejected';
+
   return (
     <div className="space-y-6">
-      <ScoringGuide currentUser={currentUser} />
+      {!isReview && <ScoringGuide currentUser={currentUser} />}
 
       <div className="bg-white border border-slate-900/10 rounded-xl p-6 md:p-8 fade-in shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-          {visibleFormLayout.map(dept => {
-             const Icon = dept.icon;
-             const isModified = modifiedDepts[dept.id] || false;
-             const prevDeptScore = vendor.scores?.[dept.id as keyof Scores] || 0;
-             const avg = isModified ? calculateDeptAverage(dept.id, scores[dept.id]) : prevDeptScore;
+        {/* Stepper */}
+        <div className="mb-8">
+          <div className="flex items-center">
+            {wizardSteps.map((s, i) => {
+              const done = i < safeStep;
+              const current = i === safeStep;
+              return (
+                <React.Fragment key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => setStepIndex(i)}
+                    className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group"
+                    title={s.title}
+                  >
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-mono border-2 transition-all ${
+                      current ? 'border-cyan-600 text-cyan-700 bg-cyan-50 ring-4 ring-cyan-500/15' :
+                      done ? 'border-cyan-600 bg-cyan-600 text-white' :
+                      'border-slate-200 text-slate-400 bg-white group-hover:border-slate-300'
+                    }`}>
+                      {done ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                    </span>
+                    <span className={`text-[10px] sm:text-[11px] font-semibold whitespace-nowrap ${current ? 'text-cyan-700' : done ? 'text-slate-600' : 'text-slate-400'}`}>{s.title}</span>
+                  </button>
+                  {i < lastIndex && (
+                    <div className="flex-1 h-[2px] mx-1.5 sm:mx-2 -mt-4 rounded-full bg-slate-200 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-300 ${i < safeStep ? 'bg-cyan-600 w-full' : 'bg-transparent w-0'}`} />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
 
-             return (
-               <div key={dept.id} className="bg-slate-50 border border-slate-900/10 rounded-xl p-5 relative overflow-hidden group">
-                  <div className={`absolute top-0 right-0 w-full h-[3px] opacity-80 ${getScoreColorClass(avg, true)}`} />
-                  <div className="flex justify-between items-center mb-6">
-                     <div className="flex items-center gap-3">
-                       <div className="bg-white p-2 rounded-lg border border-slate-900/10 shadow-sm">
-                         <Icon className="w-5 h-5 text-slate-500" />
-                       </div>
-                       <div>
-                         <h4 className="font-bold text-slate-800 leading-none">{dept.title}</h4>
-                         <span className="text-[10px] text-slate-400 font-medium block mt-1">
-                           <span className="text-slate-400">بدون ارزیابی ثبت شده</span>
-                         </span>
-                       </div>
-                     </div>
-                     <div className="text-right">
-                       <div className="text-[10px] text-slate-400 font-semibold mb-0.5">میانگین بخش</div>
-                       <div className={`text-2xl font-black font-mono tracking-tighter ${getScoreColorClass(avg)}`}>
-                         {avg}
-                       </div>
-                     </div>
+        {/* Step body */}
+        {!isReview ? (
+          (() => {
+            const dept = activeStep.dept;
+            const Icon = dept.icon;
+            const isModified = modifiedDepts[dept.id] || false;
+            const prevDeptScore = vendor.scores?.[dept.id as keyof Scores] || 0;
+            const avg = isModified ? calculateDeptAverage(dept.id, scores[dept.id]) : prevDeptScore;
+            return (
+              <div className="bg-slate-50 border border-slate-900/10 rounded-xl p-5 relative overflow-hidden fade-in">
+                <div className={`absolute top-0 right-0 w-full h-[3px] opacity-80 ${getScoreColorClass(avg, true)}`} />
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-white p-2 rounded-lg border border-slate-900/10 shadow-sm">
+                      <Icon className="w-5 h-5 text-slate-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 leading-none">{dept.title}</h4>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-1">گام {safeStep + 1} از {wizardSteps.length}</span>
+                    </div>
                   </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-400 font-semibold mb-0.5">میانگین بخش</div>
+                    <div className={`text-2xl font-black font-mono tracking-tighter ${getScoreColorClass(avg)}`}>{avg}</div>
+                  </div>
+                </div>
 
-                  <div className="space-y-4">
-                    {dept.criteria.map(crit => {
-                      const prevValue = vendor.rawScores?.[dept.id]?.[crit.key] ?? 
-                                        (vendor.scores && (vendor.scores as any)[dept.id] > 0 
-                                          ? Math.round((vendor.scores as any)[dept.id] / 20) 
-                                          : 0);
-                      const isChanged = scores[dept.id][crit.key] !== prevValue;
-
-                      return (
-                        <div key={crit.key} className="bg-white border border-slate-100 rounded-lg p-3 space-y-2 shadow-xs">
-                          <div className="flex justify-between items-start text-xs">
-                            <span className="text-slate-700 font-medium leading-relaxed max-w-[70%]">{crit.label} <span className="text-cyan-600 font-semibold ml-1">(وزن: {crit.weight})</span></span>
-                            <div className="flex items-center gap-1.5 shrink-0 select-none">
-                              {prevValue > 0 && (
-                                <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60 font-medium">
-                                  قبلی: {prevValue}
-                                </span>
-                              )}
-                              <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono font-bold ${
-                                isChanged 
-                                  ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse' 
-                                  : 'text-slate-600 bg-slate-50 border-slate-200'
-                              }`}>
-                                {scores[dept.id][crit.key]} / 5
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <input 
-                              type="range" dir="ltr"
-                              min="1" max="5" step="1"
-                              value={scores[dept.id][crit.key]}
-                              onChange={(e) => handleSlider(dept.id, crit.key, e.target.value)}
-                              className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-600 focus:outline-none"
-                            />
-
+                <div className="space-y-4">
+                  {dept.criteria.map((crit: any) => {
+                    const prevValue = vendor.rawScores?.[dept.id]?.[crit.key] ??
+                      (vendor.scores && (vendor.scores as any)[dept.id] > 0 ? Math.round((vendor.scores as any)[dept.id] / 20) : 0);
+                    const isChanged = scores[dept.id][crit.key] !== prevValue;
+                    return (
+                      <div key={crit.key} className="bg-white border border-slate-100 rounded-lg p-3 space-y-2 shadow-xs">
+                        <div className="flex justify-between items-start text-xs">
+                          <span className="text-slate-700 font-medium leading-relaxed max-w-[70%]">{crit.label} <span className="text-cyan-600 font-semibold ml-1">(وزن: {crit.weight})</span></span>
+                          <div className="flex items-center gap-1.5 shrink-0 select-none">
+                            {prevValue > 0 && (
+                              <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60 font-medium">قبلی: {prevValue}</span>
+                            )}
+                            <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono font-bold ${isChanged ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse' : 'text-slate-600 bg-slate-50 border-slate-200'}`}>{scores[dept.id][crit.key]} / 5</span>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-               </div>
-             )
-          })}
-       </div>
+                        <div className="flex items-center gap-3">
+                          <input type="range" dir="ltr" min="1" max="5" step="1"
+                            value={scores[dept.id][crit.key]}
+                            onChange={(e) => handleSlider(dept.id, crit.key, e.target.value)}
+                            className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-600 focus:outline-none" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="fade-in space-y-6">
+            {/* Review summary */}
+            <div className="bg-gradient-to-l from-slate-50 to-white border border-slate-900/10 rounded-xl p-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                <div className="text-right">
+                  <div className="text-[11px] text-slate-400 font-semibold mb-1">امتیاز کل تجمیعی (SPS)</div>
+                  <div className={`text-4xl font-black font-mono tracking-tighter ${getScoreColorClass(previewOverall)}`}>{previewOverall}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[11px] text-slate-400 font-semibold mb-1">گرید پیش‌بینی‌شده</div>
+                  <GradeBadge grade={previewGrade} status={previewGrade === 'rejected' ? 'rejected' : previewGrade === 'C' ? 'conditional' : 'approved'} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {visibleFormLayout.map(d => {
+                  const a = deptAverageDisplay(d.id);
+                  const Ic = d.icon;
+                  return (
+                    <div key={d.id} className="bg-white border border-slate-100 rounded-lg p-3 text-center shadow-xs">
+                      <Ic className="w-4 h-4 text-slate-400 mx-auto mb-1" />
+                      <div className="text-[10px] text-slate-500 font-medium mb-0.5 leading-tight">{d.title}</div>
+                      <div className={`text-lg font-black font-mono ${getScoreColorClass(a)}`}>{a}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-       <div className="mb-8">
-         <label className="block text-sm font-bold text-slate-700 mb-2">توضیحات و توجیه ارزیابی</label>
-         <textarea 
-           dir="rtl"
-           rows={4}
-           className="w-full bg-white border border-slate-900/10 rounded-xl p-4 text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
-           placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."
-           value={comments}
-           onChange={(e) => setComments(e.target.value)}
-         ></textarea>
-       </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">توضیحات و توجیه ارزیابی</label>
+              <textarea dir="rtl" rows={4}
+                className="w-full bg-white border border-slate-900/10 rounded-xl p-4 text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
+                placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."
+                value={comments}
+                onChange={(e) => setComments(e.target.value)} />
+            </div>
+          </div>
+        )}
 
-       <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-slate-900/10 pt-6">
-         <button
-           onClick={handleSave}
-           disabled={isSaving}
-           className="w-full md:w-auto flex flex-row-reverse items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-75"
-         >
-           {isSaving ? (
-             <span className="inline-block w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
-           ) : (
-             <Archive className="w-5 h-5" />
-           )}
-            <span>ذخیره ارزیابی</span>
+        {/* Wizard navigation */}
+        <div className="flex items-center justify-between gap-3 border-t border-slate-900/10 pt-6 mt-8">
+          <button type="button" onClick={() => setStepIndex(Math.max(0, safeStep - 1))} disabled={safeStep === 0}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+            <ChevronRight className="w-4 h-4" /> قبلی
           </button>
+          {!isReview ? (
+            <button type="button" onClick={() => setStepIndex(Math.min(lastIndex, safeStep + 1))}
+              className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-cyan-600 hover:bg-cyan-700 transition-colors shadow-sm cursor-pointer">
+              بعدی <ChevronLeft className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={handleSave} disabled={isSaving}
+              className="flex flex-row-reverse items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm disabled:opacity-75 cursor-pointer">
+              {isSaving ? <span className="inline-block w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" /> : <Archive className="w-5 h-5" />}
+              <span>ثبت نهایی ارزیابی</span>
+            </button>
+          )}
         </div>
-     </div>
-     </div>
-   );
- }
+      </div>
+    </div>
+  );
+}
 
  // --- View: Supplier Unified Audit & Analysis Module ---
 
