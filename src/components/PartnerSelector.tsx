@@ -4,6 +4,7 @@ import { BusinessPartner, BusinessPartnerType } from '../types';
 
 interface PartnerSelectorProps {
   type: BusinessPartnerType;
+  anyType?: boolean;
   value?: string;
   selectedId?: string;
   onChange?: (id: string, partner?: BusinessPartner) => void;
@@ -20,6 +21,7 @@ interface PartnerSelectorProps {
 
 export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   type,
+  anyType = false,
   value,
   selectedId,
   onChange,
@@ -68,7 +70,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   }, [isOpen]);
 
   // Current selected partner object
-  const selectedPartner = partners.find(p => p.type === type && p.id === currentValue);
+  const selectedPartner = partners.find(p => (anyType || p.type === type) && p.id === currentValue);
 
   const getSOPGradeBadgeClass = (grade?: string) => {
     switch (grade) {
@@ -82,18 +84,11 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     }
   };
 
-  // Filter partners based on type and parent manufacturer
+  // Filter partners. In anyType mode, every partner (manufacturer or supplier)
+  // is selectable — they are independent now.
   const availablePartners = partners.filter(p => {
-    if (p.type !== type) return false;
-    
-    if (type === 'Supplier' && effectiveMfgId) {
-      // If editing existing vendor with this supplier, keep visible
-      if (existingVendorSupplierId && p.id === existingVendorSupplierId) {
-        return true;
-      }
-      return p.manufacturerId === effectiveMfgId;
-    }
-    return true;
+    if (anyType) return true;
+    return p.type === type;
   });
 
   // Filter based on search term
@@ -109,8 +104,10 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     );
   });
 
-  const isManufacturer = type === 'Manufacturer';
-  const labelTitle = isManufacturer
+  const isManufacturer = anyType ? (selectedPartner?.type === 'Manufacturer') : type === 'Manufacturer';
+  const labelTitle = anyType
+    ? 'تأمین‌کننده (تولیدکننده یا فروشنده)'
+    : isManufacturer
     ? 'کارخانه تولیدی مرجع (Manufacturer)'
     : 'فروشنده / بازرگانی واسطه (Supplier)';
 
@@ -362,7 +359,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        {isManufacturer ? (
+                        {p.type === 'Manufacturer' ? (
                           <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                             isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
                           }`}>
@@ -409,7 +406,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 mr-2">
-                        {!isManufacturer && (
+                        {p.type === 'Supplier' && (
                           p.evaluation?.grade && p.evaluation.grade !== 'Not Evaluated' ? (
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getSOPGradeBadgeClass(p.evaluation.grade)}`}>
                               {p.evaluation.grade === 'Pending Review' ? '🟡 Pending' :

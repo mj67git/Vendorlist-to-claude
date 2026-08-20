@@ -85,7 +85,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     contactPerson: string;
     phone: string;
     website: string;
-    manufacturerId: string;
     status: 'Active' | 'Inactive' | 'Blacklisted';
   }>({
     type: 'Manufacturer',
@@ -97,7 +96,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     contactPerson: '',
     phone: '',
     website: '',
-    manufacturerId: '',
     status: 'Active'
   });
 
@@ -121,11 +119,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const computedEval = useMemo<SupplierEvaluation>(() => {
     return computeSupplierEvaluation(evalDocs);
   }, [evalDocs]);
-
-  // Available Manufacturers for Supplier selection dropdown
-  const availableManufacturers = useMemo(() => {
-    return partners.filter(p => p.type === 'Manufacturer');
-  }, [partners]);
 
   // Unique countries list for country filter
   const availableCountries = useMemo(() => {
@@ -211,26 +204,21 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       // 6. Smart Search query
       if (search.trim()) {
         const query = search.toLowerCase().trim();
-        const parentMfg = p.manufacturerId 
-          ? partners.find(m => m.id === p.manufacturerId)?.name.toLowerCase() || ''
-          : '';
-        
+
         const matchesName = p.name.toLowerCase().includes(query);
         const matchesCountry = p.country.toLowerCase().includes(query);
         const matchesCity = (p.city || '').toLowerCase().includes(query);
         const matchesContact = (p.contactPerson || '').toLowerCase().includes(query);
         const matchesEmail = (p.email || '').toLowerCase().includes(query);
         const matchesPhone = (p.phone || '').toLowerCase().includes(query);
-        const matchesMfg = parentMfg.includes(query);
 
         return (
-          matchesName || 
-          matchesCountry || 
-          matchesCity || 
-          matchesContact || 
-          matchesEmail || 
-          matchesPhone || 
-          matchesMfg
+          matchesName ||
+          matchesCountry ||
+          matchesCity ||
+          matchesContact ||
+          matchesEmail ||
+          matchesPhone
         );
       }
 
@@ -272,7 +260,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       contactPerson: '',
       phone: '',
       website: '',
-      manufacturerId: '',
       status: 'Active'
     });
     setEvalDocs(getDefaultSupplierEvaluation().documents);
@@ -282,28 +269,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     setIsModalOpen(true);
   };
 
-  // Quick Action: Add Supplier for a specific Manufacturer
-  const handleOpenAddSupplierForManufacturer = (mfgId: string, defaultCountry?: string) => {
-    setFormData({
-      type: 'Supplier',
-      name: '',
-      country: defaultCountry || '',
-      city: '',
-      address: '',
-      email: '',
-      contactPerson: '',
-      phone: '',
-      website: '',
-      manufacturerId: mfgId,
-      status: 'Active'
-    });
-    setEvalDocs(getDefaultSupplierEvaluation().documents);
-    setEditingPartner(null);
-    setFormError(null);
-    setActiveModalTab('general');
-    setIsViewModalOpen(false); // Close detail view if open
-    setIsModalOpen(true);
-  };
 
   const handleOpenEdit = (partner: BusinessPartner) => {
     setFormData({
@@ -316,7 +281,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       contactPerson: partner.contactPerson || '',
       phone: partner.phone || '',
       website: partner.website || '',
-      manufacturerId: partner.manufacturerId || '',
       status: partner.status
     });
 
@@ -341,13 +305,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // Deletion Constraints Check
   const handleDeletePartnerClick = (partner: BusinessPartner) => {
     if (partner.type === 'Manufacturer') {
-      const connectedSuppliers = partners.filter(p => p.type === 'Supplier' && p.manufacturerId === partner.id);
       const connectedSources = db.filter(v => v.manufacturerId === partner.id);
-      if (connectedSuppliers.length > 0 || connectedSources.length > 0) {
+      if (connectedSources.length > 0) {
         setDeleteConstraintError({
           name: partner.name,
           type: 'Manufacturer',
-          suppliers: connectedSuppliers,
           sources: connectedSources
         });
         return;
@@ -465,27 +427,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       }
     }
 
-    // Validation 2.1: Unique Supplier Name per Manufacturer Check
+    // Validation 2.1: Unique Supplier Name Check
     if (formData.type === 'Supplier') {
-      const duplicate = partners.find(p => 
-        p.type === 'Supplier' && 
-        p.manufacturerId === formData.manufacturerId &&
+      const duplicate = partners.find(p =>
+        p.type === 'Supplier' &&
         p.name.trim().toLowerCase() === formData.name.trim().toLowerCase() &&
         p.id !== editingPartner?.id
       );
       if (duplicate) {
-        const parentMfg = partners.find(m => m.id === formData.manufacturerId);
-        setFormError(`یک فروشنده با نام "${formData.name.trim()}" برای تولیدکننده "${parentMfg?.name || ''}" قبلاً ثبت شده است.`);
+        setFormError(`یک فروشنده با نام "${formData.name.trim()}" قبلاً ثبت شده است.`);
         setActiveModalTab('general');
         return;
       }
-    }
-
-    // Validation 3: Supplier requires Manufacturer selection
-    if (formData.type === 'Supplier' && !formData.manufacturerId) {
-      setFormError('انتخاب تولیدکننده (Manufacturer) برای فروشنده الزامی است.');
-      setActiveModalTab('general');
-      return;
     }
 
     // Validation 4: SOP Evaluation Validation when type === 'Supplier'
@@ -521,7 +474,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         contactPerson: formData.contactPerson.trim() || undefined,
         phone: formData.phone.trim() || undefined,
         website: formData.website.trim() || undefined,
-        manufacturerId: formData.type === 'Supplier' ? formData.manufacturerId : undefined,
         status: formData.status,
         evaluation: formData.type === 'Supplier' ? evaluationResult : undefined,
         updatedAt: nowIso
@@ -540,7 +492,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         contactPerson: formData.contactPerson.trim() || undefined,
         phone: formData.phone.trim() || undefined,
         website: formData.website.trim() || undefined,
-        manufacturerId: formData.type === 'Supplier' ? formData.manufacturerId : undefined,
         status: formData.status,
         evaluation: formData.type === 'Supplier' ? evaluationResult : undefined,
         createdAt: nowIso,
@@ -574,16 +525,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   };
 
   // Find linked Suppliers for a Manufacturer
-  const getSuppliersForManufacturer = (mfgId: string) => {
-    return partners.filter(p => p.type === 'Supplier' && p.manufacturerId === mfgId);
-  };
-
-  // Find parent Manufacturer for a Supplier
-  const getParentManufacturer = (mfgId?: string) => {
-    if (!mfgId) return null;
-    return partners.find(p => p.id === mfgId) || null;
-  };
-
   const getGradeBadgeClass = (grade?: string) => {
     switch (grade) {
       case 'A': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
@@ -889,19 +830,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 </tr>
               ) : (
                 paginatedPartners.map(partner => {
-                  const parentMfg = getParentManufacturer(partner.manufacturerId);
                   return (
                     <tr key={partner.id} className="hover:bg-slate-50/70 transition-colors">
                       {/* Name */}
                       <td className="py-3 px-4 font-bold text-slate-800">
                         <div className="flex flex-col">
                           <span className="text-slate-900 font-black">{partner.name}</span>
-                          {partner.type === 'Supplier' && parentMfg && (
-                            <span className="text-[10px] text-indigo-600 font-medium mt-0.5 flex items-center gap-1">
-                              <Factory className="w-3 h-3" />
-                              تولیدکننده مرجع: {parentMfg.name}
-                            </span>
-                          )}
                         </div>
                       </td>
 
@@ -1103,7 +1037,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, type: 'Manufacturer', manufacturerId: '' }));
+                          setFormData(prev => ({ ...prev, type: 'Manufacturer' }));
                           setActiveModalTab('general');
                           setFormError(null);
                         }}
@@ -1193,37 +1127,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     />
                   </div>
 
-                  {/* If Supplier: Required Manufacturer Selection Dropdown */}
-                  {formData.type === 'Supplier' && (
-                    <div className="space-y-1 md:col-span-2 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
-                      <label className="font-bold text-indigo-900 block flex items-center gap-1.5">
-                        <Factory className="w-4 h-4 text-indigo-600" />
-                        <span>انتخاب تولیدکننده مرجع (Manufacturer Linkage)</span>
-                        <span className="text-rose-500">*</span>
-                      </label>
-                      <p className="text-[11px] text-indigo-700">
-                        فروشنده الزماً باید به یکی از تولیدکنندگان ثبت‌شده در سیستم متصل گردد. می‌توانید با تغییر این گزینه، فروشنده را به تولیدکننده دیگری منتقل نمایید.
-                      </p>
-                      <select
-                        required
-                        value={formData.manufacturerId || ''}
-                        onChange={e => setFormData({ ...formData, manufacturerId: e.target.value })}
-                        className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-500 font-medium"
-                      >
-                        <option value="">-- انتخاب تولیدکننده مرجع از لیست --</option>
-                        {availableManufacturers.map(mfg => (
-                          <option key={mfg.id} value={mfg.id}>
-                            {mfg.name} ({mfg.country})
-                          </option>
-                        ))}
-                      </select>
-                      {availableManufacturers.length === 0 && (
-                        <p className="text-rose-600 font-semibold mt-1">
-                          هیچ تولیدکننده‌ای ثبت نشده است! ابتدا باید حداقل یک Manufacturer تعریف کنید.
-                        </p>
-                      )}
-                    </div>
-                  )}
 
                   {/* Country */}
                   <div className="space-y-1">
@@ -1747,121 +1650,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* 2. Associated Suppliers Dashboard Table */}
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                    <div>
-                      <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
-                        <Handshake className="w-4 h-4 text-emerald-600" />
-                        <span>فروشندگان / تامین‌کنندگان متصل (Associated Suppliers)</span>
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-mono text-xs font-bold">
-                          {getSuppliersForManufacturer(selectedPartner.id).length} فروشنده
-                        </span>
-                      </h3>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        لیست کلیه شرکت‌های فروشنده که محصولات این تولیدکننده را تامین و ارزیابی SOP کرده‌اند.
-                      </p>
-                    </div>
-
-                    {/* Quick Action: Add Supplier for this Manufacturer */}
-                    <button
-                      onClick={() => handleOpenAddSupplierForManufacturer(selectedPartner.id, selectedPartner.country)}
-                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>ثبت فروشنده جدید برای این تولیدکننده</span>
-                    </button>
-                  </div>
-
-                  {getSuppliersForManufacturer(selectedPartner.id).length === 0 ? (
-                    <div className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-center space-y-2">
-                      <Handshake className="w-8 h-8 text-slate-300 mx-auto" />
-                      <p className="text-xs text-slate-500 font-medium">
-                        هنوز هیچ فروشنده‌ای (Supplier) به نام تولیدکننده "{selectedPartner.name}" ثبت نشده است.
-                      </p>
-                      <button
-                        onClick={() => handleOpenAddSupplierForManufacturer(selectedPartner.id, selectedPartner.country)}
-                        className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>تعریف و ثبت اولین Supplier برای این تولیدکننده</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                      <table className="w-full text-right text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600">
-                          <tr>
-                            <th className="py-3 px-3">نام فروشنده</th>
-                            <th className="py-3 px-3">کشور / شهر</th>
-                            <th className="py-3 px-3">مسئول تماس</th>
-                            <th className="py-3 px-3">تماس / ایمیل</th>
-                            <th className="py-3 px-3">رتبه SOP</th>
-                            <th className="py-3 px-3">وضعیت ارزیابی</th>
-                            <th className="py-3 px-3">وضعیت سیستم</th>
-                            <th className="py-3 px-3 text-center">عملیات</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {getSuppliersForManufacturer(selectedPartner.id).map(sup => (
-                            <tr key={sup.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-3 px-3 font-bold text-slate-800">{sup.name}</td>
-                              <td className="py-3 px-3 text-slate-600">{sup.country} {sup.city ? `(${sup.city})` : ''}</td>
-                              <td className="py-3 px-3 text-slate-700">{sup.contactPerson || '-'}</td>
-                              <td className="py-3 px-3 font-mono text-[11px]">
-                                <div className="text-slate-700">{sup.phone || '-'}</div>
-                                <div className="text-slate-400">{sup.email || '-'}</div>
-                              </td>
-                              <td className="py-3 px-3">
-                                {sup.evaluation && sup.evaluation.grade !== 'Not Evaluated' ? (
-                                  <span className={`px-2 py-0.5 rounded font-mono text-xs font-black border ${getGradeBadgeClass(sup.evaluation.grade)}`}>
-                                    {sup.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
-                                     sup.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
-                                     `Grade ${sup.evaluation.grade}`}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-500 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">ارزیابی نشده</span>
-                                )}
-                              </td>
-                              <td className="py-3 px-3">
-                                {sup.evaluation && sup.evaluation.grade !== 'Not Evaluated' ? (
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getSOPStatusBadgeClass(sup.evaluation.status)}`}>
-                                    {sup.evaluation.status}
-                                  </span>
-                                ) : (
-                                  <span className="text-amber-600 text-[10px] bg-amber-50 px-1.5 py-0.5 rounded">در انتظار ارزیابی</span>
-                                )}
-                              </td>
-                              <td className="py-3 px-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${sup.status === 'Active' ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-700'}`}>
-                                  {sup.status}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    onClick={() => setSelectedPartner(sup)}
-                                    className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                    title="مشاهده Supplier"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenEdit(sup)}
-                                    className="p-1 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded"
-                                    title="ویرایش Supplier"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
               </div>
             ) : (
               /* ========================================================
@@ -1872,43 +1660,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/60 pb-2">
                     <Handshake className="w-4 h-4 text-emerald-600" />
-                    <span>۱. مشخصات عمومی Supplier و تولیدکننده مرجع</span>
+                    <span>۱. مشخصات عمومی Supplier</span>
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div>
                       <span className="text-slate-400 text-[10px] block font-medium">نام فروشنده / Supplier</span>
                       <span className="font-black text-slate-900">{selectedPartner.name}</span>
-                    </div>
-
-                    {/* Linked Manufacturer */}
-                    <div className="bg-indigo-50/70 border border-indigo-100 p-2.5 rounded-xl sm:col-span-2">
-                      <span className="text-indigo-900 text-[10px] font-bold block mb-0.5">تولیدکننده مرجع (Parent Manufacturer)</span>
-                      {getParentManufacturer(selectedPartner.manufacturerId) ? (
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Factory className="w-4 h-4 text-indigo-600" />
-                            <span className="font-bold text-indigo-950 text-xs">
-                              {getParentManufacturer(selectedPartner.manufacturerId)?.name}
-                            </span>
-                            <span className="text-[10px] text-indigo-700">
-                              ({getParentManufacturer(selectedPartner.manufacturerId)?.country})
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => {
-                              const parent = getParentManufacturer(selectedPartner.manufacturerId);
-                              if (parent) setSelectedPartner(parent);
-                            }}
-                            className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center gap-1"
-                          >
-                            <span>مشاهده کارت تولیدکننده</span>
-                            <Eye className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-rose-600 font-semibold text-[11px]">تولیدکننده مرجع نامشخص است</span>
-                      )}
                     </div>
 
                     <div>
@@ -2182,23 +1940,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </>
                 )}
               </div>
-
-              {deleteConstraintError.suppliers && deleteConstraintError.suppliers.length > 0 && (
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3">
-                  <p className="font-bold text-[11px] text-slate-700 mb-1 flex items-center gap-1.5 border-b border-slate-200/60 pb-1.5">
-                    <Handshake className="w-4 h-4 text-emerald-600" />
-                    <span>تعداد {deleteConstraintError.suppliers.length} فروشنده به این تولیدکننده متصل هستند:</span>
-                  </p>
-                  <ul className="space-y-1">
-                    {deleteConstraintError.suppliers.map(s => (
-                      <li key={s.id} className="flex items-center justify-between text-[11px] bg-white p-1.5 rounded-lg border border-slate-100 font-bold">
-                        <span className="text-slate-800">{s.name}</span>
-                        <span className="text-slate-400 font-medium font-mono">({s.country})</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
               {deleteConstraintError.sources && deleteConstraintError.sources.length > 0 && (
                 <div className="space-y-1.5 max-h-[140px] overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3">

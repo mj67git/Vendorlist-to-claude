@@ -317,7 +317,6 @@ function mapPartnerRow(row: any): any {
     contactPerson: row.contactPerson || "",
     phone: row.phone || "",
     website: row.website || "",
-    manufacturerId: row.manufacturerId || undefined,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() || row.createdAt,
     updatedAt: row.updatedAt?.toISOString?.() || row.updatedAt,
@@ -365,7 +364,6 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     phone: p.phone || null,
     website: p.website || null,
     status: toDbPartnerStatus(p.status),
-    manufacturerId: p.manufacturerId || null,
   };
 
   await prisma.businessPartner.upsert({
@@ -441,11 +439,7 @@ async function seedDefaultBusinessPartners() {
   const count = await prisma.businessPartner.count();
   if (count > 0) return;
   console.log("[BusinessPartners] Seeding default partners into PostgreSQL (first startup)...");
-  // Seed manufacturers first so supplier.manufacturerId FKs resolve.
-  const ordered = [...INITIAL_BUSINESS_PARTNERS_DB].sort(
-    (a, b) => (a.type === "Manufacturer" ? 0 : 1) - (b.type === "Manufacturer" ? 0 : 1),
-  );
-  for (const p of ordered) {
+  for (const p of INITIAL_BUSINESS_PARTNERS_DB) {
     await upsertBusinessPartner(prisma, p);
   }
 }
@@ -2856,13 +2850,14 @@ async function startServer() {
         userAgent: getUserAgent(req),
       };
 
-      // Referential integrity: block deletion of records still in use.
+      // Referential integrity: block deletion when the partner is still linked
+      // to a source. Manufacturers and Suppliers are independent now, so there
+      // is no partner-to-partner reference to check.
       let blockedReason: string | null = null;
       if (existing.type === "Manufacturer") {
-        const supplierRefs = await prisma.businessPartner.count({ where: { manufacturerId: id } });
         const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
-        if (supplierRefs > 0 || vendorRefs > 0) {
-          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است.";
+        if (vendorRefs > 0) {
+          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source اختصاص داده شده است.";
         }
       } else if (existing.type === "Supplier") {
         const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
