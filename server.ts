@@ -1,10 +1,8 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_VENDORS_DB } from "./src/db_foreign_only.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { 
@@ -28,128 +26,6 @@ import {
   hashPassword,
   verifyPassword,
 } from "./src/server/security/passwordService.js";
-
-const dbPath = path.join(process.cwd(), "database", "vendors.json");
-
-interface RelationalModel {
-  vendors: Record<string, {
-    id: string;
-    name: string;
-    nameEn: string;
-    country: string;
-    contactInfo: string;
-    registrationDate: string;
-    status: string;
-    grade: string | null;
-    initialSampleStatus?: string | null;
-  }>;
-  materials: Record<string, {
-    id: string;
-    name: string;
-    nameEn: string;
-    cas: string;
-    irc: string;
-  }>;
-  vendor_materials: Record<string, {
-    id: string;
-    vendorId: string;
-    materialId: string;
-    isSample: boolean;
-    category: string;
-  }>;
-  evaluations: Record<string, {
-    id: string;
-    vendorId: string;
-    materialId: string;
-    period: string;
-    commercialScore: number;
-    qaScore: number;
-    planningScore: number;
-    financeScore: number;
-    totalScore: number;
-    grade: string;
-    scores?: any; // client convenience
-    rawScores?: any; // client convenience
-    rejectionReasons?: any; // client convenience
-  }>;
-  audit_logs: Array<{
-    id: string;
-    vendorId: string | null;
-    user: string;
-    action: string;
-    details: string;
-    createdAt: string;
-  }>;
-  // Extra fields for companion forms / analytical attachments
-  risk_assessments: Record<string, any>;
-  analysis_records: Record<string, any[]>;
-  contacts: Record<string, any>; // legacy backwards compatibility support
-}
-
-let relationalDb: RelationalModel = {
-  vendors: {},
-  materials: {},
-  vendor_materials: {},
-  evaluations: {},
-  audit_logs: [],
-  risk_assessments: {},
-  analysis_records: {},
-  contacts: {}
-};
-
-function recalculateVendorGradeAndStatus(id: string) {
-  const v = relationalDb.vendors[id];
-  if (!v) return;
-
-  const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-  const isSample = link ? link.isSample : false;
-
-  // Let's preserve sample specific statuses
-  if (isSample) {
-    const records = relationalDb.analysis_records[id] || [];
-    const rejectCount = records.filter((r: any) => r.decision === "Reject").length;
-    if (rejectCount >= 1) {
-      relationalDb.vendors[id].status = 'rejected';
-      relationalDb.vendors[id].grade = 'black list';
-    } else {
-      relationalDb.vendors[id].status = v.initialSampleStatus || 'approved';
-      relationalDb.vendors[id].grade = null;
-    }
-    return;
-  }
-
-  // Preserve explicit rejects / black list
-  if (v.status === 'rejected' || v.grade === 'rejected' || v.grade === 'black list') {
-    relationalDb.vendors[id].status = 'rejected';
-    relationalDb.vendors[id].grade = 'black list';
-    return;
-  }
-
-  const evalData = link ? Object.values(relationalDb.evaluations).find(ev => ev.vendorId === id && ev.materialId === link.materialId) : null;
-  if (!evalData || !evalData.scores) return;
-
-  const scores = evalData.scores;
-  const isFullyScored = scores.commercial > 0 && scores.qa > 0 && scores.planning > 0 && scores.finance > 0;
-  if (isFullyScored) {
-    const rounded = calculateRoundedWeightedScore(scores, CALCULATION_WEIGHTS);
-
-    let calcGrade = v.grade;
-    let calcStatus = v.status;
-
-    for (const tier of GRADE_TIERS) {
-      if (rounded >= tier.min) {
-        calcGrade = tier.grade;
-        calcStatus = tier.status;
-        break;
-      }
-    }
-
-    relationalDb.vendors[id].grade = calcGrade;
-    relationalDb.vendors[id].status = calcStatus;
-    evalData.grade = calcGrade === 'rejected' ? 'black list' : (calcGrade || "C");
-    evalData.totalScore = rounded;
-  }
-}
 
 function getVendorRank(vendorId: string, allVendors: any[]): number {
   return rankVendor(vendorId, allVendors, CALCULATION_WEIGHTS);
@@ -205,190 +81,6 @@ function generateMaterialId(cas: string | undefined, irc: string | undefined, ma
   return baseId.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function partitionVendor(v: any) {
-  if (!v || !v.id) return;
-  const {
-    id,
-    scores, rawScores, rejectionReasons,
-    contactInfo, lastAudit, ircExpiryDate,
-    activityLogs,
-    analysisRecords,
-    riskAssessment,
-    category, material, materialEn, cas, irc, name, nameEn, country, grade, status, registrationDate, isSample,
-    initialSampleStatus,
-    manufacturerId,
-    supplierId
-  } = v;
-
-  const serializedContactInfo = contactInfo ? 
-    (contactInfo + (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '')) : 
-    (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '');
-
-  // 1. Map Vendor (Only Profile Details)
-  relationalDb.vendors[id] = {
-    id,
-    name: name || "Unknown",
-    nameEn: nameEn || "Unknown",
-    country: country || "نامشخص",
-    contactInfo: serializedContactInfo,
-    manufacturerId: manufacturerId || null,
-    supplierId: supplierId || null,
-    registrationDate: registrationDate || new Date().toISOString().split('T')[0],
-    status: status || "new",
-    grade: grade === 'rejected' ? 'black list' : (grade || null),
-    initialSampleStatus: initialSampleStatus || null
-  } as any;
-
-  // 2. Map Material (Unique catalogue representation to prevent repetitive codes)
-  const materialId = generateMaterialId(cas, irc, material, materialEn);
-  relationalDb.materials[materialId] = {
-    id: materialId,
-    name: material || "نامشخص",
-    nameEn: materialEn || "Unknown",
-    cas: cas || "N/A",
-    irc: irc || "N/A"
-  };
-
-  // 3. Map VendorMaterial relationship link (isSample & category)
-  // Clean up any old links for this vendor that point to a different material
-  for (const k of Object.keys(relationalDb.vendor_materials)) {
-    if (relationalDb.vendor_materials[k].vendorId === id && relationalDb.vendor_materials[k].materialId !== materialId) {
-      delete relationalDb.vendor_materials[k];
-    }
-  }
-
-  const linkId = `link_${id}_${materialId}`;
-  relationalDb.vendor_materials[linkId] = {
-    id: linkId,
-    vendorId: id,
-    materialId: materialId,
-    isSample: isSample ?? false,
-    category: category || "foreign"
-  };
-
-  // 4. Map Periodic Evaluations to proper relational table structure
-  const evalId = `eval_${id}_${materialId}`;
-  const scoreObj = scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
-  const rounded = calculateRoundedWeightedScore(scoreObj, CALCULATION_WEIGHTS);
-
-  relationalDb.evaluations[evalId] = {
-    id: evalId,
-    vendorId: id,
-    materialId: materialId,
-    period: "۱۴۰۵-Q1",
-    commercialScore: scoreObj.commercial || 0,
-    qaScore: scoreObj.qa || 0,
-    planningScore: scoreObj.planning || 0,
-    financeScore: scoreObj.finance || 0,
-    totalScore: rounded,
-    grade: grade === 'rejected' ? 'black list' : (grade || "C"),
-    scores: scoreObj,
-    rawScores: rawScores || null,
-    rejectionReasons: rejectionReasons || null
-  };
-
-  // 5. Map Audit Log trails
-  if (Array.isArray(activityLogs)) {
-    activityLogs.forEach((log: any) => {
-      const exists = relationalDb.audit_logs.some(al => al.id === log.id);
-      if (!exists) {
-        relationalDb.audit_logs.push({
-          id: log.id || `log_${Math.random().toString(36).substr(2, 9)}`,
-          vendorId: id,
-          user: log.user || "کاربر سیستم",
-          action: "بروزرسانی اطلاعات",
-          details: log.action || "ارزیابی یا ویرایش تأمین‌کننده",
-          createdAt: log.date || new Date().toISOString()
-        });
-      }
-    });
-  }
-
-  // Backup store for extra attachments and forms
-  relationalDb.contacts[id] = {
-    contactInfo: contactInfo || '',
-    lastAudit: lastAudit || '',
-    ircExpiryDate: ircExpiryDate || ''
-  };
-  relationalDb.analysis_records[id] = analysisRecords || [];
-  relationalDb.risk_assessments[id] = riskAssessment || null;
-
-  recalculateVendorGradeAndStatus(id);
-}
-
-function reconstructVendor(id: string) {
-  const baseVendor = relationalDb.vendors[id];
-  if (!baseVendor) return null;
-
-  const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-  const material = link ? relationalDb.materials[link.materialId] : null;
-  const evalData = link ? (Object.values(relationalDb.evaluations).find(ev => ev.vendorId === id && ev.materialId === link.materialId) || null) : null;
-
-  // Rebuild Audit Logs back to ActivityLogs array structure used by frontend
-  const activityLogs = relationalDb.audit_logs
-    .filter(al => al.vendorId === id)
-    .map(al => ({
-      id: al.id,
-      action: al.details || al.action,
-      date: al.createdAt,
-      user: al.user
-    }));
-
-  const analysisRecords = relationalDb.analysis_records[id] || [];
-  const riskAssessment = relationalDb.risk_assessments[id] || null;
-
-  let manufacturerId = (baseVendor as any).manufacturerId || null;
-  let supplierId = (baseVendor as any).supplierId || null;
-  let contactInfo = baseVendor.contactInfo || (relationalDb.contacts[id]?.contactInfo || "");
-
-  if (contactInfo && contactInfo.includes('__BP_METAUIUIUI_STUB__')) {
-    // legacy support if any
-  }
-  if (contactInfo && contactInfo.includes('__BP_METAUI__:')) {
-    const parts = contactInfo.split('\n__BP_METAUI__:');
-    contactInfo = parts[0];
-    const metaParts = (parts[1] || "").split(':');
-    manufacturerId = manufacturerId || metaParts[0] || null;
-    supplierId = supplierId || metaParts[1] || null;
-  }
-
-  return {
-    id: baseVendor.id,
-    name: baseVendor.name,
-    nameEn: baseVendor.nameEn,
-    country: baseVendor.country,
-    contactInfo: contactInfo,
-    manufacturerId,
-    supplierId,
-    registrationDate: baseVendor.registrationDate,
-    status: baseVendor.status,
-    grade: baseVendor.grade === 'rejected' ? 'black list' : baseVendor.grade,
-    initialSampleStatus: baseVendor.initialSampleStatus || "",
-
-    material: material ? material.name : "نامشخص",
-    materialEn: material ? material.nameEn : "Unknown",
-    cas: material ? material.cas : "N/A",
-    irc: material ? material.irc : "N/A",
-
-    isSample: link ? link.isSample : false,
-    category: link ? link.category : "foreign",
-
-    scores: evalData ? evalData.scores : null,
-    rawScores: evalData ? evalData.rawScores : null,
-    rejectionReasons: evalData ? evalData.rejectionReasons : null,
-
-    activityLogs,
-    analysisRecords,
-    riskAssessment,
-    lastAudit: relationalDb.contacts[id]?.lastAudit || "",
-    ircExpiryDate: relationalDb.contacts[id]?.ircExpiryDate || ""
-  };
-}
-
-function getAllVendorsFlat() {
-  return Object.keys(relationalDb.vendors).map(reconstructVendor).filter(Boolean);
-}
-
 function isValidPostgresUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string" || !url.trim()) return false;
   const trimmed = url.trim();
@@ -441,12 +133,21 @@ function getPrismaClient(): PrismaClient | null {
   return _prismaInstance;
 }
 
-async function getVendorsList(): Promise<any[]> {
+// PostgreSQL is the single source of truth. Fail fast (rather than silently
+// falling back to file storage) so misconfiguration surfaces immediately.
+function requirePrisma(): PrismaClient {
   const prisma = getPrismaClient();
   if (!prisma) {
-    return getAllVendorsFlat();
+    throw new Error(
+      "DATABASE_URL is missing or invalid. A valid PostgreSQL connection is required.",
+    );
   }
-  try {
+  return prisma;
+}
+
+async function getVendorsList(): Promise<any[]> {
+  const prisma = requirePrisma();
+  {
     const vendors = await prisma.vendor.findMany();
     const vendorMaterials = await prisma.vendorMaterial.findMany();
     const materials = await prisma.material.findMany();
@@ -544,9 +245,6 @@ async function getVendorsList(): Promise<any[]> {
       });
     }
     return result;
-  } catch (err: any) {
-    console.warn("[Prisma] Failed to query PostgreSQL, falling back to local file:", err.message);
-    return getAllVendorsFlat();
   }
 }
 
@@ -556,13 +254,8 @@ async function getVendorById(id: string): Promise<any> {
 }
 
 async function saveVendorToDb(v: any): Promise<boolean> {
-  const prisma = getPrismaClient();
-  if (!prisma) {
-    partitionVendor(v);
-    saveDb();
-    return true;
-  }
-  try {
+  const prisma = requirePrisma();
+  {
     const {
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
       material, materialEn, cas, irc, isSample, category,
@@ -707,34 +400,11 @@ async function saveVendorToDb(v: any): Promise<boolean> {
     }
 
     return true;
-  } catch (err: any) {
-    console.warn("[Prisma] Failed to save to PostgreSQL, falling back to local memory:", err.message);
-    partitionVendor(v);
-    saveDb();
-    return true;
   }
 }
 
 async function deleteVendorFromDb(id: string): Promise<boolean> {
-  const prisma = getPrismaClient();
-  if (!prisma) {
-    if (relationalDb.vendors[id]) {
-      delete relationalDb.vendors[id];
-      const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-      if (link) {
-        delete relationalDb.vendor_materials[link.id];
-        const evalId = `eval_${id}_${link.materialId}`;
-        delete relationalDb.evaluations[evalId];
-      }
-      delete relationalDb.contacts[id];
-      delete relationalDb.analysis_records[id];
-      delete relationalDb.risk_assessments[id];
-      relationalDb.audit_logs = relationalDb.audit_logs.filter(al => al.vendorId !== id);
-      saveDb();
-      return true;
-    }
-    return false;
-  }
+  const prisma = requirePrisma();
   try {
     await prisma.auditLog.deleteMany({ where: { vendorId: id } });
     await prisma.evaluation.deleteMany({ where: { vendorId: id } });
@@ -742,169 +412,85 @@ async function deleteVendorFromDb(id: string): Promise<boolean> {
     await prisma.vendor.delete({ where: { id } });
     return true;
   } catch (err: any) {
-    console.warn("[Prisma] Failed to delete from PostgreSQL, falling back to local database:", err.message);
-    if (relationalDb.vendors[id]) {
-      delete relationalDb.vendors[id];
-      const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-      if (link) {
-        delete relationalDb.vendor_materials[link.id];
-        const evalId = `eval_${id}_${link.materialId}`;
-        delete relationalDb.evaluations[evalId];
-      }
-      delete relationalDb.contacts[id];
-      delete relationalDb.analysis_records[id];
-      delete relationalDb.risk_assessments[id];
-      relationalDb.audit_logs = relationalDb.audit_logs.filter(al => al.vendorId !== id);
-      saveDb();
-      return true;
+    // Prisma throws P2025 when the target row does not exist.
+    if (err?.code === "P2025") {
+      return false;
     }
-    return false;
-  }
-}
-
-// Load relational DB version v2 from file (with support for migrating legacy v1 and flat db schemas)
-try {
-  if (fs.existsSync(dbPath)) {
-    const rawData = fs.readFileSync(dbPath, "utf-8");
-    const parsed = JSON.parse(rawData);
-    if (parsed && parsed._relational_v2) {
-      relationalDb = {
-        vendors: parsed.vendors || {},
-        materials: parsed.materials || {},
-        vendor_materials: parsed.vendor_materials || {},
-        evaluations: parsed.evaluations || {},
-        audit_logs: parsed.audit_logs || [],
-        risk_assessments: parsed.risk_assessments || {},
-        analysis_records: parsed.analysis_records || {},
-        contacts: parsed.contacts || {}
-      };
-      console.log(`[RelationalDB] Loaded strictly normalized strict-5-entity relational database.`);
-    } else if (parsed && parsed._relational) {
-      console.log(`[RelationalDB] Migrating old relational model v1 to new normalized 5-entity model.`);
-      // Transform old structures to new structures by reconstructing and re-partitioning
-      const tempVendors = parsed.vendors || {};
-      Object.keys(tempVendors).forEach(vid => {
-        // Prepare temporary flat object representing old vendor
-        const ev = parsed.evaluations?.[vid] || {};
-        const co = parsed.contacts?.[vid] || {};
-        const logs = parsed.activity_logs?.[vid] || [];
-        const analysis = parsed.analysis_records?.[vid] || [];
-        const risk = parsed.risk_assessments?.[vid] || null;
-        const vBase = tempVendors[vid];
-
-        partitionVendor({
-          ...vBase,
-          ...ev,
-          ...co,
-          activityLogs: logs,
-          analysisRecords: analysis,
-          riskAssessment: risk
-        });
-      });
-      saveDb();
-    } else if (Array.isArray(parsed)) {
-      console.log(`[RelationalDB] Converting legacy flat raw list database format.`);
-      parsed.forEach(partitionVendor);
-      saveDb();
-    }
-  } else {
-    console.log(`[RelationalDB] Bootstrapping clean databases.`);
-    INITIAL_VENDORS_DB.forEach(partitionVendor);
-    saveDb();
-  }
-} catch (err: any) {
-  console.warn("[RelationalDB] Fallback in-memory loaded:", err.message);
-  INITIAL_VENDORS_DB.forEach(partitionVendor);
-}
-
-function saveDb() {
-  try {
-    const dirPath = path.dirname(dbPath);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-    const dataToWrite = {
-      _relational_v2: true,
-      vendors: relationalDb.vendors,
-      materials: relationalDb.materials,
-      vendor_materials: relationalDb.vendor_materials,
-      evaluations: relationalDb.evaluations,
-      audit_logs: relationalDb.audit_logs,
-      risk_assessments: relationalDb.risk_assessments,
-      analysis_records: relationalDb.analysis_records,
-      contacts: relationalDb.contacts
-    };
-    fs.writeFileSync(dbPath, JSON.stringify(dataToWrite, null, 2), "utf-8");
-  } catch (err: any) {
-    console.warn("[RelationalDB] Failed writing database changes to disk:", err.message);
+    throw err;
   }
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || "internal-regulatory-compliance-secret-key-321";
 
-const usersDbPath = path.join(process.cwd(), "database", "users.json");
-let USERS_DB: Record<string, any> = {
-  admin: { username: "admin", password: "123456", role: "admin", name: "مدیر سیستم" },
-  commercial: { username: "commercial", password: "123", role: "commercial", name: "واحد بازرگانی" },
-  qa: { username: "qa", password: "123", role: "qa", name: "واحد کیفیت" },
-  planning: { username: "planning", password: "123", role: "planning", name: "واحد برنامه‌ریزی و انبار" },
-  finance: { username: "finance", password: "123", role: "finance", name: "واحد مالی" },
-};
+// Default users provisioned into PostgreSQL on first startup (empty users table).
+const DEFAULT_USERS: Array<{ username: string; password: string; role: string; name: string }> = [
+  { username: "admin", password: "123456", role: "admin", name: "مدیر سیستم" },
+  { username: "commercial", password: "123", role: "commercial", name: "واحد بازرگانی" },
+  { username: "qa", password: "123", role: "qa", name: "واحد کیفیت" },
+  { username: "planning", password: "123", role: "planning", name: "واحد برنامه‌ریزی و انبار" },
+  { username: "finance", password: "123", role: "finance", name: "واحد مالی" },
+];
 
-function loadUsersDb() {
-  try {
-    if (fs.existsSync(usersDbPath)) {
-      const data = fs.readFileSync(usersDbPath, "utf-8");
-      USERS_DB = JSON.parse(data);
-    }
-    
-    // Migrate plain-text passwords to hashed passwords and initialize mustChangePassword flags
-    let modified = false;
-    for (const key of Object.keys(USERS_DB)) {
-      const user = USERS_DB[key];
-      
-      // If password is still a plain text string, hash it
-      if (typeof user.password === "string") {
-        const salt = generateSalt();
-        const hash = hashPassword(user.password, salt);
-        user.password = { hash, salt };
-        
-        // Plain text defaults must change password on first login
-        if (user.mustChangePassword === undefined) {
-          user.mustChangePassword = true;
-        }
-        modified = true;
-      }
-      
-      // Ensure mustChangePassword flag is explicitly set if missing
-      if (user.mustChangePassword === undefined) {
-        user.mustChangePassword = true;
-        modified = true;
-      }
-    }
-    
-    if (modified) {
-      saveUsersDb();
-    }
-  } catch (err: any) {
-    console.warn("[UsersDB] Failed loading or migrating users db:", err.message);
-  }
+const ALLOWED_USER_ROLES = ["admin", "lab", "commercial", "qa", "planning", "finance"] as const;
+type UserRoleValue = (typeof ALLOWED_USER_ROLES)[number];
+
+function normalizeUserRole(role: any): UserRoleValue {
+  return ALLOWED_USER_ROLES.includes(role) ? role : "commercial";
 }
 
-function saveUsersDb() {
-  try {
-    const dir = path.dirname(usersDbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(usersDbPath, JSON.stringify(USERS_DB, null, 2), "utf-8");
-  } catch (err: any) {
-    console.warn("[UsersDB] Failed to save users db to disk:", err.message);
-  }
+// Shape returned to endpoints; mirrors the legacy in-memory user record so the
+// route handlers (and verifyPassword) keep working against a { hash, salt } pair.
+interface AppUser {
+  username: string;
+  name: string;
+  role: string;
+  password: { hash: string; salt: string };
+  permissions: any;
+  mustChangePassword: boolean;
 }
 
-// Initialize users database on startup
-loadUsersDb();
+function mapUserRow(row: any): AppUser {
+  return {
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    password: { hash: row.passwordHash, salt: row.passwordSalt },
+    permissions: row.permissions ?? [],
+    mustChangePassword: row.mustChangePassword !== false,
+  };
+}
+
+async function getUserByUsername(username: string): Promise<AppUser | null> {
+  const prisma = requirePrisma();
+  const row = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+  return row ? mapUserRow(row) : null;
+}
+
+async function getAllUsers(): Promise<AppUser[]> {
+  const prisma = requirePrisma();
+  const rows = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+  return rows.map(mapUserRow);
+}
+
+async function seedDefaultUsers() {
+  const prisma = requirePrisma();
+  const count = await prisma.user.count();
+  if (count > 0) return;
+  console.log("[UsersDB] Seeding default users into PostgreSQL (first startup)...");
+  for (const u of DEFAULT_USERS) {
+    const salt = generateSalt();
+    await prisma.user.create({
+      data: {
+        username: u.username.toLowerCase(),
+        name: u.name,
+        role: normalizeUserRole(u.role) as any,
+        passwordHash: hashPassword(u.password, salt),
+        passwordSalt: salt,
+        mustChangePassword: true,
+      },
+    });
+  }
+}
 
 function requireAuth(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
@@ -924,6 +510,20 @@ function requireAuth(req: any, res: any, next: any) {
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
+
+  // PostgreSQL is the single source of truth. Verify connectivity and provision
+  // the default users on first startup before serving any request.
+  if (!isValidPostgresUrl(process.env.DATABASE_URL)) {
+    console.error(
+      "[FATAL] DATABASE_URL is missing or invalid. A valid PostgreSQL connection is required to start the server.",
+    );
+  } else {
+    try {
+      await seedDefaultUsers();
+    } catch (err: any) {
+      console.error("[Startup] Failed to provision default users:", err.message);
+    }
+  }
 
   // --- API Routes ---
 
@@ -949,7 +549,7 @@ async function startServer() {
   }
 
   // User Login (Authenticates users securely)
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = getUserAgent(req);
@@ -980,7 +580,7 @@ async function startServer() {
       return res.status(400).json({ error: "Username and password are required credentials" });
     }
 
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     if (!matchedUser) {
       AuditService.createAuditRecord({
         auditId,
@@ -1109,7 +709,7 @@ async function startServer() {
   });
 
   // Change Password endpoint for security compliance
-  app.post("/api/auth/change-password", requireAuth, (req: any, res) => {
+  app.post("/api/auth/change-password", requireAuth, async (req: any, res) => {
     const { currentPassword, newPassword } = req.body;
     const username = req.user.username;
 
@@ -1125,7 +725,7 @@ async function startServer() {
       return res.status(400).json({ error: "کلمه عبور جدید باید حداقل ۶ کاراکتر باشد" });
     }
 
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     if (!matchedUser) {
       return res.status(404).json({ error: "کاربر یافت نشد" });
     }
@@ -1138,12 +738,14 @@ async function startServer() {
 
     // Change the password, hash and salt it, and persist
     const newSalt = generateSalt();
-    USERS_DB[username.toLowerCase()].password = {
-      hash: hashPassword(newPassword, newSalt),
-      salt: newSalt
-    };
-    USERS_DB[username.toLowerCase()].mustChangePassword = false;
-    saveUsersDb();
+    await requirePrisma().user.update({
+      where: { username: username.toLowerCase() },
+      data: {
+        passwordHash: hashPassword(newPassword, newSalt),
+        passwordSalt: newSalt,
+        mustChangePassword: false,
+      },
+    });
 
     // Log the password change activity
     const now = new Date();
@@ -1180,9 +782,9 @@ async function startServer() {
   });
 
   // Fetch / verify logged in user's profile state
-  app.get("/api/auth/me", requireAuth, (req: any, res) => {
+  app.get("/api/auth/me", requireAuth, async (req: any, res) => {
     const username = req.user.username;
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     const mustChangePassword = matchedUser ? matchedUser.mustChangePassword !== false : false;
 
     res.json({ 
@@ -1506,7 +1108,7 @@ async function startServer() {
       }
       const s = validationResult.data;
 
-      const allVendorsBefore = await getAllVendorsFlat();
+      const allVendorsBefore = await getVendorsList();
       const prevRank = getVendorRank(id, allVendorsBefore);
 
       const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -1551,7 +1153,7 @@ async function startServer() {
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 
-      const allVendorsAfter = await getAllVendorsFlat();
+      const allVendorsAfter = await getVendorsList();
       const newRank = getVendorRank(id, allVendorsAfter);
 
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -2275,18 +1877,15 @@ async function startServer() {
   // --- User Management Endpoints ---
   // ==========================================
 
-  app.get("/api/users", requireAuth, (req: any, res) => {
+  app.get("/api/users", requireAuth, async (req: any, res) => {
     try {
-      const usersList = Object.keys(USERS_DB).map(username => {
-        const u = USERS_DB[username];
-        return {
-          username: u.username,
-          name: u.name,
-          role: u.role,
-          permissions: u.permissions || [],
-          mustChangePassword: u.mustChangePassword !== false
-        };
-      });
+      const usersList = (await getAllUsers()).map(u => ({
+        username: u.username,
+        name: u.name,
+        role: u.role,
+        permissions: u.permissions || [],
+        mustChangePassword: u.mustChangePassword !== false
+      }));
       res.json(usersList);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2301,7 +1900,7 @@ async function startServer() {
       }
 
       const key = username.toLowerCase();
-      if (USERS_DB[key]) {
+      if (await getUserByUsername(key)) {
         return res.status(400).json({ error: "کاربری با این نام کاربری قبلاً تعریف شده است." });
       }
 
@@ -2311,16 +1910,21 @@ async function startServer() {
         username: username,
         name: name,
         role: role,
-        password: {
-          hash: hashPassword(uPassword, uSalt),
-          salt: uSalt
-        },
         permissions: permissions || [],
         mustChangePassword: true
       };
 
-      USERS_DB[key] = newUser;
-      saveUsersDb();
+      await requirePrisma().user.create({
+        data: {
+          username: key,
+          name,
+          role: normalizeUserRole(role) as any,
+          passwordHash: hashPassword(uPassword, uSalt),
+          passwordSalt: uSalt,
+          permissions: newUser.permissions,
+          mustChangePassword: true,
+        },
+      });
 
       // Log creation to Audit Trail
       const now = new Date();
@@ -2356,7 +1960,7 @@ async function startServer() {
   app.patch("/api/users/:username", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2368,8 +1972,14 @@ async function startServer() {
       if (role) current.role = role;
       if (permissions) current.permissions = permissions;
 
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: {
+          name: current.name,
+          role: normalizeUserRole(current.role) as any,
+          permissions: current.permissions ?? [],
+        },
+      });
 
       // Log update to Audit Trail
       const now = new Date();
@@ -2404,7 +2014,7 @@ async function startServer() {
   app.delete("/api/users/:username", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2412,8 +2022,7 @@ async function startServer() {
       const reasonForChange = req.query.reasonForChange as string || "حذف دسترسی پرسنل تسویه شده";
       const beforeData = { username: current.username, name: current.name, role: current.role, permissions: current.permissions || [] };
 
-      delete USERS_DB[targetUsername];
-      saveUsersDb();
+      await requirePrisma().user.delete({ where: { username: targetUsername } });
 
       // Log deletion to Audit Trail
       const now = new Date();
@@ -2448,7 +2057,7 @@ async function startServer() {
   app.put("/api/users/:username/role", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2460,8 +2069,10 @@ async function startServer() {
 
       const oldRole = current.role;
       current.role = role;
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: { role: normalizeUserRole(role) as any },
+      });
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2495,7 +2106,7 @@ async function startServer() {
   app.put("/api/users/:username/permissions", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2507,8 +2118,10 @@ async function startServer() {
 
       const oldPermissions = current.permissions || [];
       current.permissions = permissions;
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: { permissions },
+      });
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2545,13 +2158,9 @@ async function startServer() {
 
   app.get("/api/materials", requireAuth, async (req: any, res) => {
     try {
-      const prisma = getPrismaClient();
-      if (prisma) {
-        const list = await prisma.material.findMany();
-        return res.json(list);
-      }
-      const materialsList = Object.values(relationalDb.materials);
-      res.json(materialsList);
+      const prisma = requirePrisma();
+      const list = await prisma.material.findMany();
+      res.json(list);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2565,15 +2174,9 @@ async function startServer() {
       }
 
       const materialId = generateMaterialId(cas, irc, name, nameEn);
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let existing = null;
-      if (prisma) {
-        existing = await prisma.material.findUnique({ where: { id: materialId } });
-      } else {
-        existing = relationalDb.materials[materialId];
-      }
-
+      const existing = await prisma.material.findUnique({ where: { id: materialId } });
       if (existing) {
         return res.status(400).json({ error: "ماده‌ای با این شناسه / مشخصات CAS و IRC قبلاً در سیستم ثبت شده است" });
       }
@@ -2586,12 +2189,7 @@ async function startServer() {
         irc: irc || "N/A"
       };
 
-      if (prisma) {
-        await prisma.material.create({ data: newMaterial });
-      } else {
-        relationalDb.materials[materialId] = newMaterial;
-        saveDb();
-      }
+      await prisma.material.create({ data: newMaterial });
 
       // Audit Log for Material Creation
       const now = new Date();
@@ -2625,15 +2223,9 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { name, nameEn, cas, irc, reasonForChange } = req.body;
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
@@ -2647,20 +2239,15 @@ async function startServer() {
         irc: irc || current.irc
       };
 
-      if (prisma) {
-        await prisma.material.update({
-          where: { id },
-          data: {
-            name: updatedMaterial.name,
-            nameEn: updatedMaterial.nameEn,
-            cas: updatedMaterial.cas,
-            irc: updatedMaterial.irc
-          }
-        });
-      } else {
-        relationalDb.materials[id] = updatedMaterial;
-        saveDb();
-      }
+      await prisma.material.update({
+        where: { id },
+        data: {
+          name: updatedMaterial.name,
+          nameEn: updatedMaterial.nameEn,
+          cas: updatedMaterial.cas,
+          irc: updatedMaterial.irc
+        }
+      });
 
       // Audit Log for Material Update
       const now = new Date();
@@ -2693,27 +2280,16 @@ async function startServer() {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
       // Check dependency
-      let isUsed = false;
-      if (prisma) {
-        const count = await prisma.vendorMaterial.count({ where: { materialId: id } });
-        isUsed = count > 0;
-      } else {
-        isUsed = Object.values(relationalDb.vendor_materials).some(vm => vm.materialId === id);
-      }
+      const usedCount = await prisma.vendorMaterial.count({ where: { materialId: id } });
+      const isUsed = usedCount > 0;
 
       if (isUsed) {
         // Audit Log for Rejected Deletion
@@ -2742,18 +2318,7 @@ async function startServer() {
 
       const beforeData = { name: current.name, nameEn: current.nameEn, cas: current.cas, irc: current.irc };
 
-      if (prisma) {
-        await prisma.material.delete({ where: { id } });
-      } else {
-        delete relationalDb.materials[id];
-        // Clean up linked vendor materials - REMOVED per requirement 8: No Cascade Delete
-        // for (const k of Object.keys(relationalDb.vendor_materials)) {
-        //   if (relationalDb.vendor_materials[k].materialId === id) {
-        //     delete relationalDb.vendor_materials[k];
-        //   }
-        // }
-        saveDb();
-      }
+      await prisma.material.delete({ where: { id } });
 
       // Audit Log for Material Deletion
       const now = new Date();
@@ -2786,29 +2351,17 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
       const oldStatus = (current as any).status || "Active";
       const newStatus = status || "Suspended";
-
-      // Save status (if field exists, or save custom attribute)
-      if (prisma) {
-        // Since schema might not have status, we can store in a JSON field if available, or just mock database update for audit success
-      } else {
-        (relationalDb.materials[id] as any).status = newStatus;
-        saveDb();
-      }
+      // NOTE: the materials table has no status column yet; status change is
+      // recorded in the audit trail only until a dedicated column is added.
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
