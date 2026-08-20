@@ -157,22 +157,6 @@ async function main() {
     });
   }
   
-  console.log('🌱 Inserting Audit Logs...');
-  const logs = parsed.audit_logs || [];
-  for (const log of logs) {
-    const val: any = log;
-    await prisma.auditLog.create({
-      data: {
-        id: val.id,
-        vendorId: val.vendorId || null,
-        user: val.user || 'کاربر سیستم',
-        action: val.details || val.action || 'بروزرسانی اطلاعات',
-        details: val.details || 'ارزیابی یا ویرایش تأمین‌کننده',
-        createdAt: val.createdAt ? new Date(val.createdAt) : new Date(),
-      }
-    });
-  }
-  
   console.log('✅ Seeding completed successfully!');
 }
 

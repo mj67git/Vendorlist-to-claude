@@ -107,6 +107,7 @@ CREATE TABLE "sop_documents" (
     "score" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "file_name" TEXT,
     "file_size" INTEGER,
+    "file_data_url" TEXT,
     "uploaded_at" TIMESTAMP(3),
 
     CONSTRAINT "sop_documents_pkey" PRIMARY KEY ("id")
@@ -205,18 +206,6 @@ CREATE TABLE "activity_logs" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "activity_logs_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "audit_logs" (
-    "id" VARCHAR(50) NOT NULL,
-    "vendor_id" VARCHAR(50),
-    "user" TEXT NOT NULL,
-    "action" TEXT NOT NULL,
-    "details" TEXT NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -319,12 +308,6 @@ CREATE INDEX "activity_logs_vendor_id_idx" ON "activity_logs"("vendor_id");
 CREATE INDEX "activity_logs_created_at_idx" ON "activity_logs"("created_at");
 
 -- CreateIndex
-CREATE INDEX "audit_logs_vendor_id_idx" ON "audit_logs"("vendor_id");
-
--- CreateIndex
-CREATE INDEX "audit_logs_created_at_idx" ON "audit_logs"("created_at");
-
--- CreateIndex
 CREATE UNIQUE INDEX "audit_log_audit_id_key" ON "audit_log"("audit_id");
 
 -- CreateIndex
@@ -377,7 +360,4 @@ ALTER TABLE "analysis_records" ADD CONSTRAINT "analysis_records_vendor_id_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "activity_logs" ADD CONSTRAINT "activity_logs_vendor_id_fkey" FOREIGN KEY ("vendor_id") REFERENCES "vendors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_vendor_id_fkey" FOREIGN KEY ("vendor_id") REFERENCES "vendors"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 

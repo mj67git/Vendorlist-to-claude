@@ -7,7 +7,7 @@ import {
   Pill, Handshake, Warehouse, Boxes, Coins, PawPrint, ClipboardCheck, Hash, Trash2, ShieldAlert, Printer,
   RotateCcw, Download, ChevronDown, ChevronUp, Database, Award, History, Mail, Phone, MapPin, Bell, Calendar
 } from 'lucide-react';
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
@@ -194,6 +194,7 @@ export default function App() {
       })
       .catch(err => console.error("Error fetching dynamic configuration weights:", err))
       .finally(() => {
+        setIsSyncing(true);
         authFetch('/api/vendors')
           .then(res => {
             if (!res.ok) throw new Error('API response failed');
@@ -204,9 +205,14 @@ export default function App() {
               const filtered = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
               setDb(filtered);
             }
+            setLoadError(null);
           })
           .catch(err => {
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
+            setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
+          })
+          .finally(() => {
+            setIsSyncing(false);
           });
       });
   }, []);
@@ -245,6 +251,26 @@ export default function App() {
     }
   }, [businessPartners]);
 
+  // Load business partners from the backend (PostgreSQL) as the source of truth.
+  // Guarded on an authenticated user: /api/business-partners requires auth, and
+  // an unauthenticated call would trigger authFetch's 401 session reload.
+  useEffect(() => {
+    if (!currentUser) return;
+    authFetch('/api/business-partners')
+      .then(res => {
+        if (!res.ok) throw new Error('API response failed');
+        return res.json();
+      })
+      .then((data: BusinessPartner[]) => {
+        if (Array.isArray(data)) {
+          setBusinessPartners(data);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load business partners from backend. Using local cache.", err);
+      });
+  }, [currentUser]);
+
   type ViewState = {
     view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
     categoryId: Category | null;
@@ -278,6 +304,8 @@ export default function App() {
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
@@ -609,100 +637,52 @@ export default function App() {
     }
   };
 
-  const logBusinessPartnerAudit = (action: string, partner: BusinessPartner, beforeValue?: any) => {
-    let description = `${action} business partner: ${partner.name} (${partner.type})`;
-    
-    if (partner.type === 'Supplier') {
-      if (partner.evaluation) {
-        if (action === 'Create') {
-          description += ` | SOP Score: ${partner.evaluation.totalScore}/100, Grade: ${partner.evaluation.grade}, Status: ${partner.evaluation.status}`;
-        } else if (action === 'Update' && beforeValue?.evaluation) {
-          const oldEval = beforeValue.evaluation;
-          const newEval = partner.evaluation;
-          const changes: string[] = [];
-
-          if (oldEval.totalScore !== newEval.totalScore) {
-            changes.push(`Total Score: ${oldEval.totalScore} -> ${newEval.totalScore}`);
-          }
-          if (oldEval.grade !== newEval.grade) {
-            changes.push(`Grade: ${oldEval.grade} -> ${newEval.grade}`);
-          }
-          if (oldEval.status !== newEval.status) {
-            changes.push(`Supplier Status: ${oldEval.status} -> ${newEval.status}`);
-          }
-
-          if (changes.length > 0) {
-            description += ` | SOP Eval Changes (${changes.join(', ')})`;
-          }
-        }
-      }
-
-      if (action === 'Update' && beforeValue && beforeValue.manufacturerId !== partner.manufacturerId) {
-        const oldMfg = businessPartners.find(p => p.id === beforeValue.manufacturerId)?.name || 'نامشخص';
-        const newMfg = businessPartners.find(p => p.id === partner.manufacturerId)?.name || 'نامشخص';
-        description += ` | انتقال تولیدکننده مرجع از [${oldMfg}] به [${newMfg}]`;
-      }
-    }
-
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Business Partner Repository',
-        action: action,
-        entityType: 'BusinessPartner',
-        entityId: partner.id,
-        entityName: partner.name,
-        severity: action === 'Delete' ? 'high' : 'info',
-        description: description,
-        beforeValue,
-        afterValue: partner
-      })
-    }).catch(err => console.error("Failed to sync business partner audit log:", err));
-  };
+  // Business-partner changes are audited server-side (authoritative, in the
+  // Business Partner Repository module), so the client no longer posts its own
+  // audit records — that would double-log every change.
 
   const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
     setBusinessPartners([newPartner, ...businessPartners]);
     setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
     setTimeout(() => setToastMsg(null), 3000);
-    logBusinessPartnerAudit('Create', newPartner);
+    authFetch('/api/business-partners', {
+      method: 'POST',
+      body: JSON.stringify(newPartner)
+    }).catch(err => console.error("Failed to persist new business partner:", err));
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
-    const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
     setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
     setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
     setTimeout(() => setToastMsg(null), 3000);
-    logBusinessPartnerAudit('Update', updatedPartner, oldPartner);
+    authFetch(`/api/business-partners/${updatedPartner.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updatedPartner)
+    }).catch(err => console.error("Failed to persist business partner update:", err));
   };
 
   const handleDeleteBusinessPartner = (id: string) => {
     const partner = businessPartners.find(p => p.id === id);
     if (!partner) return;
 
-    if (partner.type === 'Manufacturer') {
-      const isUsedInSource = db.some(v => v.manufacturerId === id);
-      const isUsedInSupplier = businessPartners.some(p => p.type === 'Supplier' && p.manufacturerId === id);
-      if (isUsedInSource || isUsedInSupplier) {
-        logBusinessPartnerAudit('Delete - Blocked', partner, { reason: 'Record is referenced by Source or Supplier' });
-        setToastMsg('امکان حذف این تولیدکننده وجود ندارد. این تولیدکننده به یک یا چند Source یا فروشنده اختصاص داده شده است.');
-        setTimeout(() => setToastMsg(null), 5000);
-        return;
-      }
-    } else if (partner.type === 'Supplier') {
-      const isUsedInSource = db.some(v => v.supplierId === id || v.id === id);
-      if (isUsedInSource) {
-        logBusinessPartnerAudit('Delete - Blocked', partner, { reason: 'Record is referenced by Source' });
-        setToastMsg('امکان حذف این فروشنده وجود ندارد. این فروشنده در یک یا چند Source استفاده شده است.');
-        setTimeout(() => setToastMsg(null), 5000);
-        return;
-      }
-    }
-
-    logBusinessPartnerAudit('Delete', partner);
+    // The server enforces referential integrity and audits both the blocked
+    // attempt and the successful delete; revert optimistically on rejection.
+    const snapshot = businessPartners;
     setBusinessPartners(businessPartners.filter(p => p.id !== id));
-    setToastMsg('شریک تجاری با موفقیت حذف شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'حذف شریک تجاری در سرور ناموفق بود.');
+        }
+        setToastMsg('شریک تجاری با موفقیت حذف شد!');
+        setTimeout(() => setToastMsg(null), 3000);
+      })
+      .catch(err => {
+        setBusinessPartners(snapshot);
+        setToastMsg(err.message || 'حذف شریک تجاری در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
+      });
   };
 
   // Views Content
@@ -1127,13 +1107,36 @@ export default function App() {
 
         </main>
 
-        {/* Global Toast */}
-        {toastMsg && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-white border border-[#E5E5EA] text-[#1D1D1F] px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] interactive-element">
-            <CheckCircle className="w-4 h-4 flex-shrink-[#86868B] text-emerald-500 bounce-in" />
-            <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+        {/* Top sync progress bar (non-blocking; shown while syncing with the server) */}
+        {isSyncing && (
+          <div className="fixed top-0 inset-x-0 z-[60] h-0.5 overflow-hidden bg-[var(--primary)]/15" role="progressbar" aria-label="در حال همگام‌سازی">
+            <div className="h-full w-1/3 bg-[var(--primary)] rounded-full animate-[syncSlide_1.1s_ease-in-out_infinite]" />
           </div>
         )}
+
+        {/* Data load error banner (server unreachable) */}
+        {loadError && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg" dir="rtl">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
+            <span className="font-medium text-xs font-sans text-right">{loadError}</span>
+            <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Global Toast (theme-aware; error vs. success styling) */}
+        {toastMsg && (() => {
+          const isError = /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف/.test(toastMsg);
+          return (
+            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
+              {isError
+                ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
+                : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
+              <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+            </div>
+          );
+        })()}
 
         {/* Change Password Modal */}
         {showChangePasswordModal && (
@@ -2489,11 +2492,13 @@ function CategoryView({
 }) {
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  
+  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [query]);
-  
+  }, [query, sortBy, activeFilter]);
+
   const meta = categoryLabels[categoryId];
   
   const categoryVendors = useMemo(() => {
@@ -2519,10 +2524,34 @@ function CategoryView({
     );
   }, [categoryVendors, query]);
 
+  // Apply the quick status/grade filter (toggled from the stat chips) before grouping.
+  const matchesFilter = (v: Vendor): boolean => {
+    if (!activeFilter) return true;
+    switch (activeFilter) {
+      case 'approved': return v.status === 'approved';
+      case 'conditional': return v.status === 'conditional';
+      case 'rejected': return v.status === 'rejected' || v.grade === 'rejected';
+      case 'A': return v.grade === 'A';
+      case 'B': return v.grade === 'B';
+      case 'C': return v.grade === 'C';
+      case 'expiring': {
+        if (!v.ircExpiryDate) return false;
+        const c = checkLicenseExpiry(v.ircExpiryDate);
+        return c.status === 'expired' || c.status === 'expiring_soon';
+      }
+      default: return true;
+    }
+  };
+
+  const displayVendors = useMemo(
+    () => filteredVendors.filter(matchesFilter),
+    [filteredVendors, activeFilter]
+  );
+
   // Group by material
   const grouped = useMemo(() => {
     const groups: Record<string, { fa: string, en: string, cas: string, vendors: Vendor[] }> = {};
-    filteredVendors.forEach(v => {
+    displayVendors.forEach(v => {
       const key = v.materialEn;
       if (!groups[key]) {
         groups[key] = { fa: v.material, en: v.materialEn, cas: v.cas, vendors: [] };
@@ -2530,10 +2559,40 @@ function CategoryView({
       groups[key].vendors.push(v);
     });
     return groups;
-  }, [filteredVendors]);
+  }, [displayVendors]);
 
-  // Group by material
-  const groupsList = Object.values(grouped) as { fa: string, en: string, cas: string, vendors: Vendor[] }[];
+  // Sort the material groups by the selected criterion.
+  const gradeRank = (v: Vendor): number => {
+    if (v.grade === 'A') return 4;
+    if (v.grade === 'B') return 3;
+    if (v.grade === 'C') return 2;
+    if (v.status === 'approved') return 2;
+    return 1;
+  };
+  const soonestExpiry = (vendors: Vendor[]): number => {
+    let min = Infinity;
+    vendors.forEach(v => {
+      if (v.ircExpiryDate) {
+        const c = checkLicenseExpiry(v.ircExpiryDate);
+        if (typeof c.daysLeft === 'number') min = Math.min(min, c.daysLeft);
+      }
+    });
+    return min;
+  };
+  const groupsList = useMemo(() => {
+    const list = Object.values(grouped) as { fa: string, en: string, cas: string, vendors: Vendor[] }[];
+    const sorted = [...list];
+    if (sortBy === 'material') {
+      sorted.sort((a, b) => a.fa.localeCompare(b.fa, 'fa'));
+    } else if (sortBy === 'count') {
+      sorted.sort((a, b) => b.vendors.length - a.vendors.length);
+    } else if (sortBy === 'grade') {
+      sorted.sort((a, b) => Math.max(...b.vendors.map(gradeRank)) - Math.max(...a.vendors.map(gradeRank)));
+    } else if (sortBy === 'expiry') {
+      sorted.sort((a, b) => soonestExpiry(a.vendors) - soonestExpiry(b.vendors));
+    }
+    return sorted;
+  }, [grouped, sortBy]);
 
   const ITEMS_PER_PAGE = 20;
   const totalItems = groupsList.length;
@@ -2543,6 +2602,14 @@ function CategoryView({
   const paginatedGroups = useMemo(() => {
     return groupsList.slice(startIndex, endIndex);
   }, [groupsList, startIndex, endIndex]);
+
+  // Guard against landing on an out-of-range page after the result set shrinks
+  // (e.g. a filter reduces the number of groups below the current page).
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   return (
     <div className="space-y-6 fade-in">
@@ -2583,7 +2650,7 @@ function CategoryView({
             />
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
             {query && (
-              <button 
+              <button
                 type="button"
                 onClick={() => setQuery('')}
                 className="absolute left-8 top-2.5 text-slate-400 hover:text-slate-600 transition-colors p-0.5 rounded cursor-pointer"
@@ -2594,40 +2661,80 @@ function CategoryView({
             )}
           </div>
 
-          {/* Stats inside the Toolbar */}
-          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end items-center">
-            <Badge variant="outline" className="px-3 py-1 text-xs">
-              کل سورس‌ها: <span className="font-bold font-mono mr-1 text-primary">{categoryVendors.length}</span>
-            </Badge>
-            {categoryId === 'sample' ? (
-              <>
-                <Badge variant="gradeA" className="px-2.5 py-1 text-xs">
-                  Approved: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'approved').length}</span>
-                </Badge>
-                <Badge variant="gradeC" className="px-2.5 py-1 text-xs">
-                  Approved conditional: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
-                </Badge>
-                <Badge variant="gradeReject" className="px-2.5 py-1 text-xs">
-                  Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'rejected').length}</span>
-                </Badge>
-              </>
-            ) : categoryId === 'blacklist' ? null : (
-              <>
-                <Badge variant="gradeA" className="px-2.5 py-1 text-xs">
-                  Grade A: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'A').length}</span>
-                </Badge>
-                <Badge variant="gradeB" className="px-2.5 py-1 text-xs">
-                  Grade B: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'B').length}</span>
-                </Badge>
-                <Badge variant="gradeC" className="px-2.5 py-1 text-xs">
-                  Grade C: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'C').length}</span>
-                </Badge>
-                <Badge variant="gradeReject" className="px-2.5 py-1 text-xs">
-                  لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'rejected' || v.status === 'rejected').length}</span>
-                </Badge>
-              </>
-            )}
+          {/* Sort control */}
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <label className="text-[11px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
+              <ChevronDown className="w-3.5 h-3.5" /> مرتب‌سازی
+            </label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              dir="rtl"
+              className="text-xs bg-background border border-border rounded-lg px-2.5 py-2 text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+              title="مرتب‌سازی گروه‌های ماده"
+            >
+              <option value="material">نام ماده (الفبا)</option>
+              <option value="count">تعداد سورس (بیشترین)</option>
+              <option value="grade">بهترین گرید</option>
+              <option value="expiry">نزدیک‌ترین انقضای مجوز</option>
+            </select>
           </div>
+
+          {/* Stats double as quick filters (click to toggle) */}
+          {(() => {
+            const chipCls = (key: string | null) =>
+              `px-2.5 py-1 text-xs cursor-pointer select-none transition-shadow ${
+                activeFilter === key ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : 'opacity-95 hover:opacity-100'
+              }`;
+            const toggle = (key: string) => setActiveFilter(activeFilter === key ? null : key);
+            const expiringCount = categoryVendors.filter(v => {
+              if (!v.ircExpiryDate) return false;
+              const c = checkLicenseExpiry(v.ircExpiryDate);
+              return c.status === 'expired' || c.status === 'expiring_soon';
+            }).length;
+            return (
+              <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end items-center">
+                <Badge variant="outline" onClick={() => setActiveFilter(null)}
+                  className={`px-3 py-1 text-xs cursor-pointer select-none ${activeFilter === null ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
+                  title="نمایش همه">
+                  کل سورس‌ها: <span className="font-bold font-mono mr-1 text-primary">{categoryVendors.length}</span>
+                </Badge>
+                {categoryId === 'sample' ? (
+                  <>
+                    <Badge variant="gradeA" onClick={() => toggle('approved')} className={chipCls('approved')}>
+                      Approved: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'approved').length}</span>
+                    </Badge>
+                    <Badge variant="gradeC" onClick={() => toggle('conditional')} className={chipCls('conditional')}>
+                      Approved conditional: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
+                    </Badge>
+                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
+                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'rejected').length}</span>
+                    </Badge>
+                  </>
+                ) : categoryId === 'blacklist' ? null : (
+                  <>
+                    <Badge variant="gradeA" onClick={() => toggle('A')} className={chipCls('A')}>
+                      Grade A: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'A').length}</span>
+                    </Badge>
+                    <Badge variant="gradeB" onClick={() => toggle('B')} className={chipCls('B')}>
+                      Grade B: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'B').length}</span>
+                    </Badge>
+                    <Badge variant="gradeC" onClick={() => toggle('C')} className={chipCls('C')}>
+                      Grade C: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'C').length}</span>
+                    </Badge>
+                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
+                      لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'rejected' || v.status === 'rejected').length}</span>
+                    </Badge>
+                  </>
+                )}
+                {categoryId !== 'blacklist' && expiringCount > 0 && (
+                  <Badge variant="warning" onClick={() => toggle('expiring')} className={chipCls('expiring')} title="فیلتر سورس‌های با مجوز رو به انقضا یا منقضی">
+                    ⚠ نزدیک انقضا: <span className="font-bold font-mono mr-1">{expiringCount}</span>
+                  </Badge>
+                )}
+              </div>
+            );
+          })()}
         </Card>
       </div>
 
@@ -2645,9 +2752,21 @@ function CategoryView({
           />
         ))}
         {groupsList.length === 0 && (
-          <div className="text-center py-16 px-4 bg-white rounded-2xl border border-[#E5E5EA]">
-            <Archive className="w-12 h-12 text-[#86868B] mx-auto mb-4" />
-            <h4 className="text-[#6E6E73] font-semibold text-lg">نتیجه‌ای یافت نشد</h4>
+          <div className="text-center py-16 px-4 bg-card rounded-2xl border border-border">
+            <Archive className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h4 className="text-foreground font-semibold text-lg">نتیجه‌ای یافت نشد</h4>
+            {(query || activeFilter) && (
+              <div className="mt-3">
+                <p className="text-sm text-muted-foreground">با فیلتر یا جست‌وجوی فعلی موردی پیدا نشد.</p>
+                <button
+                  type="button"
+                  onClick={() => { setQuery(''); setActiveFilter(null); }}
+                  className="mt-3 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  پاک کردن فیلترها
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -4287,6 +4406,20 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showAdminScoresEdit, setShowAdminScoresEdit] = useState(false);
 
+  // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
+  // Only the stages the current user is allowed to perform are shown.
+  const canRisk = currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab';
+  const canAnalysis = currentUser?.role === 'admin' || currentUser?.role === 'qa';
+  const evalStages = [
+    ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
+    ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
+    ...(canAnalysis ? [{ id: 'analysis', title: 'ثبت نتایج آزمایشگاهی', icon: Microscope }] : []),
+  ];
+  const [evalStageRaw, setEvalStage] = useState<string>(evalStages[0]?.id || 'score');
+  const evalStage = evalStages.some(s => s.id === evalStageRaw) ? evalStageRaw : (evalStages[0]?.id || 'score');
+  const evalStageIdx = evalStages.findIndex(s => s.id === evalStage);
+  const showEvalWizard = evalStages.length >= 2;
+
   const [showAddAnalysisForm, setShowAddAnalysisForm] = useState(false);
   const [analysisSuccess, setAnalysisSuccess] = useState(false);
   const [newAnalysis, setNewAnalysis] = useState({
@@ -4513,6 +4646,18 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       }, 100);
     }
   }, [showAdminScoresEdit]);
+
+  // Score history reconstructed from the audit trail (SPS over time).
+  const [scoreHistory, setScoreHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (vendor.isSample) return;
+    let cancelled = false;
+    authFetch(`/api/vendors/${vendor.id}/score-history`)
+      .then(res => (res.ok ? res.json() : []))
+      .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setScoreHistory(data.filter(d => d.totalSPS !== null)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vendor.id, vendor.isSample, vendor.scores]);
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
@@ -5139,8 +5284,44 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         </div>
       )}
 
+      {/* Guided evaluation wizard header (stepper) */}
+      {showEvalWizard && (
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-4">
+            <ClipboardCheck className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-slate-800 text-sm">فرآیند ارزیابی سورس <span className="text-slate-400 text-xs font-normal font-mono">(Evaluation Workflow)</span></h3>
+          </div>
+          <div className="flex items-center">
+            {evalStages.map((s, i) => {
+              const done = i < evalStageIdx;
+              const current = i === evalStageIdx;
+              const Ic = s.icon;
+              return (
+                <React.Fragment key={s.id}>
+                  <button type="button" onClick={() => setEvalStage(s.id)} className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group" title={s.title}>
+                    <span className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${
+                      current ? 'border-primary text-primary bg-primary/5 ring-4 ring-primary/10' :
+                      done ? 'border-primary bg-primary text-white' :
+                      'border-slate-200 text-slate-400 bg-white group-hover:border-slate-300'
+                    }`}>
+                      {done ? <CheckCircle className="w-4 h-4" /> : <Ic className="w-4 h-4" />}
+                    </span>
+                    <span className={`text-[10px] sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-slate-600' : 'text-slate-400'}`}>{s.title}</span>
+                  </button>
+                  {i < evalStages.length - 1 && (
+                    <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-slate-200 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-300 ${i < evalStageIdx ? 'bg-primary w-full' : 'w-0'}`} />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 2. اول بخش امتیاز دهی بیاد */}
-      {!vendor.isSample && (
+      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && (
         <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden text-right">
           <div className="border-b border-slate-100 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
@@ -5270,8 +5451,81 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         </div>
       )}
 
+      {/* Score history & trend (reconstructed from the audit trail) */}
+      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && scoreHistory.length > 0 && (
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm text-right">
+          <div className="flex items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <History className="w-4 h-4 text-primary" />
+              <h3 className="font-bold text-slate-800 text-sm">تاریخچه و روند نمرات <span className="text-slate-400 text-xs font-normal font-mono relative top-[0.5px]">(Score History)</span></h3>
+            </div>
+            <Badge variant="outline" className="text-[11px] px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
+          </div>
+
+          {scoreHistory.length >= 2 && (
+            <div className="h-52 w-full mb-5" dir="ltr">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={scoreHistory.map((h, i) => ({
+                  idx: i + 1,
+                  label: new Date(h.date).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' }),
+                  sps: h.totalSPS,
+                }))} margin={{ top: 8, right: 16, left: -12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <RTooltip
+                    contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                    formatter={(v: any) => [`${v}`, 'SPS']}
+                    labelFormatter={(l: any) => l}
+                  />
+                  <Line type="monotone" dataKey="sps" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3, fill: '#2563eb' }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 border-b border-slate-100">
+                  <th className="text-right font-semibold py-2 px-2">تاریخ</th>
+                  <th className="text-center font-semibold py-2 px-2">SPS</th>
+                  <th className="text-center font-semibold py-2 px-2">تغییر</th>
+                  <th className="text-center font-semibold py-2 px-2">گرید</th>
+                  <th className="text-right font-semibold py-2 px-2">کاربر</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...scoreHistory].reverse().map((h) => {
+                  const delta = (typeof h.totalSPS === 'number' && typeof h.previousSPS === 'number') ? +(h.totalSPS - h.previousSPS).toFixed(1) : null;
+                  return (
+                    <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                      <td className="py-2 px-2 text-slate-700">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                      <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{h.totalSPS}</td>
+                      <td className="py-2 px-2 text-center font-mono">
+                        {delta === null || delta === 0 ? (
+                          <span className="text-slate-400">—</span>
+                        ) : delta > 0 ? (
+                          <span className="text-emerald-600">▲ {delta}</span>
+                        ) : (
+                          <span className="text-red-500">▼ {Math.abs(delta)}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-[10px] px-2 py-0">{h.grade}</Badge> : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="py-2 px-2 text-slate-600">{h.user}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* 3. ارزیابی ریسک تامین کنندگان */}
-      {!vendor.isSample && (currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab') && (
+      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && (currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab') && (
         <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2.5">
@@ -5357,7 +5611,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       )}
 
       {/* 4. ثبت نتایج آزمایشگاه */}
-      {(currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+      {(!showEvalWizard || evalStage === 'analysis') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
         <div id="purchase-history-analysis-section" className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4">
             <div className="flex items-center gap-3">
@@ -5693,6 +5947,27 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
           </div>
         )}
 
+        {/* Evaluation wizard navigation */}
+        {showEvalWizard && (
+          <div className="flex items-center justify-between gap-3 bg-white border border-slate-200/60 rounded-2xl px-5 py-4 shadow-sm">
+            <button type="button" onClick={() => setEvalStage(evalStages[Math.max(0, evalStageIdx - 1)].id)} disabled={evalStageIdx === 0}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+              <ChevronRight className="w-4 h-4" /> مرحله قبل
+            </button>
+            <span className="text-xs text-slate-400 font-medium">مرحله {evalStageIdx + 1} از {evalStages.length}</span>
+            {evalStageIdx < evalStages.length - 1 ? (
+              <button type="button" onClick={() => setEvalStage(evalStages[Math.min(evalStages.length - 1, evalStageIdx + 1)].id)}
+                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+                مرحله بعد <ChevronLeft className="w-4 h-4" />
+              </button>
+            ) : (
+              <span className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-emerald-700 bg-emerald-50 border border-emerald-200">
+                <CheckCircle className="w-4 h-4" /> آخرین مرحله
+              </span>
+            )}
+          </div>
+        )}
+
       </div>
   );
 }
@@ -6012,8 +6287,8 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const visibleFormLayout = currentUser?.role === 'admin' 
-    ? FORM_LAYOUT 
+  const visibleFormLayout = currentUser?.role === 'admin'
+    ? FORM_LAYOUT
     : FORM_LAYOUT.filter(d => d.id === currentUser?.role);
 
   const handleSlider = (deptId: string, critKey: string, val: string) => {
@@ -6144,7 +6419,7 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
                        <div>
                          <h4 className="font-bold text-slate-800 leading-none">{dept.title}</h4>
                          <span className="text-[10px] text-slate-400 font-medium block mt-1">
-                           <span className="text-slate-400">بدون ارزیابی ثبت شده</span>
+                           <span className="text-slate-400">بخش ارزیابی دپارتمانی</span>
                          </span>
                        </div>
                      </div>
@@ -6158,9 +6433,9 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
 
                   <div className="space-y-4">
                     {dept.criteria.map(crit => {
-                      const prevValue = vendor.rawScores?.[dept.id]?.[crit.key] ?? 
-                                        (vendor.scores && (vendor.scores as any)[dept.id] > 0 
-                                          ? Math.round((vendor.scores as any)[dept.id] / 20) 
+                      const prevValue = vendor.rawScores?.[dept.id]?.[crit.key] ??
+                                        (vendor.scores && (vendor.scores as any)[dept.id] > 0
+                                          ? Math.round((vendor.scores as any)[dept.id] / 20)
                                           : 0);
                       const isChanged = scores[dept.id][crit.key] !== prevValue;
 
@@ -6175,17 +6450,17 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
                                 </span>
                               )}
                               <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono font-bold ${
-                                isChanged 
-                                  ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse' 
+                                isChanged
+                                  ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse'
                                   : 'text-slate-600 bg-slate-50 border-slate-200'
                               }`}>
                                 {scores[dept.id][crit.key]} / 5
                               </span>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center gap-3">
-                            <input 
+                            <input
                               type="range" dir="ltr"
                               min="1" max="5" step="1"
                               value={scores[dept.id][crit.key]}
@@ -6205,7 +6480,7 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
 
        <div className="mb-8">
          <label className="block text-sm font-bold text-slate-700 mb-2">توضیحات و توجیه ارزیابی</label>
-         <textarea 
+         <textarea
            dir="rtl"
            rows={4}
            className="w-full bg-white border border-slate-900/10 rounded-xl p-4 text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
@@ -6232,7 +6507,7 @@ function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vend
      </div>
      </div>
    );
- }
+}
 
  // --- View: Supplier Unified Audit & Analysis Module ---
 

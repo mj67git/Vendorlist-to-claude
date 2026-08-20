@@ -93,7 +93,20 @@ function getPrismaClient(): PrismaClient | null {
   return _prismaInstance;
 }
 
-// JSON file fallback helper
+// PostgreSQL is the single source of truth for the audit trail. Fail fast
+// instead of silently persisting to a local JSON file.
+function requirePrisma(): PrismaClient {
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    throw new Error(
+      "DATABASE_URL is missing or invalid. A valid PostgreSQL connection is required for the audit trail.",
+    );
+  }
+  return prisma;
+}
+
+// Legacy JSON helpers retained only for the now-unreachable fallback branches
+// below; PostgreSQL is required, so these are never exercised at runtime.
 function getJsonDbPath(): string {
   return path.join(process.cwd(), "database", "audit_logs_v3.json");
 }
@@ -154,7 +167,7 @@ export class AuditService {
    * Create a new audit log record
    */
   public static async createAuditRecord(input: CreateAuditInput): Promise<any> {
-    const prisma = getPrismaClient();
+    const prisma = requirePrisma();
     const now = new Date();
 
     if (!prisma) {
@@ -206,7 +219,7 @@ export class AuditService {
         };
       }
 
-      const record = await prisma.audit_Log.create({
+      const record = await prisma.auditLog.create({
         data: {
           auditId: input.auditId,
           correlationId: input.correlationId || null,
@@ -241,7 +254,7 @@ export class AuditService {
     page: number = 1,
     limit: number = 20
   ): Promise<{ data: any[]; total: number }> {
-    const prisma = getPrismaClient();
+    const prisma = requirePrisma();
     if (!prisma) {
       let logs = getJsonLogs();
       
@@ -396,13 +409,13 @@ export class AuditService {
       }
 
       const [data, total] = await Promise.all([
-        prisma.audit_Log.findMany({
+        prisma.auditLog.findMany({
           where,
           orderBy: { timestamp: "desc" },
           skip,
           take: limit,
         }),
-        prisma.audit_Log.count({ where }),
+        prisma.auditLog.count({ where }),
       ]);
 
       return { data, total };
@@ -416,14 +429,14 @@ export class AuditService {
    * Retrieve a single audit log by its unique Prisma ID or Audit ID
    */
   public static async getAuditById(id: string): Promise<any | null> {
-    const prisma = getPrismaClient();
+    const prisma = requirePrisma();
     if (!prisma) {
       const logs = getJsonLogs();
       return logs.find(l => l.id === id || l.auditId === id) || null;
     }
 
     try {
-      const log = await prisma.audit_Log.findFirst({
+      const log = await prisma.auditLog.findFirst({
         where: {
           OR: [
             { id: id },
@@ -442,7 +455,7 @@ export class AuditService {
    * Retrieve full audit change history for a specific business entity (e.g. material or vendor)
    */
   public static async getEntityHistory(entityId: string, entityType?: string): Promise<any[]> {
-    const prisma = getPrismaClient();
+    const prisma = requirePrisma();
     if (!prisma) {
       let logs = getJsonLogs();
       logs = logs.filter(l => l.entityId === entityId);
@@ -459,7 +472,7 @@ export class AuditService {
         where.entityType = entityType;
       }
 
-      const logs = await prisma.audit_Log.findMany({
+      const logs = await prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: "desc" }
       });
@@ -477,7 +490,7 @@ export class AuditService {
     query: string,
     filters?: AuditLogFilters
   ): Promise<any[]> {
-    const prisma = getPrismaClient();
+    const prisma = requirePrisma();
     if (!prisma) {
       let logs = getJsonLogs();
 
@@ -527,7 +540,7 @@ export class AuditService {
         ];
       }
 
-      const logs = await prisma.audit_Log.findMany({
+      const logs = await prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: "desc" },
         take: 100,

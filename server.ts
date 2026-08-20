@@ -1,10 +1,9 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_VENDORS_DB } from "./src/db_foreign_only.js";
+import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { 
@@ -28,128 +27,6 @@ import {
   hashPassword,
   verifyPassword,
 } from "./src/server/security/passwordService.js";
-
-const dbPath = path.join(process.cwd(), "database", "vendors.json");
-
-interface RelationalModel {
-  vendors: Record<string, {
-    id: string;
-    name: string;
-    nameEn: string;
-    country: string;
-    contactInfo: string;
-    registrationDate: string;
-    status: string;
-    grade: string | null;
-    initialSampleStatus?: string | null;
-  }>;
-  materials: Record<string, {
-    id: string;
-    name: string;
-    nameEn: string;
-    cas: string;
-    irc: string;
-  }>;
-  vendor_materials: Record<string, {
-    id: string;
-    vendorId: string;
-    materialId: string;
-    isSample: boolean;
-    category: string;
-  }>;
-  evaluations: Record<string, {
-    id: string;
-    vendorId: string;
-    materialId: string;
-    period: string;
-    commercialScore: number;
-    qaScore: number;
-    planningScore: number;
-    financeScore: number;
-    totalScore: number;
-    grade: string;
-    scores?: any; // client convenience
-    rawScores?: any; // client convenience
-    rejectionReasons?: any; // client convenience
-  }>;
-  audit_logs: Array<{
-    id: string;
-    vendorId: string | null;
-    user: string;
-    action: string;
-    details: string;
-    createdAt: string;
-  }>;
-  // Extra fields for companion forms / analytical attachments
-  risk_assessments: Record<string, any>;
-  analysis_records: Record<string, any[]>;
-  contacts: Record<string, any>; // legacy backwards compatibility support
-}
-
-let relationalDb: RelationalModel = {
-  vendors: {},
-  materials: {},
-  vendor_materials: {},
-  evaluations: {},
-  audit_logs: [],
-  risk_assessments: {},
-  analysis_records: {},
-  contacts: {}
-};
-
-function recalculateVendorGradeAndStatus(id: string) {
-  const v = relationalDb.vendors[id];
-  if (!v) return;
-
-  const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-  const isSample = link ? link.isSample : false;
-
-  // Let's preserve sample specific statuses
-  if (isSample) {
-    const records = relationalDb.analysis_records[id] || [];
-    const rejectCount = records.filter((r: any) => r.decision === "Reject").length;
-    if (rejectCount >= 1) {
-      relationalDb.vendors[id].status = 'rejected';
-      relationalDb.vendors[id].grade = 'black list';
-    } else {
-      relationalDb.vendors[id].status = v.initialSampleStatus || 'approved';
-      relationalDb.vendors[id].grade = null;
-    }
-    return;
-  }
-
-  // Preserve explicit rejects / black list
-  if (v.status === 'rejected' || v.grade === 'rejected' || v.grade === 'black list') {
-    relationalDb.vendors[id].status = 'rejected';
-    relationalDb.vendors[id].grade = 'black list';
-    return;
-  }
-
-  const evalData = link ? Object.values(relationalDb.evaluations).find(ev => ev.vendorId === id && ev.materialId === link.materialId) : null;
-  if (!evalData || !evalData.scores) return;
-
-  const scores = evalData.scores;
-  const isFullyScored = scores.commercial > 0 && scores.qa > 0 && scores.planning > 0 && scores.finance > 0;
-  if (isFullyScored) {
-    const rounded = calculateRoundedWeightedScore(scores, CALCULATION_WEIGHTS);
-
-    let calcGrade = v.grade;
-    let calcStatus = v.status;
-
-    for (const tier of GRADE_TIERS) {
-      if (rounded >= tier.min) {
-        calcGrade = tier.grade;
-        calcStatus = tier.status;
-        break;
-      }
-    }
-
-    relationalDb.vendors[id].grade = calcGrade;
-    relationalDb.vendors[id].status = calcStatus;
-    evalData.grade = calcGrade === 'rejected' ? 'black list' : (calcGrade || "C");
-    evalData.totalScore = rounded;
-  }
-}
 
 function getVendorRank(vendorId: string, allVendors: any[]): number {
   return rankVendor(vendorId, allVendors, CALCULATION_WEIGHTS);
@@ -205,190 +82,6 @@ function generateMaterialId(cas: string | undefined, irc: string | undefined, ma
   return baseId.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function partitionVendor(v: any) {
-  if (!v || !v.id) return;
-  const {
-    id,
-    scores, rawScores, rejectionReasons,
-    contactInfo, lastAudit, ircExpiryDate,
-    activityLogs,
-    analysisRecords,
-    riskAssessment,
-    category, material, materialEn, cas, irc, name, nameEn, country, grade, status, registrationDate, isSample,
-    initialSampleStatus,
-    manufacturerId,
-    supplierId
-  } = v;
-
-  const serializedContactInfo = contactInfo ? 
-    (contactInfo + (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '')) : 
-    (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '');
-
-  // 1. Map Vendor (Only Profile Details)
-  relationalDb.vendors[id] = {
-    id,
-    name: name || "Unknown",
-    nameEn: nameEn || "Unknown",
-    country: country || "نامشخص",
-    contactInfo: serializedContactInfo,
-    manufacturerId: manufacturerId || null,
-    supplierId: supplierId || null,
-    registrationDate: registrationDate || new Date().toISOString().split('T')[0],
-    status: status || "new",
-    grade: grade === 'rejected' ? 'black list' : (grade || null),
-    initialSampleStatus: initialSampleStatus || null
-  } as any;
-
-  // 2. Map Material (Unique catalogue representation to prevent repetitive codes)
-  const materialId = generateMaterialId(cas, irc, material, materialEn);
-  relationalDb.materials[materialId] = {
-    id: materialId,
-    name: material || "نامشخص",
-    nameEn: materialEn || "Unknown",
-    cas: cas || "N/A",
-    irc: irc || "N/A"
-  };
-
-  // 3. Map VendorMaterial relationship link (isSample & category)
-  // Clean up any old links for this vendor that point to a different material
-  for (const k of Object.keys(relationalDb.vendor_materials)) {
-    if (relationalDb.vendor_materials[k].vendorId === id && relationalDb.vendor_materials[k].materialId !== materialId) {
-      delete relationalDb.vendor_materials[k];
-    }
-  }
-
-  const linkId = `link_${id}_${materialId}`;
-  relationalDb.vendor_materials[linkId] = {
-    id: linkId,
-    vendorId: id,
-    materialId: materialId,
-    isSample: isSample ?? false,
-    category: category || "foreign"
-  };
-
-  // 4. Map Periodic Evaluations to proper relational table structure
-  const evalId = `eval_${id}_${materialId}`;
-  const scoreObj = scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
-  const rounded = calculateRoundedWeightedScore(scoreObj, CALCULATION_WEIGHTS);
-
-  relationalDb.evaluations[evalId] = {
-    id: evalId,
-    vendorId: id,
-    materialId: materialId,
-    period: "۱۴۰۵-Q1",
-    commercialScore: scoreObj.commercial || 0,
-    qaScore: scoreObj.qa || 0,
-    planningScore: scoreObj.planning || 0,
-    financeScore: scoreObj.finance || 0,
-    totalScore: rounded,
-    grade: grade === 'rejected' ? 'black list' : (grade || "C"),
-    scores: scoreObj,
-    rawScores: rawScores || null,
-    rejectionReasons: rejectionReasons || null
-  };
-
-  // 5. Map Audit Log trails
-  if (Array.isArray(activityLogs)) {
-    activityLogs.forEach((log: any) => {
-      const exists = relationalDb.audit_logs.some(al => al.id === log.id);
-      if (!exists) {
-        relationalDb.audit_logs.push({
-          id: log.id || `log_${Math.random().toString(36).substr(2, 9)}`,
-          vendorId: id,
-          user: log.user || "کاربر سیستم",
-          action: "بروزرسانی اطلاعات",
-          details: log.action || "ارزیابی یا ویرایش تأمین‌کننده",
-          createdAt: log.date || new Date().toISOString()
-        });
-      }
-    });
-  }
-
-  // Backup store for extra attachments and forms
-  relationalDb.contacts[id] = {
-    contactInfo: contactInfo || '',
-    lastAudit: lastAudit || '',
-    ircExpiryDate: ircExpiryDate || ''
-  };
-  relationalDb.analysis_records[id] = analysisRecords || [];
-  relationalDb.risk_assessments[id] = riskAssessment || null;
-
-  recalculateVendorGradeAndStatus(id);
-}
-
-function reconstructVendor(id: string) {
-  const baseVendor = relationalDb.vendors[id];
-  if (!baseVendor) return null;
-
-  const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-  const material = link ? relationalDb.materials[link.materialId] : null;
-  const evalData = link ? (Object.values(relationalDb.evaluations).find(ev => ev.vendorId === id && ev.materialId === link.materialId) || null) : null;
-
-  // Rebuild Audit Logs back to ActivityLogs array structure used by frontend
-  const activityLogs = relationalDb.audit_logs
-    .filter(al => al.vendorId === id)
-    .map(al => ({
-      id: al.id,
-      action: al.details || al.action,
-      date: al.createdAt,
-      user: al.user
-    }));
-
-  const analysisRecords = relationalDb.analysis_records[id] || [];
-  const riskAssessment = relationalDb.risk_assessments[id] || null;
-
-  let manufacturerId = (baseVendor as any).manufacturerId || null;
-  let supplierId = (baseVendor as any).supplierId || null;
-  let contactInfo = baseVendor.contactInfo || (relationalDb.contacts[id]?.contactInfo || "");
-
-  if (contactInfo && contactInfo.includes('__BP_METAUIUIUI_STUB__')) {
-    // legacy support if any
-  }
-  if (contactInfo && contactInfo.includes('__BP_METAUI__:')) {
-    const parts = contactInfo.split('\n__BP_METAUI__:');
-    contactInfo = parts[0];
-    const metaParts = (parts[1] || "").split(':');
-    manufacturerId = manufacturerId || metaParts[0] || null;
-    supplierId = supplierId || metaParts[1] || null;
-  }
-
-  return {
-    id: baseVendor.id,
-    name: baseVendor.name,
-    nameEn: baseVendor.nameEn,
-    country: baseVendor.country,
-    contactInfo: contactInfo,
-    manufacturerId,
-    supplierId,
-    registrationDate: baseVendor.registrationDate,
-    status: baseVendor.status,
-    grade: baseVendor.grade === 'rejected' ? 'black list' : baseVendor.grade,
-    initialSampleStatus: baseVendor.initialSampleStatus || "",
-
-    material: material ? material.name : "نامشخص",
-    materialEn: material ? material.nameEn : "Unknown",
-    cas: material ? material.cas : "N/A",
-    irc: material ? material.irc : "N/A",
-
-    isSample: link ? link.isSample : false,
-    category: link ? link.category : "foreign",
-
-    scores: evalData ? evalData.scores : null,
-    rawScores: evalData ? evalData.rawScores : null,
-    rejectionReasons: evalData ? evalData.rejectionReasons : null,
-
-    activityLogs,
-    analysisRecords,
-    riskAssessment,
-    lastAudit: relationalDb.contacts[id]?.lastAudit || "",
-    ircExpiryDate: relationalDb.contacts[id]?.ircExpiryDate || ""
-  };
-}
-
-function getAllVendorsFlat() {
-  return Object.keys(relationalDb.vendors).map(reconstructVendor).filter(Boolean);
-}
-
 function isValidPostgresUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string" || !url.trim()) return false;
   const trimmed = url.trim();
@@ -441,33 +134,336 @@ function getPrismaClient(): PrismaClient | null {
   return _prismaInstance;
 }
 
-async function getVendorsList(): Promise<any[]> {
+// PostgreSQL is the single source of truth. Fail fast (rather than silently
+// falling back to file storage) so misconfiguration surfaces immediately.
+function requirePrisma(): PrismaClient {
   const prisma = getPrismaClient();
   if (!prisma) {
-    return getAllVendorsFlat();
+    throw new Error(
+      "DATABASE_URL is missing or invalid. A valid PostgreSQL connection is required.",
+    );
   }
-  try {
+  return prisma;
+}
+
+// --- Mapping helpers between the frontend shapes and the normalized enums ---
+
+const DECISION_TO_DB: Record<string, "Pass" | "Reject" | "ApprovedConditional"> = {
+  "Pass": "Pass",
+  "Reject": "Reject",
+  "Approved Conditional": "ApprovedConditional",
+};
+const DECISION_FROM_DB: Record<string, string> = {
+  "Pass": "Pass",
+  "Reject": "Reject",
+  "ApprovedConditional": "Approved Conditional",
+};
+const DEVIATION_VALUES = ["None", "NCR", "Deviation", "OOS", "CAPA", "OOT", "Complaint", "Other"];
+const RISK_LEVELS = ["Low", "Medium", "High"];
+
+function toDbDecision(d: any): "Pass" | "Reject" | "ApprovedConditional" {
+  return DECISION_TO_DB[d] ?? "Pass";
+}
+function fromDbDecision(d: any): string {
+  return DECISION_FROM_DB[d] ?? "Pass";
+}
+function toDbDeviation(r: any): any {
+  return DEVIATION_VALUES.includes(r) ? r : "None";
+}
+function toDbRiskLevel(l: any): any {
+  return RISK_LEVELS.includes(l) ? l : "Low";
+}
+
+// Persist a vendor's risk assessment (single row per vendor), analysis records
+// and activity logs into their normalized tables. Each collection is fully
+// replaced from the passed data so the read-modify-write endpoints stay
+// consistent. A field left undefined is not touched (partial saves).
+async function persistVendorRelations(prisma: PrismaClient, id: string, v: any): Promise<void> {
+  const { riskAssessment, analysisRecords, activityLogs } = v;
+
+  if (riskAssessment !== undefined) {
+    await prisma.riskAssessment.deleteMany({ where: { vendorId: id } });
+    if (riskAssessment) {
+      await prisma.riskAssessment.create({
+        data: {
+          vendorId: id,
+          materialCriticality: Number(riskAssessment.materialCriticality) || 0,
+          detectability: Number(riskAssessment.detectability) || 0,
+          probability: Number(riskAssessment.probability) || 0,
+          sps: Number(riskAssessment.sps) || 0,
+          riskScore: Number(riskAssessment.riskScore) || 0,
+          sri: Number(riskAssessment.sri) || 0,
+          riskLevel: toDbRiskLevel(riskAssessment.riskLevel),
+          evaluationDate: riskAssessment.date || null,
+          evaluator: riskAssessment.evaluator || null,
+        },
+      });
+    }
+  }
+
+  if (analysisRecords !== undefined && Array.isArray(analysisRecords)) {
+    await prisma.analysisRecord.deleteMany({ where: { vendorId: id } });
+    for (const rec of analysisRecords) {
+      await prisma.analysisRecord.create({
+        data: {
+          id: rec.id || crypto.randomUUID(),
+          vendorId: id,
+          recordDate: rec.date || null,
+          qcCode: rec.qcCode || null,
+          decision: toDbDecision(rec.decision),
+          deviationReason: toDbDeviation(rec.deviationReason),
+          comments: rec.comments || null,
+          recordedBy: rec.recordedBy || null,
+        },
+      });
+    }
+  }
+
+  if (activityLogs !== undefined && Array.isArray(activityLogs)) {
+    await prisma.activityLog.deleteMany({ where: { vendorId: id } });
+    for (const log of activityLogs) {
+      await prisma.activityLog.create({
+        data: {
+          id: log.id || crypto.randomUUID(),
+          vendorId: id,
+          action: log.action || log.details || "بروزرسانی اطلاعات",
+          user: log.user || "کاربر سیستم",
+          createdAt: log.date ? parseDateSafely(log.date) : new Date(),
+        },
+      });
+    }
+  }
+}
+
+// --- Business Partner (Manufacturer / Supplier) mapping & persistence ---
+
+const SOP_STATUS_TO_DB: Record<string, "Approved" | "PermitApproval" | "Expired" | "NotSubmitted"> = {
+  "Approved": "Approved",
+  "Permit Approval": "PermitApproval",
+  "Expired": "Expired",
+  "Not Submitted": "NotSubmitted",
+};
+const SOP_STATUS_FROM_DB: Record<string, string> = {
+  "Approved": "Approved",
+  "PermitApproval": "Permit Approval",
+  "Expired": "Expired",
+  "NotSubmitted": "Not Submitted",
+};
+const BP_TYPES = ["Manufacturer", "Supplier"];
+const BP_STATUSES = ["Active", "Inactive", "Blacklisted"];
+
+function toDbPartnerType(t: any): any {
+  return BP_TYPES.includes(t) ? t : "Manufacturer";
+}
+function toDbPartnerStatus(s: any): any {
+  return BP_STATUSES.includes(s) ? s : "Active";
+}
+function toDbSopStatus(s: any): any {
+  return s == null ? null : (SOP_STATUS_TO_DB[s] ?? null);
+}
+
+// Reconstruct the frontend BusinessPartner shape from a partner row that has
+// its evaluation and SOP documents included.
+function mapPartnerRow(row: any): any {
+  const base: any = {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    nameEn: row.nameEn || "",
+    country: row.country,
+    city: row.city || "",
+    address: row.address || "",
+    email: row.email || "",
+    contactPerson: row.contactPerson || "",
+    phone: row.phone || "",
+    website: row.website || "",
+    manufacturerId: row.manufacturerId || undefined,
+    status: row.status,
+    createdAt: row.createdAt?.toISOString?.() || row.createdAt,
+    updatedAt: row.updatedAt?.toISOString?.() || row.updatedAt,
+  };
+
+  if (row.evaluation) {
+    const documents: Record<string, any> = {};
+    for (const doc of row.evaluation.documents || []) {
+      documents[doc.key] = {
+        key: doc.key,
+        nameFa: doc.nameFa,
+        nameEn: doc.nameEn,
+        status: doc.status ? SOP_STATUS_FROM_DB[doc.status] ?? null : null,
+        score: doc.score,
+        fileName: doc.fileName || undefined,
+        fileDataUrl: doc.fileDataUrl || undefined,
+        fileSize: doc.fileSize ?? undefined,
+        uploadedAt: doc.uploadedAt?.toISOString?.() || doc.uploadedAt || undefined,
+      };
+    }
+    base.evaluation = {
+      documents,
+      totalScore: row.evaluation.totalScore,
+      grade: row.evaluation.grade,
+      status: row.evaluation.status,
+      updatedBy: row.evaluation.updatedBy || undefined,
+      updatedAt: row.evaluation.updatedAt?.toISOString?.() || row.evaluation.updatedAt,
+    };
+  }
+
+  return base;
+}
+
+// Fully (re)write a partner and its optional supplier evaluation + SOP docs.
+async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void> {
+  const data = {
+    type: toDbPartnerType(p.type),
+    name: p.name || "Unknown",
+    nameEn: p.nameEn || null,
+    country: p.country || "نامشخص",
+    city: p.city || null,
+    address: p.address || null,
+    email: p.email || null,
+    contactPerson: p.contactPerson || null,
+    phone: p.phone || null,
+    website: p.website || null,
+    status: toDbPartnerStatus(p.status),
+    manufacturerId: p.manufacturerId || null,
+  };
+
+  await prisma.businessPartner.upsert({
+    where: { id: p.id },
+    update: data,
+    create: { id: p.id, ...data },
+  });
+
+  // Replace the supplier evaluation (+ documents) if present.
+  await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
+  if (p.type === "Supplier" && p.evaluation) {
+    const ev = p.evaluation;
+    const created = await prisma.supplierEvaluation.create({
+      data: {
+        partnerId: p.id,
+        totalScore: Number(ev.totalScore) || 0,
+        grade: ev.grade || "Not Evaluated",
+        status: ev.status || "Not Evaluated",
+        updatedBy: ev.updatedBy || null,
+      },
+    });
+    const docs = ev.documents ? Object.values(ev.documents) : [];
+    for (const doc of docs as any[]) {
+      await prisma.sopDocument.create({
+        data: {
+          evaluationId: created.id,
+          key: doc.key,
+          nameFa: doc.nameFa || "",
+          nameEn: doc.nameEn || "",
+          status: toDbSopStatus(doc.status),
+          score: Number(doc.score) || 0,
+          fileName: doc.fileName || null,
+          fileSize: doc.fileSize ?? null,
+          fileDataUrl: doc.fileDataUrl || null,
+          uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
+        },
+      });
+    }
+  }
+}
+
+// Build a human-readable audit description for a business-partner change,
+// including supplier SOP evaluation changes (score / grade / status).
+function buildPartnerAuditDescription(action: string, partner: any, before?: any): string {
+  let description = `${action} business partner: ${partner.name} (${partner.type})`;
+  if (partner.type === "Supplier" && partner.evaluation) {
+    const ev = partner.evaluation;
+    if (action === "Create") {
+      description += ` | SOP Score: ${ev.totalScore}/100, Grade: ${ev.grade}, Status: ${ev.status}`;
+    } else if (action === "Update" && before?.evaluation) {
+      const o = before.evaluation;
+      const changes: string[] = [];
+      if (o.totalScore !== ev.totalScore) changes.push(`Total Score: ${o.totalScore} -> ${ev.totalScore}`);
+      if (o.grade !== ev.grade) changes.push(`Grade: ${o.grade} -> ${ev.grade}`);
+      if (o.status !== ev.status) changes.push(`Supplier Status: ${o.status} -> ${ev.status}`);
+      if (changes.length) description += ` | SOP Eval Changes (${changes.join(", ")})`;
+    }
+  }
+  return description;
+}
+
+async function getBusinessPartnersList(): Promise<any[]> {
+  const prisma = requirePrisma();
+  const rows = await prisma.businessPartner.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { evaluation: { include: { documents: true } } },
+  });
+  return rows.map(mapPartnerRow);
+}
+
+async function seedDefaultBusinessPartners() {
+  const prisma = requirePrisma();
+  const count = await prisma.businessPartner.count();
+  if (count > 0) return;
+  console.log("[BusinessPartners] Seeding default partners into PostgreSQL (first startup)...");
+  // Seed manufacturers first so supplier.manufacturerId FKs resolve.
+  const ordered = [...INITIAL_BUSINESS_PARTNERS_DB].sort(
+    (a, b) => (a.type === "Manufacturer" ? 0 : 1) - (b.type === "Manufacturer" ? 0 : 1),
+  );
+  for (const p of ordered) {
+    await upsertBusinessPartner(prisma, p);
+  }
+}
+
+async function getVendorsList(): Promise<any[]> {
+  const prisma = requirePrisma();
+  {
     const vendors = await prisma.vendor.findMany();
     const vendorMaterials = await prisma.vendorMaterial.findMany();
     const materials = await prisma.material.findMany();
     const evaluations = await prisma.evaluation.findMany();
-    const auditLogs = await prisma.auditLog.findMany();
+    const activityLogRows = await prisma.activityLog.findMany({ orderBy: { createdAt: "asc" } });
+    const riskRows = await prisma.riskAssessment.findMany();
+    const analysisRows = await prisma.analysisRecord.findMany({ orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
     const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
-    
+
     const logsByVendor = new Map<string, any[]>();
-    auditLogs.forEach(log => {
-      if (log.vendorId) {
-        const existing = logsByVendor.get(log.vendorId) || [];
-        existing.push({
-          id: log.id,
-          action: log.details || log.action,
-          date: log.createdAt.toISOString(),
-          user: log.user
-        });
-        logsByVendor.set(log.vendorId, existing);
-      }
+    activityLogRows.forEach(log => {
+      const existing = logsByVendor.get(log.vendorId) || [];
+      existing.push({
+        id: log.id,
+        action: log.action,
+        date: log.createdAt.toISOString(),
+        user: log.user
+      });
+      logsByVendor.set(log.vendorId, existing);
+    });
+
+    const riskByVendor = new Map<string, any>();
+    riskRows.forEach(r => {
+      riskByVendor.set(r.vendorId, {
+        materialCriticality: r.materialCriticality,
+        detectability: r.detectability,
+        probability: r.probability,
+        sps: r.sps,
+        riskScore: r.riskScore,
+        sri: r.sri,
+        riskLevel: r.riskLevel,
+        date: r.evaluationDate || "",
+        evaluator: r.evaluator || ""
+      });
+    });
+
+    const analysisByVendor = new Map<string, any[]>();
+    analysisRows.forEach(a => {
+      const existing = analysisByVendor.get(a.vendorId) || [];
+      existing.push({
+        id: a.id,
+        date: a.recordDate || "",
+        qcCode: a.qcCode || "",
+        decision: fromDbDecision(a.decision),
+        deviationReason: a.deviationReason,
+        comments: a.comments || "",
+        recordedBy: a.recordedBy || ""
+      });
+      analysisByVendor.set(a.vendorId, existing);
     });
 
     const result: any[] = [];
@@ -495,11 +491,8 @@ async function getVendorsList(): Promise<any[]> {
         }
       }
 
-      let riskObj = null;
-      try { riskObj = v.riskAssessment ? JSON.parse(v.riskAssessment) : null; } catch {}
-
-      let analysisArr: any[] = [];
-      try { analysisArr = v.analysisRecords ? JSON.parse(v.analysisRecords) : []; } catch {}
+      const riskObj = riskByVendor.get(v.id) || null;
+      const analysisArr: any[] = analysisByVendor.get(v.id) || [];
 
       let manufacturerId = (v as any).manufacturerId || null;
       let supplierId = (v as any).supplierId || null;
@@ -544,9 +537,6 @@ async function getVendorsList(): Promise<any[]> {
       });
     }
     return result;
-  } catch (err: any) {
-    console.warn("[Prisma] Failed to query PostgreSQL, falling back to local file:", err.message);
-    return getAllVendorsFlat();
   }
 }
 
@@ -556,13 +546,8 @@ async function getVendorById(id: string): Promise<any> {
 }
 
 async function saveVendorToDb(v: any): Promise<boolean> {
-  const prisma = getPrismaClient();
-  if (!prisma) {
-    partitionVendor(v);
-    saveDb();
-    return true;
-  }
-  try {
+  const prisma = requirePrisma();
+  {
     const {
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
       material, materialEn, cas, irc, isSample, category,
@@ -575,8 +560,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       (contactInfo + (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '')) : 
       (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '');
 
-    const riskText = riskAssessment ? JSON.stringify(riskAssessment) : null;
-    const analysisText = analysisRecords ? JSON.stringify(analysisRecords) : null;
+    // risk assessment & analysis records are now stored in normalized tables
+    // (see persistVendorRelations), not in the legacy vendor Text columns.
     const scoreText = scores ? JSON.stringify(scores) : null;
     const rawScoreText = rawScores ? JSON.stringify(rawScores) : null;
     const rejectText = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
@@ -595,8 +580,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
-        riskAssessment: riskText,
-        analysisRecords: analysisText,
+        riskAssessment: null,
+        analysisRecords: null,
       },
       create: {
         id,
@@ -608,8 +593,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
-        riskAssessment: riskText,
-        analysisRecords: analysisText,
+        riskAssessment: null,
+        analysisRecords: null,
       },
     });
 
@@ -687,224 +672,101 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       },
     });
 
-    if (activityLogs && Array.isArray(activityLogs)) {
-      await prisma.auditLog.deleteMany({
-        where: { vendorId: id }
-      });
+    await persistVendorRelations(prisma, id, v);
 
-      for (const log of activityLogs) {
-        await prisma.auditLog.create({
-          data: {
-            id: log.id || `log_${Math.random().toString(36).substr(2, 9)}`,
-            vendorId: id,
-            user: log.user || "کاربر سیستم",
-            action: log.details || log.action || "بروزرسانی اطلاعات",
-            details: log.action || "ارزیابی یا ویرایش تأمین‌کننده",
-            createdAt: log.date ? parseDateSafely(log.date) : new Date(),
-          }
-        });
-      }
-    }
-
-    return true;
-  } catch (err: any) {
-    console.warn("[Prisma] Failed to save to PostgreSQL, falling back to local memory:", err.message);
-    partitionVendor(v);
-    saveDb();
     return true;
   }
 }
 
 async function deleteVendorFromDb(id: string): Promise<boolean> {
-  const prisma = getPrismaClient();
-  if (!prisma) {
-    if (relationalDb.vendors[id]) {
-      delete relationalDb.vendors[id];
-      const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-      if (link) {
-        delete relationalDb.vendor_materials[link.id];
-        const evalId = `eval_${id}_${link.materialId}`;
-        delete relationalDb.evaluations[evalId];
-      }
-      delete relationalDb.contacts[id];
-      delete relationalDb.analysis_records[id];
-      delete relationalDb.risk_assessments[id];
-      relationalDb.audit_logs = relationalDb.audit_logs.filter(al => al.vendorId !== id);
-      saveDb();
-      return true;
-    }
-    return false;
-  }
+  const prisma = requirePrisma();
   try {
-    await prisma.auditLog.deleteMany({ where: { vendorId: id } });
+    // Evaluations, vendor-material links, risk assessments, analysis records
+    // and activity logs cascade on the vendor delete via their foreign keys.
     await prisma.evaluation.deleteMany({ where: { vendorId: id } });
     await prisma.vendorMaterial.deleteMany({ where: { vendorId: id } });
     await prisma.vendor.delete({ where: { id } });
     return true;
   } catch (err: any) {
-    console.warn("[Prisma] Failed to delete from PostgreSQL, falling back to local database:", err.message);
-    if (relationalDb.vendors[id]) {
-      delete relationalDb.vendors[id];
-      const link = Object.values(relationalDb.vendor_materials).find(vm => vm.vendorId === id);
-      if (link) {
-        delete relationalDb.vendor_materials[link.id];
-        const evalId = `eval_${id}_${link.materialId}`;
-        delete relationalDb.evaluations[evalId];
-      }
-      delete relationalDb.contacts[id];
-      delete relationalDb.analysis_records[id];
-      delete relationalDb.risk_assessments[id];
-      relationalDb.audit_logs = relationalDb.audit_logs.filter(al => al.vendorId !== id);
-      saveDb();
-      return true;
+    // Prisma throws P2025 when the target row does not exist.
+    if (err?.code === "P2025") {
+      return false;
     }
-    return false;
-  }
-}
-
-// Load relational DB version v2 from file (with support for migrating legacy v1 and flat db schemas)
-try {
-  if (fs.existsSync(dbPath)) {
-    const rawData = fs.readFileSync(dbPath, "utf-8");
-    const parsed = JSON.parse(rawData);
-    if (parsed && parsed._relational_v2) {
-      relationalDb = {
-        vendors: parsed.vendors || {},
-        materials: parsed.materials || {},
-        vendor_materials: parsed.vendor_materials || {},
-        evaluations: parsed.evaluations || {},
-        audit_logs: parsed.audit_logs || [],
-        risk_assessments: parsed.risk_assessments || {},
-        analysis_records: parsed.analysis_records || {},
-        contacts: parsed.contacts || {}
-      };
-      console.log(`[RelationalDB] Loaded strictly normalized strict-5-entity relational database.`);
-    } else if (parsed && parsed._relational) {
-      console.log(`[RelationalDB] Migrating old relational model v1 to new normalized 5-entity model.`);
-      // Transform old structures to new structures by reconstructing and re-partitioning
-      const tempVendors = parsed.vendors || {};
-      Object.keys(tempVendors).forEach(vid => {
-        // Prepare temporary flat object representing old vendor
-        const ev = parsed.evaluations?.[vid] || {};
-        const co = parsed.contacts?.[vid] || {};
-        const logs = parsed.activity_logs?.[vid] || [];
-        const analysis = parsed.analysis_records?.[vid] || [];
-        const risk = parsed.risk_assessments?.[vid] || null;
-        const vBase = tempVendors[vid];
-
-        partitionVendor({
-          ...vBase,
-          ...ev,
-          ...co,
-          activityLogs: logs,
-          analysisRecords: analysis,
-          riskAssessment: risk
-        });
-      });
-      saveDb();
-    } else if (Array.isArray(parsed)) {
-      console.log(`[RelationalDB] Converting legacy flat raw list database format.`);
-      parsed.forEach(partitionVendor);
-      saveDb();
-    }
-  } else {
-    console.log(`[RelationalDB] Bootstrapping clean databases.`);
-    INITIAL_VENDORS_DB.forEach(partitionVendor);
-    saveDb();
-  }
-} catch (err: any) {
-  console.warn("[RelationalDB] Fallback in-memory loaded:", err.message);
-  INITIAL_VENDORS_DB.forEach(partitionVendor);
-}
-
-function saveDb() {
-  try {
-    const dirPath = path.dirname(dbPath);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-    const dataToWrite = {
-      _relational_v2: true,
-      vendors: relationalDb.vendors,
-      materials: relationalDb.materials,
-      vendor_materials: relationalDb.vendor_materials,
-      evaluations: relationalDb.evaluations,
-      audit_logs: relationalDb.audit_logs,
-      risk_assessments: relationalDb.risk_assessments,
-      analysis_records: relationalDb.analysis_records,
-      contacts: relationalDb.contacts
-    };
-    fs.writeFileSync(dbPath, JSON.stringify(dataToWrite, null, 2), "utf-8");
-  } catch (err: any) {
-    console.warn("[RelationalDB] Failed writing database changes to disk:", err.message);
+    throw err;
   }
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || "internal-regulatory-compliance-secret-key-321";
 
-const usersDbPath = path.join(process.cwd(), "database", "users.json");
-let USERS_DB: Record<string, any> = {
-  admin: { username: "admin", password: "123456", role: "admin", name: "مدیر سیستم" },
-  commercial: { username: "commercial", password: "123", role: "commercial", name: "واحد بازرگانی" },
-  qa: { username: "qa", password: "123", role: "qa", name: "واحد کیفیت" },
-  planning: { username: "planning", password: "123", role: "planning", name: "واحد برنامه‌ریزی و انبار" },
-  finance: { username: "finance", password: "123", role: "finance", name: "واحد مالی" },
-};
+// Default users provisioned into PostgreSQL on first startup (empty users table).
+const DEFAULT_USERS: Array<{ username: string; password: string; role: string; name: string }> = [
+  { username: "admin", password: "123456", role: "admin", name: "مدیر سیستم" },
+  { username: "commercial", password: "123", role: "commercial", name: "واحد بازرگانی" },
+  { username: "qa", password: "123", role: "qa", name: "واحد کیفیت" },
+  { username: "planning", password: "123", role: "planning", name: "واحد برنامه‌ریزی و انبار" },
+  { username: "finance", password: "123", role: "finance", name: "واحد مالی" },
+];
 
-function loadUsersDb() {
-  try {
-    if (fs.existsSync(usersDbPath)) {
-      const data = fs.readFileSync(usersDbPath, "utf-8");
-      USERS_DB = JSON.parse(data);
-    }
-    
-    // Migrate plain-text passwords to hashed passwords and initialize mustChangePassword flags
-    let modified = false;
-    for (const key of Object.keys(USERS_DB)) {
-      const user = USERS_DB[key];
-      
-      // If password is still a plain text string, hash it
-      if (typeof user.password === "string") {
-        const salt = generateSalt();
-        const hash = hashPassword(user.password, salt);
-        user.password = { hash, salt };
-        
-        // Plain text defaults must change password on first login
-        if (user.mustChangePassword === undefined) {
-          user.mustChangePassword = true;
-        }
-        modified = true;
-      }
-      
-      // Ensure mustChangePassword flag is explicitly set if missing
-      if (user.mustChangePassword === undefined) {
-        user.mustChangePassword = true;
-        modified = true;
-      }
-    }
-    
-    if (modified) {
-      saveUsersDb();
-    }
-  } catch (err: any) {
-    console.warn("[UsersDB] Failed loading or migrating users db:", err.message);
-  }
+const ALLOWED_USER_ROLES = ["admin", "lab", "commercial", "qa", "planning", "finance"] as const;
+type UserRoleValue = (typeof ALLOWED_USER_ROLES)[number];
+
+function normalizeUserRole(role: any): UserRoleValue {
+  return ALLOWED_USER_ROLES.includes(role) ? role : "commercial";
 }
 
-function saveUsersDb() {
-  try {
-    const dir = path.dirname(usersDbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(usersDbPath, JSON.stringify(USERS_DB, null, 2), "utf-8");
-  } catch (err: any) {
-    console.warn("[UsersDB] Failed to save users db to disk:", err.message);
-  }
+// Shape returned to endpoints; mirrors the legacy in-memory user record so the
+// route handlers (and verifyPassword) keep working against a { hash, salt } pair.
+interface AppUser {
+  username: string;
+  name: string;
+  role: string;
+  password: { hash: string; salt: string };
+  permissions: any;
+  mustChangePassword: boolean;
 }
 
-// Initialize users database on startup
-loadUsersDb();
+function mapUserRow(row: any): AppUser {
+  return {
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    password: { hash: row.passwordHash, salt: row.passwordSalt },
+    permissions: row.permissions ?? [],
+    mustChangePassword: row.mustChangePassword !== false,
+  };
+}
+
+async function getUserByUsername(username: string): Promise<AppUser | null> {
+  const prisma = requirePrisma();
+  const row = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+  return row ? mapUserRow(row) : null;
+}
+
+async function getAllUsers(): Promise<AppUser[]> {
+  const prisma = requirePrisma();
+  const rows = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+  return rows.map(mapUserRow);
+}
+
+async function seedDefaultUsers() {
+  const prisma = requirePrisma();
+  const count = await prisma.user.count();
+  if (count > 0) return;
+  console.log("[UsersDB] Seeding default users into PostgreSQL (first startup)...");
+  for (const u of DEFAULT_USERS) {
+    const salt = generateSalt();
+    await prisma.user.create({
+      data: {
+        username: u.username.toLowerCase(),
+        name: u.name,
+        role: normalizeUserRole(u.role) as any,
+        passwordHash: hashPassword(u.password, salt),
+        passwordSalt: salt,
+        mustChangePassword: true,
+      },
+    });
+  }
+}
 
 function requireAuth(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
@@ -924,6 +786,25 @@ function requireAuth(req: any, res: any, next: any) {
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
+
+  // PostgreSQL is the single source of truth. Verify connectivity and provision
+  // the default users on first startup before serving any request.
+  if (!isValidPostgresUrl(process.env.DATABASE_URL)) {
+    console.error(
+      "[FATAL] DATABASE_URL is missing or invalid. A valid PostgreSQL connection is required to start the server.",
+    );
+  } else {
+    try {
+      await seedDefaultUsers();
+    } catch (err: any) {
+      console.error("[Startup] Failed to provision default users:", err.message);
+    }
+    try {
+      await seedDefaultBusinessPartners();
+    } catch (err: any) {
+      console.error("[Startup] Failed to provision default business partners:", err.message);
+    }
+  }
 
   // --- API Routes ---
 
@@ -949,7 +830,7 @@ async function startServer() {
   }
 
   // User Login (Authenticates users securely)
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = getUserAgent(req);
@@ -980,7 +861,7 @@ async function startServer() {
       return res.status(400).json({ error: "Username and password are required credentials" });
     }
 
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     if (!matchedUser) {
       AuditService.createAuditRecord({
         auditId,
@@ -1109,7 +990,7 @@ async function startServer() {
   });
 
   // Change Password endpoint for security compliance
-  app.post("/api/auth/change-password", requireAuth, (req: any, res) => {
+  app.post("/api/auth/change-password", requireAuth, async (req: any, res) => {
     const { currentPassword, newPassword } = req.body;
     const username = req.user.username;
 
@@ -1125,7 +1006,7 @@ async function startServer() {
       return res.status(400).json({ error: "کلمه عبور جدید باید حداقل ۶ کاراکتر باشد" });
     }
 
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     if (!matchedUser) {
       return res.status(404).json({ error: "کاربر یافت نشد" });
     }
@@ -1138,12 +1019,14 @@ async function startServer() {
 
     // Change the password, hash and salt it, and persist
     const newSalt = generateSalt();
-    USERS_DB[username.toLowerCase()].password = {
-      hash: hashPassword(newPassword, newSalt),
-      salt: newSalt
-    };
-    USERS_DB[username.toLowerCase()].mustChangePassword = false;
-    saveUsersDb();
+    await requirePrisma().user.update({
+      where: { username: username.toLowerCase() },
+      data: {
+        passwordHash: hashPassword(newPassword, newSalt),
+        passwordSalt: newSalt,
+        mustChangePassword: false,
+      },
+    });
 
     // Log the password change activity
     const now = new Date();
@@ -1180,9 +1063,9 @@ async function startServer() {
   });
 
   // Fetch / verify logged in user's profile state
-  app.get("/api/auth/me", requireAuth, (req: any, res) => {
+  app.get("/api/auth/me", requireAuth, async (req: any, res) => {
     const username = req.user.username;
-    const matchedUser = USERS_DB[username.toLowerCase()];
+    const matchedUser = await getUserByUsername(username);
     const mustChangePassword = matchedUser ? matchedUser.mustChangePassword !== false : false;
 
     res.json({ 
@@ -1212,6 +1095,36 @@ async function startServer() {
     } catch (error: any) {
       console.error("Failed to fetch vendors:", error);
       res.status(500).json({ error: "Failed to fetch vendors" });
+    }
+  });
+
+  // Score history for a single vendor, reconstructed from the audit trail
+  // (each scoring writes an audit record with before/after SPS). Available to
+  // any authenticated user so the trend shows on the vendor detail page.
+  app.get("/api/vendors/:id/score-history", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const rows = await prisma.auditLog.findMany({
+        where: { entityId: req.params.id, entityType: "Score" },
+        orderBy: { timestamp: "asc" },
+      });
+      const history = rows.map((r) => {
+        const after: any = r.afterData || {};
+        const before: any = r.beforeData || {};
+        return {
+          id: r.id,
+          date: r.timestamp.toISOString(),
+          totalSPS: typeof after.totalSPS === "number" ? after.totalSPS : null,
+          previousSPS: typeof before.totalSPS === "number" ? before.totalSPS : null,
+          grade: after.grade ?? null,
+          scores: after.scores ?? null,
+          user: r.userName || r.userId || "—",
+          reason: r.reasonForChange || "",
+        };
+      });
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -1506,7 +1419,7 @@ async function startServer() {
       }
       const s = validationResult.data;
 
-      const allVendorsBefore = await getAllVendorsFlat();
+      const allVendorsBefore = await getVendorsList();
       const prevRank = getVendorRank(id, allVendorsBefore);
 
       const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -1551,7 +1464,7 @@ async function startServer() {
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 
-      const allVendorsAfter = await getAllVendorsFlat();
+      const allVendorsAfter = await getVendorsList();
       const newRank = getVendorRank(id, allVendorsAfter);
 
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -2275,18 +2188,15 @@ async function startServer() {
   // --- User Management Endpoints ---
   // ==========================================
 
-  app.get("/api/users", requireAuth, (req: any, res) => {
+  app.get("/api/users", requireAuth, async (req: any, res) => {
     try {
-      const usersList = Object.keys(USERS_DB).map(username => {
-        const u = USERS_DB[username];
-        return {
-          username: u.username,
-          name: u.name,
-          role: u.role,
-          permissions: u.permissions || [],
-          mustChangePassword: u.mustChangePassword !== false
-        };
-      });
+      const usersList = (await getAllUsers()).map(u => ({
+        username: u.username,
+        name: u.name,
+        role: u.role,
+        permissions: u.permissions || [],
+        mustChangePassword: u.mustChangePassword !== false
+      }));
       res.json(usersList);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2301,7 +2211,7 @@ async function startServer() {
       }
 
       const key = username.toLowerCase();
-      if (USERS_DB[key]) {
+      if (await getUserByUsername(key)) {
         return res.status(400).json({ error: "کاربری با این نام کاربری قبلاً تعریف شده است." });
       }
 
@@ -2311,16 +2221,21 @@ async function startServer() {
         username: username,
         name: name,
         role: role,
-        password: {
-          hash: hashPassword(uPassword, uSalt),
-          salt: uSalt
-        },
         permissions: permissions || [],
         mustChangePassword: true
       };
 
-      USERS_DB[key] = newUser;
-      saveUsersDb();
+      await requirePrisma().user.create({
+        data: {
+          username: key,
+          name,
+          role: normalizeUserRole(role) as any,
+          passwordHash: hashPassword(uPassword, uSalt),
+          passwordSalt: uSalt,
+          permissions: newUser.permissions,
+          mustChangePassword: true,
+        },
+      });
 
       // Log creation to Audit Trail
       const now = new Date();
@@ -2356,7 +2271,7 @@ async function startServer() {
   app.patch("/api/users/:username", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2368,8 +2283,14 @@ async function startServer() {
       if (role) current.role = role;
       if (permissions) current.permissions = permissions;
 
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: {
+          name: current.name,
+          role: normalizeUserRole(current.role) as any,
+          permissions: current.permissions ?? [],
+        },
+      });
 
       // Log update to Audit Trail
       const now = new Date();
@@ -2404,7 +2325,7 @@ async function startServer() {
   app.delete("/api/users/:username", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2412,8 +2333,7 @@ async function startServer() {
       const reasonForChange = req.query.reasonForChange as string || "حذف دسترسی پرسنل تسویه شده";
       const beforeData = { username: current.username, name: current.name, role: current.role, permissions: current.permissions || [] };
 
-      delete USERS_DB[targetUsername];
-      saveUsersDb();
+      await requirePrisma().user.delete({ where: { username: targetUsername } });
 
       // Log deletion to Audit Trail
       const now = new Date();
@@ -2448,7 +2368,7 @@ async function startServer() {
   app.put("/api/users/:username/role", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2460,8 +2380,10 @@ async function startServer() {
 
       const oldRole = current.role;
       current.role = role;
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: { role: normalizeUserRole(role) as any },
+      });
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2495,7 +2417,7 @@ async function startServer() {
   app.put("/api/users/:username/permissions", requireAuth, async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
-      const current = USERS_DB[targetUsername];
+      const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
@@ -2507,8 +2429,10 @@ async function startServer() {
 
       const oldPermissions = current.permissions || [];
       current.permissions = permissions;
-      USERS_DB[targetUsername] = current;
-      saveUsersDb();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: { permissions },
+      });
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2545,13 +2469,9 @@ async function startServer() {
 
   app.get("/api/materials", requireAuth, async (req: any, res) => {
     try {
-      const prisma = getPrismaClient();
-      if (prisma) {
-        const list = await prisma.material.findMany();
-        return res.json(list);
-      }
-      const materialsList = Object.values(relationalDb.materials);
-      res.json(materialsList);
+      const prisma = requirePrisma();
+      const list = await prisma.material.findMany();
+      res.json(list);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2565,15 +2485,9 @@ async function startServer() {
       }
 
       const materialId = generateMaterialId(cas, irc, name, nameEn);
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let existing = null;
-      if (prisma) {
-        existing = await prisma.material.findUnique({ where: { id: materialId } });
-      } else {
-        existing = relationalDb.materials[materialId];
-      }
-
+      const existing = await prisma.material.findUnique({ where: { id: materialId } });
       if (existing) {
         return res.status(400).json({ error: "ماده‌ای با این شناسه / مشخصات CAS و IRC قبلاً در سیستم ثبت شده است" });
       }
@@ -2586,12 +2500,7 @@ async function startServer() {
         irc: irc || "N/A"
       };
 
-      if (prisma) {
-        await prisma.material.create({ data: newMaterial });
-      } else {
-        relationalDb.materials[materialId] = newMaterial;
-        saveDb();
-      }
+      await prisma.material.create({ data: newMaterial });
 
       // Audit Log for Material Creation
       const now = new Date();
@@ -2625,15 +2534,9 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { name, nameEn, cas, irc, reasonForChange } = req.body;
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
@@ -2647,20 +2550,15 @@ async function startServer() {
         irc: irc || current.irc
       };
 
-      if (prisma) {
-        await prisma.material.update({
-          where: { id },
-          data: {
-            name: updatedMaterial.name,
-            nameEn: updatedMaterial.nameEn,
-            cas: updatedMaterial.cas,
-            irc: updatedMaterial.irc
-          }
-        });
-      } else {
-        relationalDb.materials[id] = updatedMaterial;
-        saveDb();
-      }
+      await prisma.material.update({
+        where: { id },
+        data: {
+          name: updatedMaterial.name,
+          nameEn: updatedMaterial.nameEn,
+          cas: updatedMaterial.cas,
+          irc: updatedMaterial.irc
+        }
+      });
 
       // Audit Log for Material Update
       const now = new Date();
@@ -2693,27 +2591,16 @@ async function startServer() {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
       // Check dependency
-      let isUsed = false;
-      if (prisma) {
-        const count = await prisma.vendorMaterial.count({ where: { materialId: id } });
-        isUsed = count > 0;
-      } else {
-        isUsed = Object.values(relationalDb.vendor_materials).some(vm => vm.materialId === id);
-      }
+      const usedCount = await prisma.vendorMaterial.count({ where: { materialId: id } });
+      const isUsed = usedCount > 0;
 
       if (isUsed) {
         // Audit Log for Rejected Deletion
@@ -2742,18 +2629,7 @@ async function startServer() {
 
       const beforeData = { name: current.name, nameEn: current.nameEn, cas: current.cas, irc: current.irc };
 
-      if (prisma) {
-        await prisma.material.delete({ where: { id } });
-      } else {
-        delete relationalDb.materials[id];
-        // Clean up linked vendor materials - REMOVED per requirement 8: No Cascade Delete
-        // for (const k of Object.keys(relationalDb.vendor_materials)) {
-        //   if (relationalDb.vendor_materials[k].materialId === id) {
-        //     delete relationalDb.vendor_materials[k];
-        //   }
-        // }
-        saveDb();
-      }
+      await prisma.material.delete({ where: { id } });
 
       // Audit Log for Material Deletion
       const now = new Date();
@@ -2786,29 +2662,17 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
-      const prisma = getPrismaClient();
+      const prisma = requirePrisma();
 
-      let current = null;
-      if (prisma) {
-        current = await prisma.material.findUnique({ where: { id } });
-      } else {
-        current = relationalDb.materials[id];
-      }
-
+      const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
       const oldStatus = (current as any).status || "Active";
       const newStatus = status || "Suspended";
-
-      // Save status (if field exists, or save custom attribute)
-      if (prisma) {
-        // Since schema might not have status, we can store in a JSON field if available, or just mock database update for audit success
-      } else {
-        (relationalDb.materials[id] as any).status = newStatus;
-        saveDb();
-      }
+      // NOTE: the materials table has no status column yet; status change is
+      // recorded in the audit trail only until a dedicated column is added.
 
       const now = new Date();
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2831,6 +2695,173 @@ async function startServer() {
       });
 
       res.json({ success: true, status: newStatus });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- Business Partner Endpoints ---
+  // ==========================================
+
+  app.get("/api/business-partners", requireAuth, async (req: any, res) => {
+    try {
+      const list = await getBusinessPartnersList();
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/business-partners", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const partner = req.body;
+      if (!partner || !partner.id || !partner.name || !partner.type) {
+        return res.status(400).json({ error: "فیلدهای id، name و type الزامی هستند." });
+      }
+      const existing = await prisma.businessPartner.findUnique({ where: { id: partner.id } });
+      if (existing) {
+        return res.status(400).json({ error: "شریک تجاری با این شناسه قبلاً ثبت شده است." });
+      }
+      await upsertBusinessPartner(prisma, partner);
+      const [saved] = (await getBusinessPartnersList()).filter(p => p.id === partner.id);
+
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        action: "Create",
+        severity: "Information",
+        entityType: "BusinessPartner",
+        entityId: partner.id,
+        entityName: partner.name,
+        eventType: "User Activity",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        description: buildPartnerAuditDescription("Create", partner),
+        reasonForChange: req.body.reasonForChange || "ثبت شریک تجاری جدید",
+        beforeData: null,
+        afterData: saved,
+      }).catch(err => console.error("Audit logging failed on partner create:", err));
+
+      res.json({ success: true, partner: saved });
+    } catch (err: any) {
+      console.error("Failed to create business partner:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const { id } = req.params;
+      const existing = await prisma.businessPartner.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+      const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
+      await upsertBusinessPartner(prisma, { ...req.body, id });
+      const [saved] = (await getBusinessPartnersList()).filter(p => p.id === id);
+
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        action: "Update",
+        severity: "Warning",
+        entityType: "BusinessPartner",
+        entityId: id,
+        entityName: saved?.name || existing.name,
+        eventType: "User Activity",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        description: buildPartnerAuditDescription("Update", saved, before),
+        reasonForChange: req.body.reasonForChange || "ویرایش اطلاعات شریک تجاری",
+        beforeData: before,
+        afterData: saved,
+      }).catch(err => console.error("Audit logging failed on partner update:", err));
+
+      res.json({ success: true, partner: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const { id } = req.params;
+      const existing = await prisma.businessPartner.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+
+      const auditBase = {
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        entityType: "BusinessPartner",
+        entityId: id,
+        entityName: existing.name,
+        eventType: "User Activity" as const,
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      };
+
+      // Referential integrity: block deletion of records still in use.
+      let blockedReason: string | null = null;
+      if (existing.type === "Manufacturer") {
+        const supplierRefs = await prisma.businessPartner.count({ where: { manufacturerId: id } });
+        const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
+        if (supplierRefs > 0 || vendorRefs > 0) {
+          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است.";
+        }
+      } else if (existing.type === "Supplier") {
+        const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
+        if (vendorRefs > 0) {
+          blockedReason = "امکان حذف این فروشنده وجود ندارد. در یک یا چند Source استفاده شده است.";
+        }
+      }
+
+      if (blockedReason) {
+        await AuditService.createAuditRecord({
+          ...auditBase,
+          auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `تلاش ناموفق برای حذف شریک تجاری "${existing.name}" (${existing.type}) — رکورد در حال استفاده است.`,
+          reasonForChange: "Attempted delete of referenced record",
+          beforeData: null,
+          afterData: null,
+        }).catch(err => console.error("Audit logging failed on blocked partner delete:", err));
+        return res.status(400).json({ error: blockedReason });
+      }
+
+      const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
+      // supplier_evaluations + sop_documents cascade via foreign keys.
+      await prisma.businessPartner.delete({ where: { id } });
+
+      await AuditService.createAuditRecord({
+        ...auditBase,
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        action: "Delete",
+        severity: "Critical",
+        description: buildPartnerAuditDescription("Delete", { name: existing.name, type: existing.type }),
+        reasonForChange: (req.query.reasonForChange as string) || "حذف شریک تجاری",
+        beforeData: before,
+        afterData: null,
+      }).catch(err => console.error("Audit logging failed on partner delete:", err));
+
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
