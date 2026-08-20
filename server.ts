@@ -367,6 +367,26 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
   }
 }
 
+// Build a human-readable audit description for a business-partner change,
+// including supplier SOP evaluation changes (score / grade / status).
+function buildPartnerAuditDescription(action: string, partner: any, before?: any): string {
+  let description = `${action} business partner: ${partner.name} (${partner.type})`;
+  if (partner.type === "Supplier" && partner.evaluation) {
+    const ev = partner.evaluation;
+    if (action === "Create") {
+      description += ` | SOP Score: ${ev.totalScore}/100, Grade: ${ev.grade}, Status: ${ev.status}`;
+    } else if (action === "Update" && before?.evaluation) {
+      const o = before.evaluation;
+      const changes: string[] = [];
+      if (o.totalScore !== ev.totalScore) changes.push(`Total Score: ${o.totalScore} -> ${ev.totalScore}`);
+      if (o.grade !== ev.grade) changes.push(`Grade: ${o.grade} -> ${ev.grade}`);
+      if (o.status !== ev.status) changes.push(`Supplier Status: ${o.status} -> ${ev.status}`);
+      if (changes.length) description += ` | SOP Eval Changes (${changes.join(", ")})`;
+    }
+  }
+  return description;
+}
+
 async function getBusinessPartnersList(): Promise<any[]> {
   const prisma = requirePrisma();
   const rows = await prisma.businessPartner.findMany({
@@ -2676,6 +2696,28 @@ async function startServer() {
       }
       await upsertBusinessPartner(prisma, partner);
       const [saved] = (await getBusinessPartnersList()).filter(p => p.id === partner.id);
+
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        action: "Create",
+        severity: "Information",
+        entityType: "BusinessPartner",
+        entityId: partner.id,
+        entityName: partner.name,
+        eventType: "User Activity",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        description: buildPartnerAuditDescription("Create", partner),
+        reasonForChange: req.body.reasonForChange || "ثبت شریک تجاری جدید",
+        beforeData: null,
+        afterData: saved,
+      }).catch(err => console.error("Audit logging failed on partner create:", err));
+
       res.json({ success: true, partner: saved });
     } catch (err: any) {
       console.error("Failed to create business partner:", err);
@@ -2691,8 +2733,31 @@ async function startServer() {
       if (!existing) {
         return res.status(404).json({ error: "شریک تجاری یافت نشد" });
       }
+      const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
       await upsertBusinessPartner(prisma, { ...req.body, id });
       const [saved] = (await getBusinessPartnersList()).filter(p => p.id === id);
+
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        action: "Update",
+        severity: "Warning",
+        entityType: "BusinessPartner",
+        entityId: id,
+        entityName: saved?.name || existing.name,
+        eventType: "User Activity",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        description: buildPartnerAuditDescription("Update", saved, before),
+        reasonForChange: req.body.reasonForChange || "ویرایش اطلاعات شریک تجاری",
+        beforeData: before,
+        afterData: saved,
+      }).catch(err => console.error("Audit logging failed on partner update:", err));
+
       res.json({ success: true, partner: saved });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2708,22 +2773,64 @@ async function startServer() {
         return res.status(404).json({ error: "شریک تجاری یافت نشد" });
       }
 
+      const auditBase = {
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "Business Partner Repository",
+        entityType: "BusinessPartner",
+        entityId: id,
+        entityName: existing.name,
+        eventType: "User Activity" as const,
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      };
+
       // Referential integrity: block deletion of records still in use.
+      let blockedReason: string | null = null;
       if (existing.type === "Manufacturer") {
         const supplierRefs = await prisma.businessPartner.count({ where: { manufacturerId: id } });
         const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
         if (supplierRefs > 0 || vendorRefs > 0) {
-          return res.status(400).json({ error: "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است." });
+          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است.";
         }
       } else if (existing.type === "Supplier") {
         const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
         if (vendorRefs > 0) {
-          return res.status(400).json({ error: "امکان حذف این فروشنده وجود ندارد. در یک یا چند Source استفاده شده است." });
+          blockedReason = "امکان حذف این فروشنده وجود ندارد. در یک یا چند Source استفاده شده است.";
         }
       }
 
+      if (blockedReason) {
+        await AuditService.createAuditRecord({
+          ...auditBase,
+          auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `تلاش ناموفق برای حذف شریک تجاری "${existing.name}" (${existing.type}) — رکورد در حال استفاده است.`,
+          reasonForChange: "Attempted delete of referenced record",
+          beforeData: null,
+          afterData: null,
+        }).catch(err => console.error("Audit logging failed on blocked partner delete:", err));
+        return res.status(400).json({ error: blockedReason });
+      }
+
+      const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
       // supplier_evaluations + sop_documents cascade via foreign keys.
       await prisma.businessPartner.delete({ where: { id } });
+
+      await AuditService.createAuditRecord({
+        ...auditBase,
+        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        action: "Delete",
+        severity: "Critical",
+        description: buildPartnerAuditDescription("Delete", { name: existing.name, type: existing.type }),
+        reasonForChange: (req.query.reasonForChange as string) || "حذف شریک تجاری",
+        beforeData: before,
+        afterData: null,
+      }).catch(err => console.error("Audit logging failed on partner delete:", err));
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

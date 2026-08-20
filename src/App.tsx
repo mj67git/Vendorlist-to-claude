@@ -637,63 +637,14 @@ export default function App() {
     }
   };
 
-  const logBusinessPartnerAudit = (action: string, partner: BusinessPartner, beforeValue?: any) => {
-    let description = `${action} business partner: ${partner.name} (${partner.type})`;
-    
-    if (partner.type === 'Supplier') {
-      if (partner.evaluation) {
-        if (action === 'Create') {
-          description += ` | SOP Score: ${partner.evaluation.totalScore}/100, Grade: ${partner.evaluation.grade}, Status: ${partner.evaluation.status}`;
-        } else if (action === 'Update' && beforeValue?.evaluation) {
-          const oldEval = beforeValue.evaluation;
-          const newEval = partner.evaluation;
-          const changes: string[] = [];
-
-          if (oldEval.totalScore !== newEval.totalScore) {
-            changes.push(`Total Score: ${oldEval.totalScore} -> ${newEval.totalScore}`);
-          }
-          if (oldEval.grade !== newEval.grade) {
-            changes.push(`Grade: ${oldEval.grade} -> ${newEval.grade}`);
-          }
-          if (oldEval.status !== newEval.status) {
-            changes.push(`Supplier Status: ${oldEval.status} -> ${newEval.status}`);
-          }
-
-          if (changes.length > 0) {
-            description += ` | SOP Eval Changes (${changes.join(', ')})`;
-          }
-        }
-      }
-
-      if (action === 'Update' && beforeValue && beforeValue.manufacturerId !== partner.manufacturerId) {
-        const oldMfg = businessPartners.find(p => p.id === beforeValue.manufacturerId)?.name || 'نامشخص';
-        const newMfg = businessPartners.find(p => p.id === partner.manufacturerId)?.name || 'نامشخص';
-        description += ` | انتقال تولیدکننده مرجع از [${oldMfg}] به [${newMfg}]`;
-      }
-    }
-
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Business Partner Repository',
-        action: action,
-        entityType: 'BusinessPartner',
-        entityId: partner.id,
-        entityName: partner.name,
-        severity: action === 'Delete' ? 'high' : 'info',
-        description: description,
-        beforeValue,
-        afterValue: partner
-      })
-    }).catch(err => console.error("Failed to sync business partner audit log:", err));
-  };
+  // Business-partner changes are audited server-side (authoritative, in the
+  // Business Partner Repository module), so the client no longer posts its own
+  // audit records — that would double-log every change.
 
   const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
     setBusinessPartners([newPartner, ...businessPartners]);
     setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
     setTimeout(() => setToastMsg(null), 3000);
-    logBusinessPartnerAudit('Create', newPartner);
     authFetch('/api/business-partners', {
       method: 'POST',
       body: JSON.stringify(newPartner)
@@ -701,11 +652,9 @@ export default function App() {
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
-    const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
     setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
     setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
     setTimeout(() => setToastMsg(null), 3000);
-    logBusinessPartnerAudit('Update', updatedPartner, oldPartner);
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
       body: JSON.stringify(updatedPartner)
@@ -716,39 +665,23 @@ export default function App() {
     const partner = businessPartners.find(p => p.id === id);
     if (!partner) return;
 
-    if (partner.type === 'Manufacturer') {
-      const isUsedInSource = db.some(v => v.manufacturerId === id);
-      const isUsedInSupplier = businessPartners.some(p => p.type === 'Supplier' && p.manufacturerId === id);
-      if (isUsedInSource || isUsedInSupplier) {
-        logBusinessPartnerAudit('Delete - Blocked', partner, { reason: 'Record is referenced by Source or Supplier' });
-        setToastMsg('امکان حذف این تولیدکننده وجود ندارد. این تولیدکننده به یک یا چند Source یا فروشنده اختصاص داده شده است.');
-        setTimeout(() => setToastMsg(null), 5000);
-        return;
-      }
-    } else if (partner.type === 'Supplier') {
-      const isUsedInSource = db.some(v => v.supplierId === id || v.id === id);
-      if (isUsedInSource) {
-        logBusinessPartnerAudit('Delete - Blocked', partner, { reason: 'Record is referenced by Source' });
-        setToastMsg('امکان حذف این فروشنده وجود ندارد. این فروشنده در یک یا چند Source استفاده شده است.');
-        setTimeout(() => setToastMsg(null), 5000);
-        return;
-      }
-    }
-
-    logBusinessPartnerAudit('Delete', partner);
+    // The server enforces referential integrity and audits both the blocked
+    // attempt and the successful delete; revert optimistically on rejection.
     const snapshot = businessPartners;
     setBusinessPartners(businessPartners.filter(p => p.id !== id));
-    setToastMsg('شریک تجاری با موفقیت حذف شد!');
-    setTimeout(() => setToastMsg(null), 3000);
     authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
-      .then(res => {
-        if (!res.ok) throw new Error('delete rejected');
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'حذف شریک تجاری در سرور ناموفق بود.');
+        }
+        setToastMsg('شریک تجاری با موفقیت حذف شد!');
+        setTimeout(() => setToastMsg(null), 3000);
       })
       .catch(err => {
-        console.error("Failed to delete business partner on backend, reverting:", err);
         setBusinessPartners(snapshot);
-        setToastMsg('حذف شریک تجاری در سرور ناموفق بود.');
-        setTimeout(() => setToastMsg(null), 4000);
+        setToastMsg(err.message || 'حذف شریک تجاری در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
       });
   };
 
