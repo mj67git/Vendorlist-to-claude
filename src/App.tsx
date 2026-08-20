@@ -252,7 +252,10 @@ export default function App() {
   }, [businessPartners]);
 
   // Load business partners from the backend (PostgreSQL) as the source of truth.
+  // Guarded on an authenticated user: /api/business-partners requires auth, and
+  // an unauthenticated call would trigger authFetch's 401 session reload.
   useEffect(() => {
+    if (!currentUser) return;
     authFetch('/api/business-partners')
       .then(res => {
         if (!res.ok) throw new Error('API response failed');
@@ -266,7 +269,7 @@ export default function App() {
       .catch(err => {
         console.error("Failed to load business partners from backend. Using local cache.", err);
       });
-  }, []);
+  }, [currentUser]);
 
   type ViewState = {
     view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
