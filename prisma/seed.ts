@@ -1,12 +1,64 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { generateSalt, hashPassword } from '../src/server/security/passwordService';
 
 const prisma = new PrismaClient();
 
+const ALLOWED_ROLES = ['admin', 'lab', 'commercial', 'qa', 'planning', 'finance'] as const;
+type AllowedRole = (typeof ALLOWED_ROLES)[number];
+
+function normalizeRole(role: unknown): AllowedRole {
+  return ALLOWED_ROLES.includes(role as AllowedRole) ? (role as AllowedRole) : 'commercial';
+}
+
+async function seedUsers() {
+  const usersPath = path.join(process.cwd(), 'database', 'users.json');
+  if (!fs.existsSync(usersPath)) {
+    console.log('ℹ️  No users.json found, skipping user seed.');
+    return;
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersPath, 'utf8')) as Record<string, any>;
+  console.log('🌱 Seeding Users (passwords are salted + hashed)...');
+
+  for (const [key, u] of Object.entries(users)) {
+    const username = (u.username || key).toLowerCase();
+    const salt = generateSalt();
+    // Support both legacy plaintext and pre-hashed { hash, salt } shapes.
+    let passwordHash: string;
+    let passwordSalt: string;
+    if (u.password && typeof u.password === 'object' && u.password.hash) {
+      passwordHash = u.password.hash;
+      passwordSalt = u.password.salt;
+    } else {
+      passwordSalt = salt;
+      passwordHash = hashPassword(String(u.password ?? '123'), salt);
+    }
+
+    await prisma.user.upsert({
+      where: { username },
+      update: {
+        name: u.name || username,
+        role: normalizeRole(u.role),
+      },
+      create: {
+        username,
+        name: u.name || username,
+        role: normalizeRole(u.role),
+        passwordHash,
+        passwordSalt,
+        mustChangePassword: u.mustChangePassword ?? true,
+      },
+    });
+  }
+}
+
 async function main() {
   console.log('🔄 Starting seed process...');
-  
+
+  await seedUsers();
+
   const jsonPath = path.join(process.cwd(), 'database', 'vendors.json');
   
   if (!fs.existsSync(jsonPath)) {
