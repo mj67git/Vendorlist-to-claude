@@ -145,6 +145,95 @@ function requirePrisma(): PrismaClient {
   return prisma;
 }
 
+// --- Mapping helpers between the frontend shapes and the normalized enums ---
+
+const DECISION_TO_DB: Record<string, "Pass" | "Reject" | "ApprovedConditional"> = {
+  "Pass": "Pass",
+  "Reject": "Reject",
+  "Approved Conditional": "ApprovedConditional",
+};
+const DECISION_FROM_DB: Record<string, string> = {
+  "Pass": "Pass",
+  "Reject": "Reject",
+  "ApprovedConditional": "Approved Conditional",
+};
+const DEVIATION_VALUES = ["None", "NCR", "Deviation", "OOS", "CAPA", "OOT", "Complaint", "Other"];
+const RISK_LEVELS = ["Low", "Medium", "High"];
+
+function toDbDecision(d: any): "Pass" | "Reject" | "ApprovedConditional" {
+  return DECISION_TO_DB[d] ?? "Pass";
+}
+function fromDbDecision(d: any): string {
+  return DECISION_FROM_DB[d] ?? "Pass";
+}
+function toDbDeviation(r: any): any {
+  return DEVIATION_VALUES.includes(r) ? r : "None";
+}
+function toDbRiskLevel(l: any): any {
+  return RISK_LEVELS.includes(l) ? l : "Low";
+}
+
+// Persist a vendor's risk assessment (single row per vendor), analysis records
+// and activity logs into their normalized tables. Each collection is fully
+// replaced from the passed data so the read-modify-write endpoints stay
+// consistent. A field left undefined is not touched (partial saves).
+async function persistVendorRelations(prisma: PrismaClient, id: string, v: any): Promise<void> {
+  const { riskAssessment, analysisRecords, activityLogs } = v;
+
+  if (riskAssessment !== undefined) {
+    await prisma.riskAssessment.deleteMany({ where: { vendorId: id } });
+    if (riskAssessment) {
+      await prisma.riskAssessment.create({
+        data: {
+          vendorId: id,
+          materialCriticality: Number(riskAssessment.materialCriticality) || 0,
+          detectability: Number(riskAssessment.detectability) || 0,
+          probability: Number(riskAssessment.probability) || 0,
+          sps: Number(riskAssessment.sps) || 0,
+          riskScore: Number(riskAssessment.riskScore) || 0,
+          sri: Number(riskAssessment.sri) || 0,
+          riskLevel: toDbRiskLevel(riskAssessment.riskLevel),
+          evaluationDate: riskAssessment.date || null,
+          evaluator: riskAssessment.evaluator || null,
+        },
+      });
+    }
+  }
+
+  if (analysisRecords !== undefined && Array.isArray(analysisRecords)) {
+    await prisma.analysisRecord.deleteMany({ where: { vendorId: id } });
+    for (const rec of analysisRecords) {
+      await prisma.analysisRecord.create({
+        data: {
+          id: rec.id || crypto.randomUUID(),
+          vendorId: id,
+          recordDate: rec.date || null,
+          qcCode: rec.qcCode || null,
+          decision: toDbDecision(rec.decision),
+          deviationReason: toDbDeviation(rec.deviationReason),
+          comments: rec.comments || null,
+          recordedBy: rec.recordedBy || null,
+        },
+      });
+    }
+  }
+
+  if (activityLogs !== undefined && Array.isArray(activityLogs)) {
+    await prisma.activityLog.deleteMany({ where: { vendorId: id } });
+    for (const log of activityLogs) {
+      await prisma.activityLog.create({
+        data: {
+          id: log.id || crypto.randomUUID(),
+          vendorId: id,
+          action: log.action || log.details || "بروزرسانی اطلاعات",
+          user: log.user || "کاربر سیستم",
+          createdAt: log.date ? parseDateSafely(log.date) : new Date(),
+        },
+      });
+    }
+  }
+}
+
 async function getVendorsList(): Promise<any[]> {
   const prisma = requirePrisma();
   {
@@ -152,23 +241,53 @@ async function getVendorsList(): Promise<any[]> {
     const vendorMaterials = await prisma.vendorMaterial.findMany();
     const materials = await prisma.material.findMany();
     const evaluations = await prisma.evaluation.findMany();
-    const auditLogs = await prisma.auditLog.findMany();
+    const activityLogRows = await prisma.activityLog.findMany({ orderBy: { createdAt: "asc" } });
+    const riskRows = await prisma.riskAssessment.findMany();
+    const analysisRows = await prisma.analysisRecord.findMany({ orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
     const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
-    
+
     const logsByVendor = new Map<string, any[]>();
-    auditLogs.forEach(log => {
-      if (log.vendorId) {
-        const existing = logsByVendor.get(log.vendorId) || [];
-        existing.push({
-          id: log.id,
-          action: log.details || log.action,
-          date: log.createdAt.toISOString(),
-          user: log.user
-        });
-        logsByVendor.set(log.vendorId, existing);
-      }
+    activityLogRows.forEach(log => {
+      const existing = logsByVendor.get(log.vendorId) || [];
+      existing.push({
+        id: log.id,
+        action: log.action,
+        date: log.createdAt.toISOString(),
+        user: log.user
+      });
+      logsByVendor.set(log.vendorId, existing);
+    });
+
+    const riskByVendor = new Map<string, any>();
+    riskRows.forEach(r => {
+      riskByVendor.set(r.vendorId, {
+        materialCriticality: r.materialCriticality,
+        detectability: r.detectability,
+        probability: r.probability,
+        sps: r.sps,
+        riskScore: r.riskScore,
+        sri: r.sri,
+        riskLevel: r.riskLevel,
+        date: r.evaluationDate || "",
+        evaluator: r.evaluator || ""
+      });
+    });
+
+    const analysisByVendor = new Map<string, any[]>();
+    analysisRows.forEach(a => {
+      const existing = analysisByVendor.get(a.vendorId) || [];
+      existing.push({
+        id: a.id,
+        date: a.recordDate || "",
+        qcCode: a.qcCode || "",
+        decision: fromDbDecision(a.decision),
+        deviationReason: a.deviationReason,
+        comments: a.comments || "",
+        recordedBy: a.recordedBy || ""
+      });
+      analysisByVendor.set(a.vendorId, existing);
     });
 
     const result: any[] = [];
@@ -196,11 +315,8 @@ async function getVendorsList(): Promise<any[]> {
         }
       }
 
-      let riskObj = null;
-      try { riskObj = v.riskAssessment ? JSON.parse(v.riskAssessment) : null; } catch {}
-
-      let analysisArr: any[] = [];
-      try { analysisArr = v.analysisRecords ? JSON.parse(v.analysisRecords) : []; } catch {}
+      const riskObj = riskByVendor.get(v.id) || null;
+      const analysisArr: any[] = analysisByVendor.get(v.id) || [];
 
       let manufacturerId = (v as any).manufacturerId || null;
       let supplierId = (v as any).supplierId || null;
@@ -268,8 +384,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       (contactInfo + (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '')) : 
       (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '');
 
-    const riskText = riskAssessment ? JSON.stringify(riskAssessment) : null;
-    const analysisText = analysisRecords ? JSON.stringify(analysisRecords) : null;
+    // risk assessment & analysis records are now stored in normalized tables
+    // (see persistVendorRelations), not in the legacy vendor Text columns.
     const scoreText = scores ? JSON.stringify(scores) : null;
     const rawScoreText = rawScores ? JSON.stringify(rawScores) : null;
     const rejectText = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
@@ -288,8 +404,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
-        riskAssessment: riskText,
-        analysisRecords: analysisText,
+        riskAssessment: null,
+        analysisRecords: null,
       },
       create: {
         id,
@@ -301,8 +417,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
-        riskAssessment: riskText,
-        analysisRecords: analysisText,
+        riskAssessment: null,
+        analysisRecords: null,
       },
     });
 
@@ -380,24 +496,7 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       },
     });
 
-    if (activityLogs && Array.isArray(activityLogs)) {
-      await prisma.auditLog.deleteMany({
-        where: { vendorId: id }
-      });
-
-      for (const log of activityLogs) {
-        await prisma.auditLog.create({
-          data: {
-            id: log.id || `log_${Math.random().toString(36).substr(2, 9)}`,
-            vendorId: id,
-            user: log.user || "کاربر سیستم",
-            action: log.details || log.action || "بروزرسانی اطلاعات",
-            details: log.action || "ارزیابی یا ویرایش تأمین‌کننده",
-            createdAt: log.date ? parseDateSafely(log.date) : new Date(),
-          }
-        });
-      }
-    }
+    await persistVendorRelations(prisma, id, v);
 
     return true;
   }
