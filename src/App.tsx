@@ -7,7 +7,7 @@ import {
   Pill, Handshake, Warehouse, Boxes, Coins, PawPrint, ClipboardCheck, Hash, Trash2, ShieldAlert, Printer,
   RotateCcw, Download, ChevronDown, ChevronUp, Database, Award, History, Mail, Phone, MapPin, Bell, Calendar
 } from 'lucide-react';
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
@@ -2603,6 +2603,14 @@ function CategoryView({
     return groupsList.slice(startIndex, endIndex);
   }, [groupsList, startIndex, endIndex]);
 
+  // Guard against landing on an out-of-range page after the result set shrinks
+  // (e.g. a filter reduces the number of groups below the current page).
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   return (
     <div className="space-y-6 fade-in">
       {/* Sticky Category Top Header & Toolbar */}
@@ -4625,6 +4633,18 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     }
   }, [showAdminScoresEdit]);
 
+  // Score history reconstructed from the audit trail (SPS over time).
+  const [scoreHistory, setScoreHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (vendor.isSample) return;
+    let cancelled = false;
+    authFetch(`/api/vendors/${vendor.id}/score-history`)
+      .then(res => (res.ok ? res.json() : []))
+      .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setScoreHistory(data.filter(d => d.totalSPS !== null)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vendor.id, vendor.isSample, vendor.scores]);
+
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
   if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'lab') {
@@ -5377,6 +5397,79 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
                 هیچ امتیازی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Score history & trend (reconstructed from the audit trail) */}
+      {!vendor.isSample && scoreHistory.length > 0 && (
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm text-right">
+          <div className="flex items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <History className="w-4 h-4 text-primary" />
+              <h3 className="font-bold text-slate-800 text-sm">تاریخچه و روند نمرات <span className="text-slate-400 text-xs font-normal font-mono relative top-[0.5px]">(Score History)</span></h3>
+            </div>
+            <Badge variant="outline" className="text-[11px] px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
+          </div>
+
+          {scoreHistory.length >= 2 && (
+            <div className="h-52 w-full mb-5" dir="ltr">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={scoreHistory.map((h, i) => ({
+                  idx: i + 1,
+                  label: new Date(h.date).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' }),
+                  sps: h.totalSPS,
+                }))} margin={{ top: 8, right: 16, left: -12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <RTooltip
+                    contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                    formatter={(v: any) => [`${v}`, 'SPS']}
+                    labelFormatter={(l: any) => l}
+                  />
+                  <Line type="monotone" dataKey="sps" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3, fill: '#2563eb' }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 border-b border-slate-100">
+                  <th className="text-right font-semibold py-2 px-2">تاریخ</th>
+                  <th className="text-center font-semibold py-2 px-2">SPS</th>
+                  <th className="text-center font-semibold py-2 px-2">تغییر</th>
+                  <th className="text-center font-semibold py-2 px-2">گرید</th>
+                  <th className="text-right font-semibold py-2 px-2">کاربر</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...scoreHistory].reverse().map((h) => {
+                  const delta = (typeof h.totalSPS === 'number' && typeof h.previousSPS === 'number') ? +(h.totalSPS - h.previousSPS).toFixed(1) : null;
+                  return (
+                    <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                      <td className="py-2 px-2 text-slate-700">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                      <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{h.totalSPS}</td>
+                      <td className="py-2 px-2 text-center font-mono">
+                        {delta === null || delta === 0 ? (
+                          <span className="text-slate-400">—</span>
+                        ) : delta > 0 ? (
+                          <span className="text-emerald-600">▲ {delta}</span>
+                        ) : (
+                          <span className="text-red-500">▼ {Math.abs(delta)}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-[10px] px-2 py-0">{h.grade}</Badge> : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="py-2 px-2 text-slate-600">{h.user}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

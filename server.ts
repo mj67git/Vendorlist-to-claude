@@ -1098,6 +1098,36 @@ async function startServer() {
     }
   });
 
+  // Score history for a single vendor, reconstructed from the audit trail
+  // (each scoring writes an audit record with before/after SPS). Available to
+  // any authenticated user so the trend shows on the vendor detail page.
+  app.get("/api/vendors/:id/score-history", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const rows = await prisma.auditLog.findMany({
+        where: { entityId: req.params.id, entityType: "Score" },
+        orderBy: { timestamp: "asc" },
+      });
+      const history = rows.map((r) => {
+        const after: any = r.afterData || {};
+        const before: any = r.beforeData || {};
+        return {
+          id: r.id,
+          date: r.timestamp.toISOString(),
+          totalSPS: typeof after.totalSPS === "number" ? after.totalSPS : null,
+          previousSPS: typeof before.totalSPS === "number" ? before.totalSPS : null,
+          grade: after.grade ?? null,
+          scores: after.scores ?? null,
+          user: r.userName || r.userId || "—",
+          reason: r.reasonForChange || "",
+        };
+      });
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create or Update single vendor (Unified Database)
   app.post("/api/vendors", requireAuth, async (req: any, res) => {
     try {
