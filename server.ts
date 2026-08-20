@@ -505,7 +505,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
 async function deleteVendorFromDb(id: string): Promise<boolean> {
   const prisma = requirePrisma();
   try {
-    await prisma.auditLog.deleteMany({ where: { vendorId: id } });
+    // Evaluations, vendor-material links, risk assessments, analysis records
+    // and activity logs cascade on the vendor delete via their foreign keys.
     await prisma.evaluation.deleteMany({ where: { vendorId: id } });
     await prisma.vendorMaterial.deleteMany({ where: { vendorId: id } });
     await prisma.vendor.delete({ where: { id } });

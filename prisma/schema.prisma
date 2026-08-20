@@ -225,7 +225,6 @@ model Vendor {
 
   materials             VendorMaterial[]
   evaluations           Evaluation[]
-  auditLogs             AuditLog[]
   riskAssessments       RiskAssessment[]
   analysisRecordEntries AnalysisRecord[]
   activityLogs          ActivityLog[]
@@ -344,29 +343,10 @@ model ActivityLog {
 }
 
 // ---------------------------------------------------------------------------
-// Module: Legacy audit log (kept for compatibility with existing data layer)
-// ---------------------------------------------------------------------------
-
-model AuditLog {
-  id        String   @id @map("id") @db.VarChar(50)
-  vendorId  String?  @map("vendor_id") @db.VarChar(50)
-  user      String   @map("user")
-  action    String   @map("action")
-  details   String   @map("details")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  vendor Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-
-  @@index([vendorId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-// ---------------------------------------------------------------------------
 // Module: Regulatory audit trail (canonical, GxP-style, fully indexed)
 // ---------------------------------------------------------------------------
 
-model Audit_Log {
+model AuditLog {
   id              String   @id @default(uuid()) @map("id") @db.VarChar(50)
   auditId         String   @unique @map("audit_id") @db.VarChar(50)
   correlationId   String?  @map("correlation_id") @db.VarChar(50)

@@ -219,7 +219,7 @@ export class AuditService {
         };
       }
 
-      const record = await prisma.audit_Log.create({
+      const record = await prisma.auditLog.create({
         data: {
           auditId: input.auditId,
           correlationId: input.correlationId || null,
@@ -409,13 +409,13 @@ export class AuditService {
       }
 
       const [data, total] = await Promise.all([
-        prisma.audit_Log.findMany({
+        prisma.auditLog.findMany({
           where,
           orderBy: { timestamp: "desc" },
           skip,
           take: limit,
         }),
-        prisma.audit_Log.count({ where }),
+        prisma.auditLog.count({ where }),
       ]);
 
       return { data, total };
@@ -436,7 +436,7 @@ export class AuditService {
     }
 
     try {
-      const log = await prisma.audit_Log.findFirst({
+      const log = await prisma.auditLog.findFirst({
         where: {
           OR: [
             { id: id },
@@ -472,7 +472,7 @@ export class AuditService {
         where.entityType = entityType;
       }
 
-      const logs = await prisma.audit_Log.findMany({
+      const logs = await prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: "desc" }
       });
@@ -540,7 +540,7 @@ export class AuditService {
         ];
       }
 
-      const logs = await prisma.audit_Log.findMany({
+      const logs = await prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: "desc" },
         take: 100,
