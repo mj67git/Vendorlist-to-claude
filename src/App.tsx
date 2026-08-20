@@ -245,6 +245,23 @@ export default function App() {
     }
   }, [businessPartners]);
 
+  // Load business partners from the backend (PostgreSQL) as the source of truth.
+  useEffect(() => {
+    authFetch('/api/business-partners')
+      .then(res => {
+        if (!res.ok) throw new Error('API response failed');
+        return res.json();
+      })
+      .then((data: BusinessPartner[]) => {
+        if (Array.isArray(data)) {
+          setBusinessPartners(data);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load business partners from backend. Using local cache.", err);
+      });
+  }, []);
+
   type ViewState = {
     view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
     categoryId: Category | null;
@@ -666,6 +683,10 @@ export default function App() {
     setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
     setTimeout(() => setToastMsg(null), 3000);
     logBusinessPartnerAudit('Create', newPartner);
+    authFetch('/api/business-partners', {
+      method: 'POST',
+      body: JSON.stringify(newPartner)
+    }).catch(err => console.error("Failed to persist new business partner:", err));
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
@@ -674,6 +695,10 @@ export default function App() {
     setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
     setTimeout(() => setToastMsg(null), 3000);
     logBusinessPartnerAudit('Update', updatedPartner, oldPartner);
+    authFetch(`/api/business-partners/${updatedPartner.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updatedPartner)
+    }).catch(err => console.error("Failed to persist business partner update:", err));
   };
 
   const handleDeleteBusinessPartner = (id: string) => {
@@ -700,9 +725,20 @@ export default function App() {
     }
 
     logBusinessPartnerAudit('Delete', partner);
+    const snapshot = businessPartners;
     setBusinessPartners(businessPartners.filter(p => p.id !== id));
     setToastMsg('شریک تجاری با موفقیت حذف شد!');
     setTimeout(() => setToastMsg(null), 3000);
+    authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
+      .then(res => {
+        if (!res.ok) throw new Error('delete rejected');
+      })
+      .catch(err => {
+        console.error("Failed to delete business partner on backend, reverting:", err);
+        setBusinessPartners(snapshot);
+        setToastMsg('حذف شریک تجاری در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 4000);
+      });
   };
 
   // Views Content

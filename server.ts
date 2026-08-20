@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { createServer as createViteServer } from "vite";
+import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { 
@@ -231,6 +232,161 @@ async function persistVendorRelations(prisma: PrismaClient, id: string, v: any):
         },
       });
     }
+  }
+}
+
+// --- Business Partner (Manufacturer / Supplier) mapping & persistence ---
+
+const SOP_STATUS_TO_DB: Record<string, "Approved" | "PermitApproval" | "Expired" | "NotSubmitted"> = {
+  "Approved": "Approved",
+  "Permit Approval": "PermitApproval",
+  "Expired": "Expired",
+  "Not Submitted": "NotSubmitted",
+};
+const SOP_STATUS_FROM_DB: Record<string, string> = {
+  "Approved": "Approved",
+  "PermitApproval": "Permit Approval",
+  "Expired": "Expired",
+  "NotSubmitted": "Not Submitted",
+};
+const BP_TYPES = ["Manufacturer", "Supplier"];
+const BP_STATUSES = ["Active", "Inactive", "Blacklisted"];
+
+function toDbPartnerType(t: any): any {
+  return BP_TYPES.includes(t) ? t : "Manufacturer";
+}
+function toDbPartnerStatus(s: any): any {
+  return BP_STATUSES.includes(s) ? s : "Active";
+}
+function toDbSopStatus(s: any): any {
+  return s == null ? null : (SOP_STATUS_TO_DB[s] ?? null);
+}
+
+// Reconstruct the frontend BusinessPartner shape from a partner row that has
+// its evaluation and SOP documents included.
+function mapPartnerRow(row: any): any {
+  const base: any = {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    nameEn: row.nameEn || "",
+    country: row.country,
+    city: row.city || "",
+    address: row.address || "",
+    email: row.email || "",
+    contactPerson: row.contactPerson || "",
+    phone: row.phone || "",
+    website: row.website || "",
+    manufacturerId: row.manufacturerId || undefined,
+    status: row.status,
+    createdAt: row.createdAt?.toISOString?.() || row.createdAt,
+    updatedAt: row.updatedAt?.toISOString?.() || row.updatedAt,
+  };
+
+  if (row.evaluation) {
+    const documents: Record<string, any> = {};
+    for (const doc of row.evaluation.documents || []) {
+      documents[doc.key] = {
+        key: doc.key,
+        nameFa: doc.nameFa,
+        nameEn: doc.nameEn,
+        status: doc.status ? SOP_STATUS_FROM_DB[doc.status] ?? null : null,
+        score: doc.score,
+        fileName: doc.fileName || undefined,
+        fileDataUrl: doc.fileDataUrl || undefined,
+        fileSize: doc.fileSize ?? undefined,
+        uploadedAt: doc.uploadedAt?.toISOString?.() || doc.uploadedAt || undefined,
+      };
+    }
+    base.evaluation = {
+      documents,
+      totalScore: row.evaluation.totalScore,
+      grade: row.evaluation.grade,
+      status: row.evaluation.status,
+      updatedBy: row.evaluation.updatedBy || undefined,
+      updatedAt: row.evaluation.updatedAt?.toISOString?.() || row.evaluation.updatedAt,
+    };
+  }
+
+  return base;
+}
+
+// Fully (re)write a partner and its optional supplier evaluation + SOP docs.
+async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void> {
+  const data = {
+    type: toDbPartnerType(p.type),
+    name: p.name || "Unknown",
+    nameEn: p.nameEn || null,
+    country: p.country || "نامشخص",
+    city: p.city || null,
+    address: p.address || null,
+    email: p.email || null,
+    contactPerson: p.contactPerson || null,
+    phone: p.phone || null,
+    website: p.website || null,
+    status: toDbPartnerStatus(p.status),
+    manufacturerId: p.manufacturerId || null,
+  };
+
+  await prisma.businessPartner.upsert({
+    where: { id: p.id },
+    update: data,
+    create: { id: p.id, ...data },
+  });
+
+  // Replace the supplier evaluation (+ documents) if present.
+  await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
+  if (p.type === "Supplier" && p.evaluation) {
+    const ev = p.evaluation;
+    const created = await prisma.supplierEvaluation.create({
+      data: {
+        partnerId: p.id,
+        totalScore: Number(ev.totalScore) || 0,
+        grade: ev.grade || "Not Evaluated",
+        status: ev.status || "Not Evaluated",
+        updatedBy: ev.updatedBy || null,
+      },
+    });
+    const docs = ev.documents ? Object.values(ev.documents) : [];
+    for (const doc of docs as any[]) {
+      await prisma.sopDocument.create({
+        data: {
+          evaluationId: created.id,
+          key: doc.key,
+          nameFa: doc.nameFa || "",
+          nameEn: doc.nameEn || "",
+          status: toDbSopStatus(doc.status),
+          score: Number(doc.score) || 0,
+          fileName: doc.fileName || null,
+          fileSize: doc.fileSize ?? null,
+          fileDataUrl: doc.fileDataUrl || null,
+          uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
+        },
+      });
+    }
+  }
+}
+
+async function getBusinessPartnersList(): Promise<any[]> {
+  const prisma = requirePrisma();
+  const rows = await prisma.businessPartner.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { evaluation: { include: { documents: true } } },
+  });
+  return rows.map(mapPartnerRow);
+}
+
+async function seedDefaultBusinessPartners() {
+  const prisma = requirePrisma();
+  const count = await prisma.businessPartner.count();
+  if (count > 0) return;
+  console.log("[BusinessPartners] Seeding default partners into PostgreSQL (first startup)...");
+  // Seed manufacturers first so supplier.manufacturerId FKs resolve.
+  const ordered = [...INITIAL_BUSINESS_PARTNERS_DB].sort(
+    (a, b) => (a.type === "Manufacturer" ? 0 : 1) - (b.type === "Manufacturer" ? 0 : 1),
+  );
+  for (const p of ordered) {
+    await upsertBusinessPartner(prisma, p);
   }
 }
 
@@ -622,6 +778,11 @@ async function startServer() {
       await seedDefaultUsers();
     } catch (err: any) {
       console.error("[Startup] Failed to provision default users:", err.message);
+    }
+    try {
+      await seedDefaultBusinessPartners();
+    } catch (err: any) {
+      console.error("[Startup] Failed to provision default business partners:", err.message);
     }
   }
 
@@ -2484,6 +2645,86 @@ async function startServer() {
       });
 
       res.json({ success: true, status: newStatus });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================
+  // --- Business Partner Endpoints ---
+  // ==========================================
+
+  app.get("/api/business-partners", requireAuth, async (req: any, res) => {
+    try {
+      const list = await getBusinessPartnersList();
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/business-partners", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const partner = req.body;
+      if (!partner || !partner.id || !partner.name || !partner.type) {
+        return res.status(400).json({ error: "فیلدهای id، name و type الزامی هستند." });
+      }
+      const existing = await prisma.businessPartner.findUnique({ where: { id: partner.id } });
+      if (existing) {
+        return res.status(400).json({ error: "شریک تجاری با این شناسه قبلاً ثبت شده است." });
+      }
+      await upsertBusinessPartner(prisma, partner);
+      const [saved] = (await getBusinessPartnersList()).filter(p => p.id === partner.id);
+      res.json({ success: true, partner: saved });
+    } catch (err: any) {
+      console.error("Failed to create business partner:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const { id } = req.params;
+      const existing = await prisma.businessPartner.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+      await upsertBusinessPartner(prisma, { ...req.body, id });
+      const [saved] = (await getBusinessPartnersList()).filter(p => p.id === id);
+      res.json({ success: true, partner: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const { id } = req.params;
+      const existing = await prisma.businessPartner.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+
+      // Referential integrity: block deletion of records still in use.
+      if (existing.type === "Manufacturer") {
+        const supplierRefs = await prisma.businessPartner.count({ where: { manufacturerId: id } });
+        const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
+        if (supplierRefs > 0 || vendorRefs > 0) {
+          return res.status(400).json({ error: "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است." });
+        }
+      } else if (existing.type === "Supplier") {
+        const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
+        if (vendorRefs > 0) {
+          return res.status(400).json({ error: "امکان حذف این فروشنده وجود ندارد. در یک یا چند Source استفاده شده است." });
+        }
+      }
+
+      // supplier_evaluations + sop_documents cascade via foreign keys.
+      await prisma.businessPartner.delete({ where: { id } });
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

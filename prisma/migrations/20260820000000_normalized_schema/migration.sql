@@ -107,6 +107,7 @@ CREATE TABLE "sop_documents" (
     "score" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "file_name" TEXT,
     "file_size" INTEGER,
+    "file_data_url" TEXT,
     "uploaded_at" TIMESTAMP(3),
 
     CONSTRAINT "sop_documents_pkey" PRIMARY KEY ("id")
