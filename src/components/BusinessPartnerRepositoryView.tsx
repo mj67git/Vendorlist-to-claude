@@ -1,5 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
+import { authFetch } from '../services/authFetch';
+import { History } from 'lucide-react';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
   CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
@@ -70,6 +73,22 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<BusinessPartner | null>(null);
   const [selectedPartner, setSelectedPartner] = useState<BusinessPartner | null>(null);
+
+  // SOP evaluation history (reconstructed from the audit trail) for the
+  // currently-viewed supplier.
+  const [evalHistory, setEvalHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (!isViewModalOpen || !selectedPartner || selectedPartner.type !== 'Supplier') {
+      setEvalHistory([]);
+      return;
+    }
+    let cancelled = false;
+    authFetch(`/api/business-partners/${selectedPartner.id}/evaluation-history`)
+      .then(res => (res.ok ? res.json() : []))
+      .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setEvalHistory(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isViewModalOpen, selectedPartner]);
 
   // Modal active tab when editing/creating a supplier: 'general' | 'evaluation'
   const [activeModalTab, setActiveModalTab] = useState<'general' | 'evaluation'>('general');
@@ -1764,6 +1783,70 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
+
+                {/* SOP evaluation history & trend (reconstructed from audit trail) */}
+                {evalHistory.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <History className="w-4 h-4 text-indigo-600" />
+                        <span>تاریخچه و روند ارزیابی SOP <span className="text-slate-400 font-normal font-mono">(Evaluation History)</span></span>
+                      </h3>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-bold">{evalHistory.length} تغییر</span>
+                    </div>
+
+                    {evalHistory.length >= 2 && (
+                      <div className="h-44 w-full" dir="ltr">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={evalHistory.map((h, i) => ({
+                            idx: i + 1,
+                            label: new Date(h.date).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' }),
+                            score: h.totalScore,
+                          }))} margin={{ top: 8, right: 16, left: -12, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                            <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                            <RTooltip contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }} formatter={(v: any) => [`${v}`, 'Score']} />
+                            <Line type="monotone" dataKey="score" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3, fill: '#4f46e5' }} activeDot={{ r: 5 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="text-slate-500 border-b border-slate-100">
+                            <th className="text-right font-semibold py-2 px-2">تاریخ</th>
+                            <th className="text-center font-semibold py-2 px-2">امتیاز</th>
+                            <th className="text-center font-semibold py-2 px-2">تغییر</th>
+                            <th className="text-center font-semibold py-2 px-2">گرید</th>
+                            <th className="text-right font-semibold py-2 px-2">کاربر</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...evalHistory].reverse().map((h, i, arr) => {
+                            const prev = arr[i + 1];
+                            const delta = prev ? +(h.totalScore - prev.totalScore).toFixed(1) : null;
+                            return (
+                              <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                                <td className="py-2 px-2 text-slate-700">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                                <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{h.totalScore}</td>
+                                <td className="py-2 px-2 text-center font-mono">
+                                  {delta === null || delta === 0 ? <span className="text-slate-400">—</span> : delta > 0 ? <span className="text-emerald-600">▲ {delta}</span> : <span className="text-red-500">▼ {Math.abs(delta)}</span>}
+                                </td>
+                                <td className="py-2 px-2 text-center">
+                                  {h.grade ? <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getGradeBadgeClass(h.grade)}`}>{h.grade}</span> : <span className="text-slate-400">—</span>}
+                                </td>
+                                <td className="py-2 px-2 text-slate-600">{h.user}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* 3. SOP Documents Table Card */}
                 <div className="space-y-3">

@@ -2746,6 +2746,40 @@ async function startServer() {
     }
   });
 
+  // SOP evaluation history for a supplier, reconstructed from the audit trail
+  // (each partner change records the full partner, incl. its evaluation, in
+  // afterData). Returns only points where an evaluation with a score exists.
+  app.get("/api/business-partners/:id/evaluation-history", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const rows = await prisma.auditLog.findMany({
+        where: { entityId: req.params.id, entityType: "BusinessPartner" },
+        orderBy: { timestamp: "asc" },
+      });
+      const history: any[] = [];
+      let lastScore: number | null = null;
+      for (const r of rows) {
+        const ev = (r.afterData as any)?.evaluation;
+        if (!ev || typeof ev.totalScore !== "number") continue;
+        // Skip consecutive duplicates (no score change).
+        if (ev.totalScore === lastScore) continue;
+        history.push({
+          id: r.id,
+          date: r.timestamp.toISOString(),
+          totalScore: ev.totalScore,
+          grade: ev.grade ?? null,
+          status: ev.status ?? null,
+          user: r.userName || r.userId || "—",
+          reason: r.reasonForChange || "",
+        });
+        lastScore = ev.totalScore;
+      }
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/business-partners", requireAuth, async (req: any, res) => {
     try {
       const prisma = requirePrisma();
