@@ -332,7 +332,9 @@ function mapPartnerRow(row: any): any {
         status: doc.status ? SOP_STATUS_FROM_DB[doc.status] ?? null : null,
         score: doc.score,
         fileName: doc.fileName || undefined,
-        fileDataUrl: doc.fileDataUrl || undefined,
+        // The heavy base64 blob is fetched lazily via the per-document file
+        // endpoint; the list/detail payload only signals that a file exists.
+        hasFile: !!doc.fileDataUrl,
         fileSize: doc.fileSize ?? undefined,
         uploadedAt: doc.uploadedAt?.toISOString?.() || doc.uploadedAt || undefined,
       };
@@ -372,6 +374,20 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     create: { id: p.id, ...data },
   });
 
+  // Since the list/detail payload no longer carries the base64 blob, capture
+  // the existing document files before replacing the evaluation so an edit
+  // that doesn't re-upload keeps the stored file instead of wiping it.
+  const existingFiles = new Map<string, { fileDataUrl: string | null; fileName: string | null; fileSize: number | null }>();
+  const prevEval = await prisma.supplierEvaluation.findUnique({
+    where: { partnerId: p.id },
+    include: { documents: true },
+  });
+  if (prevEval) {
+    for (const d of prevEval.documents) {
+      existingFiles.set(d.key, { fileDataUrl: d.fileDataUrl, fileName: d.fileName, fileSize: d.fileSize });
+    }
+  }
+
   // Replace the supplier evaluation (+ documents) if present.
   await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
   if (p.type === "Supplier" && p.evaluation) {
@@ -387,6 +403,13 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     });
     const docs = ev.documents ? Object.values(ev.documents) : [];
     for (const doc of docs as any[]) {
+      const prior = existingFiles.get(doc.key);
+      // fileName present but no fresh blob => unchanged reference, keep the
+      // stored blob. fileName absent => the user removed the file, so drop it.
+      const stillReferencesFile = !!doc.fileName;
+      const fileName = doc.fileName || null;
+      const fileDataUrl = doc.fileDataUrl || (stillReferencesFile ? prior?.fileDataUrl : null) || null;
+      const fileSize = doc.fileSize ?? (stillReferencesFile && !doc.fileDataUrl ? prior?.fileSize : null) ?? null;
       await prisma.sopDocument.create({
         data: {
           evaluationId: created.id,
@@ -395,9 +418,9 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
           nameEn: doc.nameEn || "",
           status: toDbSopStatus(doc.status),
           score: Number(doc.score) || 0,
-          fileName: doc.fileName || null,
-          fileSize: doc.fileSize ?? null,
-          fileDataUrl: doc.fileDataUrl || null,
+          fileName,
+          fileSize,
+          fileDataUrl,
           uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
         },
       });
@@ -2775,6 +2798,25 @@ async function startServer() {
         lastScore = ev.totalScore;
       }
       res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Fetch a single SOP document's stored file on demand (kept out of the list
+  // payload so the repository stays lightweight).
+  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const evaluation = await prisma.supplierEvaluation.findUnique({
+        where: { partnerId: req.params.id },
+        include: { documents: { where: { key: req.params.key as any } } },
+      });
+      const doc = evaluation?.documents?.[0];
+      if (!doc || !doc.fileDataUrl) {
+        return res.status(404).json({ error: "فایلی برای این مدرک یافت نشد" });
+      }
+      res.json({ fileName: doc.fileName, fileSize: doc.fileSize, fileDataUrl: doc.fileDataUrl });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

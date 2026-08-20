@@ -402,14 +402,30 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }));
   };
 
-  const handleDocFileView = (doc: SOPDocumentEval) => {
-    openDocumentPreview(doc, () => handleDocFileDownload(doc));
+  // The base64 blob is no longer shipped in the list payload; fetch it on
+  // demand from the per-document file endpoint when a file already exists.
+  const ensureDocDataUrl = async (doc: SOPDocumentEval, partnerId?: string): Promise<string | null> => {
+    if (doc.fileDataUrl) return doc.fileDataUrl;
+    if (!partnerId || !doc.fileName) return null;
+    try {
+      const res = await authFetch(`/api/business-partners/${partnerId}/documents/${doc.key}/file`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.fileDataUrl || null;
+    } catch { return null; }
   };
 
-  const handleDocFileDownload = (doc: SOPDocumentEval) => {
-    if (!doc.fileDataUrl) return;
+  const handleDocFileView = async (doc: SOPDocumentEval, partnerId?: string) => {
+    const url = await ensureDocDataUrl(doc, partnerId);
+    if (!url) return;
+    openDocumentPreview({ ...doc, fileDataUrl: url }, () => handleDocFileDownload(doc, partnerId));
+  };
+
+  const handleDocFileDownload = async (doc: SOPDocumentEval, partnerId?: string) => {
+    const url = await ensureDocDataUrl(doc, partnerId);
+    if (!url) return;
     const a = document.createElement('a');
-    a.href = doc.fileDataUrl;
+    a.href = url;
     a.download = doc.fileName || `${doc.nameEn}.pdf`;
     document.body.appendChild(a);
     a.click();
@@ -1363,7 +1379,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() => handleDocFileView(doc)}
+                                      onClick={() => handleDocFileView(doc, editingPartner?.id)}
                                       className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                                       title="مشاهده فایل"
                                     >
@@ -1371,7 +1387,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleDocFileDownload(doc)}
+                                      onClick={() => handleDocFileDownload(doc, editingPartner?.id)}
                                       className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
                                       title="دانلود فایل"
                                     >
@@ -1889,14 +1905,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   {doc?.fileName ? (
                                     <div className="flex items-center justify-center gap-1">
                                       <button
-                                        onClick={() => doc && handleDocFileView(doc)}
+                                        onClick={() => doc && handleDocFileView(doc, selectedPartner?.id)}
                                         className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                                         title="مشاهده"
                                       >
                                         <Eye className="w-3.5 h-3.5" />
                                       </button>
                                       <button
-                                        onClick={() => doc && handleDocFileDownload(doc)}
+                                        onClick={() => doc && handleDocFileDownload(doc, selectedPartner?.id)}
                                         className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
                                         title="دانلود"
                                       >
