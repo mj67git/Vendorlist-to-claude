@@ -82,6 +82,46 @@ function generateMaterialId(cas: string | undefined, irc: string | undefined, ma
   return baseId.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
+// Map a material DB row to the frontend Material shape (name -> nameFa, etc.).
+// IRC receive/expiry dates are intentionally excluded: IRC belongs to the
+// source (vendor), not the material catalogue.
+function mapMaterialToClient(m: any) {
+  return {
+    id: m.id,
+    nameFa: m.name,
+    nameEn: m.nameEn,
+    cas: m.cas,
+    irc: m.irc,
+    iupac: m.iupac || '',
+    role: m.role || 'API',
+    finalProduct: m.finalProduct || '',
+    finalProductEn: m.finalProductEn || '',
+    pharmacopoeia: m.pharmacopoeia || 'USP',
+    standardNameFa: m.standardNameFa || '',
+    standardNameEn: m.standardNameEn || '',
+    specificationFile: m.specificationFile || undefined,
+    createdAt: m.createdAt ? (m.createdAt.toISOString?.() || m.createdAt) : new Date().toISOString(),
+  };
+}
+
+// Build the persisted material columns from a client payload (nameFa -> name).
+function materialDataFromBody(b: any) {
+  return {
+    name: (b.nameFa ?? b.name ?? '').trim(),
+    nameEn: (b.nameEn ?? '').trim(),
+    cas: b.cas || 'N/A',
+    irc: b.irc || 'N/A',
+    iupac: b.iupac || null,
+    role: b.role || null,
+    finalProduct: b.finalProduct || null,
+    finalProductEn: b.finalProductEn || null,
+    pharmacopoeia: b.pharmacopoeia || null,
+    standardNameFa: b.standardNameFa || null,
+    standardNameEn: b.standardNameEn || null,
+    specificationFile: b.specificationFile || null,
+  };
+}
+
 function isValidPostgresUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string" || !url.trim()) return false;
   const trimmed = url.trim();
@@ -2470,8 +2510,8 @@ async function startServer() {
   app.get("/api/materials", requireAuth, async (req: any, res) => {
     try {
       const prisma = requirePrisma();
-      const list = await prisma.material.findMany();
-      res.json(list);
+      const list = await prisma.material.findMany({ orderBy: { createdAt: "desc" } });
+      res.json(list.map(mapMaterialToClient));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2479,28 +2519,25 @@ async function startServer() {
 
   app.post("/api/materials", requireAuth, async (req: any, res) => {
     try {
-      const { name, nameEn, cas, irc, reasonForChange } = req.body;
-      if (!name || !nameEn) {
+      const b = req.body;
+      const reasonForChange = b.reasonForChange;
+      const data = materialDataFromBody(b);
+      if (!data.name || !data.nameEn) {
         return res.status(400).json({ error: "وارد کردن نام فارسی و انگلیسی ماده الزامی است" });
       }
 
-      const materialId = generateMaterialId(cas, irc, name, nameEn);
       const prisma = requirePrisma();
+      const materialId = b.id || generateMaterialId(data.cas, data.irc, data.name, data.nameEn);
 
       const existing = await prisma.material.findUnique({ where: { id: materialId } });
       if (existing) {
-        return res.status(400).json({ error: "ماده‌ای با این شناسه / مشخصات CAS و IRC قبلاً در سیستم ثبت شده است" });
+        return res.status(400).json({ error: "ماده‌ای با این شناسه قبلاً در سیستم ثبت شده است" });
       }
 
-      const newMaterial = {
-        id: materialId,
-        name: name,
-        nameEn: nameEn,
-        cas: cas || "N/A",
-        irc: irc || "N/A"
-      };
-
-      await prisma.material.create({ data: newMaterial });
+      const created = await prisma.material.create({ data: { id: materialId, ...data } });
+      const newMaterial = mapMaterialToClient(created);
+      const name = data.name;
+      const nameEn = data.nameEn;
 
       // Audit Log for Material Creation
       const now = new Date();
@@ -2533,7 +2570,8 @@ async function startServer() {
   app.patch("/api/materials/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { name, nameEn, cas, irc, reasonForChange } = req.body;
+      const b = req.body;
+      const reasonForChange = b.reasonForChange;
       const prisma = requirePrisma();
 
       const current = await prisma.material.findUnique({ where: { id } });
@@ -2541,24 +2579,25 @@ async function startServer() {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
-      const originalData = { name: current.name, nameEn: current.nameEn, cas: current.cas, irc: current.irc };
-      const updatedMaterial = {
-        id: current.id,
-        name: name || current.name,
-        nameEn: nameEn || current.nameEn,
-        cas: cas || current.cas,
-        irc: irc || current.irc
-      };
-
-      await prisma.material.update({
-        where: { id },
-        data: {
-          name: updatedMaterial.name,
-          nameEn: updatedMaterial.nameEn,
-          cas: updatedMaterial.cas,
-          irc: updatedMaterial.irc
-        }
+      const originalData = mapMaterialToClient(current);
+      // Merge: keep the current value when a field is not supplied.
+      const incoming = materialDataFromBody({
+        nameFa: b.nameFa ?? b.name ?? current.name,
+        nameEn: b.nameEn ?? current.nameEn,
+        cas: b.cas ?? current.cas,
+        irc: b.irc ?? current.irc,
+        iupac: b.iupac ?? current.iupac,
+        role: b.role ?? current.role,
+        finalProduct: b.finalProduct ?? current.finalProduct,
+        finalProductEn: b.finalProductEn ?? current.finalProductEn,
+        pharmacopoeia: b.pharmacopoeia ?? current.pharmacopoeia,
+        standardNameFa: b.standardNameFa ?? current.standardNameFa,
+        standardNameEn: b.standardNameEn ?? current.standardNameEn,
+        specificationFile: b.specificationFile ?? current.specificationFile,
       });
+
+      const updated = await prisma.material.update({ where: { id }, data: incoming });
+      const updatedMaterial = mapMaterialToClient(updated);
 
       // Audit Log for Material Update
       const now = new Date();
@@ -2575,8 +2614,8 @@ async function startServer() {
         description: `اطلاعات مستندات مرجع ماده دارویی ${current.name} بروزرسانی گردید.`,
         entityType: "Material",
         entityId: id,
-        entityName: updatedMaterial.name,
-        reasonForChange: reasonForChange || "اصلاح کدهای IRC / CAS رسمی سازمان غذا و دارو",
+        entityName: updatedMaterial.nameFa,
+        reasonForChange: reasonForChange || "اصلاح مشخصات مرجع ماده",
         beforeData: originalData,
         afterData: updatedMaterial
       });

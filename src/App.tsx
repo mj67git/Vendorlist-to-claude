@@ -234,6 +234,15 @@ export default function App() {
     }
   }, [materials]);
 
+  // Load the material catalogue from the backend (PostgreSQL) once authenticated.
+  useEffect(() => {
+    if (!currentUser) return;
+    authFetch('/api/materials')
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: Material[] | null) => { if (Array.isArray(data)) setMaterials(data); })
+      .catch(err => console.error("Failed to load materials from backend. Using local cache.", err));
+  }, [currentUser]);
+
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
     try {
       const saved = localStorage.getItem('app_business_partners');
@@ -583,29 +592,19 @@ export default function App() {
     handleSelectVendor(normalized);
   };
 
-  const logMaterialAudit = (action: string, material: any, beforeValue?: any) => {
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Material Repository',
-        action: action,
-        entityType: 'Material',
-        entityId: material.id,
-        entityName: material.nameFa,
-        severity: action === 'Delete' ? 'high' : 'info',
-        description: `${action} material: ${material.nameFa}`,
-        beforeValue,
-        afterValue: material
-      })
-    }).catch(err => console.error("Failed to sync material audit log:", err));
-  };
-
+  // Material changes are persisted and audited server-side (module "مدیریت مواد"),
+  // so the client only does an optimistic update and syncs to the API.
   const handleAddMaterial = (newMaterial: Material) => {
     setMaterials([newMaterial, ...materials]);
     setToastMsg('ماده اولیه جدید با موفقیت اضافه شد!');
     setTimeout(() => setToastMsg(null), 3000);
-    logMaterialAudit('Create', newMaterial);
+    authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
+      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
+      .catch(err => {
+        setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
+        setToastMsg(err.message || 'ثبت ماده در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
+      });
   };
 
   const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
@@ -613,26 +612,29 @@ export default function App() {
     setMaterials(materials.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
-    logMaterialAudit(customAction || 'Update', updatedMaterial, oldMaterial);
+    authFetch(`/api/materials/${updatedMaterial.id}`, { method: 'PATCH', body: JSON.stringify(updatedMaterial) })
+      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ویرایش ماده'); })
+      .catch(err => {
+        if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
+        setToastMsg(err.message || 'ویرایش ماده در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
+      });
   };
 
   const handleDeleteMaterial = async (id: string) => {
+    const snapshot = materials;
+    setMaterials(materials.filter(m => m.id !== id));
     try {
-      const response = await fetch(`/api/materials/${id}`, { method: 'DELETE' });
+      const response = await authFetch(`/api/materials/${id}`, { method: 'DELETE' });
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'خطا در حذف');
       }
-      
-      const material = materials.find(m => m.id === id);
-      if (material) {
-        logMaterialAudit('Delete', material);
-      }
-      setMaterials(materials.filter(m => m.id !== id));
       setToastMsg('ماده اولیه با موفقیت حذف شد!');
       setTimeout(() => setToastMsg(null), 3000);
     } catch (err: any) {
-      setToastMsg(err.message);
+      setMaterials(snapshot);
+      setToastMsg(err.message || 'حذف ماده در سرور ناموفق بود.');
       setTimeout(() => setToastMsg(null), 5000);
     }
   };
