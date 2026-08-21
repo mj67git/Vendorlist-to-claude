@@ -848,7 +848,11 @@ export default function App() {
               <span className="text-[10px] font-bold text-slate-400">CATEGORIES</span>
             </div>
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
-              const count = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : v.category === id).length;
+              const count = db.filter(v =>
+                id === 'sample' ? (v.category === 'sample' || v.isSample) :
+                id === 'blacklist' ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected')) :
+                (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
+              ).length;
               return (
                 <SidebarButton 
                   key={id}
@@ -1370,7 +1374,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {(Object.entries(categoryLabels) as [Category, any][]).filter(([id]) => id !== 'blacklist').map(([id, meta]) => {
-            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : v.category === id);
+            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected'));
             const verified = id === 'sample' 
               ? catVendors.filter(v => v.status === 'approved').length 
               : catVendors.filter(v => v.grade === 'A' || v.grade === 'B').length;
@@ -2483,7 +2487,7 @@ function CategoryView({
     if (categoryId === 'blacklist') {
       return db.filter(v => !v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'));
     }
-    return db.filter(v => v.category === categoryId);
+    return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
   }, [db, categoryId]);
   
   const filteredVendors = useMemo(() => {
@@ -4144,7 +4148,7 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
             ? (v.isSample && v.status === 'rejected')
             : (categoryFilter as string) === 'blacklist'
             ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'))
-            : (v.category === categoryFilter)
+            : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
           )
         : true;
       const matchStatus = statusFilter ? v.status === statusFilter : true;
@@ -4380,6 +4384,29 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     comments: ''
   });
 
+  // Reject → status automation, applied to ANY source/supplier (not just samples).
+  // A single Reject QC result flags the vendor 'rejected' (→ Black List view);
+  // correcting/removing all Reject results restores it. Returns the derived state.
+  const deriveQcOutcome = (records: AnalysisRecord[]): { status: Status; rejectionReasons: string[] | null } => {
+    const existingReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
+    const rejectRecords = records.filter(r => r.decision === 'Reject');
+    if (rejectRecords.length >= 1) {
+      const qcReasons = rejectRecords.map(r =>
+        `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
+      );
+      const existingNonQc = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
+      const merged = [...existingNonQc, ...qcReasons];
+      return { status: 'rejected', rejectionReasons: merged.length > 0 ? merged : null };
+    }
+    // No Reject results remain → drop QC reasons, and restore status if it was auto-rejected by QC.
+    const nonQcReasons = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
+    let status = vendor.status;
+    if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
+      status = (vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional') ? 'conditional' : 'approved';
+    }
+    return { status, rejectionReasons: nonQcReasons.length > 0 ? nonQcReasons : null };
+  };
+
   const handleAddAnalysisSubmit = (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
@@ -4405,26 +4432,14 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     };
 
     const updatedRecords = [...(vendor.analysisRecords || []), record];
-    
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
 
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
+    const statusChangedToRejected = finalStatus === 'rejected' && vendor.status !== 'rejected';
 
     const decisionMapList = { Pass: 'قبول (Pass)', Reject: 'مردود (Reject)', 'Approved Conditional': 'قبول مشروط (Approved Conditional)' };
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
-      action: `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionMapList[record.decision] || record.decision}] (کد QC: ${record.qcCode})`,
+      action: `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionMapList[record.decision] || record.decision}] (کد QC: ${record.qcCode})${statusChangedToRejected ? ' — وضعیت سورس به «مردود» تغییر کرد و به لیست سیاه منتقل شد' : ''}`,
       date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
       user: currentUser?.name || 'کاربر سیستم'
     };
@@ -4432,7 +4447,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : (vendor.rejectionReasons || null),
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, null);
@@ -4512,32 +4527,12 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       user: currentUser?.name || 'کاربر سیستم'
     };
 
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
-
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      } else {
-        // If all reject records removed/changed to pass
-        const nonQcReasons = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = nonQcReasons;
-        if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
-          finalStatus = vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional' ? 'conditional' : 'approved';
-        }
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
 
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : null,
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, 'نتیجه آزمایش با موفقیت ویرایش شد!');
@@ -4556,31 +4551,12 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       user: currentUser?.name || 'کاربر سیستم'
     };
 
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
-
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      } else {
-        const nonQcReasons = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = nonQcReasons;
-        if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
-          finalStatus = vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional' ? 'conditional' : 'approved';
-        }
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
 
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : null,
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, 'نتیجه آزمایش با موفقیت حذف شد!');
