@@ -4609,6 +4609,18 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     return () => { cancelled = true; };
   }, [vendor.id, vendor.isSample, vendor.scores]);
 
+  // Risk assessment history reconstructed from the audit trail (SRI/RPN over time).
+  const [riskHistory, setRiskHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (vendor.isSample) return;
+    let cancelled = false;
+    authFetch(`/api/vendors/${vendor.id}/risk-history`)
+      .then(res => (res.ok ? res.json() : []))
+      .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setRiskHistory(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vendor.id, vendor.isSample, vendor.riskAssessment]);
+
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
   if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'lab') {
@@ -5557,6 +5569,74 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
           ) : (
             <div className="text-center py-10 text-slate-400 text-xs bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
               هیچ ارزیابی ریسکی برای این تامین‌کننده ثبت نشده است.
+            </div>
+          )}
+
+          {/* Risk assessment history & SRI/RPN trend (reconstructed from the audit trail) */}
+          {!showRiskAssessment && riskHistory.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-slate-100">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <History className="w-4 h-4 text-primary" />
+                  <h3 className="font-bold text-slate-800 text-sm">تاریخچه و روند ریسک <span className="text-slate-400 text-xs font-normal font-mono relative top-[0.5px]">(Risk History)</span></h3>
+                </div>
+                <Badge variant="outline" className="text-[11px] px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
+              </div>
+
+              {riskHistory.length >= 2 && (
+                <div className="h-52 w-full mb-5" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={riskHistory.map((h, i) => ({
+                      idx: i + 1,
+                      label: new Date(h.date).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' }),
+                      sri: h.sri,
+                      rpn: h.riskScore,
+                    }))} margin={{ top: 8, right: 16, left: -12, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <RTooltip
+                        contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                      />
+                      <Line type="monotone" dataKey="sri" name="SRI" stroke="#dc2626" strokeWidth={2.5} dot={{ r: 3, fill: '#dc2626' }} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey="rpn" name="RPN" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} activeDot={{ r: 5 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-500 border-b border-slate-100">
+                      <th className="text-right font-semibold py-2 px-2">تاریخ</th>
+                      <th className="text-center font-semibold py-2 px-2">سطح ریسک</th>
+                      <th className="text-center font-semibold py-2 px-2">RPN</th>
+                      <th className="text-center font-semibold py-2 px-2">SRI</th>
+                      <th className="text-right font-semibold py-2 px-2">ارزیاب</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...riskHistory].reverse().map((h) => (
+                      <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                        <td className="py-2 px-2 text-slate-700">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td className="py-2 px-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            h.riskLevel === 'Low' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            h.riskLevel === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            h.riskLevel === 'High' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+                          }`}>
+                            {h.riskLevel === 'Low' ? 'پایین' : h.riskLevel === 'Medium' ? 'متوسط' : h.riskLevel === 'High' ? 'بالا' : (h.riskLevel || '—')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{h.riskScore ?? '—'}</td>
+                        <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{typeof h.sri === 'number' ? h.sri.toFixed(1) : '—'}</td>
+                        <td className="py-2 px-2 text-slate-600">{h.user}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

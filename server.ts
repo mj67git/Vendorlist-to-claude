@@ -1185,6 +1185,38 @@ async function startServer() {
     }
   });
 
+  // Risk assessment history (reconstructed from audit trail)
+  app.get("/api/vendors/:id/risk-history", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const rows = await prisma.auditLog.findMany({
+        where: { entityId: req.params.id, entityType: "Risk Assessment" },
+        orderBy: { timestamp: "asc" },
+      });
+      const history = rows.map((r) => {
+        const after: any = r.afterData || {};
+        const before: any = r.beforeData || {};
+        return {
+          id: r.id,
+          date: r.timestamp.toISOString(),
+          riskLevel: after.riskLevel ?? null,
+          previousRiskLevel: before.riskLevel ?? null,
+          riskScore: typeof after.riskScore === "number" ? after.riskScore : null,
+          sri: typeof after.sri === "number" ? after.sri : null,
+          materialCriticality: after.materialCriticality ?? null,
+          probability: after.probability ?? null,
+          detectability: after.detectability ?? null,
+          sps: after.sps ?? null,
+          user: r.userName || r.userId || "—",
+          reason: r.reasonForChange || "",
+        };
+      });
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create or Update single vendor (Unified Database)
   app.post("/api/vendors", requireAuth, async (req: any, res) => {
     try {
@@ -1302,6 +1334,33 @@ async function startServer() {
             afterData
           }).catch(err => console.error("Audit logging failed on POST /api/vendors update:", err));
         }
+      }
+
+      // Dedicated Risk Assessment audit (enables risk-history reconstruction)
+      try {
+        const oldRisk = existing?.riskAssessment || null;
+        const newRisk = updated?.riskAssessment || null;
+        if (JSON.stringify(oldRisk) !== JSON.stringify(newRisk) && newRisk) {
+          const riskCritical = newRisk.riskLevel === 'High';
+          await AuditService.createAuditRecord({
+            auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-RSK-${Date.now()}`,
+            userId: userObj.username || 'system',
+            userName: newRisk.evaluator || userObj.name || userObj.username || 'کاربر سیستم',
+            role: userObj.role || 'user',
+            module: "Risk Management",
+            entityType: "Risk Assessment",
+            entityId: updated.id,
+            entityName,
+            action: oldRisk ? "Update" : "Create",
+            severity: riskCritical ? "Critical" : "Warning",
+            description: `ثبت/به‌روزرسانی ارزیابی ریسک "${entityName}" — سطح ریسک: ${newRisk.riskLevel}، RPN: ${newRisk.riskScore}، SRI: ${newRisk.sri}`,
+            reasonForChange: reasonForChange || "ثبت ارزیابی ریسک FMEA",
+            beforeData: oldRisk,
+            afterData: newRisk
+          }).catch(err => console.error("Audit logging failed on risk assessment:", err));
+        }
+      } catch (e) {
+        console.error("Risk audit block error:", e);
       }
 
       console.log(`[UnifiedDB] Saved monolithic vendor payload: ${v.id}`);
