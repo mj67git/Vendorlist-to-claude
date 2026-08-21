@@ -20,6 +20,7 @@
 - **آداپتر:** `api/handler.ts` → بسته `dist/server.cjs` (از `npm run build`). `vercel.json` rewrite دارد.
 - **env لازم:** `DATABASE_URL` (PostgreSQL معتبر، مثل Neon/Supabase) و `JWT_SECRET`.
 - **مهاجرت + seed:** جدول‌ها باید با `prisma migrate deploy` ساخته شوند. کاربران پیش‌فرض روی **اولین اجرا** (cold start) اگر جدول users خالی باشد seed می‌شوند (`seedDefaultUsers`).
+- **audit در حالت لوکال:** ثبت رویدادها در localStorage (`app_audit_log`، util `services/localAudit.ts`) از هندلرهای مرکزی (سورس/ماده/شریک: create/update/delete) با before/after؛ `AuditTrailView` در حالت لوکال از همین store می‌خواند (فیلتر/صفحه‌بندی/آمار سمت‌کلاینت). diff فیلدها هم کار می‌کند.
 - **رفع باگ لاگین Vercel:** `prisma generate` به build + postinstall اضافه شد (بدون آن Prisma Client روی Vercel ساخته نمی‌شد و login کرش می‌کرد → صفحه HTML → خطای Safari «The string did not match the expected pattern»). login handler حالا try/catch دارد و همیشه JSON برمی‌گرداند؛ فرانت هم پاسخ غیر-JSON را با پیام واضح مدیریت می‌کند.
 - **⚠️ نکتهٔ لاگین:** دو مسیر seed پسورد متفاوت دارند —
   - محلی (`prisma/seed.ts`): `admin / 123`

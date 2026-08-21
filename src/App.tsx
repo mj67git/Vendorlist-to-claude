@@ -45,6 +45,7 @@ import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { authFetch, isLocalMode } from './services/authFetch';
+import { appendLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
@@ -451,6 +452,22 @@ export default function App() {
       setTimeout(() => setToastMsg(null), 3000);
     }
 
+    if (isLocalMode()) {
+      const isSource = !!(normalized.isSample || normalized.category === 'sample');
+      const rejected = normalized.status === 'rejected' && original?.status !== 'rejected';
+      appendLocalAudit({
+        user: currentUser?.name, role: currentUser?.role,
+        module: isSource ? 'Source Management' : 'Supplier Management',
+        action: original ? 'Update' : 'Create',
+        entityType: isSource ? 'Source' : 'Supplier',
+        entityName: normalized.material || normalized.name || 'سورس',
+        severity: rejected ? 'Critical' : original ? 'Warning' : 'Info',
+        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : ''}`,
+        before: original || null, after: normalized,
+        reason: (normalized as any).reasonForChange || 'به‌روزرسانی رکورد',
+      });
+    }
+
     if (!original) {
       // Fallback to traditional monolithic POST if there is no previous record found to diff safely
       authFetch('/api/vendors', {
@@ -568,10 +585,15 @@ export default function App() {
   };
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
+    const removed = db.find(v => v.id === vendorId);
     setDb(db.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
     setToastMsg('سورس با موفقیت حذف شد!');
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) {
+      const isSource = !!(removed?.isSample || removed?.category === 'sample');
+      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
+    }
     authFetch(`/api/vendors/${vendorId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -586,6 +608,17 @@ export default function App() {
     setDb([normalized, ...db]);
     setToastMsg('سورس جدید با موفقیت اضافه شد!');
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) {
+      const isSource = !!(normalized.isSample || normalized.category === 'sample');
+      appendLocalAudit({
+        user: currentUser?.name, role: currentUser?.role,
+        module: isSource ? 'Source Management' : 'Supplier Management',
+        action: 'Create', entityType: isSource ? 'Source' : 'Supplier',
+        entityName: normalized.material || normalized.name || 'سورس', severity: 'Info',
+        description: `ثبت سورس جدید "${normalized.name || normalized.material}"`,
+        before: null, after: normalized, reason: 'ثبت سورس جدید',
+      });
+    }
     authFetch('/api/vendors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -602,6 +635,7 @@ export default function App() {
     setMaterials([newMaterial, ...materials]);
     setToastMsg('ماده اولیه جدید با موفقیت اضافه شد!');
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: (newMaterial as any).nameFa || (newMaterial as any).name || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${(newMaterial as any).nameFa || (newMaterial as any).name || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
     authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
       .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
       .catch(err => {
@@ -616,6 +650,7 @@ export default function App() {
     setMaterials(materials.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
     authFetch(`/api/materials/${updatedMaterial.id}`, { method: 'PATCH', body: JSON.stringify(updatedMaterial) })
       .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ویرایش ماده'); })
       .catch(err => {
@@ -627,7 +662,14 @@ export default function App() {
 
   const handleDeleteMaterial = async (id: string) => {
     const snapshot = materials;
+    const removed = materials.find(m => m.id === id);
     setMaterials(materials.filter(m => m.id !== id));
+    if (isLocalMode()) {
+      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: (removed as any)?.nameFa || (removed as any)?.name || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${(removed as any)?.nameFa || (removed as any)?.name || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
+      setToastMsg('ماده اولیه با موفقیت حذف شد!');
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     try {
       const response = await authFetch(`/api/materials/${id}`, { method: 'DELETE' });
       if (!response.ok) {
@@ -651,6 +693,7 @@ export default function App() {
     setBusinessPartners([newPartner, ...businessPartners]);
     setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
     authFetch('/api/business-partners', {
       method: 'POST',
       body: JSON.stringify(newPartner)
@@ -658,9 +701,11 @@ export default function App() {
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
+    const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
     setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
     setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
     setTimeout(() => setToastMsg(null), 3000);
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
       body: JSON.stringify(updatedPartner)
@@ -675,6 +720,12 @@ export default function App() {
     // attempt and the successful delete; revert optimistically on rejection.
     const snapshot = businessPartners;
     setBusinessPartners(businessPartners.filter(p => p.id !== id));
+    if (isLocalMode()) {
+      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Delete', entityType: 'BusinessPartner', entityName: partner.name, severity: 'Critical', description: `حذف شریک تجاری "${partner.name}"`, before: partner, after: null, reason: 'حذف شریک تجاری' });
+      setToastMsg('شریک تجاری با موفقیت حذف شد!');
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
       .then(async res => {
         if (!res.ok) {

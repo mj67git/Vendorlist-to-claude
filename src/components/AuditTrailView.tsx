@@ -7,6 +7,8 @@ import {
   Calculator, Award, TrendingUp, Cpu
 } from 'lucide-react';
 import { Pagination } from './Pagination';
+import { isLocalMode } from '../services/authFetch';
+import { readLocalAudit } from '../services/localAudit';
 
 export interface AuditLog {
   id: string;
@@ -254,6 +256,48 @@ export const AuditTrailView: React.FC = () => {
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
     try {
+      const activeSev = quickSeverityFilter || filterSeverity;
+
+      // Local/demo mode: read the client-side audit store instead of the backend.
+      if (isLocalMode()) {
+        const mapLocal = (l: any) => {
+          const d = new Date(l.timestamp);
+          return {
+            id: l.id,
+            date: d.toLocaleDateString('fa-IR'),
+            time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            user: l.userName || l.userId || 'سیستم',
+            role: l.role || 'user',
+            module: l.module,
+            action: l.action,
+            recordName: l.entityName || l.entityId || 'مشخصات',
+            severity: l.severity === 'Critical' ? 'Critical' : l.severity === 'Warning' ? 'Warning' : 'Info',
+            description: l.description || '',
+            before: l.beforeData,
+            after: l.afterData,
+            reason: l.reasonForChange || '—',
+            correlationId: l.correlationId || 'LOCAL',
+            entityType: l.entityType,
+            eventType: l.eventType || l.module,
+            ipAddress: l.ipAddress || 'local',
+            userAgent: l.userAgent || 'Local Demo Mode',
+          };
+        };
+        const q = searchQuery.trim().toLowerCase();
+        const all = readLocalAudit().map(mapLocal).filter((l: any) => {
+          if (filterUser !== 'all' && l.user !== filterUser) return false;
+          if (filterModule !== 'all' && l.module !== filterModule) return false;
+          if (filterAction !== 'all' && l.action !== filterAction) return false;
+          if (activeSev !== 'all' && l.severity !== activeSev) return false;
+          if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
+          return true;
+        });
+        setTotalItems(all.length);
+        setLogs(all.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage));
+        setIsLoading(false);
+        return;
+      }
+
       const token = localStorage.getItem('app_jwt_token');
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -333,6 +377,19 @@ export const AuditTrailView: React.FC = () => {
   // Fetch metrics and filters
   const fetchStatsAndFilters = useCallback(async () => {
     try {
+      if (isLocalMode()) {
+        const all = readLocalAudit();
+        setStats({
+          total: all.length,
+          critical: all.filter((l: any) => l.severity === 'Critical').length,
+          warning: all.filter((l: any) => l.severity === 'Warning').length,
+          activeUsers: new Set(all.map((l: any) => l.userName)).size,
+          lastUpdated: all[0] ? new Date(all[0].timestamp).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '—',
+        });
+        setApiUsers(Array.from(new Set(all.map((l: any) => l.userName).filter(Boolean))));
+        setApiModules(Array.from(new Set(all.map((l: any) => l.module).filter(Boolean))));
+        return;
+      }
       const token = localStorage.getItem('app_jwt_token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
