@@ -1012,12 +1012,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-md font-mono text-xs font-black border ${getGradeBadgeClass(partner.evaluation.grade)}`}>
-                                {partner.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
-                                 partner.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
-                                 `Grade ${partner.evaluation.grade}`}
-                              </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
                                 <Award className="w-3 h-3" />
                                 {gradeApprovalLabel(partner.evaluation.grade).label}
                               </span>
