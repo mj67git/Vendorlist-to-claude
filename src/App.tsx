@@ -6008,7 +6008,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
 
 // --- View: Risk Assessment Form ---
 // FMEA 5×5 risk matrix (Criticality × Probability). Highlights the live cell.
-function RiskHeatmap({ criticality, probability }: { criticality: number; probability: number }) {
+function RiskHeatmap({ criticality, probability, detectability }: { criticality: number; probability: number; detectability: number }) {
   // rows: criticality 5→1 (top=most critical) · cols: probability 1→5
   const rows = [5, 4, 3, 2, 1];
   const cols = [1, 2, 3, 4, 5];
@@ -6039,11 +6039,11 @@ function RiskHeatmap({ criticality, probability }: { criticality: number; probab
                   <div
                     key={`${c}-${p}`}
                     className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-all ${cellColor(c, p)} ${
-                      active ? 'ring-2 ring-white scale-105 z-10 shadow-lg' : 'opacity-70'
+                      active ? 'ring-2 ring-white scale-105 z-10 shadow-lg' : 'opacity-90'
                     }`}
                     title={`Criticality ${c} × Probability ${p} = RPN(2D) ${c * p}`}
                   >
-                    <span className={active ? 'text-white' : 'text-slate-300'}>{c * p}</span>
+                    <span className={active ? 'text-white' : 'text-slate-100'}>{c * p}</span>
                     {active && (
                       <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-white border border-slate-900" />
                     )}
@@ -6060,6 +6060,18 @@ function RiskHeatmap({ criticality, probability }: { criticality: number; probab
           </div>
           <div className="text-center text-[10px] text-slate-400 font-bold mt-1">Probability →</div>
         </div>
+      </div>
+      {/* Detectability factor → full 3D RPN */}
+      <div className="flex items-center justify-center gap-2 mt-3 text-xs" dir="rtl">
+        <span className="text-slate-300 font-mono" dir="ltr">
+          {criticality} × {probability} = <span className="text-amber-300 font-bold">{criticality * probability}</span>
+        </span>
+        <span className="text-slate-500">×</span>
+        <span className="text-slate-300">تشخیص <span className="font-mono text-white font-bold">{detectability}</span></span>
+        <span className="text-slate-500">=</span>
+        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-200 font-mono font-black">
+          RPN {criticality * probability * detectability}
+        </span>
       </div>
       {/* Legend */}
       <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-slate-400" dir="rtl">
@@ -6190,7 +6202,7 @@ function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: 
         </div>
 
         {/* Visual risk matrix */}
-        <RiskHeatmap criticality={criticality} probability={probability} />
+        <RiskHeatmap criticality={criticality} probability={probability} detectability={detectability} />
 
         {/* Info / Formulas */}
         <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 text-sm text-slate-300">
