@@ -152,6 +152,40 @@ const MOCK_AUDIT_LOGS: AuditLog[] = [
   }
 ];
 
+// Persian labels for common audit field keys (fallback: raw key).
+const fieldKeyLabels: Record<string, string> = {
+  status: 'وضعیت', grade: 'گرید', name: 'نام', nameEn: 'نام لاتین', country: 'کشور',
+  material: 'ماده', materialEn: 'ماده (لاتین)', cas: 'CAS', irc: 'IRC', category: 'دسته',
+  contactInfo: 'اطلاعات تماس', totalSPS: 'امتیاز SPS', scores: 'نمرات', riskLevel: 'سطح ریسک',
+  riskScore: 'RPN', sri: 'SRI', decision: 'تصمیم', deviationReason: 'انحراف', qcCode: 'کد QC',
+  evaluator: 'ارزیاب', role: 'نقش', username: 'نام کاربری', mustChangePassword: 'اجبار تغییر رمز',
+  initialSampleStatus: 'وضعیت اولیهٔ نمونه', rejectionReasons: 'دلایل رد', totalScore: 'امتیاز کل',
+};
+
+const fmtVal = (v: any): string => {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+};
+
+// Compute the changed fields between two audit snapshots.
+function computeFieldDiff(before: any, after: any): { key: string; label: string; from: string; to: string; kind: 'added' | 'removed' | 'changed' }[] {
+  const bef = before && typeof before === 'object' ? before : {};
+  const aft = after && typeof after === 'object' ? after : {};
+  const keys = Array.from(new Set([...Object.keys(bef), ...Object.keys(aft)]));
+  const rows: { key: string; label: string; from: string; to: string; kind: 'added' | 'removed' | 'changed' }[] = [];
+  for (const k of keys) {
+    const from = fmtVal(bef[k]);
+    const to = fmtVal(aft[k]);
+    if (from === to) continue;
+    const inBef = k in bef && bef[k] !== null && bef[k] !== undefined && bef[k] !== '';
+    const inAft = k in aft && aft[k] !== null && aft[k] !== undefined && aft[k] !== '';
+    const kind = !inBef ? 'added' : !inAft ? 'removed' : 'changed';
+    rows.push({ key: k, label: fieldKeyLabels[k] || k, from, to, kind });
+  }
+  return rows;
+}
+
 export const AuditTrailView: React.FC = () => {
   // Navigation & view states
   const [searchQuery, setSearchQuery] = useState('');
@@ -1293,52 +1327,61 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                 );
               })()}
-              <div className="space-y-3.5 pt-4 border-t border-slate-100">
-                <span className="text-[11px] font-bold text-slate-500 block">بررسی مقایسه‌ای مقادیر (Before / After Comparison):</span>
-                
-                <div className="grid grid-cols-1 gap-3">
-                  {/* Before values */}
-                  <div className="bg-rose-50/30 border border-rose-100 rounded-xl p-3">
-                    <span className="text-[10px] font-bold text-rose-600 block mb-1.5">مقادیر قبل از تغییر (Before)</span>
-                    <div className="font-mono text-[11px] text-rose-800 bg-rose-50/50 p-2 rounded-lg overflow-x-auto text-left" dir="ltr">
-                      {isLoadingDetail ? (
-                        <div className="flex items-center gap-1 text-rose-400 py-1">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span className="italic">در حال بارگذاری تغییرات از دیتابیس...</span>
-                        </div>
-                      ) : selectedLog.before ? (
-                        typeof selectedLog.before === 'object' ? (
-                          <pre className="whitespace-pre-wrap">{JSON.stringify(selectedLog.before, null, 2)}</pre>
-                        ) : (
-                          <span>{selectedLog.before}</span>
-                        )
-                      ) : (
-                        <span className="text-rose-400 italic">No existing record (تعریف اولیه)</span>
-                      )}
-                    </div>
-                  </div>
+              <div className="space-y-3 pt-4 border-t border-slate-100">
+                <span className="text-[11px] font-bold text-slate-500 block">بررسی مقایسه‌ای فیلدها (Field-level Diff):</span>
 
-                  {/* After values */}
-                  <div className="bg-emerald-50/30 border border-emerald-100 rounded-xl p-3">
-                    <span className="text-[10px] font-bold text-emerald-600 block mb-1.5">مقادیر بعد از تغییر (After)</span>
-                    <div className="font-mono text-[11px] text-emerald-800 bg-emerald-50/50 p-2 rounded-lg overflow-x-auto text-left" dir="ltr">
-                      {isLoadingDetail ? (
-                        <div className="flex items-center gap-1 text-emerald-400 py-1">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span className="italic">در حال بارگذاری تغییرات از دیتابیس...</span>
-                        </div>
-                      ) : selectedLog.after ? (
-                        typeof selectedLog.after === 'object' ? (
-                          <pre className="whitespace-pre-wrap">{JSON.stringify(selectedLog.after, null, 2)}</pre>
-                        ) : (
-                          <span>{selectedLog.after}</span>
-                        )
-                      ) : (
-                        <span className="text-emerald-400 italic">Record Deleted (حذف شده)</span>
-                      )}
-                    </div>
+                {isLoadingDetail ? (
+                  <div className="flex items-center gap-1.5 text-slate-400 py-3 text-xs">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span className="italic">در حال بارگذاری تغییرات از دیتابیس...</span>
                   </div>
-                </div>
+                ) : (() => {
+                  const diff = computeFieldDiff(selectedLog.before, selectedLog.after);
+                  const bothObjects = (selectedLog.before && typeof selectedLog.before === 'object') || (selectedLog.after && typeof selectedLog.after === 'object');
+                  if (diff.length === 0) {
+                    return (
+                      <div className="text-[11px] text-slate-400 italic bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        {!selectedLog.before && selectedLog.after ? 'رکورد جدید ایجاد شده (بدون مقدار قبلی).'
+                          : selectedLog.before && !selectedLog.after ? 'رکورد حذف شده است.'
+                          : bothObjects ? 'تغییری در فیلدها ثبت نشده است.'
+                          : 'جزئیات فیلدی برای این رویداد در دسترس نیست.'}
+                      </div>
+                    );
+                  }
+                  const kindStyle = {
+                    added: { row: 'bg-emerald-50/40 border-emerald-100', tag: 'bg-emerald-100 text-emerald-700', label: 'افزوده' },
+                    removed: { row: 'bg-rose-50/40 border-rose-100', tag: 'bg-rose-100 text-rose-700', label: 'حذف' },
+                    changed: { row: 'bg-amber-50/40 border-amber-100', tag: 'bg-amber-100 text-amber-700', label: 'تغییر' },
+                  } as const;
+                  return (
+                    <div className="space-y-1.5">
+                      {diff.map(d => {
+                        const s = kindStyle[d.kind];
+                        return (
+                          <div key={d.key} className={`rounded-lg border p-2.5 ${s.row}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] font-bold text-slate-700">{d.label}</span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${s.tag}`}>{s.label}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] font-mono" dir="ltr">
+                              <span className="flex-1 text-rose-700 bg-rose-50/70 rounded px-2 py-1 line-through decoration-rose-300 break-all">{d.from}</span>
+                              <span className="text-slate-400 shrink-0">→</span>
+                              <span className="flex-1 text-emerald-700 bg-emerald-50/70 rounded px-2 py-1 font-bold break-all">{d.to}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Raw JSON fallback for full traceability */}
+                      <details className="mt-2">
+                        <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600 select-none">نمایش داده خام JSON (before / after)</summary>
+                        <div className="grid grid-cols-1 gap-2 mt-2" dir="ltr">
+                          <pre className="whitespace-pre-wrap font-mono text-[10px] text-rose-800 bg-rose-50/50 border border-rose-100 p-2 rounded-lg overflow-x-auto">{selectedLog.before ? (typeof selectedLog.before === 'object' ? JSON.stringify(selectedLog.before, null, 2) : String(selectedLog.before)) : 'null'}</pre>
+                          <pre className="whitespace-pre-wrap font-mono text-[10px] text-emerald-800 bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg overflow-x-auto">{selectedLog.after ? (typeof selectedLog.after === 'object' ? JSON.stringify(selectedLog.after, null, 2) : String(selectedLog.after)) : 'null'}</pre>
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
