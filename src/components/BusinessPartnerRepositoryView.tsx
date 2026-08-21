@@ -54,7 +54,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // Search & Filters state
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<BusinessPartnerType | 'All'>('All');
-  const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'All'>('All');
+  const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'Blacklisted' | 'All'>('All');
   const [gradeFilter, setGradeFilter] = useState<SOPGrade | 'All'>('All');
   const [sopStatusFilter, setSopStatusFilter] = useState<SOPSupplierStatus | 'All'>('All');
   const [countryFilter, setCountryFilter] = useState<string>('All');
@@ -89,6 +89,24 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       .catch(() => {});
     return () => { cancelled = true; };
   }, [isViewModalOpen, selectedPartner]);
+
+  // Blacklist workflow: blacklisting requires a reason (captured in the audit
+  // trail); restoring returns the partner to Active.
+  const [blacklistTarget, setBlacklistTarget] = useState<BusinessPartner | null>(null);
+  const [blacklistReason, setBlacklistReason] = useState('');
+
+  const confirmBlacklist = () => {
+    if (!blacklistTarget || !blacklistReason.trim()) return;
+    onEditPartner({ ...blacklistTarget, status: 'Blacklisted', reasonForChange: `افزودن به لیست سیاه: ${blacklistReason.trim()}` } as any);
+    setSelectedPartner(prev => (prev && prev.id === blacklistTarget.id ? { ...prev, status: 'Blacklisted' } : prev));
+    setBlacklistTarget(null);
+    setBlacklistReason('');
+  };
+
+  const handleRestoreFromBlacklist = (partner: BusinessPartner) => {
+    onEditPartner({ ...partner, status: 'Active', reasonForChange: 'خروج از لیست سیاه و بازگرداندن به وضعیت فعال' } as any);
+    setSelectedPartner(prev => (prev && prev.id === partner.id ? { ...prev, status: 'Active' } : prev));
+  };
 
   // Modal active tab when editing/creating a supplier: 'general' | 'evaluation'
   const [activeModalTab, setActiveModalTab] = useState<'general' | 'evaluation'>('general');
@@ -797,6 +815,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <option value="All">همه وضعیت‌ها</option>
               <option value="Active">فعال (Active)</option>
               <option value="Inactive">غیرفعال (Inactive)</option>
+              <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
             </select>
           </div>
 
@@ -945,8 +964,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             <CheckCircle2 className="w-3 h-3" />
                             Active
                           </span>
+                        ) : partner.status === 'Blacklisted' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-600 text-white border border-rose-700">
+                            <AlertTriangle className="w-3 h-3" />
+                            Blacklist
+                          </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                             <XCircle className="w-3 h-3" />
                             Inactive
                           </span>
@@ -1582,12 +1606,38 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
                     <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" />{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
                     <span>•</span>
-                    <span>وضعیت سیستم: {selectedPartner.status === 'Active' ? <strong className="text-teal-600">فعال (Active)</strong> : <strong className="text-rose-600">غیرفعال (Inactive)</strong>}</span>
+                    <span>وضعیت سیستم: {
+                      selectedPartner.status === 'Active' ? <strong className="text-teal-600">فعال (Active)</strong> :
+                      selectedPartner.status === 'Blacklisted' ? <strong className="text-rose-600">⛔ لیست سیاه (Blacklisted)</strong> :
+                      <strong className="text-amber-600">غیرفعال (Inactive)</strong>
+                    }</span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
+                {currentUser?.role === 'admin' && selectedPartner.status !== 'Blacklisted' && (
+                  <button
+                    type="button"
+                    onClick={() => { setBlacklistTarget(selectedPartner); setBlacklistReason(''); }}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="افزودن به لیست سیاه"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>لیست سیاه</span>
+                  </button>
+                )}
+                {currentUser?.role === 'admin' && selectedPartner.status === 'Blacklisted' && (
+                  <button
+                    type="button"
+                    onClick={() => handleRestoreFromBlacklist(selectedPartner)}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="خروج از لیست سیاه"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>خروج از لیست سیاه</span>
+                  </button>
+                )}
                 {currentUser?.role === 'admin' && (
                   <button
                     type="button"
@@ -1620,6 +1670,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
             {/* Scrollable Modal Body */}
             <div className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
+
+            {selectedPartner.status === 'Blacklisted' && (
+              <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-300 rounded-2xl">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <div className="font-black text-rose-800">این شریک تجاری در لیست سیاه قرار دارد</div>
+                  <p className="text-xs text-rose-700 mt-0.5">امکان انتخاب این شریک برای سورس‌های جدید وجود ندارد. دلیل قرارگیری در لیست سیاه در ردیابی تغییرات (Audit Trail) ثبت شده است.</p>
+                </div>
+              </div>
+            )}
 
             {/* ========================================================
                CASE A: MANUFACTURER DETAIL DASHBOARD
@@ -1952,6 +2012,56 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 className="px-6 py-2.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-slate-800 font-sans font-bold text-xs transition-colors cursor-pointer"
               >
                 بستن
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Blacklist Confirmation Modal (reason required) */}
+      {blacklistTarget && createPortal(
+        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 text-right fade-in">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="p-2.5 bg-rose-600 text-white rounded-xl">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-sm">افزودن به لیست سیاه</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">{blacklistTarget.name}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              با این کار، این شریک تجاری در لیست سیاه قرار می‌گیرد و دیگر قابل انتخاب برای سورس‌های جدید نخواهد بود. ثبت دلیل الزامی است و در ردیابی تغییرات ذخیره می‌شود.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">دلیل قرارگیری در لیست سیاه <span className="text-rose-500">*</span></label>
+              <textarea
+                dir="rtl"
+                rows={3}
+                value={blacklistReason}
+                onChange={e => setBlacklistReason(e.target.value)}
+                placeholder="مثلاً: عدم انطباق مکرر کیفی، تخلف قراردادی، مشکلات رگولاتوری..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-rose-500 focus:bg-white resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setBlacklistTarget(null); setBlacklistReason(''); }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                disabled={!blacklistReason.trim()}
+                onClick={confirmBlacklist}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>تأیید و افزودن به لیست سیاه</span>
               </button>
             </div>
           </div>

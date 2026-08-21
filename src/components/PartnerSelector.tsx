@@ -87,6 +87,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   // Filter partners. In anyType mode, every partner (manufacturer or supplier)
   // is selectable — they are independent now.
   const availablePartners = partners.filter(p => {
+    // Blacklisted partners cannot be selected for new/edited sources.
+    if (p.status === 'Blacklisted' && p.id !== selectedId) return false;
     if (anyType) return true;
     return p.type === type;
   });
