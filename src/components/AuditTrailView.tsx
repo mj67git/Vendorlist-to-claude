@@ -9,6 +9,7 @@ import {
 import { Pagination } from './Pagination';
 import { isLocalMode } from '../services/authFetch';
 import { readLocalAudit } from '../services/localAudit';
+import { exportAuditToExcel } from '../utils/excelExport';
 
 export interface AuditLog {
   id: string;
@@ -500,6 +501,66 @@ export const AuditTrailView: React.FC = () => {
     setCurrentPage(1);
   };
 
+  // Export ALL records matching the current filters (not just the current page).
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const activeSev = quickSeverityFilter || filterSeverity;
+      const q = searchQuery.trim().toLowerCase();
+      const mapRow = (l: any) => {
+        const d = new Date(l.timestamp || l.createdAt);
+        return {
+          date: d.toLocaleDateString('fa-IR'),
+          time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          user: l.userName || l.userId || 'سیستم',
+          role: l.role || 'user',
+          module: l.module,
+          action: l.action,
+          recordName: l.entityName || l.entityId || 'مشخصات',
+          severity: l.severity === 'Critical' ? 'Critical' : l.severity === 'Warning' ? 'Warning' : 'Info',
+          description: l.description || '',
+          reason: l.reasonForChange || '',
+          before: l.beforeData,
+          after: l.afterData,
+        };
+      };
+      let rows: any[] = [];
+      if (isLocalMode()) {
+        rows = readLocalAudit().map(mapRow).filter((l: any) => {
+          if (filterUser !== 'all' && l.user !== filterUser) return false;
+          if (filterModule !== 'all' && l.module !== filterModule) return false;
+          if (filterAction !== 'all' && l.action !== filterAction) return false;
+          if (activeSev !== 'all' && l.severity !== activeSev) return false;
+          if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
+          return true;
+        });
+      } else {
+        const token = localStorage.getItem('app_jwt_token');
+        const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const params = new URLSearchParams({
+          page: '1', limit: '10000',
+          userId: filterUser !== 'all' ? filterUser : '',
+          module: filterModule !== 'all' ? filterModule : '',
+          eventType: filterEventType !== 'all' ? filterEventType : '',
+          action: filterAction !== 'all' ? filterAction : '',
+          severity: activeSev !== 'all' ? activeSev : '',
+          quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
+          startDate, endDate, query: searchQuery,
+        });
+        const res = await fetch(`/api/audit-logs?${params.toString()}`, { headers });
+        if (res.ok) { const j = await res.json(); rows = (j.data || []).map(mapRow); }
+      }
+      if (rows.length === 0) { alert('رکوردی برای خروجی یافت نشد.'); return; }
+      exportAuditToExcel(rows);
+    } catch (err) {
+      console.error('Audit export failed:', err);
+      alert('خطا در تهیهٔ خروجی Excel.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
@@ -524,6 +585,14 @@ export const AuditTrailView: React.FC = () => {
 
         {/* TOP METRIC CHIPS */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <button
+            onClick={handleExport}
+            disabled={isExporting || stats.total === 0}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            خروجی Excel
+          </button>
           <div className="bg-white border border-slate-100 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
             <span className="text-[11px] text-slate-400 font-medium">کل لاگ‌ها:</span>

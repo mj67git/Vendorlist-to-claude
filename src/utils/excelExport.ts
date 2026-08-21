@@ -708,3 +708,138 @@ export function exportBusinessPartnersToExcel(
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   XLSX.writeFile(wb, `گزارش_شرکای_تجاری_${dateStr}.xlsx`);
 }
+
+/**
+ * Exports the Audit Trail to a styled Excel workbook, matching the Business
+ * Partners export format (header fill 1E3A8A, Segoe UI, thin borders, RTL,
+ * coloured severity cells).
+ */
+export interface AuditExportRow {
+  date?: string; time?: string; user?: string; role?: string; module?: string;
+  action?: string; recordName?: string; severity?: string; description?: string;
+  reason?: string; before?: any; after?: any;
+}
+
+export function exportAuditToExcel(rows: AuditExportRow[]) {
+  const roleFa: Record<string, string> = {
+    admin: 'مدیر سیستم', qa: 'واحد کیفیت', lab: 'آزمایشگاه', commercial: 'بازرگانی',
+    planning: 'برنامه‌ریزی', finance: 'مالی', guest: 'مهمان', user: 'کاربر',
+  };
+  const actionFa: Record<string, string> = {
+    Create: 'ایجاد', Update: 'ویرایش', Delete: 'حذف', Reject: 'مردودسازی', Restore: 'بازگردانی',
+    LOGIN: 'ورود', Login: 'ورود', LOGOUT: 'خروج', FAILED_LOGIN: 'ورود ناموفق',
+    CREATE_USER: 'ایجاد کاربر', UPDATE_USER: 'ویرایش کاربر', DELETE_USER: 'حذف کاربر',
+    ROLE_CHANGE: 'تغییر نقش', PERMISSION_CHANGE: 'تغییر دسترسی', 'System Update': 'تغییر سیستم',
+  };
+  const sevFa: Record<string, string> = { Info: 'عادی', Warning: 'هشدار', Critical: 'بحرانی' };
+
+  const changeSummary = (before: any, after: any): string => {
+    const bef = before && typeof before === 'object' ? before : {};
+    const aft = after && typeof after === 'object' ? after : {};
+    const keys = Array.from(new Set([...Object.keys(bef), ...Object.keys(aft)]));
+    const parts: string[] = [];
+    for (const k of keys) {
+      const f = bef[k] == null || bef[k] === '' ? '—' : (typeof bef[k] === 'object' ? JSON.stringify(bef[k]) : String(bef[k]));
+      const t = aft[k] == null || aft[k] === '' ? '—' : (typeof aft[k] === 'object' ? JSON.stringify(aft[k]) : String(aft[k]));
+      if (f === t) continue;
+      parts.push(`${k}: ${f} → ${t}`);
+    }
+    if (parts.length === 0) {
+      if (!before && after) return 'رکورد جدید';
+      if (before && !after) return 'رکورد حذف شد';
+      return '—';
+    }
+    return parts.slice(0, 12).join('؛ ');
+  };
+
+  const headers = [
+    'ردیف', 'تاریخ', 'ساعت', 'کاربر', 'سمت', 'ماژول', 'عملیات',
+    'رکورد هدف', 'سطح بحرانیت', 'شرح فعالیت', 'دلیل تغییر', 'خلاصهٔ تغییرات',
+  ];
+  const body = rows.map((r, i) => [
+    i + 1,
+    r.date || '', r.time || '', r.user || '', roleFa[r.role || ''] || r.role || '',
+    r.module || '', actionFa[r.action || ''] || r.action || '',
+    r.recordName || '', sevFa[r.severity || ''] || r.severity || '',
+    r.description || '', r.reason || '', changeSummary(r.before, r.after),
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
+  const SEV_COL = 8; // 'سطح بحرانیت'
+
+  for (const key of Object.keys(ws)) {
+    if (key[0] === '!') continue;
+    const match = key.match(/^([A-Z]+)(\d+)$/);
+    if (!match) continue;
+    const cell = ws[key];
+    const colIndex = XLSX.utils.decode_col(match[1]);
+    const rowIndex = parseInt(match[2], 10) - 1;
+
+    if (rowIndex === 0) {
+      cell.s = {
+        fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
+        font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: {
+          top: { style: 'thin', color: { rgb: '475569' } },
+          bottom: { style: 'medium', color: { rgb: '0F172A' } },
+          left: { style: 'thin', color: { rgb: '475569' } },
+          right: { style: 'thin', color: { rgb: '475569' } },
+        },
+      };
+      continue;
+    }
+
+    cell.s = {
+      fill: { patternType: 'solid', fgColor: { rgb: rowIndex % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+      font: { name: 'Segoe UI', sz: 9, color: { rgb: '1E293B' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        right: { style: 'thin', color: { rgb: 'E2E8F0' } },
+      },
+    };
+
+    // Right-align free-text columns (record, description, reason, changes)
+    if ([7, 9, 10, 11].includes(colIndex)) cell.s.alignment.horizontal = 'right';
+
+    // Severity colour
+    if (colIndex === SEV_COL) {
+      const v = String(cell.v || '');
+      if (v.includes('بحرانی')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'DC2626' } };
+      } else if (v.includes('هشدار')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'D97706' } };
+      } else if (v.includes('عادی')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'D1FAE5' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '059669' } };
+      }
+    }
+  }
+
+  ws['!cols'] = [
+    { wch: 6 },   // ردیف
+    { wch: 14 },  // تاریخ
+    { wch: 12 },  // ساعت
+    { wch: 20 },  // کاربر
+    { wch: 16 },  // سمت
+    { wch: 24 },  // ماژول
+    { wch: 14 },  // عملیات
+    { wch: 26 },  // رکورد هدف
+    { wch: 16 },  // سطح بحرانیت
+    { wch: 40 },  // شرح
+    { wch: 28 },  // دلیل
+    { wch: 50 },  // خلاصهٔ تغییرات
+  ];
+  if (!ws['!views']) ws['!views'] = [];
+  ws['!views'].push({ RTL: true });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ردیابی تغییرات');
+  const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
+  XLSX.writeFile(wb, `گزارش_Audit_${dateStr}.xlsx`);
+}
