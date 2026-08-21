@@ -4384,10 +4384,17 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     comments: ''
   });
 
-  // Reject → status automation, applied to ANY source/supplier (not just samples).
-  // A single Reject QC result flags the vendor 'rejected' (→ Black List view);
-  // correcting/removing all Reject results restores it. Returns the derived state.
+  // Reject → status automation.
+  // Samples: a single Reject QC result auto-flags 'rejected' (→ Black List); this is
+  // acceptable because a sample is a one-shot go/no-go decision.
+  // Sources/suppliers: NO automatic status change — a source can have many results and
+  // one failure should not blacklist it automatically. The QA/admin decides manually via
+  // the decision box, with a mandatory explanation (logged to audit + source).
   const deriveQcOutcome = (records: AnalysisRecord[]): { status: Status; rejectionReasons: string[] | null } => {
+    const isSampleVendor = vendor.isSample || vendor.category === 'sample';
+    if (!isSampleVendor) {
+      return { status: vendor.status, rejectionReasons: vendor.rejectionReasons || null };
+    }
     const existingReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
     const rejectRecords = records.filter(r => r.decision === 'Reject');
     if (rejectRecords.length >= 1) {
@@ -4562,7 +4569,57 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     }, 'نتیجه آزمایش با موفقیت حذف شد!');
     setConfirmDeleteAnalysisId(null);
   };
-  
+
+  // Admin manual decision for sources/suppliers (not samples): reject → Black List, or restore.
+  const [showRejectBox, setShowRejectBox] = useState(false);
+  const [rejectDecisionReason, setRejectDecisionReason] = useState('');
+
+  const handleAdminRejectSource = () => {
+    if (!rejectDecisionReason.trim()) {
+      alert('لطفاً دلیل رد این سورس را وارد کنید (الزامی).');
+      return;
+    }
+    const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
+    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `رد سورس "${vendor.material}" (${vendor.name}) و انتقال به لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
+    onSave({
+      ...vendor,
+      status: 'rejected',
+      rejectionReasons: [...existingNonQc, reasonLine],
+      reasonForChange: `رد سورس بر اساس تصمیم کیفی: ${rejectDecisionReason.trim()}`,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, 'سورس به لیست سیاه منتقل شد.');
+    setShowRejectBox(false);
+    setRejectDecisionReason('');
+  };
+
+  const handleAdminRestoreSource = () => {
+    if (!rejectDecisionReason.trim()) {
+      alert('لطفاً دلیل بازگردانی این سورس را وارد کنید (الزامی).');
+      return;
+    }
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `بازگردانی سورس "${vendor.material}" (${vendor.name}) از لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
+    onSave({
+      ...vendor,
+      status: 'approved',
+      rejectionReasons: null,
+      reasonForChange: `بازگردانی سورس از لیست سیاه: ${rejectDecisionReason.trim()}`,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, 'سورس از لیست سیاه بازگردانی شد.');
+    setShowRejectBox(false);
+    setRejectDecisionReason('');
+  };
+
   const evalFormRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -5765,7 +5822,6 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
             const total = recs.length;
             const passRate = total > 0 ? Math.round(((pass + cond) / total) * 100) : 0;
             const sorted = [...recs].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-            const dotColor = (d: string) => d === 'Pass' ? 'bg-emerald-500 border-emerald-200' : d === 'Approved Conditional' ? 'bg-blue-500 border-blue-200' : 'bg-rose-500 border-rose-200';
             return (
               <div className="mb-6 space-y-4">
                 {/* Summary strip */}
@@ -5788,40 +5844,78 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
                   </div>
                 </div>
 
-                {/* Chronological timeline */}
+                {/* Lab results trend line chart (Pass=100 / Conditional=50 / Reject=0) */}
                 <div className="bg-slate-50/50 border border-slate-200/60 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-4">
-                    <History className="w-4 h-4 text-indigo-600" />
-                    <h4 className="font-bold text-slate-800 text-xs">روند زمانی نتایج آزمایشگاهی <span className="text-slate-400 font-normal font-mono">(Lab Timeline)</span></h4>
+                    <Activity className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-bold text-slate-800 text-xs">روند کیفی نتایج آزمایشگاهی <span className="text-slate-400 font-normal font-mono">(Lab Quality Trend)</span></h4>
                   </div>
-                  <div className="overflow-x-auto pb-2">
-                    <div className="flex items-start gap-0 min-w-max px-2" dir="ltr">
-                      {sorted.map((r, i) => (
-                        <div key={r.id || i} className="flex items-center">
-                          <div className="flex flex-col items-center w-28">
-                            <div className={`w-4 h-4 rounded-full border-4 ${dotColor(r.decision)} shadow-sm z-10`} title={r.decision} />
-                            <div className="mt-2 text-center">
-                              <div className="text-[10px] font-mono font-bold text-slate-700" dir="ltr">{r.date}</div>
-                              <div className="text-[10px] font-mono text-slate-500 truncate max-w-[6.5rem]" dir="ltr">{r.qcCode}</div>
-                              <div className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                r.decision === 'Pass' ? 'bg-emerald-100 text-emerald-700' :
-                                r.decision === 'Approved Conditional' ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'
-                              }`}>
-                                {r.decision === 'Pass' ? 'Pass' : r.decision === 'Approved Conditional' ? 'Cond.' : 'Reject'}
-                              </div>
-                              {r.deviationReason && r.deviationReason !== 'None' && (
-                                <div className="mt-0.5 text-[9px] font-bold text-amber-700">{r.deviationReason}</div>
-                              )}
-                            </div>
-                          </div>
-                          {i < sorted.length - 1 && (
-                            <div className="h-0.5 w-8 bg-slate-300 -mt-[3.25rem]" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                  <div className="h-56 w-full" dir="ltr">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sorted.map((r) => ({
+                        label: r.date,
+                        qc: r.qcCode,
+                        level: r.decision === 'Pass' ? 100 : r.decision === 'Approved Conditional' ? 50 : 0,
+                        decision: r.decision,
+                      }))} margin={{ top: 10, right: 16, left: -8, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                        <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tickFormatter={(v: number) => v === 100 ? 'Pass' : v === 50 ? 'Cond.' : v === 0 ? 'Reject' : ''} tick={{ fill: '#94a3b8', fontSize: 10 }} width={48} />
+                        <RTooltip
+                          contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                          formatter={(v: any) => [v === 100 ? 'قبول (Pass)' : v === 50 ? 'قبول مشروط' : 'مردود (Reject)', 'نتیجه']}
+                          labelFormatter={(l: any, p: any) => `${l}${p && p[0] ? ' • ' + p[0].payload.qc : ''}`}
+                        />
+                        <Line type="monotone" dataKey="level" name="نتیجه" stroke="#4f46e5" strokeWidth={2.5}
+                          dot={(props: any) => {
+                            const c = props.payload.decision === 'Pass' ? '#10b981' : props.payload.decision === 'Approved Conditional' ? '#3b82f6' : '#e11d48';
+                            return <circle key={props.key} cx={props.cx} cy={props.cy} r={4.5} fill={c} stroke="#fff" strokeWidth={1.5} />;
+                          }}
+                          activeDot={{ r: 6 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
+
+                {/* Admin decision box for sources/suppliers (not samples) */}
+                {!(vendor.isSample || vendor.category === 'sample') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+                  <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/40 border-amber-200'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'}`} />
+                      <h4 className="font-bold text-slate-800 text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-slate-400 font-normal font-mono">(QA Decision)</span></h4>
+                    </div>
+                    {vendor.status === 'rejected' ? (
+                      <p className="text-[11px] text-rose-700 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                    ) : (
+                      <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                        وجود {rej > 0 ? <strong className="text-rose-600">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
+                      </p>
+                    )}
+                    {showRejectBox ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={rejectDecisionReason}
+                          onChange={e => setRejectDecisionReason(e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); }} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">انصراف</button>
+                          {vendor.status === 'rejected' ? (
+                            <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
+                          ) : (
+                            <button type="button" onClick={handleAdminRejectSource} className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg">تأیید رد و انتقال به لیست سیاه</button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setShowRejectBox(true)} className={`px-4 py-1.5 text-xs font-bold text-white rounded-lg ${vendor.status === 'rejected' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                        {vendor.status === 'rejected' ? 'بازگردانی سورس از لیست سیاه' : 'رد سورس و انتقال به لیست سیاه'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}
