@@ -5780,6 +5780,76 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
             </div>
           )}
 
+          {/* Lab results summary + chronological timeline */}
+          {vendor.analysisRecords && vendor.analysisRecords.length > 0 && (() => {
+            const recs = vendor.analysisRecords!;
+            const pass = recs.filter(r => r.decision === 'Pass').length;
+            const cond = recs.filter(r => r.decision === 'Approved Conditional').length;
+            const rej = recs.filter(r => r.decision === 'Reject').length;
+            const total = recs.length;
+            const passRate = total > 0 ? Math.round(((pass + cond) / total) * 100) : 0;
+            const sorted = [...recs].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            const dotColor = (d: string) => d === 'Pass' ? 'bg-emerald-500 border-emerald-200' : d === 'Approved Conditional' ? 'bg-blue-500 border-blue-200' : 'bg-rose-500 border-rose-200';
+            return (
+              <div className="mb-6 space-y-4">
+                {/* Summary strip */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-emerald-700">{pass}</div>
+                    <div className="text-[11px] font-bold text-emerald-600">قبول (Pass)</div>
+                  </div>
+                  <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-blue-700">{cond}</div>
+                    <div className="text-[11px] font-bold text-blue-600">قبول مشروط</div>
+                  </div>
+                  <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-rose-700">{rej}</div>
+                    <div className="text-[11px] font-bold text-rose-600">مردود (Reject)</div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                    <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700' : passRate >= 50 ? 'text-amber-600' : 'text-rose-700'}`}>{passRate}%</div>
+                    <div className="text-[11px] font-bold text-slate-500">نرخ قبولی</div>
+                  </div>
+                </div>
+
+                {/* Chronological timeline */}
+                <div className="bg-slate-50/50 border border-slate-200/60 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <History className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-bold text-slate-800 text-xs">روند زمانی نتایج آزمایشگاهی <span className="text-slate-400 font-normal font-mono">(Lab Timeline)</span></h4>
+                  </div>
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex items-start gap-0 min-w-max px-2" dir="ltr">
+                      {sorted.map((r, i) => (
+                        <div key={r.id || i} className="flex items-center">
+                          <div className="flex flex-col items-center w-28">
+                            <div className={`w-4 h-4 rounded-full border-4 ${dotColor(r.decision)} shadow-sm z-10`} title={r.decision} />
+                            <div className="mt-2 text-center">
+                              <div className="text-[10px] font-mono font-bold text-slate-700" dir="ltr">{r.date}</div>
+                              <div className="text-[10px] font-mono text-slate-500 truncate max-w-[6.5rem]" dir="ltr">{r.qcCode}</div>
+                              <div className={`mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                r.decision === 'Pass' ? 'bg-emerald-100 text-emerald-700' :
+                                r.decision === 'Approved Conditional' ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'
+                              }`}>
+                                {r.decision === 'Pass' ? 'Pass' : r.decision === 'Approved Conditional' ? 'Cond.' : 'Reject'}
+                              </div>
+                              {r.deviationReason && r.deviationReason !== 'None' && (
+                                <div className="mt-0.5 text-[9px] font-bold text-amber-700">{r.deviationReason}</div>
+                              )}
+                            </div>
+                          </div>
+                          {i < sorted.length - 1 && (
+                            <div className="h-0.5 w-8 bg-slate-300 -mt-[3.25rem]" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Lab Records List / Table */}
           {vendor.analysisRecords && vendor.analysisRecords.length > 0 ? (
             <div className="overflow-x-auto rounded-xl border border-slate-200/60 shadow-xs">
