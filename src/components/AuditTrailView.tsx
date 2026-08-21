@@ -199,6 +199,8 @@ export const AuditTrailView: React.FC = () => {
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const advancedFilterCount = [filterUser, filterModule, filterEventType, filterAction, filterSeverity].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
 
   // Sorting States
   const [sortField, setSortField] = useState<'date' | 'time' | 'user' | 'severity'>('date');
@@ -475,15 +477,6 @@ export const AuditTrailView: React.FC = () => {
             <span className="text-[11px] text-rose-500 font-medium">خطای بحرانی:</span>
             <span className="text-xs font-bold font-mono text-rose-700">{stats.critical}</span>
           </div>
-          <div className="bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-xl flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-            <span className="text-[11px] text-amber-600 font-medium">هشدارها:</span>
-            <span className="text-xs font-bold font-mono text-amber-700">{stats.warning}</span>
-          </div>
-          <div className="bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-xl flex items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-medium">آخرین بروزرسانی:</span>
-            <span className="text-xs font-bold font-mono text-slate-600">{stats.lastUpdated}</span>
-          </div>
         </div>
       </div>
 
@@ -539,6 +532,21 @@ export const AuditTrailView: React.FC = () => {
               هشدارها (Warning)
             </button>
             <button
+              onClick={() => setShowAdvancedFilters(v => !v)}
+              title="فیلترهای پیشرفته"
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                showAdvancedFilters || advancedFilterCount > 0
+                  ? 'bg-[#0071E3] border-[#0071E3] text-white shadow-xs'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              فیلترها
+              {advancedFilterCount > 0 && (
+                <span className="bg-white/25 text-white rounded-full px-1.5 text-[10px] font-black">{advancedFilterCount}</span>
+              )}
+            </button>
+            <button
               onClick={handleResetFilters}
               title="پاک کردن تمامی فیلترها"
               className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 rounded-xl transition-all cursor-pointer"
@@ -548,110 +556,8 @@ export const AuditTrailView: React.FC = () => {
           </div>
         </div>
 
-        {/* QUICK CATEGORY FILTERS (PHASE 5, PHASE 6 & PHASE 7 SECURITY) */}
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-500 ml-1">دسته‌بندی‌های ویژه Audit:</span>
-          <button
-            onClick={() => { setQuickCategoryFilter('all'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-              quickCategoryFilter === 'all'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            همه رویدادها
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('user_activity'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'user_activity'
-                ? 'bg-cyan-600 text-white shadow-xs'
-                : 'bg-cyan-50 text-cyan-800 hover:bg-cyan-100 border border-cyan-200/60'
-            }`}
-          >
-            <Activity className="w-3 h-3" />
-            User Activity (فعالیت کاربران)
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('authentication'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'authentication'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/60'
-            }`}
-          >
-            <Key className="w-3 h-3" />
-            Authentication (ورود و خروج)
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('authorization'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'authorization'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200/60'
-            }`}
-          >
-            <UserIcon className="w-3 h-3" />
-            Authorization (نقش و دسترسی)
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('security_events'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'security_events'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/60'
-            }`}
-          >
-            <ShieldAlert className="w-3 h-3" />
-            Security Events (امنیتی)
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('risk_events'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'risk_events'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60'
-            }`}
-          >
-            <AlertTriangle className="w-3 h-3" />
-            Risk Events (ریسک)
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('fmea_changes'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'fmea_changes'
-                ? 'bg-orange-600 text-white shadow-xs'
-                : 'bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200/60'
-            }`}
-          >
-            <ClipboardList className="w-3 h-3" />
-            FMEA Changes
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('score_changes'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'score_changes'
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200/60'
-            }`}
-          >
-            <Calculator className="w-3 h-3" />
-            Score Changes
-          </button>
-          <button
-            onClick={() => { setQuickCategoryFilter('lab_events'); setCurrentPage(1); }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              quickCategoryFilter === 'lab_events'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60'
-            }`}
-          >
-            <FlaskConical className="w-3 h-3" />
-            Laboratory Events
-          </button>
-        </div>
-
-        {/* DETAILED FILTERS ACCORDION / BOX */}
+        {/* DETAILED FILTERS — collapsible advanced panel */}
+        {showAdvancedFilters && (
         <div className="pt-4 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {/* User Filter */}
           <div className="space-y-1">
@@ -763,6 +669,7 @@ export const AuditTrailView: React.FC = () => {
             />
           </div>
         </div>
+        )}
       </div>
 
       {/* TABLE DATA LIST CONTAINER */}
@@ -780,32 +687,23 @@ export const AuditTrailView: React.FC = () => {
           <table className="w-full text-right border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-xs font-bold border-b border-slate-100">
-                <th className="py-3 px-4 w-[12%]">
-                  <button 
-                    onClick={() => handleSort('date')} 
+                <th className="py-3 px-4 w-[16%]">
+                  <button
+                    onClick={() => handleSort('date')}
                     className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-bold cursor-pointer"
                   >
-                    تاریخ {sortField === 'date' && (sortDirection === 'asc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />)}
+                    تاریخ و ساعت {sortField === 'date' && (sortDirection === 'asc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />)}
                   </button>
                 </th>
-                <th className="py-3 px-4 w-[10%]">
-                  <button 
-                    onClick={() => handleSort('time')} 
-                    className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-bold cursor-pointer"
-                  >
-                    ساعت {sortField === 'time' && (sortDirection === 'asc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />)}
-                  </button>
-                </th>
-                <th className="py-3 px-4 w-[15%]">
-                  <button 
-                    onClick={() => handleSort('user')} 
+                <th className="py-3 px-4 w-[18%]">
+                  <button
+                    onClick={() => handleSort('user')}
                     className="flex items-center gap-1.5 hover:text-slate-800 transition-colors font-bold cursor-pointer"
                   >
                     کاربر {sortField === 'user' && (sortDirection === 'asc' ? <ArrowUpDown className="w-3 h-3 rotate-180" /> : <ArrowUpDown className="w-3 h-3" />)}
                   </button>
                 </th>
-                <th className="py-3 px-4 w-[12%]">سمت</th>
-                <th className="py-3 px-4 w-[13%]">ماژول</th>
+                <th className="py-3 px-4 w-[15%]">ماژول</th>
                 <th className="py-3 px-4 w-[10%]">عملیات</th>
                 <th className="py-3 px-4 w-[15%]">رکورد هدف</th>
                 <th className="py-3 px-4 w-[13%]">
@@ -831,18 +729,20 @@ export const AuditTrailView: React.FC = () => {
                       onClick={() => handleOpenDrawer(log)}
                       className="hover:bg-slate-50/60 transition-all duration-150 cursor-pointer group"
                     >
-                      <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px] font-bold">{log.date}</td>
-                      <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px]">{log.time}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px]">
+                        <span className="text-slate-600 font-bold">{log.date}</span>
+                        <span className="text-slate-400 mr-1.5">{log.time}</span>
+                      </td>
                       <td className="py-3.5 px-4 font-bold text-slate-800">
                         <div className="flex items-center gap-1.5">
                           <div className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
                             <UserIcon className="w-3 h-3" />
                           </div>
-                          <span className="truncate max-w-[120px]">{log.user}</span>
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate max-w-[140px]">{log.user}</span>
+                            <span className="text-slate-400 text-[10px] font-medium truncate max-w-[140px]">{roleLabels[log.role] || log.role}</span>
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
-                        {roleLabels[log.role] || log.role}
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 font-semibold">{log.module}</td>
                       <td className="py-3.5 px-4">
@@ -864,7 +764,7 @@ export const AuditTrailView: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400 font-medium">
+                  <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
                     <div className="flex flex-col items-center gap-2">
                       <AlertCircle className="w-8 h-8 text-slate-300" />
                       <span>هیچ رکورد لاگی با مشخصات انتخابی یافت نشد.</span>
