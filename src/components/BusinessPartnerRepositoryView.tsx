@@ -658,17 +658,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const getSOPStatusBadgeClass = (status?: string) => {
-    switch (status) {
-      case 'Approved Supplier': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Approved with Monitoring': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Conditional Supplier':
-      case 'Conditional Approval': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Pending Review': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-      case 'Blacklist':
-      case 'Rejected': return 'bg-rose-50 text-rose-700 border-rose-200';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      default: return 'bg-muted text-muted-foreground border-border';
+  // نتیجهٔ ارزیابی SOP بر اساس گرید (فقط گرید نمایش داده می‌شود، بدون وضعیت مانیتورینگ)
+  const gradeApprovalLabel = (grade?: string): { label: string; cls: string } => {
+    switch (grade) {
+      case 'A': return { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+      case 'B': return { label: 'Permit Approval', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
+      case 'C': return { label: 'Expired', cls: 'bg-amber-100 text-amber-800 border-amber-300' };
+      case 'D': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
+      case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
+      case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
+      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-slate-300' };
     }
   };
 
@@ -935,7 +934,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <ArrowUpDown className="w-3 h-3 text-slate-400" />
                   </div>
                 </th>
-                <th className="py-3 px-4">ارزیابی SOP Supplier</th>
+                <th className="py-3 px-4">نتیجهٔ ارزیابی SOP</th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('status')}>
                   <div className="flex items-center gap-1">
                     <span>وضعیت سیستم</span>
@@ -999,14 +998,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-md font-mono text-xs font-black border ${getGradeBadgeClass(partner.evaluation.grade)}`}>
-                                {partner.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
-                                 partner.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
-                                 `Grade ${partner.evaluation.grade}`}
-                              </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${getSOPStatusBadgeClass(partner.evaluation.status)}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
                                 <Award className="w-3 h-3" />
-                                {partner.evaluation.status}
+                                {gradeApprovalLabel(partner.evaluation.grade).label}
                               </span>
                               <span className="text-[10px] font-mono text-slate-400 font-bold">
                                 ({partner.evaluation.totalScore}/100)
@@ -1580,8 +1574,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               در انتظار ارزیابی
                             </span>
                           ) : (
-                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getSOPStatusBadgeClass(computedEval.status)}`}>
-                              {computedEval.status}
+                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(computedEval.grade).cls}`}>
+                              {gradeApprovalLabel(computedEval.grade).label}
                             </span>
                           )}
                         </div>
@@ -1926,8 +1920,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
                         <span className="text-[10px] text-slate-400 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
-                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getSOPStatusBadgeClass(selectedPartner.evaluation.status)}`}>
-                            {selectedPartner.evaluation.status}
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(selectedPartner.evaluation.grade).cls}`}>
+                            {gradeApprovalLabel(selectedPartner.evaluation.grade).label}
                           </span>
                         </div>
                       </div>

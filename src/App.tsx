@@ -44,7 +44,7 @@ import { MaterialSelector } from './components/MaterialSelector';
 import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
-import { authFetch } from './services/authFetch';
+import { authFetch, isLocalMode } from './services/authFetch';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
@@ -208,6 +208,7 @@ export default function App() {
             setLoadError(null);
           })
           .catch(err => {
+            if (isLocalMode()) { setLoadError(null); return; }
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
             setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
           })
@@ -848,7 +849,11 @@ export default function App() {
               <span className="text-[10px] font-bold text-slate-400">CATEGORIES</span>
             </div>
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
-              const count = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : v.category === id).length;
+              const count = db.filter(v =>
+                id === 'sample' ? (v.category === 'sample' || v.isSample) :
+                id === 'blacklist' ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected')) :
+                (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
+              ).length;
               return (
                 <SidebarButton 
                   key={id}
@@ -1370,7 +1375,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {(Object.entries(categoryLabels) as [Category, any][]).filter(([id]) => id !== 'blacklist').map(([id, meta]) => {
-            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : v.category === id);
+            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected'));
             const verified = id === 'sample' 
               ? catVendors.filter(v => v.status === 'approved').length 
               : catVendors.filter(v => v.grade === 'A' || v.grade === 'B').length;
@@ -2483,7 +2488,7 @@ function CategoryView({
     if (categoryId === 'blacklist') {
       return db.filter(v => !v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'));
     }
-    return db.filter(v => v.category === categoryId);
+    return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
   }, [db, categoryId]);
   
   const filteredVendors = useMemo(() => {
@@ -4144,7 +4149,7 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
             ? (v.isSample && v.status === 'rejected')
             : (categoryFilter as string) === 'blacklist'
             ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'))
-            : (v.category === categoryFilter)
+            : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
           )
         : true;
       const matchStatus = statusFilter ? v.status === statusFilter : true;
@@ -4380,6 +4385,36 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     comments: ''
   });
 
+  // Reject → status automation.
+  // Samples: a single Reject QC result auto-flags 'rejected' (→ Black List); this is
+  // acceptable because a sample is a one-shot go/no-go decision.
+  // Sources/suppliers: NO automatic status change — a source can have many results and
+  // one failure should not blacklist it automatically. The QA/admin decides manually via
+  // the decision box, with a mandatory explanation (logged to audit + source).
+  const deriveQcOutcome = (records: AnalysisRecord[]): { status: Status; rejectionReasons: string[] | null } => {
+    const isSampleVendor = vendor.isSample || vendor.category === 'sample';
+    if (!isSampleVendor) {
+      return { status: vendor.status, rejectionReasons: vendor.rejectionReasons || null };
+    }
+    const existingReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
+    const rejectRecords = records.filter(r => r.decision === 'Reject');
+    if (rejectRecords.length >= 1) {
+      const qcReasons = rejectRecords.map(r =>
+        `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
+      );
+      const existingNonQc = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
+      const merged = [...existingNonQc, ...qcReasons];
+      return { status: 'rejected', rejectionReasons: merged.length > 0 ? merged : null };
+    }
+    // No Reject results remain → drop QC reasons, and restore status if it was auto-rejected by QC.
+    const nonQcReasons = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
+    let status = vendor.status;
+    if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
+      status = (vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional') ? 'conditional' : 'approved';
+    }
+    return { status, rejectionReasons: nonQcReasons.length > 0 ? nonQcReasons : null };
+  };
+
   const handleAddAnalysisSubmit = (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
@@ -4405,26 +4440,14 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     };
 
     const updatedRecords = [...(vendor.analysisRecords || []), record];
-    
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
 
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
+    const statusChangedToRejected = finalStatus === 'rejected' && vendor.status !== 'rejected';
 
     const decisionMapList = { Pass: 'قبول (Pass)', Reject: 'مردود (Reject)', 'Approved Conditional': 'قبول مشروط (Approved Conditional)' };
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
-      action: `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionMapList[record.decision] || record.decision}] (کد QC: ${record.qcCode})`,
+      action: `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionMapList[record.decision] || record.decision}] (کد QC: ${record.qcCode})${statusChangedToRejected ? ' — وضعیت سورس به «مردود» تغییر کرد و به لیست سیاه منتقل شد' : ''}`,
       date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
       user: currentUser?.name || 'کاربر سیستم'
     };
@@ -4432,7 +4455,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : (vendor.rejectionReasons || null),
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, null);
@@ -4512,32 +4535,12 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       user: currentUser?.name || 'کاربر سیستم'
     };
 
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
-
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      } else {
-        // If all reject records removed/changed to pass
-        const nonQcReasons = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = nonQcReasons;
-        if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
-          finalStatus = vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional' ? 'conditional' : 'approved';
-        }
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
 
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : null,
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, 'نتیجه آزمایش با موفقیت ویرایش شد!');
@@ -4556,37 +4559,68 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       user: currentUser?.name || 'کاربر سیستم'
     };
 
-    let finalStatus = vendor.status;
-    let updatedRejectionReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
-
-    if (vendor.isSample || vendor.category === 'sample') {
-      const rejectRecords = updatedRecords.filter(r => r.decision === 'Reject');
-      if (rejectRecords.length >= 1) {
-        finalStatus = 'rejected';
-        const qcReasons = rejectRecords.map(r => 
-          `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-        );
-        const existingNonQc = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = [...existingNonQc, ...qcReasons];
-      } else {
-        const nonQcReasons = updatedRejectionReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-        updatedRejectionReasons = nonQcReasons;
-        if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
-          finalStatus = vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional' ? 'conditional' : 'approved';
-        }
-      }
-    }
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
 
     onSave({
       ...vendor,
       status: finalStatus,
-      rejectionReasons: updatedRejectionReasons.length > 0 ? updatedRejectionReasons : null,
+      rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, 'نتیجه آزمایش با موفقیت حذف شد!');
     setConfirmDeleteAnalysisId(null);
   };
-  
+
+  // Admin manual decision for sources/suppliers (not samples): reject → Black List, or restore.
+  const [showRejectBox, setShowRejectBox] = useState(false);
+  const [rejectDecisionReason, setRejectDecisionReason] = useState('');
+
+  const handleAdminRejectSource = () => {
+    if (!rejectDecisionReason.trim()) {
+      alert('لطفاً دلیل رد این سورس را وارد کنید (الزامی).');
+      return;
+    }
+    const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
+    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `رد سورس "${vendor.material}" (${vendor.name}) و انتقال به لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
+    onSave({
+      ...vendor,
+      status: 'rejected',
+      rejectionReasons: [...existingNonQc, reasonLine],
+      reasonForChange: `رد سورس بر اساس تصمیم کیفی: ${rejectDecisionReason.trim()}`,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, 'سورس به لیست سیاه منتقل شد.');
+    setShowRejectBox(false);
+    setRejectDecisionReason('');
+  };
+
+  const handleAdminRestoreSource = () => {
+    if (!rejectDecisionReason.trim()) {
+      alert('لطفاً دلیل بازگردانی این سورس را وارد کنید (الزامی).');
+      return;
+    }
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `بازگردانی سورس "${vendor.material}" (${vendor.name}) از لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
+    onSave({
+      ...vendor,
+      status: 'approved',
+      rejectionReasons: null,
+      reasonForChange: `بازگردانی سورس از لیست سیاه: ${rejectDecisionReason.trim()}`,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, 'سورس از لیست سیاه بازگردانی شد.');
+    setShowRejectBox(false);
+    setRejectDecisionReason('');
+  };
+
   const evalFormRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -4608,6 +4642,18 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
       .catch(() => {});
     return () => { cancelled = true; };
   }, [vendor.id, vendor.isSample, vendor.scores]);
+
+  // Risk assessment history reconstructed from the audit trail (SRI/RPN over time).
+  const [riskHistory, setRiskHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (vendor.isSample) return;
+    let cancelled = false;
+    authFetch(`/api/vendors/${vendor.id}/risk-history`)
+      .then(res => (res.ok ? res.json() : []))
+      .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setRiskHistory(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vendor.id, vendor.isSample, vendor.riskAssessment]);
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
@@ -5559,6 +5605,74 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
               هیچ ارزیابی ریسکی برای این تامین‌کننده ثبت نشده است.
             </div>
           )}
+
+          {/* Risk assessment history & SRI/RPN trend (reconstructed from the audit trail) */}
+          {!showRiskAssessment && riskHistory.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-slate-100">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <History className="w-4 h-4 text-primary" />
+                  <h3 className="font-bold text-slate-800 text-sm">تاریخچه و روند ریسک <span className="text-slate-400 text-xs font-normal font-mono relative top-[0.5px]">(Risk History)</span></h3>
+                </div>
+                <Badge variant="outline" className="text-[11px] px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
+              </div>
+
+              {riskHistory.length >= 2 && (
+                <div className="h-52 w-full mb-5" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={riskHistory.map((h, i) => ({
+                      idx: i + 1,
+                      label: new Date(h.date).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' }),
+                      sri: h.sri,
+                      rpn: h.riskScore,
+                    }))} margin={{ top: 8, right: 16, left: -12, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <RTooltip
+                        contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                      />
+                      <Line type="monotone" dataKey="sri" name="SRI" stroke="#dc2626" strokeWidth={2.5} dot={{ r: 3, fill: '#dc2626' }} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey="rpn" name="RPN" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} activeDot={{ r: 5 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-500 border-b border-slate-100">
+                      <th className="text-right font-semibold py-2 px-2">تاریخ</th>
+                      <th className="text-center font-semibold py-2 px-2">سطح ریسک</th>
+                      <th className="text-center font-semibold py-2 px-2">RPN</th>
+                      <th className="text-center font-semibold py-2 px-2">SRI</th>
+                      <th className="text-right font-semibold py-2 px-2">ارزیاب</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...riskHistory].reverse().map((h) => (
+                      <tr key={h.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                        <td className="py-2 px-2 text-slate-700">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td className="py-2 px-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            h.riskLevel === 'Low' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            h.riskLevel === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            h.riskLevel === 'High' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'
+                          }`}>
+                            {h.riskLevel === 'Low' ? 'پایین' : h.riskLevel === 'Medium' ? 'متوسط' : h.riskLevel === 'High' ? 'بالا' : (h.riskLevel || '—')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{h.riskScore ?? '—'}</td>
+                        <td className="py-2 px-2 text-center font-mono font-bold text-slate-800">{typeof h.sri === 'number' ? h.sri.toFixed(1) : '—'}</td>
+                        <td className="py-2 px-2 text-slate-600">{h.user}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -5699,6 +5813,113 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
               )}
             </div>
           )}
+
+          {/* Lab results summary + chronological timeline */}
+          {vendor.analysisRecords && vendor.analysisRecords.length > 0 && (() => {
+            const recs = vendor.analysisRecords!;
+            const pass = recs.filter(r => r.decision === 'Pass').length;
+            const cond = recs.filter(r => r.decision === 'Approved Conditional').length;
+            const rej = recs.filter(r => r.decision === 'Reject').length;
+            const total = recs.length;
+            const passRate = total > 0 ? Math.round(((pass + cond) / total) * 100) : 0;
+            const sorted = [...recs].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            return (
+              <div className="mb-6 space-y-4">
+                {/* Summary strip */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-emerald-700">{pass}</div>
+                    <div className="text-[11px] font-bold text-emerald-600">قبول (Pass)</div>
+                  </div>
+                  <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-blue-700">{cond}</div>
+                    <div className="text-[11px] font-bold text-blue-600">قبول مشروط</div>
+                  </div>
+                  <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-rose-700">{rej}</div>
+                    <div className="text-[11px] font-bold text-rose-600">مردود (Reject)</div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                    <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700' : passRate >= 50 ? 'text-amber-600' : 'text-rose-700'}`}>{passRate}%</div>
+                    <div className="text-[11px] font-bold text-slate-500">نرخ قبولی</div>
+                  </div>
+                </div>
+
+                {/* Lab results trend line chart (Pass=100 / Conditional=50 / Reject=0) */}
+                <div className="bg-slate-50/50 border border-slate-200/60 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Activity className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-bold text-slate-800 text-xs">روند کیفی نتایج آزمایشگاهی <span className="text-slate-400 font-normal font-mono">(Lab Quality Trend)</span></h4>
+                  </div>
+                  <div className="h-56 w-full" dir="ltr">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sorted.map((r) => ({
+                        label: r.date,
+                        qc: r.qcCode,
+                        level: r.decision === 'Pass' ? 100 : r.decision === 'Approved Conditional' ? 50 : 0,
+                        decision: r.decision,
+                      }))} margin={{ top: 10, right: 16, left: -8, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Vazirmatn FD' }} />
+                        <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tickFormatter={(v: number) => v === 100 ? 'Pass' : v === 50 ? 'Cond.' : v === 0 ? 'Reject' : ''} tick={{ fill: '#94a3b8', fontSize: 10 }} width={48} />
+                        <RTooltip
+                          contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid #e2e8f0' }}
+                          formatter={(v: any) => [v === 100 ? 'قبول (Pass)' : v === 50 ? 'قبول مشروط' : 'مردود (Reject)', 'نتیجه']}
+                          labelFormatter={(l: any, p: any) => `${l}${p && p[0] ? ' • ' + p[0].payload.qc : ''}`}
+                        />
+                        <Line type="monotone" dataKey="level" name="نتیجه" stroke="#4f46e5" strokeWidth={2.5}
+                          dot={(props: any) => {
+                            const c = props.payload.decision === 'Pass' ? '#10b981' : props.payload.decision === 'Approved Conditional' ? '#3b82f6' : '#e11d48';
+                            return <circle key={props.key} cx={props.cx} cy={props.cy} r={4.5} fill={c} stroke="#fff" strokeWidth={1.5} />;
+                          }}
+                          activeDot={{ r: 6 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Admin decision box for sources/suppliers (not samples) */}
+                {!(vendor.isSample || vendor.category === 'sample') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+                  <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/40 border-amber-200'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'}`} />
+                      <h4 className="font-bold text-slate-800 text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-slate-400 font-normal font-mono">(QA Decision)</span></h4>
+                    </div>
+                    {vendor.status === 'rejected' ? (
+                      <p className="text-[11px] text-rose-700 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                    ) : (
+                      <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                        وجود {rej > 0 ? <strong className="text-rose-600">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
+                      </p>
+                    )}
+                    {showRejectBox ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={rejectDecisionReason}
+                          onChange={e => setRejectDecisionReason(e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); }} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">انصراف</button>
+                          {vendor.status === 'rejected' ? (
+                            <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
+                          ) : (
+                            <button type="button" onClick={handleAdminRejectSource} className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg">تأیید رد و انتقال به لیست سیاه</button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setShowRejectBox(true)} className={`px-4 py-1.5 text-xs font-bold text-white rounded-lg ${vendor.status === 'rejected' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                        {vendor.status === 'rejected' ? 'بازگردانی سورس از لیست سیاه' : 'رد سورس و انتقال به لیست سیاه'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Lab Records List / Table */}
           {vendor.analysisRecords && vendor.analysisRecords.length > 0 ? (
@@ -5927,6 +6148,82 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
 
 
 // --- View: Risk Assessment Form ---
+// FMEA 5×5 risk matrix (Criticality × Probability). Highlights the live cell.
+function RiskHeatmap({ criticality, probability, detectability }: { criticality: number; probability: number; detectability: number }) {
+  // rows: criticality 5→1 (top=most critical) · cols: probability 1→5
+  const rows = [5, 4, 3, 2, 1];
+  const cols = [1, 2, 3, 4, 5];
+  const cellColor = (c: number, p: number) => {
+    const rpn = c * p; // 1..25
+    if (rpn >= 15) return 'bg-red-500/25 border-red-500/40';
+    if (rpn >= 8) return 'bg-amber-500/25 border-amber-500/40';
+    return 'bg-emerald-500/20 border-emerald-500/40';
+  };
+  return (
+    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4" dir="ltr">
+      <div className="text-slate-200 font-bold text-sm mb-3 text-center" dir="rtl">
+        ماتریس ریسک (اهمیت × احتمال)
+      </div>
+      <div className="flex items-stretch gap-2">
+        {/* Y-axis label */}
+        <div className="flex items-center">
+          <span className="text-[10px] text-slate-400 font-bold [writing-mode:vertical-rl] rotate-180">
+            Criticality →
+          </span>
+        </div>
+        <div className="flex-1">
+          <div className="grid grid-cols-5 gap-1">
+            {rows.map(c =>
+              cols.map(p => {
+                const active = c === criticality && p === probability;
+                return (
+                  <div
+                    key={`${c}-${p}`}
+                    className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-all ${cellColor(c, p)} ${
+                      active ? 'ring-2 ring-white scale-105 z-10 shadow-lg' : 'opacity-90'
+                    }`}
+                    title={`Criticality ${c} × Probability ${p} = RPN(2D) ${c * p}`}
+                  >
+                    <span className={active ? 'text-white' : 'text-slate-100'}>{c * p}</span>
+                    {active && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-white border border-slate-900" />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {/* X-axis labels */}
+          <div className="grid grid-cols-5 gap-1 mt-1">
+            {cols.map(p => (
+              <div key={p} className="text-center text-[10px] text-slate-400 font-bold">{p}</div>
+            ))}
+          </div>
+          <div className="text-center text-[10px] text-slate-400 font-bold mt-1">Probability →</div>
+        </div>
+      </div>
+      {/* Detectability factor → full 3D RPN */}
+      <div className="flex items-center justify-center gap-2 mt-3 text-xs" dir="rtl">
+        <span className="text-slate-300 font-mono" dir="ltr">
+          {criticality} × {probability} = <span className="text-amber-300 font-bold">{criticality * probability}</span>
+        </span>
+        <span className="text-slate-500">×</span>
+        <span className="text-slate-300">تشخیص <span className="font-mono text-white font-bold">{detectability}</span></span>
+        <span className="text-slate-500">=</span>
+        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-200 font-mono font-black">
+          RPN {criticality * probability * detectability}
+        </span>
+      </div>
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-slate-400" dir="rtl">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> پایین</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/40" /> متوسط</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/30 border border-red-500/40" /> بالا</span>
+      </div>
+    </div>
+  );
+}
+
 function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
   const spsScore = calculateOverallScore(vendor.scores, true) || 0;
   
@@ -6044,6 +6341,9 @@ function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: 
             </select>
           </div>
         </div>
+
+        {/* Visual risk matrix */}
+        <RiskHeatmap criticality={criticality} probability={probability} detectability={detectability} />
 
         {/* Info / Formulas */}
         <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 text-sm text-slate-300">

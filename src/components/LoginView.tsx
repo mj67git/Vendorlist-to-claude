@@ -13,6 +13,18 @@ export function LoginView({ onLogin }: LoginViewProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Local/demo mode: sign in without any backend/database (browser localStorage only).
+  // Gated behind VITE_ENABLE_LOCAL_DEMO so production (company server) stays auth-only.
+  const localDemoEnabled = (import.meta as any).env?.VITE_ENABLE_LOCAL_DEMO === 'true';
+
+  const handleLocalDemoLogin = () => {
+    const demoUser: User = { username: 'demo', role: 'admin', name: 'کاربر آزمایشی (لوکال)', mustChangePassword: false } as User;
+    localStorage.setItem('app_local_mode', 'true');
+    localStorage.setItem('app_currentUser', JSON.stringify(demoUser));
+    localStorage.removeItem('app_jwt_token');
+    onLogin(demoUser);
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
@@ -29,7 +41,18 @@ export function LoginView({ onLogin }: LoginViewProps) {
       body: JSON.stringify({ username, password })
     })
       .then(async (res) => {
-        const data = await res.json();
+        // Guard against non-JSON responses (e.g. an HTML 500 error page when the
+        // server/database is misconfigured). Parsing HTML as JSON throws a cryptic
+        // "The string did not match the expected pattern" on Safari/iOS.
+        const raw = await res.text();
+        let data: any = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch {
+          throw new Error(
+            res.status >= 500
+              ? 'خطای سرور — احتمالاً پایگاه‌داده متصل یا مهاجرت نشده است. با مدیر سیستم تماس بگیرید.'
+              : 'پاسخ نامعتبر از سرور احراز هویت دریافت شد.'
+          );
+        }
         if (!res.ok) {
           throw new Error(data.error || 'Invalid username or password.');
         }
@@ -101,6 +124,20 @@ export function LoginView({ onLogin }: LoginViewProps) {
                {loading ? 'Verifying...' : 'Sign In'}
             </button>
          </form>
+         {localDemoEnabled && (
+           <div className="mt-5 pt-4 border-t border-[#E5E5EA] text-center">
+             <button
+               type="button"
+               onClick={handleLocalDemoLogin}
+               className="w-full bg-white border border-[#0071E3] text-[#0071E3] hover:bg-[#0071E3]/5 font-medium py-2 rounded-lg transition-colors text-sm cursor-pointer"
+             >
+               ورود آزمایشی (حالت لوکال — بدون دیتابیس)
+             </button>
+             <p className="mt-2 text-[10px] text-slate-400 leading-relaxed">
+               داده‌ها فقط در همین مرورگر ذخیره می‌شوند. برای نسخهٔ نهایی، ورود عادی با پایگاه‌داده استفاده می‌شود.
+             </p>
+           </div>
+         )}
       </div>
     </div>
   );
