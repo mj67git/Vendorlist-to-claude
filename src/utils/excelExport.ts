@@ -520,3 +520,178 @@ export function exportFullArchiveMultiSheetExcel(
   const safeTitle = `گزارش_جامع_چند_شیتی_تامین_کنندگان_${dateStr}`;
   XLSX.writeFile(wb, `${safeTitle}.xlsx`);
 }
+
+/**
+ * Builds a styled worksheet for the Business Partners repository.
+ * Mirrors the visual format of the vendor archive export (header fill 1E3A8A,
+ * Segoe UI, thin borders, RTL, coloured grade/status cells).
+ */
+export function buildPartnersWorksheet(
+  partners: BusinessPartner[],
+  db: Vendor[] = []
+): { ws: XLSX.WorkSheet; count: number } {
+  const statusFa = (s: string) =>
+    s === 'Active' ? 'فعال (Active)' :
+    s === 'Blacklisted' ? 'لیست سیاه (Blacklisted)' :
+    'غیرفعال (Inactive)';
+
+  const connectedCount = (p: BusinessPartner) =>
+    (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
+
+  const headers = [
+    'ردیف',
+    'نوع شریک',
+    'نام شریک تجاری',
+    'نام لاتین',
+    'کشور',
+    'شهر',
+    'مسئول تماس',
+    'شماره تماس',
+    'ایمیل',
+    'وبسایت',
+    'وضعیت سیستم',
+    'امتیاز SOP (فروشنده)',
+    'گرید SOP',
+    'وضعیت Supplier',
+    'تعداد سورس متصل',
+    'تاریخ ثبت',
+  ];
+
+  const rows = partners.map((p, i) => {
+    const ev = p.type === 'Supplier' ? p.evaluation : undefined;
+    let createdStr = '';
+    try { createdStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('fa-IR') : ''; } catch { createdStr = ''; }
+    return [
+      i + 1,
+      p.type === 'Manufacturer' ? 'تولیدکننده (Manufacturer)' : 'فروشنده (Supplier)',
+      p.name || '',
+      p.nameEn || '-',
+      p.country || '-',
+      p.city || '-',
+      p.contactPerson || '-',
+      p.phone || '-',
+      p.email || '-',
+      p.website || '-',
+      statusFa(p.status),
+      ev && ev.grade !== 'Not Evaluated' ? `${ev.totalScore} / 100` : '—',
+      ev && ev.grade !== 'Not Evaluated' ? `Grade ${ev.grade}` : '—',
+      ev && ev.grade !== 'Not Evaluated' ? (ev.status || '—') : '—',
+      connectedCount(p),
+      createdStr,
+    ];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  for (const key of Object.keys(ws)) {
+    if (key[0] === '!') continue;
+    const match = key.match(/^([A-Z]+)(\d+)$/);
+    if (!match) continue;
+    const cell = ws[key];
+    const colIndex = XLSX.utils.decode_col(match[1]);
+    const rowIndex = parseInt(match[2], 10) - 1;
+
+    if (rowIndex === 0) {
+      cell.s = {
+        fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
+        font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: {
+          top: { style: 'thin', color: { rgb: '475569' } },
+          bottom: { style: 'medium', color: { rgb: '0F172A' } },
+          left: { style: 'thin', color: { rgb: '475569' } },
+          right: { style: 'thin', color: { rgb: '475569' } },
+        },
+      };
+      continue;
+    }
+
+    cell.s = {
+      fill: { patternType: 'solid', fgColor: { rgb: rowIndex % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+      font: { name: 'Segoe UI', sz: 9, color: { rgb: '1E293B' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        right: { style: 'thin', color: { rgb: 'E2E8F0' } },
+      },
+    };
+
+    // Right-align free-text columns (name, address-like, email, website)
+    if ([2, 3, 6, 8, 9].includes(colIndex)) cell.s.alignment.horizontal = 'right';
+
+    // System status colour (col 10)
+    if (colIndex === 10) {
+      const v = String(cell.v || '').toLowerCase();
+      if (v.includes('blacklist') || v.includes('لیست سیاه')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'DC2626' } };
+      } else if (v.includes('active') || v.includes('فعال')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'D1FAE5' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '059669' } };
+      } else if (v.includes('inactive') || v.includes('غیرفعال')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'D97706' } };
+      }
+    }
+
+    // SOP grade colour (col 12)
+    if (colIndex === 12) {
+      const v = String(cell.v || '').toLowerCase();
+      if (v.includes('grade a') || v.endsWith(' a')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'D1FAE5' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '059669' } };
+      } else if (v.includes('grade b') || v.endsWith(' b')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'DBEAFE' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '0071E3' } };
+      } else if (v.includes('grade c') || v.endsWith(' c')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'D97706' } };
+      } else if (v.includes('blacklist') || v.includes('rejected') || v.endsWith(' d')) {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'DC2626' } };
+      }
+    }
+  }
+
+  ws['!cols'] = [
+    { wch: 6 },   // ردیف
+    { wch: 24 },  // نوع
+    { wch: 30 },  // نام
+    { wch: 26 },  // لاتین
+    { wch: 14 },  // کشور
+    { wch: 14 },  // شهر
+    { wch: 20 },  // مسئول تماس
+    { wch: 18 },  // تلفن
+    { wch: 26 },  // ایمیل
+    { wch: 26 },  // وبسایت
+    { wch: 22 },  // وضعیت
+    { wch: 18 },  // امتیاز SOP
+    { wch: 14 },  // گرید
+    { wch: 26 },  // وضعیت Supplier
+    { wch: 16 },  // سورس متصل
+    { wch: 16 },  // تاریخ
+  ];
+  if (!ws['!views']) ws['!views'] = [];
+  ws['!views'].push({ RTL: true });
+  void range;
+  return { ws, count: partners.length };
+}
+
+/**
+ * Exports the Business Partners repository to a styled Excel workbook,
+ * matching the vendor archive export format.
+ */
+export function exportBusinessPartnersToExcel(
+  partners: BusinessPartner[],
+  db: Vendor[] = []
+) {
+  const wb = XLSX.utils.book_new();
+  const { ws } = buildPartnersWorksheet(partners, db);
+  XLSX.utils.book_append_sheet(wb, ws, 'شرکای تجاری');
+
+  const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
+  XLSX.writeFile(wb, `گزارش_شرکای_تجاری_${dateStr}.xlsx`);
+}

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
+import { exportBusinessPartnersToExcel } from '../utils/excelExport';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
   CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
@@ -106,6 +107,72 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const handleRestoreFromBlacklist = (partner: BusinessPartner) => {
     onEditPartner({ ...partner, status: 'Active', reasonForChange: 'خروج از لیست سیاه و بازگرداندن به وضعیت فعال' } as any);
     setSelectedPartner(prev => (prev && prev.id === partner.id ? { ...prev, status: 'Active' } : prev));
+  };
+
+  // Sources (vendors) linked to a partner — via manufacturerId / supplierId, or
+  // a vendor whose id equals the partner id (legacy name-based linkage).
+  const getConnectedSources = (partner: BusinessPartner) =>
+    (db || []).filter(v => v.manufacturerId === partner.id || v.supplierId === partner.id || v.id === partner.id);
+
+  const gradeBadgeCls = (g?: string | null) => {
+    if (g === 'A') return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300';
+    if (g === 'B') return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300';
+    if (g === 'C') return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300';
+    if (g === 'rejected' || g === 'black list') return 'bg-rose-600 text-white border-rose-700';
+    return 'bg-muted text-muted-foreground border-border';
+  };
+
+  const renderConnectedSources = (partner: BusinessPartner) => {
+    const sources = getConnectedSources(partner);
+    const roleLabel = partner.type === 'Manufacturer' ? 'به‌عنوان تولیدکننده' : 'به‌عنوان فروشنده';
+    return (
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5 border-b border-border pb-2">
+          <Package className="w-4 h-4 text-primary" />
+          <span>سورس‌های متصل به این شریک ({roleLabel})</span>
+          <span className="mr-auto text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{sources.length} سورس</span>
+        </h3>
+        {sources.length === 0 ? (
+          <div className="text-center py-6 bg-muted/40 rounded-2xl border border-dashed border-border">
+            <p className="text-xs text-muted-foreground">هیچ سورسی به این شریک تجاری متصل نیست.</p>
+          </div>
+        ) : (
+          <div className="border border-border rounded-2xl overflow-hidden">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-muted border-b border-border font-bold text-muted-foreground">
+                <tr>
+                  <th className="py-2.5 px-3">ماده / محصول</th>
+                  <th className="py-2.5 px-3">نام سورس</th>
+                  <th className="py-2.5 px-3">دسته</th>
+                  <th className="py-2.5 px-3 text-center">گرید / وضعیت</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border bg-card">
+                {sources.map(v => (
+                  <tr key={v.id} className="hover:bg-muted/40">
+                    <td className="py-2 px-3">
+                      <span className="font-bold text-foreground">{v.material}</span>
+                      {v.materialEn && <span className="font-mono text-[10px] text-muted-foreground block">{v.materialEn}</span>}
+                    </td>
+                    <td className="py-2 px-3 text-foreground">{v.name}</td>
+                    <td className="py-2 px-3 text-muted-foreground">{v.category}</td>
+                    <td className="py-2 px-3 text-center">
+                      {v.grade ? (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${gradeBadgeCls(v.grade)}`}>
+                          {v.grade === 'rejected' || v.grade === 'black list' ? 'لیست سیاه' : `Grade ${v.grade}`}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">{v.status === 'rejected' ? 'مردود' : v.status || '—'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Modal active tab when editing/creating a supplier: 'general' | 'evaluation'
@@ -639,13 +706,23 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </p>
           </div>
 
-          <button
-            onClick={handleOpenAdd}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 shrink-0 border border-blue-400/30"
-          >
-            <Plus className="w-4 h-4" />
-            <span>ثبت شریک تجاری جدید</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => exportBusinessPartnersToExcel(filteredPartners, db || [])}
+              title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
+            >
+              <Download className="w-4 h-4" />
+              <span>خروجی اکسل شرکا (XLSX)</span>
+            </button>
+            <button
+              onClick={handleOpenAdd}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ثبت شریک تجاری جدید</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1745,6 +1822,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
                 </div>
 
+                {/* Connected sources */}
+                {renderConnectedSources(selectedPartner)}
+
               </div>
             ) : (
               /* ========================================================
@@ -1998,6 +2078,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Connected sources */}
+                {renderConnectedSources(selectedPartner)}
               </div>
             )}
 
