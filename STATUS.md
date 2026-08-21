@@ -9,6 +9,13 @@
 - **سلامت:** `tsc` سبز ✓ · `vite build` سبز ✓ · تست‌ها ۸ pass / ۱ fail (باگ pre-existing `SOP grade boundary`، بی‌ربط)
 - **git:** کار جاری روی `claude/vlse-modules-p3` push شده (جلوتر از main؛ PR بعدی به main)
 
+## حالت آزمایشی محلی (Local/Demo Mode) — تست بدون دیتابیس
+- برای تست روی Vercel بدون ساخت دیتابیس: env `VITE_ENABLE_LOCAL_DEMO=true` را ست کن (build-time). دکمهٔ «ورود آزمایشی (حالت لوکال)» در صفحهٔ ورود ظاهر می‌شود.
+- با کلیک آن، کاربر دموی admin ساخته می‌شود و `app_local_mode=true` در localStorage ست می‌شود. کل داده‌ها فقط در همان مرورگر (localStorage: `app_db`, `app_business_partners`, `app_materials`) ذخیره می‌شوند.
+- `authFetch` در این حالت هیچ درخواستی به backend نمی‌زند (پاسخ 503 مصنوعی، بدون reload) → همهٔ loaderها به cache محلی برمی‌گردند و نوشتن‌ها no-op می‌شوند (state از قبل در localStorage persist شده).
+- محدودیت‌ها: audit/تاریخچه‌ها (که سمت‌سرور از audit_log بازسازی می‌شوند) در این حالت خالی‌اند. برای نسخهٔ نهایی روی سرور شرکت، این env را **ست نکن** تا فقط ورود عادی با دیتابیس فعال باشد.
+- تست زنده: build استاتیک بدون backend → ورود دمو ✓ · بدون خطای صفحه ✓ · persist و رندر داده پس از reload ✓ · بدون حلقهٔ logout ✓.
+
 ## دپلوی (Vercel)
 - **آداپتر:** `api/handler.ts` → بسته `dist/server.cjs` (از `npm run build`). `vercel.json` rewrite دارد.
 - **env لازم:** `DATABASE_URL` (PostgreSQL معتبر، مثل Neon/Supabase) و `JWT_SECRET`.

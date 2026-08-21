@@ -44,7 +44,7 @@ import { MaterialSelector } from './components/MaterialSelector';
 import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
-import { authFetch } from './services/authFetch';
+import { authFetch, isLocalMode } from './services/authFetch';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
@@ -208,6 +208,7 @@ export default function App() {
             setLoadError(null);
           })
           .catch(err => {
+            if (isLocalMode()) { setLoadError(null); return; }
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
             setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
           })
