@@ -538,6 +538,19 @@ export function buildPartnersWorksheet(
   const connectedCount = (p: BusinessPartner) =>
     (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
 
+  // نتیجهٔ ارزیابی SOP بر اساس گرید (هم‌راستا با ستون لیست شرکا)
+  const sopResultLabel = (grade?: string) => {
+    switch (grade) {
+      case 'A': return 'Approved';
+      case 'B': return 'Permit Approval';
+      case 'C': return 'Expired';
+      case 'D': return 'Black List';
+      case 'Blacklist': return 'Black List';
+      case 'Pending Review': return 'Pending Review';
+      default: return grade || '—';
+    }
+  };
+
   const headers = [
     'ردیف',
     'نوع شریک',
@@ -552,7 +565,7 @@ export function buildPartnersWorksheet(
     'وضعیت سیستم',
     'امتیاز SOP (فروشنده)',
     'گرید SOP',
-    'وضعیت Supplier',
+    'نتیجهٔ ارزیابی SOP',
     'تعداد سورس متصل',
     'تاریخ ثبت',
   ];
@@ -575,7 +588,7 @@ export function buildPartnersWorksheet(
       statusFa(p.status),
       ev && ev.grade !== 'Not Evaluated' ? `${ev.totalScore} / 100` : '—',
       ev && ev.grade !== 'Not Evaluated' ? `Grade ${ev.grade}` : '—',
-      ev && ev.grade !== 'Not Evaluated' ? (ev.status || '—') : '—',
+      ev && ev.grade !== 'Not Evaluated' ? sopResultLabel(ev.grade) : '—',
       connectedCount(p),
       createdStr,
     ];

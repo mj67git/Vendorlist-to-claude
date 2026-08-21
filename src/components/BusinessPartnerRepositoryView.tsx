@@ -658,20 +658,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const getSOPStatusBadgeClass = (status?: string) => {
-    switch (status) {
-      case 'Approved Supplier': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Approved with Monitoring': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Conditional Supplier':
-      case 'Conditional Approval': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Pending Review': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-      case 'Blacklist':
-      case 'Rejected': return 'bg-rose-50 text-rose-700 border-rose-200';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      default: return 'bg-muted text-muted-foreground border-border';
-    }
-  };
-
   // نتیجهٔ ارزیابی SOP بر اساس گرید (فقط گرید نمایش داده می‌شود، بدون وضعیت مانیتورینگ)
   const gradeApprovalLabel = (grade?: string): { label: string; cls: string } => {
     switch (grade) {
@@ -1588,8 +1574,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               در انتظار ارزیابی
                             </span>
                           ) : (
-                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getSOPStatusBadgeClass(computedEval.status)}`}>
-                              {computedEval.status}
+                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(computedEval.grade).cls}`}>
+                              {gradeApprovalLabel(computedEval.grade).label}
                             </span>
                           )}
                         </div>
@@ -1934,8 +1920,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
                         <span className="text-[10px] text-slate-400 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
-                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${getSOPStatusBadgeClass(selectedPartner.evaluation.status)}`}>
-                            {selectedPartner.evaluation.status}
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(selectedPartner.evaluation.grade).cls}`}>
+                            {gradeApprovalLabel(selectedPartner.evaluation.grade).label}
                           </span>
                         </div>
                       </div>
