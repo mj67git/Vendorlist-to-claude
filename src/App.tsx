@@ -234,6 +234,15 @@ export default function App() {
     }
   }, [materials]);
 
+  // Load the material catalogue from the backend (PostgreSQL) once authenticated.
+  useEffect(() => {
+    if (!currentUser) return;
+    authFetch('/api/materials')
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: Material[] | null) => { if (Array.isArray(data)) setMaterials(data); })
+      .catch(err => console.error("Failed to load materials from backend. Using local cache.", err));
+  }, [currentUser]);
+
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
     try {
       const saved = localStorage.getItem('app_business_partners');
@@ -583,29 +592,19 @@ export default function App() {
     handleSelectVendor(normalized);
   };
 
-  const logMaterialAudit = (action: string, material: any, beforeValue?: any) => {
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Material Repository',
-        action: action,
-        entityType: 'Material',
-        entityId: material.id,
-        entityName: material.nameFa,
-        severity: action === 'Delete' ? 'high' : 'info',
-        description: `${action} material: ${material.nameFa}`,
-        beforeValue,
-        afterValue: material
-      })
-    }).catch(err => console.error("Failed to sync material audit log:", err));
-  };
-
+  // Material changes are persisted and audited server-side (module "مدیریت مواد"),
+  // so the client only does an optimistic update and syncs to the API.
   const handleAddMaterial = (newMaterial: Material) => {
     setMaterials([newMaterial, ...materials]);
     setToastMsg('ماده اولیه جدید با موفقیت اضافه شد!');
     setTimeout(() => setToastMsg(null), 3000);
-    logMaterialAudit('Create', newMaterial);
+    authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
+      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
+      .catch(err => {
+        setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
+        setToastMsg(err.message || 'ثبت ماده در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
+      });
   };
 
   const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
@@ -613,26 +612,29 @@ export default function App() {
     setMaterials(materials.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
-    logMaterialAudit(customAction || 'Update', updatedMaterial, oldMaterial);
+    authFetch(`/api/materials/${updatedMaterial.id}`, { method: 'PATCH', body: JSON.stringify(updatedMaterial) })
+      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ویرایش ماده'); })
+      .catch(err => {
+        if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
+        setToastMsg(err.message || 'ویرایش ماده در سرور ناموفق بود.');
+        setTimeout(() => setToastMsg(null), 5000);
+      });
   };
 
   const handleDeleteMaterial = async (id: string) => {
+    const snapshot = materials;
+    setMaterials(materials.filter(m => m.id !== id));
     try {
-      const response = await fetch(`/api/materials/${id}`, { method: 'DELETE' });
+      const response = await authFetch(`/api/materials/${id}`, { method: 'DELETE' });
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'خطا در حذف');
       }
-      
-      const material = materials.find(m => m.id === id);
-      if (material) {
-        logMaterialAudit('Delete', material);
-      }
-      setMaterials(materials.filter(m => m.id !== id));
       setToastMsg('ماده اولیه با موفقیت حذف شد!');
       setTimeout(() => setToastMsg(null), 3000);
     } catch (err: any) {
-      setToastMsg(err.message);
+      setMaterials(snapshot);
+      setToastMsg(err.message || 'حذف ماده در سرور ناموفق بود.');
       setTimeout(() => setToastMsg(null), 5000);
     }
   };
@@ -1742,16 +1744,14 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       return;
     }
 
-    if (!selectedManufacturerId) {
-      alert('لطفاً کارخانه تولیدی مرجع را از مخزن شرکای تجاری انتخاب کرده یا ثبت کنید.');
+    if (!selectedManufacturerId && !selectedSupplierId) {
+      alert('لطفاً تأمین‌کنندهٔ این سورس (تولیدکننده یا فروشنده) را از مخزن شرکای تجاری انتخاب کرده یا ثبت کنید.');
       return;
     }
 
     const newId = existingVendor?.id || ('v' + Math.random().toString(36).substring(2, 6));
     const isDirectPurchase = !selectedSupplierId;
-    const finalPartnerDisplayName = selectedSupplier?.name 
-      ? `${selectedManufacturer?.name} (فروشنده: ${selectedSupplier.name})` 
-      : `${selectedManufacturer?.name || formData.name} [خرید بی‌واسطه از تولیدکننده]`;
+    const finalPartnerDisplayName = selectedSupplier?.name || selectedManufacturer?.name || formData.name;
     
     // Process rejections
     const rejectLines = formData.rejectionReasonList.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -2206,65 +2206,44 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
               </div>
             </div>
 
-            {/* PARTNER REPOSITORY INTEGRATION */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border border-[#E5E5EA] p-4 rounded-xl space-y-2 md:space-y-0 shadow-2xs">
-              {/* Manufacturer Searchable Selector */}
-              <div className="space-y-1">
-                <PartnerSelector
-                  partners={partners}
-                  type="Manufacturer"
-                  selectedId={selectedManufacturerId}
-                  onSelect={(newMfgId) => {
-                    const oldMfgName = partners.find(p => p.id === selectedManufacturerId)?.name || 'بدون تولیدکننده';
-                    const newMfgName = partners.find(p => p.id === newMfgId)?.name || 'بدون تولیدکننده';
-                    
-                    setSelectedManufacturerId(newMfgId);
-                    
-                    // Log Manufacturer Selection
-                    logSourceSelectionAudit(
-                      'ChangeManufacturer', 
-                      `تغییر تولیدکننده از [${oldMfgName}] به [${newMfgName}]`,
-                      oldMfgName,
-                      newMfgName
-                    );
-                    
-                    // Reset supplier if it doesn't belong to the new manufacturer
-                    const currentSupplier = partners.find(p => p.id === selectedSupplierId);
-                    if (currentSupplier && currentSupplier.manufacturerId !== newMfgId) {
-                      setSelectedSupplierId('');
-                    }
-                  }}
-                  onAddNew={() => setShowNewMfgModal(true)}
-                />
-              </div>
+            {/* PARTNER REPOSITORY INTEGRATION — single supplier/manufacturer selector */}
+            <div className="bg-white border border-[#E5E5EA] p-4 rounded-xl shadow-2xs">
+              <PartnerSelector
+                partners={partners}
+                type="Supplier"
+                anyType={true}
+                selectedId={selectedManufacturerId || selectedSupplierId}
+                onSelect={(newId) => {
+                  const oldName = partners.find(p => p.id === (selectedManufacturerId || selectedSupplierId))?.name || 'بدون تأمین‌کننده';
+                  const picked = partners.find(p => p.id === newId);
+                  const newName = picked?.name || 'بدون تأمین‌کننده';
 
-              {/* Supplier Searchable Selector (Optional - Direct Purchase Support) */}
-              <div className="space-y-1">
-                <PartnerSelector
-                  partners={partners}
-                  type="Supplier"
-                  selectedId={selectedSupplierId}
-                  manufacturerId={selectedManufacturerId}
-                  existingVendorSupplierId={existingVendor?.supplierId}
-                  optional={true}
-                  disabled={!selectedManufacturerId}
-                  onSelect={(newSupId) => {
-                    const oldSupName = partners.find(p => p.id === selectedSupplierId)?.name || 'خرید بی‌واسطه از تولیدکننده';
-                    const newSupName = partners.find(p => p.id === newSupId)?.name || 'خرید بی‌واسطه از تولیدکننده';
-                    
-                    setSelectedSupplierId(newSupId);
-                    
-                    // Log Supplier Selection
-                    logSourceSelectionAudit(
-                      'ChangeSupplier', 
-                      `تغییر فروشنده از [${oldSupName}] به [${newSupName}]`,
-                      oldSupName,
-                      newSupName
-                    );
-                  }}
-                  onAddNew={() => setShowNewSupplierModal(true)}
-                />
-              </div>
+                  // Route the chosen partner into the correct field by its type;
+                  // manufacturers and suppliers are independent now.
+                  if (!newId || !picked) {
+                    setSelectedManufacturerId('');
+                    setSelectedSupplierId('');
+                  } else if (picked.type === 'Manufacturer') {
+                    setSelectedManufacturerId(newId);
+                    setSelectedSupplierId('');
+                  } else {
+                    setSelectedSupplierId(newId);
+                    setSelectedManufacturerId('');
+                  }
+
+                  logSourceSelectionAudit(
+                    'ChangeSupplier',
+                    `تغییر تأمین‌کننده از [${oldName}] به [${newName}]`,
+                    oldName,
+                    newName
+                  );
+                }}
+                onAddNew={() => setShowNewSupplierModal(true)}
+              />
+              <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-slate-400" />
+                تأمین‌کنندهٔ این سورس را انتخاب کنید — می‌تواند یک تولیدکننده یا یک فروشنده باشد.
+              </p>
             </div>
 
             {/* Supplier or Manufacturer Direct Summary Card */}
@@ -2278,10 +2257,6 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   <div>
                     <span className="text-slate-500 block mb-0.5 font-medium">نام فروشنده:</span>
                     <span className="font-bold text-slate-800">{selectedSupplier.name}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-0.5 font-medium">تولیدکننده مرجع:</span>
-                    <span className="font-bold text-slate-800">{selectedManufacturer?.name || 'نامشخص'}</span>
                   </div>
                   <div>
                     <span className="text-slate-500 block mb-0.5 font-medium">امتیاز ارزیابی کیفی:</span>
@@ -2796,30 +2771,20 @@ const MaterialGroup: React.FC<{
   const elementId = `group-${group.en.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
 
   const getPartnerDetails = (vendor: Vendor) => {
-    // 1. By ID if available
-    let mfgPartner = partners.find(p => p.type === 'Manufacturer' && p.id === vendor.manufacturerId);
-    let supplierPartner = partners.find(p => p.type === 'Supplier' && p.id === vendor.supplierId);
+    // A source links to a single partner (manufacturer OR supplier).
+    let partner =
+      partners.find(p => p.id === vendor.supplierId) ||
+      partners.find(p => p.id === vendor.manufacturerId);
 
-    // 2. By name match fallback
-    if (!supplierPartner && !mfgPartner) {
-      supplierPartner = partners.find(
-        p => p.type === 'Supplier' && p.name.trim().toLowerCase() === vendor.name.trim().toLowerCase()
-      );
-      if (supplierPartner) {
-        mfgPartner = partners.find(p => p.type === 'Manufacturer' && p.id === supplierPartner.manufacturerId);
-      } else {
-        mfgPartner = partners.find(
-          p => p.type === 'Manufacturer' && p.name.trim().toLowerCase() === vendor.name.trim().toLowerCase()
-        );
-      }
+    // Name-match fallback for legacy/imported records.
+    if (!partner) {
+      partner = partners.find(p => p.name.trim().toLowerCase() === vendor.name.trim().toLowerCase());
     }
 
-    const isDirect = !vendor.supplierId && !supplierPartner;
-
     return {
-      mfgName: mfgPartner ? mfgPartner.name : vendor.name,
-      supplierName: isDirect ? 'خرید بی‌واسطه از تولیدکننده' : (supplierPartner ? supplierPartner.name : 'مستقیم / تامین‌کننده ثبتی'),
-      isDirect
+      partnerName: partner ? partner.name : vendor.name,
+      partnerLabel: partner?.type === 'Supplier' ? 'فروشنده' : 'تولیدکننده',
+      isSupplier: partner?.type === 'Supplier',
     };
   };
 
@@ -2890,7 +2855,7 @@ const MaterialGroup: React.FC<{
         <div className="overflow-hidden">
           <div className="divide-y divide-border/60 bg-card">
             {group.vendors.map(vendor => {
-              const { mfgName, supplierName, isDirect } = getPartnerDetails(vendor);
+              const { partnerName, partnerLabel } = getPartnerDetails(vendor);
               return (
                 <div 
                   key={vendor.id}
@@ -2928,31 +2893,16 @@ const MaterialGroup: React.FC<{
                         <span className="font-mono text-[10px] text-muted-foreground">({vendor.materialEn})</span>
                       </div>
                       
-                      {/* 2. Name of Manufacturer */}
+                      {/* 2. Supplier / Manufacturer (single partner) */}
                       <div className="font-bold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">تولیدکننده</span>
-                        <span>{mfgName}</span>
+                        <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{partnerLabel}</span>
+                        <span>{partnerName}</span>
                       </div>
-                      
-                      {/* 3. Name of Supplier with minimal connection */}
+
+                      {/* 3. Metadata line (English name, country, licence expiry) */}
                       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
-                        <span className="text-primary font-black text-xs leading-none">↲</span>
-                        {isDirect ? (
-                          <Badge variant="gradeA" className="text-[10px] px-2 py-0 font-bold flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                            خرید بی‌واسطه از تولیدکننده
-                          </Badge>
-                        ) : (
-                          <>
-                            <span className="text-muted-foreground">فروشنده:</span>
-                            <span className="font-semibold text-foreground">{supplierName}</span>
-                          </>
-                        )}
                         {vendor.nameEn && vendor.nameEn.trim() && vendor.nameEn.toLowerCase() !== 'n/a' && vendor.nameEn.toLowerCase() !== 'unknown' && (
-                          <>
-                            <span className="text-border">|</span>
-                            <span className="font-mono text-[10px] text-muted-foreground">{vendor.nameEn}</span>
-                          </>
+                          <span className="font-mono text-[10px] text-muted-foreground">{vendor.nameEn}</span>
                         )}
                         {(() => {
                           const displayCountry = getDisplayCountry(vendor);
@@ -4670,7 +4620,9 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
   // Business Partner Repository resolution for Manufacturer and Supplier
-  const mfgPartner = partners.find(p => p.id === vendor.manufacturerId);
+  // A source links to a single partner (manufacturer or supplier).
+  const mfgPartner = partners.find(p => p.id === vendor.supplierId) || partners.find(p => p.id === vendor.manufacturerId);
+  const partnerLabel = mfgPartner?.type === 'Supplier' ? 'فروشنده' : 'تولیدکننده';
   const mfgName = mfgPartner ? mfgPartner.name : vendor.name;
   const rawMfgCountry = mfgPartner ? mfgPartner.country : (vendor.country || getDisplayCountry(vendor));
   const mfgCountry = rawMfgCountry && rawMfgCountry.trim() && rawMfgCountry.toLowerCase() !== 'unknown' && rawMfgCountry.toLowerCase() !== 'n/a' && rawMfgCountry !== 'نامشخص' && rawMfgCountry !== 'مشخص نشده' ? rawMfgCountry : null;
@@ -5000,7 +4952,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
               <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
                 <div className="flex items-center gap-2 text-indigo-900 font-extrabold text-sm border-b border-slate-100 pb-2">
                   <Factory className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span className="truncate">تولیدکننده: {mfgPartner ? mfgPartner.name : vendor.name}</span>
+                  <span className="truncate">{partnerLabel}: {mfgPartner ? mfgPartner.name : vendor.name}</span>
                 </div>
 
                 <div className="space-y-1.5 text-xs text-slate-600 leading-relaxed pt-1">

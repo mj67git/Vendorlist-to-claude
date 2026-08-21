@@ -147,11 +147,8 @@ model BusinessPartner {
   website       String?               @map("website")
   status        BusinessPartnerStatus @default(Active) @map("status")
 
-  // A Supplier may reference its Manufacturer (self-relation)
-  manufacturerId String?          @map("manufacturer_id") @db.VarChar(50)
-  manufacturer   BusinessPartner? @relation("PartnerHierarchy", fields: [manufacturerId], references: [id], onDelete: SetNull)
-  suppliers      BusinessPartner[] @relation("PartnerHierarchy")
-
+  // Manufacturers and Suppliers are independent, flat entities: a partner is
+  // classified by `type` only; suppliers no longer reference a manufacturer.
   evaluation SupplierEvaluation?
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -159,7 +156,6 @@ model BusinessPartner {
 
   @@index([type])
   @@index([status])
-  @@index([manufacturerId])
   @@map("business_partners")
 }
 

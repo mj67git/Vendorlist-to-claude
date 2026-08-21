@@ -75,7 +75,6 @@ CREATE TABLE "business_partners" (
     "phone" TEXT,
     "website" TEXT,
     "status" "BusinessPartnerStatus" NOT NULL DEFAULT 'Active',
-    "manufacturer_id" VARCHAR(50),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -248,9 +247,6 @@ CREATE INDEX "business_partners_type_idx" ON "business_partners"("type");
 CREATE INDEX "business_partners_status_idx" ON "business_partners"("status");
 
 -- CreateIndex
-CREATE INDEX "business_partners_manufacturer_id_idx" ON "business_partners"("manufacturer_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "supplier_evaluations_partner_id_key" ON "supplier_evaluations"("partner_id");
 
 -- CreateIndex
@@ -330,9 +326,6 @@ CREATE INDEX "audit_log_entity_id_idx" ON "audit_log"("entity_id");
 
 -- CreateIndex
 CREATE INDEX "audit_log_correlation_id_idx" ON "audit_log"("correlation_id");
-
--- AddForeignKey
-ALTER TABLE "business_partners" ADD CONSTRAINT "business_partners_manufacturer_id_fkey" FOREIGN KEY ("manufacturer_id") REFERENCES "business_partners"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "supplier_evaluations" ADD CONSTRAINT "supplier_evaluations_partner_id_fkey" FOREIGN KEY ("partner_id") REFERENCES "business_partners"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -82,6 +82,46 @@ function generateMaterialId(cas: string | undefined, irc: string | undefined, ma
   return baseId.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
+// Map a material DB row to the frontend Material shape (name -> nameFa, etc.).
+// IRC receive/expiry dates are intentionally excluded: IRC belongs to the
+// source (vendor), not the material catalogue.
+function mapMaterialToClient(m: any) {
+  return {
+    id: m.id,
+    nameFa: m.name,
+    nameEn: m.nameEn,
+    cas: m.cas,
+    irc: m.irc,
+    iupac: m.iupac || '',
+    role: m.role || 'API',
+    finalProduct: m.finalProduct || '',
+    finalProductEn: m.finalProductEn || '',
+    pharmacopoeia: m.pharmacopoeia || 'USP',
+    standardNameFa: m.standardNameFa || '',
+    standardNameEn: m.standardNameEn || '',
+    specificationFile: m.specificationFile || undefined,
+    createdAt: m.createdAt ? (m.createdAt.toISOString?.() || m.createdAt) : new Date().toISOString(),
+  };
+}
+
+// Build the persisted material columns from a client payload (nameFa -> name).
+function materialDataFromBody(b: any) {
+  return {
+    name: (b.nameFa ?? b.name ?? '').trim(),
+    nameEn: (b.nameEn ?? '').trim(),
+    cas: b.cas || 'N/A',
+    irc: b.irc || 'N/A',
+    iupac: b.iupac || null,
+    role: b.role || null,
+    finalProduct: b.finalProduct || null,
+    finalProductEn: b.finalProductEn || null,
+    pharmacopoeia: b.pharmacopoeia || null,
+    standardNameFa: b.standardNameFa || null,
+    standardNameEn: b.standardNameEn || null,
+    specificationFile: b.specificationFile || null,
+  };
+}
+
 function isValidPostgresUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string" || !url.trim()) return false;
   const trimmed = url.trim();
@@ -277,7 +317,6 @@ function mapPartnerRow(row: any): any {
     contactPerson: row.contactPerson || "",
     phone: row.phone || "",
     website: row.website || "",
-    manufacturerId: row.manufacturerId || undefined,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() || row.createdAt,
     updatedAt: row.updatedAt?.toISOString?.() || row.updatedAt,
@@ -293,7 +332,9 @@ function mapPartnerRow(row: any): any {
         status: doc.status ? SOP_STATUS_FROM_DB[doc.status] ?? null : null,
         score: doc.score,
         fileName: doc.fileName || undefined,
-        fileDataUrl: doc.fileDataUrl || undefined,
+        // The heavy base64 blob is fetched lazily via the per-document file
+        // endpoint; the list/detail payload only signals that a file exists.
+        hasFile: !!doc.fileDataUrl,
         fileSize: doc.fileSize ?? undefined,
         uploadedAt: doc.uploadedAt?.toISOString?.() || doc.uploadedAt || undefined,
       };
@@ -325,7 +366,6 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     phone: p.phone || null,
     website: p.website || null,
     status: toDbPartnerStatus(p.status),
-    manufacturerId: p.manufacturerId || null,
   };
 
   await prisma.businessPartner.upsert({
@@ -333,6 +373,20 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     update: data,
     create: { id: p.id, ...data },
   });
+
+  // Since the list/detail payload no longer carries the base64 blob, capture
+  // the existing document files before replacing the evaluation so an edit
+  // that doesn't re-upload keeps the stored file instead of wiping it.
+  const existingFiles = new Map<string, { fileDataUrl: string | null; fileName: string | null; fileSize: number | null }>();
+  const prevEval = await prisma.supplierEvaluation.findUnique({
+    where: { partnerId: p.id },
+    include: { documents: true },
+  });
+  if (prevEval) {
+    for (const d of prevEval.documents) {
+      existingFiles.set(d.key, { fileDataUrl: d.fileDataUrl, fileName: d.fileName, fileSize: d.fileSize });
+    }
+  }
 
   // Replace the supplier evaluation (+ documents) if present.
   await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
@@ -349,6 +403,13 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
     });
     const docs = ev.documents ? Object.values(ev.documents) : [];
     for (const doc of docs as any[]) {
+      const prior = existingFiles.get(doc.key);
+      // fileName present but no fresh blob => unchanged reference, keep the
+      // stored blob. fileName absent => the user removed the file, so drop it.
+      const stillReferencesFile = !!doc.fileName;
+      const fileName = doc.fileName || null;
+      const fileDataUrl = doc.fileDataUrl || (stillReferencesFile ? prior?.fileDataUrl : null) || null;
+      const fileSize = doc.fileSize ?? (stillReferencesFile && !doc.fileDataUrl ? prior?.fileSize : null) ?? null;
       await prisma.sopDocument.create({
         data: {
           evaluationId: created.id,
@@ -357,9 +418,9 @@ async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promise<void
           nameEn: doc.nameEn || "",
           status: toDbSopStatus(doc.status),
           score: Number(doc.score) || 0,
-          fileName: doc.fileName || null,
-          fileSize: doc.fileSize ?? null,
-          fileDataUrl: doc.fileDataUrl || null,
+          fileName,
+          fileSize,
+          fileDataUrl,
           uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
         },
       });
@@ -401,11 +462,7 @@ async function seedDefaultBusinessPartners() {
   const count = await prisma.businessPartner.count();
   if (count > 0) return;
   console.log("[BusinessPartners] Seeding default partners into PostgreSQL (first startup)...");
-  // Seed manufacturers first so supplier.manufacturerId FKs resolve.
-  const ordered = [...INITIAL_BUSINESS_PARTNERS_DB].sort(
-    (a, b) => (a.type === "Manufacturer" ? 0 : 1) - (b.type === "Manufacturer" ? 0 : 1),
-  );
-  for (const p of ordered) {
+  for (const p of INITIAL_BUSINESS_PARTNERS_DB) {
     await upsertBusinessPartner(prisma, p);
   }
 }
@@ -2470,8 +2527,8 @@ async function startServer() {
   app.get("/api/materials", requireAuth, async (req: any, res) => {
     try {
       const prisma = requirePrisma();
-      const list = await prisma.material.findMany();
-      res.json(list);
+      const list = await prisma.material.findMany({ orderBy: { createdAt: "desc" } });
+      res.json(list.map(mapMaterialToClient));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2479,28 +2536,25 @@ async function startServer() {
 
   app.post("/api/materials", requireAuth, async (req: any, res) => {
     try {
-      const { name, nameEn, cas, irc, reasonForChange } = req.body;
-      if (!name || !nameEn) {
+      const b = req.body;
+      const reasonForChange = b.reasonForChange;
+      const data = materialDataFromBody(b);
+      if (!data.name || !data.nameEn) {
         return res.status(400).json({ error: "وارد کردن نام فارسی و انگلیسی ماده الزامی است" });
       }
 
-      const materialId = generateMaterialId(cas, irc, name, nameEn);
       const prisma = requirePrisma();
+      const materialId = b.id || generateMaterialId(data.cas, data.irc, data.name, data.nameEn);
 
       const existing = await prisma.material.findUnique({ where: { id: materialId } });
       if (existing) {
-        return res.status(400).json({ error: "ماده‌ای با این شناسه / مشخصات CAS و IRC قبلاً در سیستم ثبت شده است" });
+        return res.status(400).json({ error: "ماده‌ای با این شناسه قبلاً در سیستم ثبت شده است" });
       }
 
-      const newMaterial = {
-        id: materialId,
-        name: name,
-        nameEn: nameEn,
-        cas: cas || "N/A",
-        irc: irc || "N/A"
-      };
-
-      await prisma.material.create({ data: newMaterial });
+      const created = await prisma.material.create({ data: { id: materialId, ...data } });
+      const newMaterial = mapMaterialToClient(created);
+      const name = data.name;
+      const nameEn = data.nameEn;
 
       // Audit Log for Material Creation
       const now = new Date();
@@ -2533,7 +2587,8 @@ async function startServer() {
   app.patch("/api/materials/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { name, nameEn, cas, irc, reasonForChange } = req.body;
+      const b = req.body;
+      const reasonForChange = b.reasonForChange;
       const prisma = requirePrisma();
 
       const current = await prisma.material.findUnique({ where: { id } });
@@ -2541,24 +2596,25 @@ async function startServer() {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
       }
 
-      const originalData = { name: current.name, nameEn: current.nameEn, cas: current.cas, irc: current.irc };
-      const updatedMaterial = {
-        id: current.id,
-        name: name || current.name,
-        nameEn: nameEn || current.nameEn,
-        cas: cas || current.cas,
-        irc: irc || current.irc
-      };
-
-      await prisma.material.update({
-        where: { id },
-        data: {
-          name: updatedMaterial.name,
-          nameEn: updatedMaterial.nameEn,
-          cas: updatedMaterial.cas,
-          irc: updatedMaterial.irc
-        }
+      const originalData = mapMaterialToClient(current);
+      // Merge: keep the current value when a field is not supplied.
+      const incoming = materialDataFromBody({
+        nameFa: b.nameFa ?? b.name ?? current.name,
+        nameEn: b.nameEn ?? current.nameEn,
+        cas: b.cas ?? current.cas,
+        irc: b.irc ?? current.irc,
+        iupac: b.iupac ?? current.iupac,
+        role: b.role ?? current.role,
+        finalProduct: b.finalProduct ?? current.finalProduct,
+        finalProductEn: b.finalProductEn ?? current.finalProductEn,
+        pharmacopoeia: b.pharmacopoeia ?? current.pharmacopoeia,
+        standardNameFa: b.standardNameFa ?? current.standardNameFa,
+        standardNameEn: b.standardNameEn ?? current.standardNameEn,
+        specificationFile: b.specificationFile ?? current.specificationFile,
       });
+
+      const updated = await prisma.material.update({ where: { id }, data: incoming });
+      const updatedMaterial = mapMaterialToClient(updated);
 
       // Audit Log for Material Update
       const now = new Date();
@@ -2575,8 +2631,8 @@ async function startServer() {
         description: `اطلاعات مستندات مرجع ماده دارویی ${current.name} بروزرسانی گردید.`,
         entityType: "Material",
         entityId: id,
-        entityName: updatedMaterial.name,
-        reasonForChange: reasonForChange || "اصلاح کدهای IRC / CAS رسمی سازمان غذا و دارو",
+        entityName: updatedMaterial.nameFa,
+        reasonForChange: reasonForChange || "اصلاح مشخصات مرجع ماده",
         beforeData: originalData,
         afterData: updatedMaterial
       });
@@ -2713,6 +2769,59 @@ async function startServer() {
     }
   });
 
+  // SOP evaluation history for a supplier, reconstructed from the audit trail
+  // (each partner change records the full partner, incl. its evaluation, in
+  // afterData). Returns only points where an evaluation with a score exists.
+  app.get("/api/business-partners/:id/evaluation-history", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const rows = await prisma.auditLog.findMany({
+        where: { entityId: req.params.id, entityType: "BusinessPartner" },
+        orderBy: { timestamp: "asc" },
+      });
+      const history: any[] = [];
+      let lastScore: number | null = null;
+      for (const r of rows) {
+        const ev = (r.afterData as any)?.evaluation;
+        if (!ev || typeof ev.totalScore !== "number") continue;
+        // Skip consecutive duplicates (no score change).
+        if (ev.totalScore === lastScore) continue;
+        history.push({
+          id: r.id,
+          date: r.timestamp.toISOString(),
+          totalScore: ev.totalScore,
+          grade: ev.grade ?? null,
+          status: ev.status ?? null,
+          user: r.userName || r.userId || "—",
+          reason: r.reasonForChange || "",
+        });
+        lastScore = ev.totalScore;
+      }
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Fetch a single SOP document's stored file on demand (kept out of the list
+  // payload so the repository stays lightweight).
+  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const evaluation = await prisma.supplierEvaluation.findUnique({
+        where: { partnerId: req.params.id },
+        include: { documents: { where: { key: req.params.key as any } } },
+      });
+      const doc = evaluation?.documents?.[0];
+      if (!doc || !doc.fileDataUrl) {
+        return res.status(404).json({ error: "فایلی برای این مدرک یافت نشد" });
+      }
+      res.json({ fileName: doc.fileName, fileSize: doc.fileSize, fileDataUrl: doc.fileDataUrl });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/business-partners", requireAuth, async (req: any, res) => {
     try {
       const prisma = requirePrisma();
@@ -2817,13 +2926,14 @@ async function startServer() {
         userAgent: getUserAgent(req),
       };
 
-      // Referential integrity: block deletion of records still in use.
+      // Referential integrity: block deletion when the partner is still linked
+      // to a source. Manufacturers and Suppliers are independent now, so there
+      // is no partner-to-partner reference to check.
       let blockedReason: string | null = null;
       if (existing.type === "Manufacturer") {
-        const supplierRefs = await prisma.businessPartner.count({ where: { manufacturerId: id } });
         const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
-        if (supplierRefs > 0 || vendorRefs > 0) {
-          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source یا فروشنده اختصاص داده شده است.";
+        if (vendorRefs > 0) {
+          blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source اختصاص داده شده است.";
         }
       } else if (existing.type === "Supplier") {
         const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
