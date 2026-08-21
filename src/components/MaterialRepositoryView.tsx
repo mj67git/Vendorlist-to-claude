@@ -18,11 +18,11 @@ interface Props {
 }
 
 const roleOptions: { value: MaterialRole; label: string; code: string; fullLabel: string }[] = [
-  { value: 'API', label: 'ماده موثره', code: 'API', fullLabel: 'ماده موثره دارویی (Active Pharmaceutical Ingredient)' },
-  { value: 'Excipient', label: 'ماده جانبی', code: 'EXP', fullLabel: 'ماده جانبی (Excipient)' },
-  { value: 'Intermediate', label: 'حدواسط', code: 'INT', fullLabel: 'محصول واسطه (Intermediate)' },
-  { value: 'Solvent', label: 'حلال', code: 'SOL', fullLabel: 'حلال / ریجنت (Solvent / Reagent)' },
-  { value: 'Reagent / Reactant', label: 'واکنشگر', code: 'REA', fullLabel: 'واکنش‌گر آزمایشگاهی (Reagent)' },
+  { value: 'API', label: 'ماده موثره', code: 'API', fullLabel: 'ماده موثره دارویی (API)' },
+  { value: 'Intermediate', label: 'حدواسط', code: 'INT', fullLabel: 'حدواسط (Intermediate)' },
+  { value: 'Solvent', label: 'حلال', code: 'SOL', fullLabel: 'حلال (Solvent)' },
+  { value: 'Reagent / Reactant', label: 'واکنشگر', code: 'REA', fullLabel: 'واکنش‌گر (Reagent)' },
+  { value: 'Excipient', label: 'اکسپیانت', code: 'EXP', fullLabel: 'اکسپیانت (Excipient)' },
   { value: 'Packaging Item', label: 'ملزومات بسته‌بندی', code: 'PKG', fullLabel: 'ملزومات بسته‌بندی (Packaging)' },
   { value: 'Other', label: 'سایر موارد', code: 'OTH', fullLabel: 'سایر موارد (Other)' },
 ];
