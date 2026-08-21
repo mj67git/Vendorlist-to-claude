@@ -1,13 +1,21 @@
 # STATUS.md — وضعیت زندهٔ کار
 
 > بعد از **هر تغییر** به‌روزرسانی می‌شود. برای ادامه در سشن جدید: اول `CLAUDE.md` بعد این را بخوان.
-> آخرین به‌روزرسانی: پس از merge PR #3
+> آخرین به‌روزرسانی: ماژول‌های ریسک/آزمایشگاه + بازطراحی اتوماسیون Reject
 
 ## وضعیت کلی
 - **برنچ کاری فعلی:** `claude/vlse-modules-p3` (از main تازه) — کار جدید اینجا
 - **PRها:** #2 merged (نرمال‌سازی دیتابیس) · #3 merged (بهبود ماژول‌ها) — **همهٔ کار در `main` است**
 - **سلامت:** `tsc` سبز ✓ · `vite build` سبز ✓ · تست‌ها ۸ pass / ۱ fail (باگ pre-existing `SOP grade boundary`، بی‌ربط)
-- **git:** تمیز، هم‌تراز با origin/main
+- **git:** کار جاری روی `claude/vlse-modules-p3` push شده (جلوتر از main؛ PR بعدی به main)
+
+## دپلوی (Vercel)
+- **آداپتر:** `api/handler.ts` → بسته `dist/server.cjs` (از `npm run build`). `vercel.json` rewrite دارد.
+- **env لازم:** `DATABASE_URL` (PostgreSQL معتبر، مثل Neon/Supabase) و `JWT_SECRET`.
+- **مهاجرت + seed:** جدول‌ها باید با `prisma migrate deploy` ساخته شوند. کاربران پیش‌فرض روی **اولین اجرا** (cold start) اگر جدول users خالی باشد seed می‌شوند (`seedDefaultUsers`).
+- **⚠️ نکتهٔ لاگین:** دو مسیر seed پسورد متفاوت دارند —
+  - محلی (`prisma/seed.ts`): `admin / 123`
+  - seed خودکار سرور (`server.ts` DEFAULT_USERS، روی Vercel اجرا می‌شود): `admin / 123456` + `mustChangePassword: true` (اجبار تغییر رمز در اولین ورود).
 
 ## آنچه انجام شده (به ترتیب)
 ### زیرساخت دیتابیس (فاز ۲)

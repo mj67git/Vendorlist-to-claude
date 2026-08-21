@@ -57,6 +57,12 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 **اسکرین‌شات با مرورگر:** Chromium در `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`؛ `playwright-core` را موقت نصب کن (`bun add playwright-core`) و بعد `bun install` برای بازگرداندن. برای dark mode: `document.documentElement.classList.add('dark')`.
 **پاک‌سازی pkill:** هرگز `pkill -f "tsx"` نزن (خودِ shell را می‌کشد)؛ با PID بکش: `for pid in $(pgrep -f 'bin/tsx'); do [ "$pid" != "$$" ] && kill $pid; done`.
 
+## دپلوی (Vercel)
+- **Build:** `npm run build` (vite build + esbuild → `dist/server.cjs`). آداپتر: `api/handler.ts`، پیکربندی: `vercel.json`.
+- **env لازم روی Vercel:** `DATABASE_URL` (PostgreSQL معتبر مثل Neon/Supabase) و `JWT_SECRET`.
+- **DB:** قبل از استفاده `prisma migrate deploy` را روی همان `DATABASE_URL` اجرا کن. کاربران پیش‌فرض روی اولین cold start (اگر جدول users خالی باشد) خودکار seed می‌شوند.
+- **لاگین روی Vercel:** `admin / 123456` (از `DEFAULT_USERS` در `server.ts`) با `mustChangePassword: true` — اولین ورود، تغییر رمز خواسته می‌شود. (محلی با `prisma/seed.ts` رمز `123` است.)
+
 ## Git / تحویل
 - **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
 - **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها) — همه در `main`.
