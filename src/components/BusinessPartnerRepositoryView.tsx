@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
+import { exportBusinessPartnersToExcel } from '../utils/excelExport';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
   CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
@@ -705,13 +706,23 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </p>
           </div>
 
-          <button
-            onClick={handleOpenAdd}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 shrink-0 border border-blue-400/30"
-          >
-            <Plus className="w-4 h-4" />
-            <span>ثبت شریک تجاری جدید</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => exportBusinessPartnersToExcel(filteredPartners, db || [])}
+              title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
+            >
+              <Download className="w-4 h-4" />
+              <span>خروجی اکسل شرکا (XLSX)</span>
+            </button>
+            <button
+              onClick={handleOpenAdd}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ثبت شریک تجاری جدید</span>
+            </button>
+          </div>
         </div>
       </div>
 
