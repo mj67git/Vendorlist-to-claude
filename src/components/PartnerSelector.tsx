@@ -79,8 +79,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
       case 'C': return 'bg-amber-100 text-amber-800 border-amber-300';
       case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'Not Evaluated': return 'bg-slate-100 text-slate-600 border-slate-300';
-      default: return 'bg-slate-100 text-slate-600 border-slate-300';
+      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
+      default: return 'bg-muted text-muted-foreground border-border';
     }
   };
 
@@ -117,7 +117,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     <div className="space-y-1 relative font-sans" dir="rtl" ref={dropdownRef}>
       {/* Label and Quick Add Button */}
       <div className="flex items-center justify-between">
-        <label className="text-[#1D1D1F] font-semibold text-xs flex items-center gap-1.5">
+        <label className="text-foreground font-semibold text-xs flex items-center gap-1.5">
           {isManufacturer ? (
             <Factory className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
           ) : (
@@ -127,7 +127,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
           {!optional ? (
             <span className="text-rose-500 font-bold">*</span>
           ) : (
-            <span className="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded mr-1">
+            <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.2 rounded mr-1">
               اختیاری (در صورت خرید مستقیم خالی بگذارید)
             </span>
           )}
@@ -139,7 +139,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
           onClick={triggerOpenCreate}
           className={`font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer ${
             disabled
-              ? 'text-slate-400 cursor-not-allowed opacity-50'
+              ? 'text-muted-foreground cursor-not-allowed opacity-50'
               : 'text-[#0071E3] hover:text-[#0025D2]'
           }`}
         >
@@ -159,12 +159,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               setSearchTerm('');
             }
           }}
-          className={`flex items-center justify-between w-full bg-white border rounded-xl px-3.5 py-2.5 cursor-pointer transition-all text-right text-sm ${
+          className={`flex items-center justify-between w-full bg-card border rounded-xl px-3.5 py-2.5 cursor-pointer transition-all text-right text-sm ${
             disabled
-              ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
               ? 'border-[#0071E3] ring-2 ring-[#0071E3]/20 shadow-xs'
-              : 'border-slate-300 hover:border-slate-400'
+              : 'border-border hover:border-slate-400'
           }`}
         >
           <div className="flex items-center gap-2.5 overflow-hidden w-full">
@@ -181,12 +181,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             {selectedPartner ? (
               <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
                 <div className="min-w-0">
-                  <div className="font-bold text-slate-900 truncate text-xs sm:text-sm">
+                  <div className="font-bold text-foreground truncate text-xs sm:text-sm">
                     {selectedPartner.name}
                   </div>
-                  <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                  <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
                     {selectedPartner.nameEn && (
-                      <span className="font-mono text-[10px] text-slate-400" dir="ltr">
+                      <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">
                         {selectedPartner.nameEn}
                       </span>
                     )}
@@ -194,7 +194,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       <>
                         <span className="text-slate-300">•</span>
                         <span className="flex items-center gap-0.5">
-                          <Globe className="w-2.5 h-2.5 text-slate-400" />
+                          <Globe className="w-2.5 h-2.5 text-muted-foreground" />
                           <span>{selectedPartner.country}</span>
                         </span>
                       </>
@@ -210,7 +210,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                        `Grade ${selectedPartner.evaluation.grade}`}
                     </span>
                   ) : (
-                    <span className="mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                    <span className="mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border shrink-0">
                       ارزیابی نشده
                     </span>
                   )
@@ -224,12 +224,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       <Sparkles className="w-3 h-3 text-emerald-600" />
                       خرید بی‌واسطه از تولیدکننده (مستقیم)
                     </span>
-                    <span className="text-[11px] text-slate-400 hidden sm:inline">
+                    <span className="text-[11px] text-muted-foreground hidden sm:inline">
                       — کلیک جهت انتخاب فروشنده واسطه
                     </span>
                   </div>
                 ) : (
-                  <span className="text-slate-400 text-xs">
+                  <span className="text-muted-foreground text-xs">
                     {disabled && !isManufacturer
                       ? 'ابتدا تولیدکننده مرجع را انتخاب کنید'
                       : isManufacturer
@@ -241,7 +241,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1 text-slate-400 mr-2 shrink-0">
+          <div className="flex items-center gap-1 text-muted-foreground mr-2 shrink-0">
             {selectedPartner && optional && (
               <span
                 role="button"
@@ -257,7 +257,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   }
                 }}
                 title="حذف و تغییر به خرید بی‌واسطه"
-                className="p-1 hover:bg-slate-100 hover:text-slate-700 rounded-md transition-colors cursor-pointer"
+                className="p-1 hover:bg-accent hover:text-foreground rounded-md transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </span>
@@ -268,24 +268,24 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
         {/* Dropdown Popover */}
         {isOpen && !disabled && (
-          <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn">
+          <div className="absolute top-full right-0 left-0 mt-1.5 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn">
             {/* Search Header */}
-            <div className="p-2.5 border-b border-slate-100 bg-slate-50/80">
+            <div className="p-2.5 border-b border-border bg-muted/80">
               <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-2.5" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={`جستجو بر اساس نام فارسی، انگلیسی یا کشور ${isManufacturer ? 'تولیدکننده' : 'فروشنده'}...`}
-                  className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#0071E3] focus:ring-1 focus:ring-[#0071E3]"
+                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#0071E3] focus:ring-1 focus:ring-[#0071E3]"
                 />
                 {searchTerm && (
                   <button
                     type="button"
                     onClick={() => setSearchTerm('')}
-                    className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600"
+                    className="absolute left-2.5 top-2 text-muted-foreground hover:text-muted-foreground"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -294,7 +294,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             </div>
 
             {/* List Body */}
-            <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 p-1.5">
+            <div className="max-h-60 overflow-y-auto divide-y divide-border p-1.5">
               {/* Special Option for Supplier: Direct Purchase (خرید بی‌واسطه) */}
               {!isManufacturer && optional && (
                 <div
@@ -305,7 +305,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between mb-1 ${
                     !currentValue
                       ? 'bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-bold'
-                      : 'hover:bg-emerald-50/40 text-slate-700'
+                      : 'hover:bg-emerald-50/40 text-foreground'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -319,7 +319,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                           بدون واسطه
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
                         خرید به صورت مستقیم از کارخانه سازنده صورت گرفته و فروشنده واسطه‌ای وجود ندارد.
                       </div>
                     </div>
@@ -330,7 +330,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
               {/* Partner Items */}
               {filteredPartners.length === 0 ? (
-                <div className="p-6 text-center text-slate-400 text-xs">
+                <div className="p-6 text-center text-muted-foreground text-xs">
                   <div>هیچ {isManufacturer ? 'تولیدکننده‌ای' : 'فروشنده‌ای'} با این مشخصات یافت نشد.</div>
                   <button
                     type="button"
@@ -357,19 +357,19 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
                         isSelected
                           ? 'bg-blue-50 border border-blue-200 text-blue-950 font-bold'
-                          : 'hover:bg-slate-50 text-slate-800'
+                          : 'hover:bg-accent text-foreground'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {p.type === 'Manufacturer' ? (
                           <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-                            isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                            isSelected ? 'bg-indigo-600 text-white' : 'bg-muted text-muted-foreground'
                           }`}>
                             <Factory className="w-3.5 h-3.5" />
                           </div>
                         ) : (
                           <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-                            isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
+                            isSelected ? 'bg-emerald-600 text-white' : 'bg-muted text-muted-foreground'
                           }`}>
                             <Handshake className="w-3.5 h-3.5" />
                           </div>
@@ -384,9 +384,9 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate flex items-center gap-2 mt-0.5">
+                          <div className="text-[10px] text-muted-foreground truncate flex items-center gap-2 mt-0.5">
                             {p.nameEn && (
-                              <span className="font-mono text-slate-400" dir="ltr">
+                              <span className="font-mono text-muted-foreground" dir="ltr">
                                 {p.nameEn}
                               </span>
                             )}
@@ -416,7 +416,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                                `Grade ${p.evaluation.grade}`}
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                               ارزیابی نشده
                             </span>
                           )
@@ -430,8 +430,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             </div>
 
             {/* Quick Add Footer inside Dropdown */}
-            <div className="p-2 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs">
-              <span className="text-[11px] text-slate-400">
+            <div className="p-2 border-t border-border bg-muted/50 flex items-center justify-between text-xs">
+              <span className="text-[11px] text-muted-foreground">
                 {filteredPartners.length} مورد یافت شد
               </span>
               <button

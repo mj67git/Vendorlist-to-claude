@@ -113,7 +113,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
   return (
     <div className="space-y-1 relative" style={{ direction: 'rtl' }}>
-      <label className="text-[#1D1D1F] font-semibold text-xs flex items-center justify-between">
+      <label className="text-foreground font-semibold text-xs flex items-center justify-between">
         <span>ماده اولیه (انتخاب از مخزن مرجع) <span className="text-rose-500">*</span></span>
         {selectedMaterial && (
           <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">
@@ -127,14 +127,14 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between w-full bg-white border rounded-lg px-3 py-2 cursor-pointer transition-colors text-right text-sm ${
+          className={`flex items-center justify-between w-full bg-card border rounded-lg px-3 py-2 cursor-pointer transition-colors text-right text-sm ${
             isOpen ? 'border-[#0071E3] ring-1 ring-[#0071E3]' : 'border-[#D2D2D7] hover:border-[#86868B]'
-          } ${!selectedMaterial && !isOpen && !oldMaterialName ? 'text-slate-400' : 'text-[#1D1D1F]'}`}
+          } ${!selectedMaterial && !isOpen && !oldMaterialName ? 'text-muted-foreground' : 'text-foreground'}`}
         >
           <div className="flex-1 truncate pr-1">
             {selectedMaterial ? (
-              <span className="font-bold text-slate-800">
-                {selectedMaterial.nameFa} <span className="text-slate-400 font-mono text-xs dir-ltr">({selectedMaterial.nameEn})</span>
+              <span className="font-bold text-foreground">
+                {selectedMaterial.nameFa} <span className="text-muted-foreground font-mono text-xs dir-ltr">({selectedMaterial.nameEn})</span>
               </span>
             ) : oldMaterialName ? (
               <span className="text-amber-600 font-medium">نیاز به انتخاب از مخزن (ماده قبلی: {oldMaterialName})</span>
@@ -145,33 +145,33 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
           <div className="flex items-center gap-1 shrink-0">
             {selectedMaterial && (
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
                 {selectedMaterial.role}
               </span>
             )}
-            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </div>
         </button>
 
         {/* Dropdown Options */}
         {isOpen && (
-          <div className="absolute z-30 right-0 left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-right">
-            <div className="p-2 border-b border-slate-100 bg-slate-50/50">
+          <div className="absolute z-30 right-0 left-0 mt-1 bg-card rounded-xl shadow-xl border border-border overflow-hidden text-right">
+            <div className="p-2 border-b border-border bg-muted/50">
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="جستجوی ماده، CAS یا نام انگلیسی..."
-                  className="w-full bg-white border border-slate-200 rounded-lg pr-8 pl-3 py-1.5 text-xs focus:outline-none focus:border-cyan-600"
+                  className="w-full bg-card border border-border rounded-lg pr-8 pl-3 py-1.5 text-xs focus:outline-none focus:border-cyan-600"
                 />
               </div>
             </div>
 
-            <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+            <div className="max-h-60 overflow-y-auto divide-y divide-border">
               {filteredMaterials.length === 0 ? (
-                <div className="p-4 text-center text-slate-400 text-xs">
+                <div className="p-4 text-center text-muted-foreground text-xs">
                   ماده‌ای با این مشخصات یافت نشد.
                 </div>
               ) : (
@@ -185,18 +185,18 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                         onChange(mat.id, mat);
                         setIsOpen(false);
                       }}
-                      className={`w-full p-2.5 flex items-center justify-between hover:bg-slate-50 transition-colors text-right ${
+                      className={`w-full p-2.5 flex items-center justify-between hover:bg-accent transition-colors text-right ${
                         isSelected ? 'bg-cyan-50/50' : ''
                       }`}
                     >
                       <div className="flex flex-col">
-                        <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <span className="font-bold text-foreground text-xs flex items-center gap-1.5">
                           {mat.nameFa}
                           {mat.standardNameFa && mat.standardNameFa !== mat.nameFa && (
-                            <span className="text-[10px] text-slate-400 font-normal">({mat.standardNameFa})</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">({mat.standardNameFa})</span>
                           )}
                         </span>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5" dir="ltr">
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono mt-0.5" dir="ltr">
                           <span>{mat.nameEn}</span>
                           {mat.cas && mat.cas !== 'N/A' && (
                             <>
@@ -208,7 +208,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
+                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
                           {mat.role}
                         </span>
                         {isSelected && <Check className="w-4 h-4 text-cyan-600" />}
@@ -220,7 +220,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
             </div>
 
             {onAddMaterial && (
-              <div className="p-2 border-t border-slate-100 bg-slate-50">
+              <div className="p-2 border-t border-border bg-muted">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}
@@ -238,22 +238,22 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
       {/* Comprehensive Material Creation Modal (Matching MaterialRepositoryView) */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-right">
+          <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-right">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+            <div className="p-5 border-b border-border flex items-center justify-between bg-muted/80 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-fuchsia-100 text-fuchsia-700 rounded-xl">
                   <Package className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 text-base">ثبت ماده اولیه جدید در مخزن</h3>
-                  <p className="text-[11px] text-slate-500">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
+                  <h3 className="font-bold text-foreground text-base">ثبت ماده اولیه جدید در مخزن</h3>
+                  <p className="text-[11px] text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-200/50 transition-colors"
+                className="text-muted-foreground hover:text-muted-foreground p-2 rounded-xl hover:bg-slate-200/50 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -264,7 +264,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Persian Name */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     نام فارسی ماده <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -273,13 +273,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     value={formData.nameFa || ''}
                     onChange={(e) => setFormData({ ...formData, nameFa: e.target.value })}
                     placeholder="مثلاً: استامینوفن"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   />
                 </div>
 
                 {/* English Name */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     نام لاتین / ژنریک <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -289,13 +289,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
                     placeholder="e.g. Paracetamol"
                     dir="ltr"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   />
                 </div>
 
                 {/* CAS Code */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     کد CAS
                   </label>
                   <input
@@ -304,19 +304,19 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     onChange={(e) => setFormData({ ...formData, cas: e.target.value })}
                     placeholder="103-90-2"
                     dir="ltr"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   />
                 </div>
 
                 {/* Role */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     نقش ماده (Role) <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={formData.role || 'API'}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as MaterialRole })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   >
                     {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value} - {opt.fullLabel}</option>)}
                   </select>
@@ -324,13 +324,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
                 {/* Pharmacopoeia */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     فارماکوپه (Pharmacopoeia) <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={formData.pharmacopoeia || 'USP'}
                     onChange={(e) => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   >
                     {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
@@ -338,7 +338,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
                 {/* Final Product Fa */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (فارسی) <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -347,13 +347,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     value={formData.finalProduct || ''}
                     onChange={(e) => setFormData({ ...formData, finalProduct: e.target.value })}
                     placeholder="مثلاً: قرص استامینوفن ۵۰۰"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   />
                 </div>
 
                 {/* Final Product En */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
+                  <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (لاتین)
                   </label>
                   <input
@@ -362,16 +362,16 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     onChange={(e) => setFormData({ ...formData, finalProductEn: e.target.value })}
                     placeholder="Paracetamol 500mg Tablet"
                     dir="ltr"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-white transition-all"
+                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   />
                 </div>
 
                 {/* Specification File Upload */}
                 <div className="md:col-span-2 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">Specification File (اختیاری)</label>
+                  <label className="text-xs font-bold text-foreground block">Specification File (اختیاری)</label>
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-xs cursor-pointer hover:bg-slate-100 transition-colors text-slate-600 font-medium">
-                      <Upload className="w-4 h-4 text-slate-500" />
+                    <label className="flex items-center justify-center gap-2 px-4 py-2 bg-muted border border-border border-dashed rounded-xl text-xs cursor-pointer hover:bg-accent transition-colors text-muted-foreground font-medium">
+                      <Upload className="w-4 h-4 text-muted-foreground" />
                       <span>انتخاب فایل مشخصات فنی</span>
                       <input 
                         type="file" 
@@ -399,27 +399,27 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
               </div>
 
               {/* Standard Names Auto-generation Box */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="bg-muted p-4 rounded-xl border border-border space-y-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
-                  <div className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-bold select-all">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
+                  <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-bold select-all">
                     {generateStandardNameFa(formData)}
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
-                  <div className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 font-mono font-bold select-all" dir="ltr">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
+                  <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-mono font-bold select-all" dir="ltr">
                     {generateStandardNameEn(formData)}
                   </div>
                 </div>
               </div>
 
               {/* Footer Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                  className="px-4 py-2 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-accent transition-colors"
                 >
                   انصراف
                 </button>

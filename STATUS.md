@@ -89,3 +89,8 @@
 - الگوی «تاریخچه از audit» برای هر موجودیتی که audit before/after دارد قابل تکرار است.
 - برای هر ماژول: اگر هنوز localStorage-only است (مثل قبلِ مواد/شرکا)، اول به backend وصلش کن.
 - قبل از تغییر بزرگ UI، ساختار فعلی را بخوان و درک/پیشنهاد را با کاربر تأیید کن (کاربر این را ترجیح می‌دهد).
+
+## تم (Dark/Light) — یکدست‌سازی سراسری
+- دکمهٔ تغییر تم (ماه/خورشید) در هدر + ردیف در منوی کاربر؛ انتخاب در localStorage (`theme`) ذخیره می‌شود و بار اول `prefers-color-scheme` را احترام می‌گذارد.
+- **مهاجرت ۱۵۵۹ رنگ ثابت به theme tokens** در ۱۴ فایل: `bg-white→bg-card`, `bg-slate-50/100→bg-muted`, `text-slate-800/700→text-foreground`, `text-slate-600/500/400→text-muted-foreground`, `border-slate-100/200→border-border`, `hover:bg-slate-*→hover:bg-accent`.
+- استثناها (دست‌نخورده): پنل‌های عمداً تیره (`bg-slate-800/900`)، رنگ‌های معنایی (emerald/blue/amber/rose)، overlayهای سفید روی دکمه‌های رنگی (`bg-white/20`)، فرم چاپ و صفحهٔ ورود، `print:bg-white`.

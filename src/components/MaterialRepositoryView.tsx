@@ -275,82 +275,82 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     <div className="w-full flex flex-col gap-6 fade-in pb-10" dir="rtl">
       {/* STATS CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-muted text-foreground flex items-center justify-center shrink-0 border border-border">
             <Archive className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Materials</div>
-            <div className="text-xl font-black text-slate-800 font-mono mt-0.5">{statTotal}</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Total Materials</div>
+            <div className="text-xl font-black text-foreground font-mono mt-0.5">{statTotal}</div>
           </div>
         </div>
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
             <Pill className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">API (ماده موثره)</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">API (ماده موثره)</div>
             <div className="text-xl font-black text-blue-600 font-mono mt-0.5">{statAPI}</div>
           </div>
         </div>
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
             <FlaskConical className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Intermediate</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Intermediate</div>
             <div className="text-xl font-black text-amber-600 font-mono mt-0.5">{statInt}</div>
           </div>
         </div>
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Excipient</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Excipient</div>
             <div className="text-xl font-black text-emerald-600 font-mono mt-0.5">{statExc}</div>
           </div>
         </div>
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
             <Droplet className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Solvent</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Solvent</div>
             <div className="text-xl font-black text-indigo-600 font-mono mt-0.5">{statSol}</div>
           </div>
         </div>
-        <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
             <Beaker className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Reagent / Other</div>
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Reagent / Other</div>
             <div className="text-xl font-black text-rose-600 font-mono mt-0.5">{statRea}</div>
           </div>
         </div>
       </div>
 
       {/* HEADER & FILTER BAR */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-blue-600 font-mono text-xs uppercase tracking-wider">
             <Database className="w-4 h-4" />
             <span>Material Master Registry</span>
           </div>
-          <h1 className="text-xl font-black text-slate-800 tracking-tight">مخزن مرجع مواد اولیه</h1>
-          <p className="text-xs text-slate-500">مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام</p>
+          <h1 className="text-xl font-black text-foreground tracking-tight">مخزن مرجع مواد اولیه</h1>
+          <p className="text-xs text-muted-foreground">مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام</p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
           <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               placeholder="جستجو (نام فارسی، لاتین، CAS، محصول)..."
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+              className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
             />
           </div>
           
@@ -358,7 +358,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={roleFilter} 
               onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white w-full sm:w-32 transition-colors"
+              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card w-full sm:w-32 transition-colors"
             >
               <option value="All">همه Roleها</option>
               {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value}</option>)}
@@ -367,7 +367,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={pharmFilter} 
               onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white w-full sm:w-36 transition-colors"
+              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:border-blue-500 focus:bg-card w-full sm:w-36 transition-colors"
             >
               <option value="All">همه فارماکوپه‌ها</option>
               {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -385,69 +385,69 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* TABLE */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+      <div className="bg-card rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse text-xs whitespace-nowrap">
             <thead>
-              <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('nameFa')}>
+              <tr className="bg-muted text-muted-foreground border-b border-border">
+                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('nameFa')}>
                   <div className="flex items-center gap-1.5">
                     <span>نام فارسی ماده</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('nameEn')}>
+                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('nameEn')}>
                   <div className="flex items-center gap-1.5">
                     <span>نام لاتین / ژنریک</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('role')}>
+                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('role')}>
                   <div className="flex items-center justify-center gap-1.5">
                     <span>Role</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('finalProduct')}>
+                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('finalProduct')}>
                   <div className="flex items-center gap-1.5">
                     <span>محصول نهایی</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('cas')}>
+                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('cas')}>
                   <div className="flex items-center justify-center gap-1.5">
                     <span>CAS Number</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => handleSort('pharmacopoeia')}>
+                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('pharmacopoeia')}>
                   <div className="flex items-center justify-center gap-1.5">
                     <span>Pharmacopoeia</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3.5 px-4 font-bold text-center w-28">عملیات</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {currentData.length > 0 ? (
                 currentData.map(material => (
-                  <tr key={material.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-4 font-bold text-slate-800">{material.nameFa}</td>
-                    <td className="py-3 px-4 font-mono text-xs text-slate-600" dir="ltr">{material.nameEn}</td>
+                  <tr key={material.id} className="hover:bg-accent/70 transition-colors">
+                    <td className="py-3 px-4 font-bold text-foreground">{material.nameFa}</td>
+                    <td className="py-3 px-4 font-mono text-xs text-muted-foreground" dir="ltr">{material.nameEn}</td>
                     <td className="py-3 px-4 text-center">
                       <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
                         material.role === 'API' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                         material.role === 'Intermediate' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                         material.role === 'Excipient' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        'bg-slate-100 text-slate-700 border-slate-200'
+                        'bg-muted text-foreground border-border'
                       }`}>
                         {material.role}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-700">{material.finalProduct}</td>
-                    <td className="py-3 px-4 text-center font-mono text-xs text-slate-600" dir="ltr">{material.cas}</td>
-                    <td className="py-3 px-4 text-center font-mono font-bold text-xs text-slate-700">{material.pharmacopoeia}</td>
+                    <td className="py-3 px-4 text-foreground">{material.finalProduct}</td>
+                    <td className="py-3 px-4 text-center font-mono text-xs text-muted-foreground" dir="ltr">{material.cas}</td>
+                    <td className="py-3 px-4 text-center font-mono font-bold text-xs text-foreground">{material.pharmacopoeia}</td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button 
@@ -479,7 +479,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <Archive className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                     <span>هیچ ماده‌ای با مشخصات مورد نظر در مخزن یافت نشد.</span>
                   </td>
@@ -490,7 +490,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         </div>
         
         {/* PAGINATION */}
-        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50">
+        <div className="px-6 py-3 border-t border-border bg-muted/50">
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
@@ -510,36 +510,36 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             className="absolute inset-0" 
           />
           
-          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden text-right z-10">
+          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
                   <CheckCircle className="w-16 h-16 text-emerald-500 bounce-in" />
                 </div>
-                <h3 className="text-2xl font-bold text-slate-800 mb-2">
+                <h3 className="text-2xl font-bold text-foreground mb-2">
                   {editingMaterial ? 'تغییرات ماده با موفقیت ذخیره شد' : 'ماده اولیه جدید با موفقیت ثبت شد'}
                 </h3>
-                <p className="text-slate-500 text-xs font-medium">اطلاعات با موفقیت در انبار مرجع مواد ثبت گردید.</p>
+                <p className="text-muted-foreground text-xs font-medium">اطلاعات با موفقیت در انبار مرجع مواد ثبت گردید.</p>
               </div>
             ) : (
               <>
                 {/* Sticky Top Header */}
-                <div className="sticky top-0 z-30 px-6 py-4 border-b border-slate-200 bg-white/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
+                <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
                       <Database className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className="text-base sm:text-lg font-black text-slate-800">
+                      <h2 className="text-base sm:text-lg font-black text-foreground">
                         {editingMaterial ? 'ویرایش ماده اولیه در مخزن مرجع' : 'ثبت ماده اولیه جدید در مخزن مرجع'}
                       </h2>
-                      <p className="text-[11px] text-slate-500">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
+                      <p className="text-[11px] text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
                     </div>
                   </div>
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)} 
-                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                    className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
                     title="بستن"
                   >
                     <X className="w-5 h-5" />
@@ -563,15 +563,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   )}
 
                   {/* بخش اول: نام‌گذاری و مشخصات شیمیایی */}
-                  <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                  <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-border">
                       <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش اول: نام‌گذاری و هویت شیمیایی</h3>
+                      <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش اول: نام‌گذاری و هویت شیمیایی</h3>
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           نام فارسی ماده <span className="text-rose-500">*</span>
                         </label>
                         <input 
@@ -579,13 +579,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           required
                           value={formData.nameFa || ''} 
                           onChange={e => setFormData({ ...formData, nameFa: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="مثال: استامینوفن"
                         />
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           نام لاتین / ژنریک <span className="text-rose-500">*</span>
                         </label>
                         <input 
@@ -593,14 +593,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           required
                           value={formData.nameEn || ''} 
                           onChange={e => setFormData({ ...formData, nameEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="e.g. Paracetamol"
                           dir="ltr"
                         />
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           شماره CAS <span className="text-rose-500">*</span>
                         </label>
                         <input 
@@ -608,21 +608,21 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           required
                           value={formData.cas || ''} 
                           onChange={e => setFormData({ ...formData, cas: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="103-90-2"
                           dir="ltr"
                         />
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           نام IUPAC (اختیاری)
                         </label>
                         <input 
                           type="text" 
                           value={formData.iupac || ''} 
                           onChange={e => setFormData({ ...formData, iupac: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="N-(4-hydroxyphenyl)ethanamide"
                           dir="ltr"
                         />
@@ -631,34 +631,34 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* بخش دوم: طبقه‌بندی و استانداردهای فارماکوپه‌ای */}
-                  <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                  <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-border">
                       <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و فارماکوپه</h3>
+                      <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و فارماکوپه</h3>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           نقش ماده (Material Role) <span className="text-rose-500">*</span>
                         </label>
                         <select 
                           value={formData.role || 'API'} 
                           onChange={e => setFormData({ ...formData, role: e.target.value as MaterialRole })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         >
                           {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value} - {opt.fullLabel}</option>)}
                         </select>
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           فارماکوپه مرجع (Pharmacopoeia) <span className="text-rose-500">*</span>
                         </label>
                         <select 
                           value={formData.pharmacopoeia || 'USP'} 
                           onChange={e => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         >
                           {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
@@ -667,15 +667,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* بخش سوم: محصول نهایی، اسناد فنی و نام‌های استاندارد */}
-                  <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                  <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-border">
                       <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش سوم: محصول نهایی دارویی و فایل مشخصات فنی</h3>
+                      <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش سوم: محصول نهایی دارویی و فایل مشخصات فنی</h3>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (فارسی) <span className="text-rose-500">*</span>
                         </label>
                         <input 
@@ -683,13 +683,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           required
                           value={formData.finalProduct || ''} 
                           onChange={e => setFormData({ ...formData, finalProduct: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="مثلاً: قرص استامینوفن ۵۰۰"
                         />
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">
+                        <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (لاتین) <span className="text-rose-500">*</span>
                         </label>
                         <input 
@@ -697,17 +697,17 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           required
                           value={formData.finalProductEn || ''} 
                           onChange={e => setFormData({ ...formData, finalProductEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-left font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                           placeholder="Paracetamol 500mg Tablet"
                           dir="ltr"
                         />
                       </div>
                       
                       <div className="sm:col-span-2 space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 block">فایل پیوست Specification (اختیاری)</label>
+                        <label className="text-xs font-bold text-foreground block">فایل پیوست Specification (اختیاری)</label>
                         <div className="flex flex-wrap items-center gap-3">
-                          <label className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 border-dashed rounded-xl text-xs cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-colors text-slate-600 font-medium">
-                            <Upload className="w-4 h-4 text-slate-500" />
+                          <label className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border border-dashed rounded-xl text-xs cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-colors text-muted-foreground font-medium">
+                            <Upload className="w-4 h-4 text-muted-foreground" />
                             <span>انتخاب فایل مشخصات فنی</span>
                             <input 
                               type="file" 
@@ -749,13 +749,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی</label>
                         <div className="w-full px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-lg text-xs text-slate-100 font-bold select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Standard English Name</label>
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name</label>
                         <div className="w-full px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-lg text-xs text-slate-100 font-mono font-bold select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
@@ -766,11 +766,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 
                 {/* Sticky Bottom Footer */}
-                <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-slate-200 bg-slate-50/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0 shadow-xs">
+                <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0 shadow-xs">
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                    className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-slate-200/60 rounded-xl transition-colors border border-border cursor-pointer"
                   >
                     انصراف
                   </button>
@@ -797,20 +797,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             className="absolute inset-0" 
           />
           
-          <div className="relative w-full max-w-3xl max-h-[92vh] h-full sm:h-auto bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden text-right z-10">
-            <div className="sticky top-0 z-30 px-6 py-4 border-b border-slate-200 bg-white/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
+          <div className="relative w-full max-w-3xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+            <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
                   <Eye className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base sm:text-lg font-black text-slate-800">جزئیات شناسنامه ماده اولیه</h2>
-                  <p className="text-[11px] text-slate-500 font-mono" dir="ltr">{selectedMaterial.id}</p>
+                  <h2 className="text-base sm:text-lg font-black text-foreground">جزئیات شناسنامه ماده اولیه</h2>
+                  <p className="text-[11px] text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
                 </div>
               </div>
               <button 
                 onClick={() => setIsViewModalOpen(false)} 
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
                 title="بستن"
               >
                 <X className="w-5 h-5" />
@@ -820,87 +820,87 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <div className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
               
               {/* بخش اول – اطلاعات پایه */}
-              <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش اول: اطلاعات هویت و نام‌گذاری</h3>
+                  <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش اول: اطلاعات هویت و نام‌گذاری</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">نام فارسی</div>
-                    <div className="text-sm font-bold text-slate-800">{selectedMaterial.nameFa}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام فارسی</div>
+                    <div className="text-sm font-bold text-foreground">{selectedMaterial.nameFa}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
-                    <div className="text-sm font-bold font-mono text-slate-800" dir="ltr">{selectedMaterial.nameEn}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
+                    <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.nameEn}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">نام IUPAC</div>
-                    <div className="text-xs font-mono text-slate-700" dir="ltr">{selectedMaterial.iupac || '-'}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام IUPAC</div>
+                    <div className="text-xs font-mono text-foreground" dir="ltr">{selectedMaterial.iupac || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CAS Number</div>
-                    <div className="text-sm font-bold font-mono text-slate-800" dir="ltr">{selectedMaterial.cas}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">CAS Number</div>
+                    <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.cas}</div>
                   </div>
                 </div>
               </div>
 
               {/* بخش دوم – اطلاعات طبقه‌بندی و محصول نهایی */}
-              <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border">
                   <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و محصول نهایی</h3>
+                  <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و محصول نهایی</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">نقش ماده (Role)</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
                     <span className="inline-block px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-xs font-mono font-bold">
                       {selectedMaterial.role}
                     </span>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
-                    <div className="text-sm font-bold font-mono text-slate-800">{selectedMaterial.pharmacopoeia}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
+                    <div className="text-sm font-bold font-mono text-foreground">{selectedMaterial.pharmacopoeia}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
-                    <div className="text-sm font-bold text-slate-800">{selectedMaterial.finalProduct}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
+                    <div className="text-sm font-bold text-foreground">{selectedMaterial.finalProduct}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
-                    <div className="text-sm font-bold font-mono text-slate-800" dir="ltr">{selectedMaterial.finalProductEn}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
+                    <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.finalProductEn}</div>
                   </div>
                 </div>
               </div>
 
               {/* بخش سوم – اطلاعات استاندارد و اسناد فنی */}
-              <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+              <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border">
                   <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">بخش سوم: نام‌های استاندارد و اسناد فنی</h3>
+                  <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش سوم: نام‌های استاندارد و اسناد فنی</h3>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                  <div className="p-4 bg-card border border-border rounded-xl space-y-3">
                     <div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
-                      <div className="text-xs font-bold text-slate-800">{selectedMaterial.standardNameFa}</div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
+                      <div className="text-xs font-bold text-foreground">{selectedMaterial.standardNameFa}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Standard English Name</div>
-                      <div className="text-xs font-bold font-mono text-slate-800" dir="ltr">{selectedMaterial.standardNameEn}</div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Standard English Name</div>
+                      <div className="text-xs font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.standardNameEn}</div>
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">فایل پیوست Specification</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
                     {selectedMaterial.specificationFile ? (
-                      <div className="flex items-center justify-between bg-white border border-slate-200 p-3 rounded-xl shadow-xs">
+                      <div className="flex items-center justify-between bg-card border border-border p-3 rounded-xl shadow-xs">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
                             <FileText className="w-5 h-5" />
                           </div>
-                          <div className="font-mono text-xs font-bold text-slate-700 truncate max-w-[220px] sm:max-w-[320px]" dir="ltr">
+                          <div className="font-mono text-xs font-bold text-foreground truncate max-w-[220px] sm:max-w-[320px]" dir="ltr">
                             {selectedMaterial.specificationFile}
                           </div>
                         </div>
@@ -915,9 +915,9 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 border-dashed rounded-xl">
-                        <div className="text-xs font-bold text-slate-400 font-mono mb-2">No Specification Uploaded</div>
-                        <label className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 cursor-pointer hover:bg-slate-100 transition-colors shadow-xs">
+                      <div className="flex flex-col items-center justify-center p-6 bg-card border border-border border-dashed rounded-xl">
+                        <div className="text-xs font-bold text-muted-foreground font-mono mb-2">No Specification Uploaded</div>
+                        <label className="flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-lg text-xs font-bold text-muted-foreground cursor-pointer hover:bg-accent transition-colors shadow-xs">
                           <Upload className="w-4 h-4" />
                           <span>آپلود فایل جدید</span>
                           <input type="file" className="hidden" onChange={handleReplaceSpec} />
@@ -930,10 +930,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
             </div>
 
-            <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-slate-200 bg-slate-50/95 backdrop-blur-md flex items-center justify-end shrink-0 shadow-xs">
+            <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end shrink-0 shadow-xs">
               <button
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs transition-colors cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-foreground font-bold text-xs transition-colors cursor-pointer"
               >
                 بستن
               </button>
@@ -948,12 +948,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div onClick={() => setMaterialToDelete(null)} className="absolute inset-0" />
           
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 border border-slate-200 z-10 text-right">
+          <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">
             <div className="flex items-center gap-3 text-rose-600 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
                 <Trash2 className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-black text-slate-800">حذف ماده اولیه</h3>
+              <h3 className="text-base font-black text-foreground">حذف ماده اولیه</h3>
             </div>
 
             <div className="space-y-4">
@@ -962,11 +962,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs leading-relaxed">
                     <strong>خطای یکپارچگی داده‌ها (ALCOA+):</strong> امکان حذف این ماده به علت وجود وابستگی در سورس‌های فعال وجود ندارد. ابتدا باید وابستگی سورس‌های زیر را برطرف نمایید:
                   </div>
-                  <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl p-2 bg-slate-50">
+                  <div className="max-h-40 overflow-y-auto divide-y divide-border border border-border rounded-xl p-2 bg-muted">
                     {connectedVendors.map(vendor => (
-                      <div key={vendor.id} className="py-2 px-2 text-xs text-slate-700 flex justify-between items-center">
+                      <div key={vendor.id} className="py-2 px-2 text-xs text-foreground flex justify-between items-center">
                         <span className="font-bold">{vendor.name}</span>
-                        <span className="font-mono bg-slate-200/70 px-2 py-0.5 rounded text-[10px] text-slate-700">
+                        <span className="font-mono bg-slate-200/70 px-2 py-0.5 rounded text-[10px] text-foreground">
                           {vendor.category === 'sample' ? 'نمونه' : vendor.category}
                         </span>
                       </div>
@@ -975,7 +975,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <div className="flex justify-end pt-2">
                     <button 
                       onClick={() => setMaterialToDelete(null)} 
-                      className="w-full sm:w-auto px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                      className="w-full sm:w-auto px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all"
                     >
                       متوجه شدم
                     </button>
@@ -983,14 +983,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </>
               ) : (
                 <>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    آیا از حذف ماده اولیه <span className="font-bold text-slate-800">«{materialToDelete.nameFa}» ({materialToDelete.nameEn})</span> اطمینان دارید؟ 
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    آیا از حذف ماده اولیه <span className="font-bold text-foreground">«{materialToDelete.nameFa}» ({materialToDelete.nameEn})</span> اطمینان دارید؟ 
                     این عمل غیرقابل بازگشت بوده و تمامی اطلاعات مربوط به این ماده از سیستم حذف خواهد شد.
                   </p>
                   <div className="flex items-center justify-end gap-2 pt-2">
                     <button 
                       onClick={() => setMaterialToDelete(null)} 
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
+                      className="px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all border border-border"
                     >
                       انصراف
                     </button>
@@ -1017,22 +1017,22 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
           <div onClick={() => setSpecToDelete(false)} className="absolute inset-0" />
           
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 border border-slate-200 z-10 text-right">
+          <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">
             <div className="flex items-center gap-3 text-rose-600 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
                 <FileText className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-black text-slate-800">حذف فایل پیوست Specification</h3>
+              <h3 className="text-base font-black text-foreground">حذف فایل پیوست Specification</h3>
             </div>
 
             <div className="space-y-4">
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 آیا از حذف فایل پیوست مشخصات فنی (Specification) این ماده اطمینان دارید؟
               </p>
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button 
                   onClick={() => setSpecToDelete(false)} 
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
+                  className="px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all border border-border"
                 >
                   انصراف
                 </button>
