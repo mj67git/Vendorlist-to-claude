@@ -29,7 +29,18 @@ export function LoginView({ onLogin }: LoginViewProps) {
       body: JSON.stringify({ username, password })
     })
       .then(async (res) => {
-        const data = await res.json();
+        // Guard against non-JSON responses (e.g. an HTML 500 error page when the
+        // server/database is misconfigured). Parsing HTML as JSON throws a cryptic
+        // "The string did not match the expected pattern" on Safari/iOS.
+        const raw = await res.text();
+        let data: any = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch {
+          throw new Error(
+            res.status >= 500
+              ? 'خطای سرور — احتمالاً پایگاه‌داده متصل یا مهاجرت نشده است. با مدیر سیستم تماس بگیرید.'
+              : 'پاسخ نامعتبر از سرور احراز هویت دریافت شد.'
+          );
+        }
         if (!res.ok) {
           throw new Error(data.error || 'Invalid username or password.');
         }

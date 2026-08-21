@@ -888,6 +888,7 @@ async function startServer() {
 
   // User Login (Authenticates users securely)
   app.post("/api/auth/login", async (req, res) => {
+    try {
     const { username, password } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = getUserAgent(req);
@@ -1009,6 +1010,16 @@ async function startServer() {
         mustChangePassword
       }
     });
+    } catch (err: any) {
+      // Always answer with JSON so the client never has to parse an HTML error
+      // page (e.g. when the database is unreachable or not yet migrated).
+      console.error("[Login] Unexpected failure:", err?.message || err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "خطای سرور در ورود — اتصال یا مهاجرت پایگاه‌داده را بررسی کنید (DATABASE_URL / migrate).",
+        });
+      }
+    }
   });
 
   // User Logout endpoint
