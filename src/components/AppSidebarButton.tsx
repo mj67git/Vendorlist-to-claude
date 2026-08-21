@@ -102,9 +102,11 @@ interface AppSidebarButtonProps {
   label: string;
   sub?: string;
   badge?: string | number;
+  alert?: number;
   active: boolean;
   onClick: () => void;
   variant?: string;
+  collapsed?: boolean;
 }
 
 export function AppSidebarButton({
@@ -112,19 +114,24 @@ export function AppSidebarButton({
   label,
   sub,
   badge,
+  alert,
   active,
   onClick,
   variant = 'home',
+  collapsed = false,
 }: AppSidebarButtonProps) {
   const currentStyle = variantStyles[variant] || variantStyles.home;
+  const hasAlert = typeof alert === 'number' && alert > 0;
 
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
-        'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 text-right group relative cursor-pointer',
+        'w-full flex items-center rounded-xl text-xs font-semibold transition-all duration-200 text-right group relative cursor-pointer',
+        collapsed ? 'justify-center p-2' : 'gap-3 px-3.5 py-2.5',
         active
           ? currentStyle.activeClass
           : cn('bg-transparent', currentStyle.hoverClass)
@@ -132,32 +139,43 @@ export function AppSidebarButton({
     >
       <div
         className={cn(
-          'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-all duration-200',
+          'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-all duration-200 relative',
           active
             ? currentStyle.iconActiveClass
             : currentStyle.iconHoverClass
         )}
       >
         <Icon className="w-4 h-4" aria-hidden="true" />
-      </div>
-
-      <div className="flex flex-col overflow-hidden text-right flex-1 min-w-0">
-        <span className="font-bold leading-tight truncate text-inherit">
-          {label}
-        </span>
-        {sub && (
-          <span
-            className={cn(
-              'text-[10px] truncate font-mono uppercase tracking-wider mt-0.5',
-              active ? 'text-white/80' : 'text-muted-foreground/80'
-            )}
-          >
-            {sub}
-          </span>
+        {collapsed && hasAlert && (
+          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center animate-pulse">{alert}</span>
         )}
       </div>
 
-      {badge !== undefined && (
+      {!collapsed && (
+        <div className="flex flex-col overflow-hidden text-right flex-1 min-w-0">
+          <span className="font-bold leading-tight truncate text-inherit">
+            {label}
+          </span>
+          {sub && (
+            <span
+              className={cn(
+                'text-[10px] truncate font-mono uppercase tracking-wider mt-0.5',
+                active ? 'text-white/80' : 'text-muted-foreground/80'
+              )}
+            >
+              {sub}
+            </span>
+          )}
+        </div>
+      )}
+
+      {!collapsed && hasAlert && (
+        <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 bg-rose-600 text-white animate-pulse" title="نیازمند توجه">
+          {alert}
+        </span>
+      )}
+
+      {!collapsed && badge !== undefined && (
         <span
           className={cn(
             'text-[11px] font-mono font-bold px-2 py-0.5 rounded-full shrink-0',

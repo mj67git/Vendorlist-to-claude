@@ -45,6 +45,7 @@ import { MaterialSelector } from './components/MaterialSelector';
 import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
+import { CommandPalette } from './components/CommandPalette';
 import { authFetch, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
@@ -315,6 +316,22 @@ export default function App() {
 
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('app_sidebar_collapsed') === 'true'; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem('app_sidebar_collapsed', String(sidebarCollapsed)); } catch { /* ignore */ } }, [sidebarCollapsed]);
+  // Global ⌘K / Ctrl+K to open the command palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setShowCommandPalette(v => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -334,6 +351,12 @@ export default function App() {
       .filter(item => item.check.status === 'expiring_soon' || item.check.status === 'expired')
       .sort((a, b) => (a.check.daysLeft || 0) - (b.check.daysLeft || 0));
   }, [db]);
+
+  // Critical audit events (local mode reads the client store; harmless 0 otherwise).
+  const criticalAuditCount = useMemo(() => {
+    if (!isLocalMode()) return 0;
+    try { return readLocalAudit().filter((l: any) => l.severity === 'Critical').length; } catch { return 0; }
+  }, [db, businessPartners, materials]);
 
   if (!currentUser) {
     return <LoginView onLogin={setCurrentUser} />;
@@ -865,41 +888,74 @@ export default function App() {
 
         {/* LEFT PANEL: Fixed Sidebar */}
         <aside className={`
-          fixed top-0 bottom-0 right-0 z-30 w-[272px] bg-card/95 backdrop-blur-md border-l border-border/80 
-          transform transition-transform duration-300 ease-in-out md:translate-x-0 slide-in print:hidden
+          fixed top-0 bottom-0 right-0 z-30 w-[272px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[272px]'} bg-card/95 backdrop-blur-md border-l border-border/80
+          transform transition-all duration-300 ease-in-out md:translate-x-0 slide-in print:hidden
           ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
           flex flex-col shadow-xs
         `}>
           {/* BRAND BLOCK */}
-          <div className="px-5 py-4.5 border-b border-border/80 flex items-center justify-between">
+          <div className={`py-4.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center shrink-0">
                 <img src={temadLogo} alt="Logo" className="h-12 w-auto object-contain" />
               </div>
-              <div className="flex flex-col justify-center text-right">
+              <div className={`flex-col justify-center text-right ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
                 <span className="font-extrabold text-foreground text-xs sm:text-sm leading-tight tracking-tight">Vendor List & Supplier Evaluation System (VLSE)</span>
                 <span className="text-primary font-mono text-[10px] sm:text-[11px] mt-0.5 tracking-tight font-bold">
                   سیستم ارزیابی تامین‌کنندگان
                 </span>
               </div>
             </div>
-            <button 
+            <button
               className="md:hidden text-muted-foreground hover:text-foreground p-1 rounded-lg"
               onClick={() => setSidebarOpen(false)}
             >
               <X className="w-5 h-5" />
             </button>
+            {/* Desktop collapse toggle */}
+            <button
+              className={`hidden md:flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border transition-all ${sidebarCollapsed ? 'md:hidden' : ''}`}
+              onClick={() => setSidebarCollapsed(true)}
+              title="جمع کردن نوار کناری"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
+          {/* Collapsed: search + expand controls */}
+          {sidebarCollapsed && (
+            <div className="hidden md:flex flex-col items-center gap-1.5 py-2 border-b border-border/80">
+              <button onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent border border-border">
+                <Search className="w-4 h-4" />
+              </button>
+              <button onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Expanded: quick search launcher */}
+          {!sidebarCollapsed && (
+            <div className="px-3 pt-3">
+              <button
+                onClick={() => setShowCommandPalette(true)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-muted/40 hover:bg-accent text-muted-foreground transition-colors text-xs"
+              >
+                <span className="flex items-center gap-2"><Search className="w-3.5 h-3.5" /> جستجوی سریع...</span>
+                <kbd className="font-mono text-[10px] bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+              </button>
+            </div>
+          )}
+
           <nav className="flex-1 px-3 py-3.5 space-y-1 overflow-y-auto">
-            <SidebarButton 
+            <SidebarButton collapsed={sidebarCollapsed}
               icon={Home} label="صفحه اصلی" 
               variant="home"
               active={view === 'home' && !selectedVendor} 
               onClick={() => navigate('home')} 
             />
 
-            <div className="pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between">
+            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
               <span className="text-[10px] font-bold text-slate-400">CATEGORIES</span>
             </div>
@@ -910,7 +966,7 @@ export default function App() {
                 (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
               ).length;
               return (
-                <SidebarButton 
+                <SidebarButton collapsed={sidebarCollapsed}
                   key={id}
                   variant={id}
                   badge={count}
@@ -921,18 +977,18 @@ export default function App() {
               );
             })}
 
-            <div className="pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between">
+            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
               <span className="text-[10px] font-bold text-slate-400">REPOSITORY</span>
             </div>
-            <SidebarButton 
+            <SidebarButton collapsed={sidebarCollapsed}
               icon={Building2} label="مخزن شرکای تجاری" sub="Business Partners"
               badge={businessPartners?.length || 0}
               variant="business-partners"
               active={view === 'business-partners' && !selectedVendor} 
               onClick={() => navigate('business-partners')} 
             />
-            <SidebarButton 
+            <SidebarButton collapsed={sidebarCollapsed}
               icon={Database} label="مخزن مواد اولیه" sub="Materials Master"
               badge={materials?.length || 0}
               variant="materials"
@@ -940,28 +996,29 @@ export default function App() {
               onClick={() => navigate('materials')} 
             />
 
-            <div className="pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between">
+            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
               <span className="text-[10px] font-bold text-slate-400">GOVERNANCE</span>
             </div>
             {currentUser?.role === 'admin' && (
               <>
-                <SidebarButton 
+                <SidebarButton collapsed={sidebarCollapsed}
                   icon={Archive} label="آرشیو کامل داده‌ها" sub="Full Master Archive"
                   badge={db.length}
                   variant="archive"
                   active={view === 'archive' && !selectedVendor} 
                   onClick={() => navigate('archive')} 
                 />
-                <SidebarButton 
+                <SidebarButton collapsed={sidebarCollapsed}
                   icon={History} label="ردیابی تغییرات (Audit)" sub="Audit Trail Center"
+                  alert={criticalAuditCount}
                   variant="audit-trail"
                   active={view === 'audit-trail' && !selectedVendor} 
                   onClick={() => navigate('audit-trail')} 
                 />
               </>
             )}
-            <SidebarButton 
+            <SidebarButton collapsed={sidebarCollapsed}
               icon={Handshake} label="بررسی یکپارچه تامین‌کننده" sub="Supplier 360 Audit"
               variant="supplier-audit"
               active={view === 'supplier-audit' && !selectedVendor} 
@@ -970,8 +1027,15 @@ export default function App() {
           </nav>
 
           {currentUser && (
-            <div className="px-4 py-3.5 border-t border-border/80 flex items-center justify-between gap-3 bg-muted/40">
-              <div className="flex items-center gap-2.5 overflow-hidden text-right">
+            <div className={`py-3.5 border-t border-border/80 flex items-center bg-muted/40 ${sidebarCollapsed ? 'md:justify-center md:px-2 px-4 justify-between gap-3' : 'px-4 justify-between gap-3'}`}>
+              {sidebarCollapsed && (
+                <Avatar className="h-8 w-8 border border-border hidden md:flex" title={currentUser.name || currentUser.username}>
+                  <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">
+                    {currentUser.role === 'admin' ? 'AD' : currentUser.role === 'qa' ? 'QA' : currentUser.role === 'commercial' ? 'CO' : currentUser.role === 'planning' ? 'PL' : currentUser.role === 'finance' ? 'FI' : 'US'}
+                  </AvatarFallback>
+                </Avatar>
+              )}
+              <div className={`items-center gap-2.5 overflow-hidden text-right ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
                 <Avatar className="h-8 w-8 border border-border">
                   <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">
                     {currentUser.role === 'admin' ? 'AD' : 
@@ -994,9 +1058,9 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button 
-                  onClick={() => setShowChangePasswordModal(true)} 
+              <div className={`items-center gap-1 shrink-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
+                <button
+                  onClick={() => setShowChangePasswordModal(true)}
                   className="flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent border border-border transition-all duration-200 cursor-pointer" 
                   title="تغییر کلمه عبور"
                 >
@@ -1020,7 +1084,7 @@ export default function App() {
         </aside>
 
         {/* RIGHT PANEL: Main Content Area */}
-        <main className="flex-1 md:pr-[272px] flex flex-col h-screen overflow-hidden print:h-auto print:overflow-visible print:pr-0 print:block">
+        <main className={`flex-1 ${sidebarCollapsed ? 'md:pr-[76px]' : 'md:pr-[272px]'} flex flex-col h-screen overflow-hidden transition-all duration-300 print:h-auto print:overflow-visible print:pr-0 print:block`}>
           
           {/* Sticky Topbar */}
           <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
@@ -1168,6 +1232,17 @@ export default function App() {
           </div>
 
         </main>
+
+        {/* Global command palette (⌘K) */}
+        <CommandPalette
+          open={showCommandPalette}
+          onClose={() => setShowCommandPalette(false)}
+          db={db}
+          materials={materials}
+          partners={businessPartners}
+          onSelectVendor={handleSelectVendor}
+          onNavigate={(v, cid) => navigate(v as any, cid as any)}
+        />
 
         {/* Top sync progress bar (non-blocking; shown while syncing with the server) */}
         {isSyncing && (
