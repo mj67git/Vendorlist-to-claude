@@ -672,6 +672,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }
   };
 
+  // نتیجهٔ ارزیابی SOP بر اساس گرید (فقط گرید نمایش داده می‌شود، بدون وضعیت مانیتورینگ)
+  const gradeApprovalLabel = (grade?: string): { label: string; cls: string } => {
+    switch (grade) {
+      case 'A': return { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+      case 'B': return { label: 'Permit Approval', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
+      case 'C': return { label: 'Expired', cls: 'bg-amber-100 text-amber-800 border-amber-300' };
+      case 'D': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
+      case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
+      case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
+      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-slate-300' };
+    }
+  };
+
   const getDocStatusInfo = (status: SOPDocumentStatus | null) => {
     switch (status) {
       case 'Approved':
@@ -935,7 +948,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <ArrowUpDown className="w-3 h-3 text-slate-400" />
                   </div>
                 </th>
-                <th className="py-3 px-4">ارزیابی SOP Supplier</th>
+                <th className="py-3 px-4">نتیجهٔ ارزیابی SOP</th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('status')}>
                   <div className="flex items-center gap-1">
                     <span>وضعیت سیستم</span>
@@ -1004,9 +1017,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                  partner.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
                                  `Grade ${partner.evaluation.grade}`}
                               </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${getSOPStatusBadgeClass(partner.evaluation.status)}`}>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
                                 <Award className="w-3 h-3" />
-                                {partner.evaluation.status}
+                                {gradeApprovalLabel(partner.evaluation.grade).label}
                               </span>
                               <span className="text-[10px] font-mono text-slate-400 font-bold">
                                 ({partner.evaluation.totalScore}/100)
