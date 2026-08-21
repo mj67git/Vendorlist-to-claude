@@ -24,11 +24,23 @@ export function isLocalMode(): boolean {
  * original App-level implementation.
  */
 export function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  // In local/demo mode there is no backend: resolve a non-ok response (never
-  // 401/403, so no reload) so every loader falls back to its localStorage cache
-  // and writes become no-ops (state is already persisted locally by the caller).
+  // In local/demo mode there is no backend. Resolve synthetically (never 401/403,
+  // so no reload):
+  //  - GET (reads): a non-ok 503 so every loader falls back to its localStorage
+  //    cache instead of overwriting it with empty data.
+  //  - writes (POST/PATCH/PUT/DELETE): an ok {success:true} so the caller's
+  //    optimistic update is NOT rolled back (state is already persisted locally).
   if (isLocalMode()) {
-    return Promise.resolve(new Response(null, { status: 503 }));
+    const method = (options.method || 'GET').toUpperCase();
+    if (method === 'GET') {
+      return Promise.resolve(new Response(null, { status: 503 }));
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ success: true, localMode: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
   }
 
   const token = localStorage.getItem('app_jwt_token');

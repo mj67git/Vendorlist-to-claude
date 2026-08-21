@@ -316,6 +316,9 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // In local/demo mode the backend is intentionally absent — never show the
+  // "connection failed" banner (the mount fetch runs before demo login is set).
+  useEffect(() => { if (isLocalMode()) setLoadError(null); }, [currentUser]);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
