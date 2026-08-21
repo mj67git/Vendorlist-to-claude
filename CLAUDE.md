@@ -58,8 +58,8 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 **پاک‌سازی pkill:** هرگز `pkill -f "tsx"` نزن (خودِ shell را می‌کشد)؛ با PID بکش: `for pid in $(pgrep -f 'bin/tsx'); do [ "$pid" != "$$" ] && kill $pid; done`.
 
 ## Git / تحویل
-- **برنچ کاری:** `claude/repository-comprehensive-audit-p1-1l7l1t` (روی همین کار کن و push کن).
-- **PR:** #2 → https://github.com/mj67git/Vendorlist-to-claude/pull/2
+- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
+- **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها) — همه در `main`.
 - هر تغییر: typecheck + build + تست زنده (در صورت لمس backend) → commit با پیام واضح → push. **`STATUS.md` را بعد از هر تغییر به‌روزرسانی کن.**
 - push گاهی 502 می‌دهد؛ با backoff retry کن.
 
