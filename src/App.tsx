@@ -5,9 +5,10 @@ import {
   Activity, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Briefcase, 
   Microscope, Building, Building2, CheckCircle, AlertCircle, DollarSign, Plus, Pencil, User as UserIcon,
   Pill, Handshake, Warehouse, Boxes, Coins, PawPrint, ClipboardCheck, Hash, Trash2, ShieldAlert, Printer,
-  RotateCcw, Download, ChevronDown, ChevronUp, Database, Award, History, Mail, Phone, MapPin, Bell, Calendar
+  RotateCcw, Download, ChevronDown, ChevronUp, Database, Award, History, Mail, Phone, MapPin, Bell, Calendar,
+  ClipboardList, PieChart as PieChartIcon
 } from 'lucide-react';
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip } from 'recharts';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, PieChart, Pie, Cell } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
@@ -45,7 +46,7 @@ import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { authFetch, isLocalMode } from './services/authFetch';
-import { appendLocalAudit } from './services/localAudit';
+import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
@@ -1305,6 +1306,65 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
       .sort((a, b) => (a.check.daysLeft || 0) - (b.check.daysLeft || 0));
   }, [db]);
 
+  // Grade distribution for the donut (semantic ordinal grade colours).
+  const gradeDistribution = useMemo(() => {
+    const graded = stats.gradeA + stats.gradeB + stats.gradeC + stats.rejected;
+    const ungraded = Math.max(0, stats.total - graded);
+    return [
+      { name: 'Grade A', value: stats.gradeA, color: '#10b981' },
+      { name: 'Grade B', value: stats.gradeB, color: '#3b82f6' },
+      { name: 'Grade C', value: stats.gradeC, color: '#f59e0b' },
+      { name: 'Reject / سیاه', value: stats.rejected, color: '#e11d48' },
+      { name: 'بدون گرید', value: ungraded, color: '#94a3b8' },
+    ].filter(d => d.value > 0);
+  }, [stats]);
+
+  // Pending-actions center: real, actionable quality gaps.
+  const pendingActions = useMemo(() => {
+    const realVendors = db.filter(v => !v.isSample && v.category !== 'sample');
+    const notEvaluated = realVendors.filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'));
+    const noRisk = realVendors.filter(v => v.status !== 'rejected' && !v.riskAssessment);
+    const sopPending = (partners || []).filter(p => p.type === 'Supplier' && (!p.evaluation || p.evaluation.grade === 'Not Evaluated'));
+    return [
+      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, items: notEvaluated, icon: ClipboardList, tone: 'amber' },
+      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, items: noRisk, icon: ShieldAlert, tone: 'orange' },
+      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, items: [], icon: Award, tone: 'blue' },
+      { key: 'irc', label: 'IRC نزدیک انقضا / منقضی', count: expiringVendors.length, items: expiringVendors.map(e => e.vendor), icon: Calendar, tone: 'rose' },
+    ];
+  }, [db, partners, expiringVendors]);
+
+  // Lab pass-rate across all sources.
+  const labStats = useMemo(() => {
+    let pass = 0, cond = 0, rej = 0;
+    for (const v of db) for (const r of (v.analysisRecords || [])) {
+      if (r.decision === 'Pass') pass++;
+      else if (r.decision === 'Approved Conditional') cond++;
+      else if (r.decision === 'Reject') rej++;
+    }
+    const total = pass + cond + rej;
+    return { pass, cond, rej, total, rate: total > 0 ? Math.round(((pass + cond) / total) * 100) : 0 };
+  }, [db]);
+
+  // Recent audit activity (works in local mode; backend fetch otherwise).
+  const [recentAudit, setRecentAudit] = useState<any[]>([]);
+  useEffect(() => {
+    if (!currentUser) return;
+    if (isLocalMode()) { setRecentAudit(readLocalAudit().slice(0, 5)); return; }
+    let cancelled = false;
+    authFetch('/api/audit-logs?page=1&limit=5')
+      .then(res => (res.ok ? res.json() : null))
+      .then(j => { if (!cancelled && j?.data) setRecentAudit(j.data.slice(0, 5)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentUser, db, partners, materials]);
+
+  const toneClasses: Record<string, string> = {
+    amber: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800',
+    orange: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800',
+    blue: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800',
+    rose: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800',
+  };
+
   return (
     <div className="space-y-7 fade-in">
       {/* HERO SECTION */}
@@ -1362,6 +1422,133 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
             </div>
           </Card>
         ))}
+      </div>
+
+      {/* ANALYTICS ROW: grade donut + action center */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Grade distribution donut */}
+        <Card className="p-5 bg-card border-border/80">
+          <div className="flex items-center gap-2 mb-3">
+            <PieChartIcon className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-foreground text-sm">توزیع گرید کیفی <span className="text-muted-foreground text-xs font-normal font-mono">(Grade Mix)</span></h3>
+          </div>
+          {gradeDistribution.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground text-xs">داده‌ای برای نمایش نیست.</div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="h-44 w-1/2" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={gradeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={2} strokeWidth={2}>
+                      {gradeDistribution.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
+                    </Pie>
+                    <RTooltip contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }} formatter={(v: any, n: any) => [`${v} (${stats.total > 0 ? Math.round((v/stats.total)*100) : 0}%)`, n]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-1.5">
+                {gradeDistribution.map(d => (
+                  <div key={d.name} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-foreground font-medium">
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
+                      {d.name}
+                    </span>
+                    <span className="font-mono font-bold text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Action center */}
+        <Card className="p-5 bg-card border-border/80 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-3">
+            <ClipboardList className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-foreground text-sm">مرکز اقدامات معلق <span className="text-muted-foreground text-xs font-normal font-mono">(Action Center)</span></h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {pendingActions.map(a => {
+              const clickable = a.items.length > 0;
+              return (
+                <button
+                  key={a.key}
+                  type="button"
+                  disabled={!clickable}
+                  onClick={() => { if (clickable) onSelectVendor(a.items[0]); }}
+                  className={`text-right rounded-xl border p-3 transition-all ${toneClasses[a.tone]} ${clickable ? 'hover:shadow-sm cursor-pointer' : 'opacity-70 cursor-default'}`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <a.icon className="w-4 h-4" />
+                    <span className="text-2xl font-black font-mono tabular-nums">{a.count}</span>
+                  </div>
+                  <div className="text-[11px] font-bold leading-snug">{a.label}</div>
+                  {clickable && a.count > 0 && <div className="text-[10px] mt-1 opacity-80 group-hover:underline">رسیدگی ←</div>}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      {/* ACTIVITY ROW: recent audit + lab pass rate */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Recent audit */}
+        <Card className="p-5 bg-card border-border/80 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-3">
+            <History className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-foreground text-sm">آخرین فعالیت‌ها <span className="text-muted-foreground text-xs font-normal font-mono">(Recent Activity)</span></h3>
+          </div>
+          {recentAudit.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-xs">فعالیتی برای نمایش ثبت نشده است.</div>
+          ) : (
+            <div className="divide-y divide-border">
+              {recentAudit.map((l, i) => {
+                const sev = l.severity === 'Critical' ? 'bg-rose-500' : l.severity === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500';
+                let when = '';
+                try { const d = new Date(l.timestamp || l.createdAt); when = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch {}
+                return (
+                  <div key={l.id || i} className="flex items-center gap-2.5 py-2">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action} — ${l.entityName || ''}`}</div>
+                      <div className="text-[10px] text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Lab pass rate */}
+        <Card className="p-5 bg-card border-border/80">
+          <div className="flex items-center gap-2 mb-3">
+            <Microscope className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-foreground text-sm">نرخ قبولی آزمایشگاه <span className="text-muted-foreground text-xs font-normal font-mono">(Lab Pass)</span></h3>
+          </div>
+          {labStats.total === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-center">
+                <div className={`text-4xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
+              </div>
+              <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
+                <div className="h-full bg-emerald-500" style={{ width: `${(labStats.pass / labStats.total) * 100}%` }} />
+                <div className="h-full bg-blue-500" style={{ width: `${(labStats.cond / labStats.total) * 100}%` }} />
+                <div className="h-full bg-rose-500" style={{ width: `${(labStats.rej / labStats.total) * 100}%` }} />
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Pass {labStats.pass}</span>
+                <span className="text-blue-600 dark:text-blue-400 font-bold">مشروط {labStats.cond}</span>
+                <span className="text-rose-600 dark:text-rose-400 font-bold">Reject {labStats.rej}</span>
+              </div>
+            </div>
+          )}
+        </Card>
       </div>
 
       {/* LICENSE EXPIRY ALERTS (IF ANY) */}
