@@ -6,7 +6,7 @@ import {
   Microscope, Building, Building2, CheckCircle, AlertCircle, DollarSign, Plus, Pencil, User as UserIcon,
   Pill, Handshake, Warehouse, Boxes, Coins, PawPrint, ClipboardCheck, Hash, Trash2, ShieldAlert, Printer,
   RotateCcw, Download, ChevronDown, ChevronUp, Database, Award, History, Mail, Phone, MapPin, Bell, Calendar,
-  ClipboardList, PieChart as PieChartIcon
+  ClipboardList, PieChart as PieChartIcon, Sun, Moon
 } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, PieChart, Pie, Cell } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,6 +46,7 @@ import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { useTheme } from './design-system/ThemeSwitcher';
 import { authFetch, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
@@ -341,6 +342,7 @@ export default function App() {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const { isDark, toggleTheme } = useTheme();
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
   const handleLogout = () => {
@@ -1076,6 +1078,16 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Dark / light theme toggle */}
+              <button
+                onClick={toggleTheme}
+                className="relative p-2 rounded-xl border border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-all active:scale-95 cursor-pointer"
+                title={isDark ? 'روشن کردن حالت روز' : 'فعال‌کردن حالت شب'}
+                aria-label="تغییر حالت روز/شب"
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+
               {/* Notification Center for License Expiry */}
               <div className="relative">
                 <button
@@ -1210,6 +1222,16 @@ export default function App() {
                           </div>
                         </div>
                         <div className="p-1.5">
+                          <button
+                            onClick={toggleTheme}
+                            className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
+                          >
+                            <span className="flex items-center gap-2.5">
+                              {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                              {isDark ? 'حالت روز (روشن)' : 'حالت شب (تیره)'}
+                            </span>
+                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-500'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
+                          </button>
                           <button
                             onClick={() => { setShowUserMenu(false); setShowChangePasswordModal(true); }}
                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
