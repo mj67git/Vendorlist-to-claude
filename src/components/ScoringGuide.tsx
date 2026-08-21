@@ -9,7 +9,7 @@ interface ScoringGuideProps {
 
 export function ScoringGuide({ currentUser }: ScoringGuideProps) {
   return (
-    <div className="bg-card border border-[#E5E5EA] rounded-2xl p-6 shadow-sm border-r-4 border-r-[#0071E3] fade-in text-sm text-foreground text-right">
+    <div className="bg-card border border-border rounded-2xl p-6 shadow-sm border-r-4 border-r-[#0071E3] fade-in text-sm text-foreground text-right">
       <h4 className="font-bold text-foreground mb-3 text-base flex items-center justify-end gap-2">
         راهنمای امتیازدهی و ضرایب
         <Info className="w-5 h-5 text-[#0071E3]" />
@@ -31,7 +31,7 @@ export function ScoringGuide({ currentUser }: ScoringGuideProps) {
           ) : null}
         </li>
       </ul>
-      <div className="flex flex-wrap gap-4 items-center mt-2 border-t border-[#E5E5EA] pt-4 justify-end">
+      <div className="flex flex-wrap gap-4 items-center mt-2 border-t border-border pt-4 justify-end">
         <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
           <span className="font-mono text-emerald-700 font-bold">Grade A</span>
           <span className="text-emerald-600 text-xs mx-1">امتیاز ۸۰ تا ۱۰۰</span>

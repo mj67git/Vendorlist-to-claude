@@ -881,11 +881,11 @@ export default function App() {
           to { opacity: 1; transform: translateY(0); }
         }
         
-        /* Custom scrollbar for webkit */
+        /* Custom scrollbar for webkit (theme-aware) */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #F5F5F7; }
-        ::-webkit-scrollbar-thumb { background: #D2D2D7; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #F5F5F7; }
+        ::-webkit-scrollbar-track { background: var(--muted); }
+        ::-webkit-scrollbar-thumb { background: var(--border-hover-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
       `}</style>
 
       <div dir="rtl" className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
@@ -2289,11 +2289,11 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   </div>
                   <div className="space-y-1">
                     <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                    <input type="url" dir="ltr" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newMfgData.website} onChange={e => setNewMfgData({...newMfgData, website: e.target.value})} placeholder="https://..." />
+                    <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newMfgData.website} onChange={e => setNewMfgData({...newMfgData, website: e.target.value})} placeholder="https://..." />
                   </div>
                   <div className="space-y-1">
                     <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                    <select className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground" value={newMfgData.status} onChange={e => setNewMfgData({...newMfgData, status: e.target.value as any})}>
+                    <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newMfgData.status} onChange={e => setNewMfgData({...newMfgData, status: e.target.value as any})}>
                       <option value="Active">فعال (Active)</option>
                       <option value="Inactive">غیرفعال (Inactive)</option>
                       <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
@@ -2301,7 +2301,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   </div>
                   <div className="md:col-span-2 space-y-1">
                     <label className="text-foreground font-semibold block">نشانی دقیق کارخانه:</label>
-                    <textarea className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground h-16" value={newMfgData.address} onChange={e => setNewMfgData({...newMfgData, address: e.target.value})} />
+                    <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newMfgData.address} onChange={e => setNewMfgData({...newMfgData, address: e.target.value})} />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
@@ -2361,39 +2361,39 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">نام شرکت فروشنده (فارسی): *</label>
-                      <input required type="text" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
+                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">Supplier Name (English):</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
+                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">کشور: *</label>
-                      <input required type="text" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground" value={newSupplierData.country} onChange={e => setNewSupplierData({...newSupplierData, country: e.target.value})} />
+                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.country} onChange={e => setNewSupplierData({...newSupplierData, country: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">شهر:</label>
-                      <input type="text" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground" value={newSupplierData.city} onChange={e => setNewSupplierData({...newSupplierData, city: e.target.value})} />
+                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.city} onChange={e => setNewSupplierData({...newSupplierData, city: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">نام رابط بازرگانی:</label>
-                      <input type="text" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground" value={newSupplierData.contactPerson} onChange={e => setNewSupplierData({...newSupplierData, contactPerson: e.target.value})} />
+                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.contactPerson} onChange={e => setNewSupplierData({...newSupplierData, contactPerson: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">شماره تلفن رابط:</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.phone} onChange={e => setNewSupplierData({...newSupplierData, phone: e.target.value})} />
+                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.phone} onChange={e => setNewSupplierData({...newSupplierData, phone: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">پست الکترونیکی (Email):</label>
-                      <input type="email" dir="ltr" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.email} onChange={e => setNewSupplierData({...newSupplierData, email: e.target.value})} />
+                      <input type="email" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.email} onChange={e => setNewSupplierData({...newSupplierData, email: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                      <input type="url" dir="ltr" className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.website} onChange={e => setNewSupplierData({...newSupplierData, website: e.target.value})} placeholder="https://..." />
+                      <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.website} onChange={e => setNewSupplierData({...newSupplierData, website: e.target.value})} placeholder="https://..." />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                      <select className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground" value={newSupplierData.status} onChange={e => setNewSupplierData({...newSupplierData, status: e.target.value as any})}>
+                      <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.status} onChange={e => setNewSupplierData({...newSupplierData, status: e.target.value as any})}>
                         <option value="Active">فعال (Active)</option>
                         <option value="Inactive">غیرفعال (Inactive)</option>
                         <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
@@ -2401,7 +2401,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                     </div>
                     <div className="md:col-span-2 space-y-1">
                       <label className="text-foreground font-semibold block">نشانی دقیق دفتر فروشنده:</label>
-                      <textarea className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
+                      <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
                     </div>
                   </div>
                 ) : (
@@ -2529,7 +2529,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                     type="checkbox" 
                     checked={isSample} 
                     onChange={e => setIsSample(e.target.checked)}
-                    className="w-4 h-4 text-[#0071E3] rounded border-[#D2D2D7] focus:ring-[#0071E3]"
+                    className="w-4 h-4 text-[#0071E3] rounded border-border focus:ring-[#0071E3]"
                   />
                   <span className="text-xs font-bold text-foreground">این تامین‌کننده به عنوان یک «نمونه» ثبت می‌شود</span>
                 </label>
@@ -2538,7 +2538,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   <div className="space-y-1 fade-in">
                     <label className="text-foreground font-semibold text-xs">وضعیت اولیه نمونه (Initial Sample Status)</label>
                     <select 
-                      className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-[#0071E3]" 
+                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-[#0071E3]" 
                       value={sampleStatus} 
                       onChange={e => setSampleStatus(e.target.value)}
                     >
@@ -2558,7 +2558,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
             </div>
 
             {/* PARTNER REPOSITORY INTEGRATION — single supplier/manufacturer selector */}
-            <div className="bg-card border border-[#E5E5EA] p-4 rounded-xl shadow-2xs">
+            <div className="bg-card border border-border p-4 rounded-xl shadow-2xs">
               <PartnerSelector
                 partners={partners}
                 type="Supplier"
@@ -2701,7 +2701,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                 <input 
                   type="text" 
                   dir="ltr" 
-                  className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] font-mono text-sm" 
+                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] font-mono text-sm" 
                   value={formData.irc} 
                   onChange={e => setFormData({...formData, irc: e.target.value})} 
                   placeholder="مثال: 1234567890"
@@ -2777,7 +2777,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
 
             <div className="space-y-1">
               <label className="text-foreground font-semibold text-xs">سوابق انحرافات (هر مورد در یک خط)</label>
-              <textarea className="w-full bg-card border border-[#D2D2D7] rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] h-20 placeholder:text-muted-foreground text-xs" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})}></textarea>
+              <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] h-20 placeholder:text-muted-foreground text-xs" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})}></textarea>
             </div>
           </div>
 
@@ -3483,7 +3483,7 @@ const MaterialsComparisonSection: React.FC<{ vendors: Vendor[]; categoryId?: Cat
             <Activity className="w-4 h-4 text-[#0071E3]" />
             نمودار مقایسه و تحلیل ارزیابی تامین‌کنندگان این ماده
           </h4>
-          <p className="text-xs text-[#86868B] mt-1">مقایسه امتیاز کل مکتسبه و تحلیل جهت بهترین انتخاب تأمین کالا</p>
+          <p className="text-xs text-muted-foreground mt-1">مقایسه امتیاز کل مکتسبه و تحلیل جهت بهترین انتخاب تأمین کالا</p>
         </div>
         
         {bestVendor && bestVendor.score > 0 && (
@@ -3496,7 +3496,7 @@ const MaterialsComparisonSection: React.FC<{ vendors: Vendor[]; categoryId?: Cat
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div className="lg:col-span-7 space-y-6">
-          <div className="bg-card p-4 rounded-xl border border-[#E5E5EA]">
+          <div className="bg-card p-4 rounded-xl border border-border">
             <div className="mb-4 flex justify-between items-center text-xs text-[#6E6E73] font-semibold">
               <span>مقایسه امتیاز کل تخصصی (از ۱۰۰)</span>
               <div className="flex items-center gap-2 font-normal">
@@ -3534,7 +3534,7 @@ const MaterialsComparisonSection: React.FC<{ vendors: Vendor[]; categoryId?: Cat
             </div>
           </div>
 
-          <div className="bg-card p-4 rounded-xl border border-[#E5E5EA]">
+          <div className="bg-card p-4 rounded-xl border border-border">
              <div className="flex items-center justify-between border-b border-border pb-2 mb-3">
                <h5 className="font-bold text-foreground text-xs flex items-center gap-2">
                  <Microscope className="w-4 h-4 text-indigo-600" />
@@ -3650,7 +3650,7 @@ const MaterialsComparisonSection: React.FC<{ vendors: Vendor[]; categoryId?: Cat
               <div className="mt-4 pt-3 border-t border-[#0071E3]/20 flex items-center justify-between">
                  <span className="font-bold text-foreground">امتیاز نهایی سیستم:</span>
                  <span className="font-mono text-sm" dir="ltr">
-                   {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} = <strong className="text-[16px] text-[#0071E3] bg-card px-2 rounded-md shadow-sm border border-[#E5E5EA]">{bestVendor.engineScore.toFixed(1)}</strong>
+                   {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} = <strong className="text-[16px] text-[#0071E3] bg-card px-2 rounded-md shadow-sm border border-border">{bestVendor.engineScore.toFixed(1)}</strong>
                  </span>
               </div>
             </div>
@@ -4582,7 +4582,7 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
         <div className="order-1 md:order-2 text-right">
           <h2 className="text-2xl font-bold text-foreground mb-1 flex items-center justify-end gap-3">
             آرشیو کل تامین‌کنندگان
-            <Archive className="w-6 h-6 text-[#86868B]" />
+            <Archive className="w-6 h-6 text-muted-foreground" />
           </h2>
           <p className="text-[#6E6E73] text-sm">لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)</p>
         </div>
