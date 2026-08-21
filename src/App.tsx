@@ -5927,6 +5927,70 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
 
 
 // --- View: Risk Assessment Form ---
+// FMEA 5×5 risk matrix (Criticality × Probability). Highlights the live cell.
+function RiskHeatmap({ criticality, probability }: { criticality: number; probability: number }) {
+  // rows: criticality 5→1 (top=most critical) · cols: probability 1→5
+  const rows = [5, 4, 3, 2, 1];
+  const cols = [1, 2, 3, 4, 5];
+  const cellColor = (c: number, p: number) => {
+    const rpn = c * p; // 1..25
+    if (rpn >= 15) return 'bg-red-500/25 border-red-500/40';
+    if (rpn >= 8) return 'bg-amber-500/25 border-amber-500/40';
+    return 'bg-emerald-500/20 border-emerald-500/40';
+  };
+  return (
+    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4" dir="ltr">
+      <div className="text-slate-200 font-bold text-sm mb-3 text-center" dir="rtl">
+        ماتریس ریسک (اهمیت × احتمال)
+      </div>
+      <div className="flex items-stretch gap-2">
+        {/* Y-axis label */}
+        <div className="flex items-center">
+          <span className="text-[10px] text-slate-400 font-bold [writing-mode:vertical-rl] rotate-180">
+            Criticality →
+          </span>
+        </div>
+        <div className="flex-1">
+          <div className="grid grid-cols-5 gap-1">
+            {rows.map(c =>
+              cols.map(p => {
+                const active = c === criticality && p === probability;
+                return (
+                  <div
+                    key={`${c}-${p}`}
+                    className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-all ${cellColor(c, p)} ${
+                      active ? 'ring-2 ring-white scale-105 z-10 shadow-lg' : 'opacity-70'
+                    }`}
+                    title={`Criticality ${c} × Probability ${p} = RPN(2D) ${c * p}`}
+                  >
+                    <span className={active ? 'text-white' : 'text-slate-300'}>{c * p}</span>
+                    {active && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-white border border-slate-900" />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {/* X-axis labels */}
+          <div className="grid grid-cols-5 gap-1 mt-1">
+            {cols.map(p => (
+              <div key={p} className="text-center text-[10px] text-slate-400 font-bold">{p}</div>
+            ))}
+          </div>
+          <div className="text-center text-[10px] text-slate-400 font-bold mt-1">Probability →</div>
+        </div>
+      </div>
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-slate-400" dir="rtl">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> پایین</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/40" /> متوسط</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/30 border border-red-500/40" /> بالا</span>
+      </div>
+    </div>
+  );
+}
+
 function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
   const spsScore = calculateOverallScore(vendor.scores, true) || 0;
   
@@ -6044,6 +6108,9 @@ function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: 
             </select>
           </div>
         </div>
+
+        {/* Visual risk matrix */}
+        <RiskHeatmap criticality={criticality} probability={probability} />
 
         {/* Info / Formulas */}
         <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 text-sm text-slate-300">
