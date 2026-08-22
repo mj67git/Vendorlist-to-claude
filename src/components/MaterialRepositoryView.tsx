@@ -504,7 +504,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* CREATE/EDIT MODAL - High Quality Responsive Enterprise Modal with Portal */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsModalOpen(false)} 
             className="absolute inset-0" 
@@ -791,7 +791,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* VIEW MODAL - Clean Enterprise Detail Viewer with Portal */}
       {isViewModalOpen && selectedMaterial && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsViewModalOpen(false)} 
             className="absolute inset-0" 
@@ -945,7 +945,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* CUSTOM MATERIAL DELETE MODAL with Portal */}
       {materialToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm fade-in">
           <div onClick={() => setMaterialToDelete(null)} className="absolute inset-0" />
           
           <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">
@@ -1014,7 +1014,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* CUSTOM SPEC FILE DELETE MODAL with Portal */}
       {specToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm fade-in">
           <div onClick={() => setSpecToDelete(false)} className="absolute inset-0" />
           
           <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">

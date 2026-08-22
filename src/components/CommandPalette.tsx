@@ -93,7 +93,7 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4" dir="rtl">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-xl bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden fade-in" onKeyDown={onKeyDown}>
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
           <Search className="w-4 h-4 text-muted-foreground shrink-0" />

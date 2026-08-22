@@ -19,7 +19,8 @@
 4. **Business Partners مدل تخت:** تولیدکننده و فروشنده مستقل‌اند — فروشنده به تولیدکننده وابسته نیست (`manufacturerId` self-relation حذف شد). فقط **فروشنده** ارزیابی SOP می‌شود.
 5. **فایل‌های SOP تنبل (lazy):** لیست شرکا base64 حمل نمی‌کند؛ فقط `hasFile`. blob از `GET /api/business-partners/:id/documents/:key/file` گرفته می‌شود. هنگام ذخیره، فایل موجود حفظ می‌شود مگر صریحاً حذف شود.
 6. **سازگاری به‌عقب:** `Vendor.status`/`grade` رشتهٔ آزادند (نه enum) تا ~۳۰ endpoint نشکند. مدل‌های موجود را فقط افزایشی تغییر بده.
-7. **Theme tokens:** برای UI جدید از توکن‌ها استفاده کن (`bg-card`, `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`, `bg-background`)، نه رنگ hardcode. dark mode با کلاس `.dark` روی `documentElement`.
+7. **Theme tokens:** برای UI جدید از توکن‌ها استفاده کن (`bg-card`, `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`, `bg-background`)، نه رنگ hardcode (`bg-white`, `bg-slate-*`, `text-slate-*`, hex روشن). dark mode با کلاس `.dark` روی `documentElement`؛ سوییچر تم در هدر (`useTheme`).
+8. **انیمیشن/ناوبری (یکدست):** کلاس‌های تعریف‌شده در `index.css`: `fade-in` (۲۰۰ms), `dialog-enter` (پاپ مودال), `slide-in-drawer`, `toast-enter`, `bounce-in`, `page-transition`. **ناوبری بین صفحات** توسط `AnimatePresence`+`motion.div` (کلید `keyName`) در `renderContent` انجام می‌شود — صفحهٔ جدید نساز که خودش transition جدا بزند. **مودال‌ها:** backdrop استاندارد = `fixed inset-0 ... bg-slate-900/50 backdrop-blur-sm ... fade-in` و پنل داخل همان. از `animate-fadeIn` (تعریف‌نشده در Tailwind v4) استفاده نکن. `prefers-reduced-motion` رعایت می‌شود.
 
 ## ساختار داده (۱۲ جدول نرمال — `prisma/schema.prisma`)
 - **Auth:** `users` (نقش enum، رمز hash+salt)

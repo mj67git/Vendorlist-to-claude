@@ -1104,7 +1104,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Add / Edit Partner Modal with Portal & Sticky Header/Footer */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsModalOpen(false)} 
             className="absolute inset-0" 
@@ -1650,7 +1650,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Comprehensive View Details Modal (Dashboard for Manufacturer / 3 Cards for Supplier) */}
       {isViewModalOpen && selectedPartner && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsViewModalOpen(false)} 
             className="absolute inset-0" 
@@ -2098,7 +2098,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Blacklist Confirmation Modal (reason required) */}
       {blacklistTarget && createPortal(
-        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-600 text-white rounded-xl">
@@ -2148,7 +2148,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Custom Deletion Confirmation Modal */}
       {partnerToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
@@ -2198,7 +2198,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Custom Deletion Constraints Warning Modal */}
       {deleteConstraintError && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-lg p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">

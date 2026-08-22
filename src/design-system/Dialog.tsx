@@ -29,7 +29,7 @@ export function Dialog({ isOpen, onClose, title, description, children, footer, 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm fade-in" 
+        className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm backdrop-blur-sm fade-in" 
         onClick={onClose}
         aria-hidden="true"
       />

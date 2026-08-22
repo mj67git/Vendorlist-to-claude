@@ -893,7 +893,7 @@ export default function App() {
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
           <div 
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] z-20 md:hidden fade-in-fast" 
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 md:hidden fade-in-fast" 
             onClick={() => setSidebarOpen(false)}
           />
         )}
@@ -1256,7 +1256,7 @@ export default function App() {
           </header>
 
           <div className="flex-1 overflow-y-auto w-full print:overflow-visible">
-            <div className={(view === 'audit-trail' || view === 'materials') && !selectedVendor ? "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 fade-in" : "max-w-5xl mx-auto p-4 sm:p-8 fade-in"}>
+            <div className={(view === 'audit-trail' || view === 'materials') && !selectedVendor ? "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8" : "max-w-5xl mx-auto p-4 sm:p-8"}>
               {renderContent()}
             </div>
           </div>
@@ -2246,7 +2246,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       {/* Modals inside form */}
       <AnimatePresence>
         {showNewMfgModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
               <div className="flex justify-between items-center border-b border-border pb-3 mb-4 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
@@ -2314,7 +2314,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
         )}
 
         {showNewSupplierModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden">
               <div className="flex justify-between items-center border-b border-border pb-3 mb-3 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
@@ -2746,7 +2746,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
               const expCheck = checkLicenseExpiry(formData.ircExpiryDate);
               if (expCheck.status === 'expired') {
                 return (
-                  <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs flex items-center gap-2.5 animate-fadeIn">
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs flex items-center gap-2.5 fade-in">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     <div>
                       <strong className="font-bold">اخطار انقضای مجوز:</strong> مجوز وارد شده در تاریخ {formData.ircExpiryDate} منقضی شده است ({Math.abs(expCheck.daysLeft || 0)} روز پیش).
@@ -2756,7 +2756,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
               }
               if (expCheck.status === 'expiring_soon') {
                 return (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-xs flex items-center gap-2.5 animate-fadeIn">
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-xs flex items-center gap-2.5 fade-in">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     <div>
                       <strong className="font-bold">اعلان انقضای مجوز (کمتر از ۲ ماه):</strong> تنها {expCheck.daysLeft} روز تا انقضای این مجوز در تاریخ {formData.ircExpiryDate} باقی‌مانده است.
@@ -2766,7 +2766,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
               }
               if (expCheck.status === 'valid') {
                 return (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-2.5 text-xs flex items-center gap-2 animate-fadeIn">
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-2.5 text-xs flex items-center gap-2 fade-in">
                     <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>مجوز تا تاریخ <strong>{formData.ircExpiryDate}</strong> دارای اعتبار قانونی است ({expCheck.daysLeft} روز باقی‌مانده).</span>
                   </div>
@@ -5190,7 +5190,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         const check = checkLicenseExpiry(vendor.ircExpiryDate);
         if (check.status === 'expired') {
           return (
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-rose-900 shadow-xs flex items-center justify-between gap-4 animate-fadeIn">
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-rose-900 shadow-xs flex items-center justify-between gap-4 fade-in">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-rose-600/10 border border-rose-600/20 flex items-center justify-center text-rose-600 shrink-0">
                   <AlertCircle className="w-5 h-5" />
@@ -5212,7 +5212,7 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         }
         if (check.status === 'expiring_soon') {
           return (
-            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-amber-950 shadow-xs flex items-center justify-between gap-4 animate-fadeIn">
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-amber-950 shadow-xs flex items-center justify-between gap-4 fade-in">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
                   <AlertTriangle className="w-5 h-5 animate-bounce" />

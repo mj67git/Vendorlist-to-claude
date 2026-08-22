@@ -268,7 +268,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
         {/* Dropdown Popover */}
         {isOpen && !disabled && (
-          <div className="absolute top-full right-0 left-0 mt-1.5 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn">
+          <div className="absolute top-full right-0 left-0 mt-1.5 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden fade-in">
             {/* Search Header */}
             <div className="p-2.5 border-b border-border bg-muted/80">
               <div className="relative">
