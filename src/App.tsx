@@ -34,6 +34,7 @@ import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { GradeBadge } from './components/GradeBadge';
 import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } from './components/ScoreBar';
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
+import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
 import { PrintableSampleForm, PrintableEvaluationForm } from './components/PrintableForms';
@@ -296,7 +297,37 @@ export default function App() {
   const MAX_VIEW_HISTORY = 25;
   const capHistory = (h: ViewState[]) => (h.length > MAX_VIEW_HISTORY ? h.slice(h.length - MAX_VIEW_HISTORY) : h);
 
+  // A route carries only a vendor *id*; the full record is re-hydrated from `db`
+  // (see `selectedVendor` below), which may still be loading on a deep link.
+  const routeToViewState = (r: RouteState): ViewState => ({
+    view: r.view as ViewState['view'],
+    categoryId: (r.categoryId as Category | null) ?? null,
+    selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
+    expandedMaterial: r.expandedMaterial ?? null,
+  });
+
+  const viewStateToRoute = (s: ViewState): RouteState => ({
+    view: s.view,
+    categoryId: s.categoryId ?? null,
+    vendorId: s.selectedVendor?.id ?? null,
+    expandedMaterial: s.expandedMaterial ?? null,
+  });
+
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
+    // The URL wins on load: it is what makes a link shareable and a refresh
+    // faithful. localStorage is only the fallback for a bare '/' entry.
+    try {
+      const raw = window.location.hash;
+      const hasRoute = !!raw && raw !== '#' && raw !== '#/';
+      if (hasRoute) {
+        const fromUrl = decodeRoute(raw);
+        // A malformed link starts at home rather than silently resurrecting
+        // whatever location this browser happened to visit last.
+        return fromUrl
+          ? buildStackFromRoute(fromUrl).map(routeToViewState)
+          : [{ view: 'home', categoryId: null, selectedVendor: null }];
+      }
+    } catch { /* fall through to the cached stack */ }
     try {
       const saved = localStorage.getItem('app_viewHistory');
       return saved ? capHistory(JSON.parse(saved)) : [{ view: 'home', categoryId: null, selectedVendor: null }];
@@ -325,9 +356,29 @@ export default function App() {
   const currentViewState = viewHistory[viewHistory.length - 1] || { view: 'home', categoryId: null, selectedVendor: null };
   const view = currentViewState.view;
   const categoryId = currentViewState.categoryId;
-  const selectedVendor = currentViewState.selectedVendor
-    ? (db.find(v => v.id === currentViewState.selectedVendor!.id) || currentViewState.selectedVendor)
+  // A vendor reached through a shared link is only an id until `db` arrives, so
+  // distinguish "still loading" from "this link points at a source that no
+  // longer exists" instead of rendering a detail page full of blanks.
+  const pendingVendor = currentViewState.selectedVendor;
+  const resolvedVendor = pendingVendor ? db.find(v => v.id === pendingVendor.id) ?? null : null;
+  const isVendorStub = !!pendingVendor && !pendingVendor.name;
+  const selectedVendor = pendingVendor
+    ? (resolvedVendor ?? (isVendorStub ? null : pendingVendor))
     : null;
+  const vendorLinkPending = !!pendingVendor && !resolvedVendor && isVendorStub;
+
+  // Once the dataset arrives, replace the id-only stub on the stack with the
+  // real record so the breadcrumb shows the source name instead of a placeholder.
+  useEffect(() => {
+    if (!isVendorStub || !resolvedVendor) return;
+    setViewHistory(prev => {
+      const last = prev[prev.length - 1];
+      if (!last?.selectedVendor || last.selectedVendor.id !== resolvedVendor.id || last.selectedVendor.name) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...last, selectedVendor: resolvedVendor, expandedMaterial: last.expandedMaterial ?? resolvedVendor.materialEn ?? null };
+      return next;
+    });
+  }, [isVendorStub, resolvedVendor]);
 
   // Expanded material is scoped to the current view entry (persists across
   // reloads via viewHistory, and is restored automatically on back-navigation).
@@ -364,27 +415,90 @@ export default function App() {
     navGuardRef.current = fn;
   }, []);
 
-  // --- Hardware / browser back button ---------------------------------------
-  // The app has no router, so a single sentinel entry is kept on the browser
-  // history stack: popping it means the user pressed Back. While there is
-  // somewhere to go inside the app we consume the event, step back one view and
-  // re-arm the sentinel. Once at the root we let the browser leave normally.
-  // NOTE: this must stay above the early returns below so hook order is stable.
-  const historyDepthRef = useRef(viewHistory.length);
-  historyDepthRef.current = viewHistory.length;
-  const goBackRef = useRef<() => void>(() => {});
+  // --- Hash routing / browser history ---------------------------------------
+  // The URL hash is the shareable source of truth for the current location, and
+  // each in-app push creates a real browser history entry — so Back, Forward
+  // and the browser's history menu all behave natively.
+  // NOTE: these hooks must stay above the early returns below so that hook
+  // order stays stable across the login / change-password screens.
+  const historyRef = useRef(viewHistory);
+  historyRef.current = viewHistory;
+  // Set while we are applying a URL change, so the sync effect below does not
+  // push a duplicate entry for a location the browser already navigated to.
+  const applyingUrlRef = useRef(false);
+  const lastHashRef = useRef<string | null>(null);
+  // How many browser history entries this session created. A deep link opened
+  // directly into a detail page has none, so Back must unwind the stack itself
+  // rather than sending the user off the site.
+  const pushedEntriesRef = useRef(0);
+  const canPopBrowserRef = { get current() { return pushedEntriesRef.current > 0; } };
 
   useEffect(() => {
-    const armSentinel = () => {
-      try { window.history.pushState({ vlseSentinel: true }, ''); } catch { /* no-op */ }
-    };
-    armSentinel();
+    const top = viewHistory[viewHistory.length - 1];
+    if (!top) return;
+    const hash = encodeRoute(viewStateToRoute(top));
+    if (hash === lastHashRef.current) return;
 
-    const onPopState = () => {
-      if (historyDepthRef.current > 1) {
-        armSentinel();   // re-arm first so a blocked (guarded) back still traps
-        goBackRef.current();
+    const isFirst = lastHashRef.current === null;
+    lastHashRef.current = hash;
+    if (applyingUrlRef.current) return;   // came *from* the URL; nothing to write
+
+    try {
+      // The very first render adopts the current URL rather than adding to the
+      // browser stack; later pushes are real entries so Back/Forward work.
+      if (isFirst) {
+        window.history.replaceState(null, '', hash);
+      } else {
+        window.history.pushState(null, '', hash);
+        pushedEntriesRef.current += 1;
       }
+    } catch { /* history is unavailable (e.g. sandboxed); URL sync is optional */ }
+  }, [viewHistory]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const target = decodeRoute(window.location.hash);
+      const stack = historyRef.current;
+      const currentHash = encodeRoute(viewStateToRoute(stack[stack.length - 1]));
+
+      // An unparseable URL (hand-edited link) must not blank the app.
+      if (!target) {
+        applyingUrlRef.current = true;
+        try { window.history.replaceState(null, '', currentHash); } finally { applyingUrlRef.current = false; }
+        return;
+      }
+
+      // Respect the unsaved-changes guard: undo the browser's move and ask.
+      if (navGuardRef.current?.()) {
+        try { window.history.pushState(null, '', currentHash); } catch { /* no-op */ }
+        setPendingNav(() => () => {
+          navGuardRef.current = null;
+          window.history.back();
+        });
+        return;
+      }
+
+      applyingUrlRef.current = true;
+      pushedEntriesRef.current = Math.max(0, pushedEntriesRef.current - 1);
+      lastHashRef.current = encodeRoute(target);
+      setViewHistory(prev => {
+        // Backwards move: the URL matches somewhere already on the stack.
+        const key = routeKey(target);
+        const idx = prev.map(s => routeKey(viewStateToRoute(s))).lastIndexOf(key);
+        if (idx >= 0) {
+          const next = prev.slice(0, idx + 1);
+          // Carry the material expansion from the URL so a shared category link
+          // (and Back into one) opens the same group.
+          if (target.expandedMaterial !== undefined) {
+            next[next.length - 1] = { ...next[next.length - 1], expandedMaterial: target.expandedMaterial };
+          }
+          return next;
+        }
+        // Forward, or a location we have never rendered: adopt it.
+        return capHistory(buildStackFromRoute(target).map(routeToViewState));
+      });
+      // Release on the next tick, once the sync effect above has run.
+      setTimeout(() => { applyingUrlRef.current = false; }, 0);
     };
 
     window.addEventListener('popstate', onPopState);
@@ -517,21 +631,25 @@ export default function App() {
     }
   };
 
+  // Back and breadcrumb jumps delegate to the browser so that its own Back /
+  // Forward buttons stay in step with the in-app stack; `popstate` above is the
+  // single place that unwinds it. Only when there is no browser entry to pop
+  // (a deep link opened straight into a detail page) do we unwind directly.
   const goBack = () => {
+    if (viewHistory.length <= 1) return;
     runGuarded(() => {
-      setViewHistory(prev => {
-        if (prev.length <= 1) return prev;
-        return prev.slice(0, -1);
-      });
+      if (canPopBrowserRef.current) window.history.back();
+      else setViewHistory(prev => (prev.length > 1 ? prev.slice(0, -1) : prev));
     });
   };
 
-  goBackRef.current = goBack;
-
   // Jump directly to a given depth of the navigation stack (breadcrumb click).
   const goToHistoryIndex = (index: number) => {
+    const steps = viewHistory.length - 1 - index;
+    if (index < 0 || steps <= 0) return;
     runGuarded(() => {
-      setViewHistory(prev => (index >= 0 && index < prev.length - 1 ? prev.slice(0, index + 1) : prev));
+      if (canPopBrowserRef.current) window.history.go(-steps);
+      else setViewHistory(prev => prev.slice(0, index + 1));
     });
   };
 
@@ -888,7 +1006,34 @@ export default function App() {
     let content;
     let keyName = '';
 
-    if (selectedVendor) {
+    if (vendorLinkPending) {
+      // Deep link into a source: wait for the dataset, then report honestly if
+      // the id is not in it.
+      const stillLoading = isSyncing || db.length === 0;
+      keyName = `vendor-pending-${pendingVendor!.id}`;
+      content = stillLoading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground" dir="rtl">
+          <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+          <p className="text-xs font-semibold">در حال بازیابی اطلاعات سورس…</p>
+        </div>
+      ) : (
+        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm" dir="rtl">
+          <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="text-base font-black text-foreground">سورس مورد نظر یافت نشد</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+            لینکی که باز کرده‌اید به سورسی با شناسهٔ <span className="font-mono text-foreground">{pendingVendor!.id}</span> اشاره می‌کند که دیگر در سامانه وجود ندارد (احتمالاً حذف شده است).
+          </p>
+          <button
+            onClick={() => navigate('home')}
+            className="px-4 py-2 bg-primary hover:opacity-90 text-white rounded-xl text-xs font-bold transition-opacity cursor-pointer"
+          >
+            بازگشت به صفحه اصلی
+          </button>
+        </div>
+      );
+    } else if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
       content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} />;
     } else if (view === 'home') {
