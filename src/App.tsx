@@ -292,10 +292,14 @@ export default function App() {
     expandedMaterial?: string | null;
   };
 
+  // Cap the navigation stack so a long session cannot grow it without bound.
+  const MAX_VIEW_HISTORY = 25;
+  const capHistory = (h: ViewState[]) => (h.length > MAX_VIEW_HISTORY ? h.slice(h.length - MAX_VIEW_HISTORY) : h);
+
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
     try {
       const saved = localStorage.getItem('app_viewHistory');
-      return saved ? JSON.parse(saved) : [{ view: 'home', categoryId: null, selectedVendor: null }];
+      return saved ? capHistory(JSON.parse(saved)) : [{ view: 'home', categoryId: null, selectedVendor: null }];
     } catch {
       return [{ view: 'home', categoryId: null, selectedVendor: null }];
     }
@@ -303,7 +307,16 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('app_viewHistory', JSON.stringify(viewHistory));
+      // Persist only a light identity snapshot of the selected vendor — the full
+      // record is re-hydrated from `db` by id on read, so storing the whole
+      // object (risk/analysis/activity arrays) would bloat localStorage.
+      const slim = viewHistory.map(s => ({
+        ...s,
+        selectedVendor: s.selectedVendor
+          ? ({ id: s.selectedVendor.id, name: s.selectedVendor.name, material: s.selectedVendor.material, materialEn: s.selectedVendor.materialEn } as any)
+          : null,
+      }));
+      localStorage.setItem('app_viewHistory', JSON.stringify(slim));
     } catch (err) {
       console.error("Failed to save view history to localStorage:", err);
     }
@@ -327,6 +340,57 @@ export default function App() {
       return nh;
     });
   };
+  // Reset the scroll position whenever the rendered view changes, so the user
+  // never lands mid-page on a freshly opened screen. (A material group that
+  // needs to be revealed scrolls itself into view shortly afterwards.)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}`;
+  useEffect(() => {
+    const reset = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    reset();
+    // Run again after paint: a freshly mounted view can autofocus an input (or
+    // finish its enter transition) and nudge the container back down.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(reset));
+    return () => cancelAnimationFrame(raf);
+  }, [viewKey]);
+
+  // --- Unsaved-changes guard -------------------------------------------------
+  // Detail screens register a predicate here; any navigation away is deferred
+  // behind a confirmation dialog while it returns true. This prevents silent
+  // loss of an open edit form (a real data-integrity risk under GxP).
+  const navGuardRef = useRef<(() => boolean) | null>(null);
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+  const registerNavGuard = React.useCallback((fn: (() => boolean) | null) => {
+    navGuardRef.current = fn;
+  }, []);
+
+  // --- Hardware / browser back button ---------------------------------------
+  // The app has no router, so a single sentinel entry is kept on the browser
+  // history stack: popping it means the user pressed Back. While there is
+  // somewhere to go inside the app we consume the event, step back one view and
+  // re-arm the sentinel. Once at the root we let the browser leave normally.
+  // NOTE: this must stay above the early returns below so hook order is stable.
+  const historyDepthRef = useRef(viewHistory.length);
+  historyDepthRef.current = viewHistory.length;
+  const goBackRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const armSentinel = () => {
+      try { window.history.pushState({ vlseSentinel: true }, ''); } catch { /* no-op */ }
+    };
+    armSentinel();
+
+    const onPopState = () => {
+      if (historyDepthRef.current > 1) {
+        armSentinel();   // re-arm first so a blocked (guarded) back still traps
+        goBackRef.current();
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -403,42 +467,71 @@ export default function App() {
     );
   }
 
+  const runGuarded = (action: () => void) => {
+    if (navGuardRef.current?.()) {
+      setPendingNav(() => action);
+      return;
+    }
+    action();
+  };
+
   const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners', newCat: Category | null = null) => {
-    setViewHistory(prev => {
-      if (newView === 'home') {
-        return [{ view: 'home', categoryId: null, selectedVendor: null }];
-      }
-      const last = prev[prev.length - 1];
-      if (last && last.view === newView && last.categoryId === newCat && last.selectedVendor === null) {
-        return prev;
-      }
-      return [...prev, { view: newView, categoryId: newCat, selectedVendor: null }];
+    runGuarded(() => {
+      setViewHistory(prev => {
+        if (newView === 'home') {
+          return [{ view: 'home', categoryId: null, selectedVendor: null }];
+        }
+        // Top-level navigation behaves like switching tabs, not drilling down:
+        // if this destination is already on the stack, unwind back to it instead
+        // of pushing a duplicate (which previously made "back" re-enter a source
+        // detail the user had deliberately left).
+        const existing = prev.map((s, i) => ({ s, i }))
+          .filter(({ s }) => s.view === newView && s.categoryId === newCat && s.selectedVendor === null)
+          .pop();
+        if (existing) {
+          return prev.slice(0, existing.i + 1);
+        }
+        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null }]);
+      });
+      setSidebarOpen(false);
     });
-    setSidebarOpen(false);
   };
 
   const handleSelectVendor = (vendor: Vendor | null) => {
     if (vendor) {
-      setViewHistory(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.selectedVendor?.id === vendor.id) {
-          return prev;
-        }
-        // Mark the material as expanded on the underlying list entry so that
-        // returning (goBack) restores the same expanded material, then push
-        // the vendor-detail entry on top (carrying the same marker).
-        const base = { ...last, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
-        return [...prev.slice(0, -1), base, { ...base, selectedVendor: vendor }];
+      runGuarded(() => {
+        setViewHistory(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.selectedVendor?.id === vendor.id) {
+            return prev;
+          }
+          // Mark the material as expanded on the underlying list entry so that
+          // returning (goBack) restores the same expanded material, then push
+          // the vendor-detail entry on top (carrying the same marker).
+          const base = { ...last, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
+          return capHistory([...prev.slice(0, -1), base, { ...base, selectedVendor: vendor }]);
+        });
       });
     } else {
-      setViewHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
+      goBack();
     }
   };
 
   const goBack = () => {
-    setViewHistory(prev => {
-      if (prev.length <= 1) return prev;
-      return prev.slice(0, -1);
+    runGuarded(() => {
+      setViewHistory(prev => {
+        if (prev.length <= 1) return prev;
+        return prev.slice(0, -1);
+      });
+    });
+  };
+
+  goBackRef.current = goBack;
+
+  // Jump directly to a given depth of the navigation stack (breadcrumb click).
+  const goToHistoryIndex = (index: number) => {
+    runGuarded(() => {
+      setViewHistory(prev => (index >= 0 && index < prev.length - 1 ? prev.slice(0, index + 1) : prev));
     });
   };
 
@@ -451,6 +544,7 @@ export default function App() {
     if (state.view === 'supplier-audit') return 'بررسی یکپارچه تامین‌کننده';
     if (state.view === 'materials') return 'مخزن مواد اولیه';
     if (state.view === 'audit-trail') return 'Audit Trail';
+    if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
     if (state.view === 'category' && state.categoryId) {
       return categoryLabels[state.categoryId]?.fa || 'دسته‌بندی';
     }
@@ -796,7 +890,7 @@ export default function App() {
 
     if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
-      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} />;
     } else if (view === 'home') {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
@@ -994,7 +1088,7 @@ export default function App() {
                   variant={id}
                   badge={count}
                   icon={meta.icon} label={meta.fa} sub={meta.en}
-                  active={view === 'category' && categoryId === id && !selectedVendor} 
+                  active={view === 'category' && categoryId === id} 
                   onClick={() => navigate('category', id)} 
                 />
               );
@@ -1008,14 +1102,14 @@ export default function App() {
               icon={Building2} label="مخزن شرکای تجاری" sub="Business Partners"
               badge={businessPartners?.length || 0}
               variant="business-partners"
-              active={view === 'business-partners' && !selectedVendor} 
+              active={view === 'business-partners'} 
               onClick={() => navigate('business-partners')} 
             />
             <SidebarButton collapsed={sidebarCollapsed}
               icon={Database} label="مخزن مواد اولیه" sub="Materials Master"
               badge={materials?.length || 0}
               variant="materials"
-              active={view === 'materials' && !selectedVendor} 
+              active={view === 'materials'} 
               onClick={() => navigate('materials')} 
             />
 
@@ -1029,14 +1123,14 @@ export default function App() {
                   icon={Archive} label="آرشیو کامل داده‌ها" sub="Full Master Archive"
                   badge={db.length}
                   variant="archive"
-                  active={view === 'archive' && !selectedVendor} 
+                  active={view === 'archive'} 
                   onClick={() => navigate('archive')} 
                 />
                 <SidebarButton collapsed={sidebarCollapsed}
                   icon={History} label="ردیابی تغییرات (Audit)" sub="Audit Trail Center"
                   alert={criticalAuditCount}
                   variant="audit-trail"
-                  active={view === 'audit-trail' && !selectedVendor} 
+                  active={view === 'audit-trail'} 
                   onClick={() => navigate('audit-trail')} 
                 />
               </>
@@ -1044,7 +1138,7 @@ export default function App() {
             <SidebarButton collapsed={sidebarCollapsed}
               icon={Handshake} label="بررسی یکپارچه تامین‌کننده" sub="Supplier 360 Audit"
               variant="supplier-audit"
-              active={view === 'supplier-audit' && !selectedVendor} 
+              active={view === 'supplier-audit'} 
               onClick={() => navigate('supplier-audit')} 
             />
           </nav>
@@ -1065,18 +1159,46 @@ export default function App() {
               </button>
 
               {/* Navigation History & Back Handler */}
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 {viewHistory.length > 1 && (
-                  <Button 
+                  <Button
                     variant="outline"
                     size="sm"
                     onClick={goBack}
-                    className="h-8 gap-1.5 text-xs font-bold text-foreground bg-background hover:bg-accent border-border"
-                    title="برگشت به مرحله قبل"
+                    className="h-8 gap-1.5 text-xs font-bold text-foreground bg-background hover:bg-accent border-border shrink-0"
+                    title={`برگشت به ${getViewStateLabel(viewHistory[viewHistory.length - 2]) || 'مرحله قبل'}`}
                   >
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                     <span>برگشت</span>
                   </Button>
+                )}
+
+                {/* Breadcrumb trail — shows the full path and allows jumping
+                    directly to any earlier level. */}
+                {viewHistory.length > 1 && (
+                  <nav aria-label="مسیر ناوبری" className="hidden lg:flex items-center gap-1 min-w-0 text-xs">
+                    {viewHistory.map((state, idx) => {
+                      const label = getViewStateLabel(state);
+                      if (!label) return null;
+                      const isLast = idx === viewHistory.length - 1;
+                      return (
+                        <React.Fragment key={idx}>
+                          {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
+                          {isLast ? (
+                            <span className="font-bold text-foreground truncate max-w-[180px]" aria-current="page">{label}</span>
+                          ) : (
+                            <button
+                              onClick={() => goToHistoryIndex(idx)}
+                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[130px] transition-colors cursor-pointer"
+                              title={`رفتن به ${label}`}
+                            >
+                              {label}
+                            </button>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </nav>
                 )}
               </div>
 
@@ -1266,13 +1388,47 @@ export default function App() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto w-full print:overflow-visible">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full print:overflow-visible">
             <div className={(view === 'audit-trail' || view === 'materials') && !selectedVendor ? "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8" : "max-w-5xl mx-auto p-4 sm:p-8"}>
               {renderContent()}
             </div>
           </div>
 
         </main>
+
+        {/* Unsaved-changes confirmation before leaving an open edit form */}
+        {pendingNav && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" dir="rtl">
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm fade-in" onClick={() => setPendingNav(null)} />
+            <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 dialog-enter" role="alertdialog" aria-modal="true">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div className="text-right">
+                  <h3 className="text-sm font-black text-foreground mb-1.5">تغییرات ذخیره‌نشده</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+                    فرم ویرایش باز است و تغییرات شما هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این تغییرات از بین می‌روند.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-start gap-2.5 mt-6">
+                <button
+                  onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  خروج بدون ذخیره
+                </button>
+                <button
+                  onClick={() => setPendingNav(null)}
+                  className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
+                >
+                  ماندن در صفحه
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Global command palette (⌘K) */}
         <CommandPalette
@@ -4721,9 +4877,22 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
 }
 
 // --- View: Vendor Detail ---
-function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void }) {
+function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const editFormRef = useRef<HTMLDivElement>(null);
+
+  // Warn before navigating away (or closing the tab) with the edit form open.
+  useEffect(() => {
+    registerNavGuard?.(() => isEditing);
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isEditing) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      registerNavGuard?.(null);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [isEditing, registerNavGuard]);
 
   useEffect(() => {
     if (isEditing) {
