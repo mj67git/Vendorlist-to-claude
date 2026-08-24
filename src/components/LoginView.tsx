@@ -14,8 +14,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
   const [loading, setLoading] = useState(false);
 
   // Local/demo mode: sign in without any backend/database (browser localStorage only).
-  // Gated behind VITE_ENABLE_LOCAL_DEMO so production (company server) stays auth-only.
+  // Shown when explicitly enabled (VITE_ENABLE_LOCAL_DEMO) OR automatically once a
+  // login attempt reveals the backend/database is unavailable — so a no-DB test
+  // deploy needs zero configuration, while a healthy production login never sees it.
   const localDemoEnabled = (import.meta as any).env?.VITE_ENABLE_LOCAL_DEMO === 'true';
+  const [backendUnavailable, setBackendUnavailable] = useState(false);
+  const showDemoButton = localDemoEnabled || backendUnavailable;
 
   const handleLocalDemoLogin = () => {
     const demoUser: User = { username: 'demo', role: 'admin', name: 'کاربر آزمایشی (لوکال)', mustChangePassword: false } as User;
@@ -47,14 +51,19 @@ export function LoginView({ onLogin }: LoginViewProps) {
         const raw = await res.text();
         let data: any = {};
         try { data = raw ? JSON.parse(raw) : {}; } catch {
-          throw new Error(
-            res.status >= 500
-              ? 'خطای سرور — احتمالاً پایگاه‌داده متصل یا مهاجرت نشده است. با مدیر سیستم تماس بگیرید.'
-              : 'پاسخ نامعتبر از سرور احراز هویت دریافت شد.'
-          );
+          // A non-JSON auth response means there is no working backend/DB.
+          setBackendUnavailable(true);
+          throw new Error('سرور/پایگاه‌داده در دسترس نیست. برای تست بدون دیتابیس از دکمهٔ «ورود آزمایشی» زیر استفاده کنید.');
         }
         if (!res.ok) {
-          throw new Error(data.error || 'Invalid username or password.');
+          // A working backend returns a JSON { error } body (e.g. a real 401 wrong
+          // password). A 404 or an empty/bodyless failure means the API/DB isn't
+          // there — offer the local demo instead of a misleading credentials error.
+          if (res.status === 404 || !data || typeof data.error !== 'string') {
+            setBackendUnavailable(true);
+            throw new Error('سرور/پایگاه‌داده در دسترس نیست. برای تست بدون دیتابیس از دکمهٔ «ورود آزمایشی» زیر استفاده کنید.');
+          }
+          throw new Error(data.error);
         }
         return data;
       })
@@ -68,6 +77,10 @@ export function LoginView({ onLogin }: LoginViewProps) {
       })
       .catch((err) => {
         console.error("Login verification failed:", err);
+        // A network failure (server unreachable) also means no backend/DB — offer demo.
+        if (err instanceof TypeError || /Failed to fetch|NetworkError|پایگاه‌داده/i.test(err?.message || '')) {
+          setBackendUnavailable(true);
+        }
         setError(err.message || 'Error connecting to the authentication server.');
       })
       .finally(() => {
@@ -124,7 +137,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                {loading ? 'Verifying...' : 'Sign In'}
             </button>
          </form>
-         {localDemoEnabled && (
+         {showDemoButton && (
            <div className="mt-5 pt-4 border-t border-[#E5E5EA] text-center">
              <button
                type="button"

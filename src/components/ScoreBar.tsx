@@ -1,7 +1,7 @@
 import React from 'react';
 
 export function getScoreColorClass(score: number | null, isBar = false) {
-  if (score === null) return isBar ? 'bg-slate-200' : 'text-slate-400';
+  if (score === null) return isBar ? 'bg-slate-200' : 'text-muted-foreground';
   if (score >= 80) return isBar ? 'bg-emerald-600' : 'text-emerald-600';
   if (score >= 60) return isBar ? 'bg-[#0071E3]' : 'text-[#0071E3]';
   if (score >= 40) return isBar ? 'bg-amber-600' : 'text-amber-600';
@@ -9,7 +9,7 @@ export function getScoreColorClass(score: number | null, isBar = false) {
 }
 
 export function getSRIColorClass(sri: number | null | undefined, isBar = false) {
-  if (sri === null || sri === undefined) return isBar ? 'bg-slate-200' : 'text-slate-400';
+  if (sri === null || sri === undefined) return isBar ? 'bg-slate-200' : 'text-muted-foreground';
   if (sri >= 76) return isBar ? 'bg-red-600' : 'text-red-600';
   if (sri >= 26) return isBar ? 'bg-amber-500' : 'text-amber-500';
   return isBar ? 'bg-emerald-600' : 'text-emerald-600';
@@ -76,7 +76,7 @@ export function ScoreBar({ label, value, max = 100 }: ScoreBarProps) {
   return (
     <div className="flex flex-col gap-1.5 mb-3">
       <div className="flex justify-between items-center text-xs">
-        <span className="text-slate-600">{label}</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className={`font-bold font-mono ${getScoreColorClass(percentage)}`}>{value} / {max}</span>
       </div>
       <div className="w-full h-px bg-slate-900/10 rounded-full">

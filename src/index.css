@@ -200,14 +200,36 @@ body {
   .fade-in {
     animation: fadeIn 200ms ease forwards;
   }
+  .fade-in-fast {
+    animation: fadeIn 120ms ease forwards;
+  }
   .slide-in-drawer {
-    animation: slideIn 250ms ease forwards;
+    animation: slideInRtl 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .slide-in {
+    animation: fadeIn 220ms ease forwards;
   }
   .dialog-enter {
-    animation: fadeScale 200ms ease forwards;
+    animation: fadeScale 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .toast-enter {
     animation: fadeSlideUp 250ms ease forwards;
+  }
+  .bounce-in {
+    animation: fadeScale 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  /* Unified page transition (applied to a keyed wrapper on every navigation) */
+  .page-transition {
+    animation: fadeSlide 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+}
+
+/* Accessibility: honour reduced-motion by disabling non-essential animation */
+@media (prefers-reduced-motion: reduce) {
+  .page-transition, .fade-in, .fade-in-fast, .slide-in, .slide-in-drawer,
+  .dialog-enter, .toast-enter, .bounce-in, .page-enter {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 
   /* Scrollbar override */

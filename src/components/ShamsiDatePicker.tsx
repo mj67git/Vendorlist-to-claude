@@ -150,8 +150,8 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
     <div className="relative inline-block w-full" ref={containerRef} dir="rtl">
       {/* Input Field */}
       <div 
-        className={`flex items-center justify-between w-full bg-white border border-slate-250 rounded-xl px-3 py-2 cursor-pointer
-          ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:border-indigo-300'} transition-all`}
+        className={`flex items-center justify-between w-full bg-card border border-slate-250 rounded-xl px-3 py-2 cursor-pointer
+          ${disabled ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:border-indigo-300'} transition-all`}
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}
@@ -162,13 +162,13 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <CalendarIcon className="w-4 h-4 text-slate-400 shrink-0" />
+          <CalendarIcon className="w-4 h-4 text-muted-foreground shrink-0" />
           <div className="flex flex-col text-right min-w-0">
-            <span className={`font-mono text-sm leading-none ${value ? 'text-slate-800' : 'text-slate-400'}`}>
+            <span className={`font-mono text-sm leading-none ${value ? 'text-foreground' : 'text-muted-foreground'}`}>
               {value || placeholder}
             </span>
             {value && (
-              <span className="text-[10px] text-slate-400 font-sans mt-1" dir="ltr" style={{ textAlign: 'right' }}>
+              <span className="text-[10px] text-muted-foreground font-sans mt-1" dir="ltr" style={{ textAlign: 'right' }}>
                 {getGregorianEquivalent(value)}
               </span>
             )}
@@ -198,7 +198,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ type: 'spring', bounce: 0.3, duration: 0.4 }}
-            className="absolute top-full right-0 mt-2 z-50 bg-white border border-slate-250 shadow-[0_4px_24px_rgba(15,23,42,0.08)] rounded-2xl p-4 w-72 origin-top"
+            className="absolute top-full right-0 mt-2 z-50 bg-card border border-slate-250 shadow-[0_4px_24px_rgba(15,23,42,0.08)] rounded-2xl p-4 w-72 origin-top"
             role="dialog"
             aria-label="انتخاب تاریخ شمسی"
           >
@@ -208,7 +208,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                 type="button"
                 aria-label="ماه بعد"
                 onClick={handleNextMonth}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -219,7 +219,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                   <select
                     value={currentMonth}
                     onChange={(e) => setCurrentMonth(parseInt(e.target.value, 10))}
-                    className="bg-slate-50 border border-slate-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer text-slate-700 font-sans shadow-sm"
+                    className="bg-muted border border-border text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer text-foreground font-sans shadow-sm"
                   >
                     {MONTH_NAMES.map((name, index) => (
                       <option key={index + 1} value={index + 1}>
@@ -232,7 +232,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                   <select
                     value={currentYear}
                     onChange={(e) => setCurrentYear(parseInt(e.target.value, 10))}
-                    className="bg-slate-50 border border-slate-200 text-[11px] font-bold rounded-lg px-1.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer text-slate-700 shadow-sm"
+                    className="bg-muted border border-border text-[11px] font-bold rounded-lg px-1.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer text-foreground shadow-sm"
                   >
                     {Array.from({ length: 41 }, (_, i) => 1380 + i).map((yr) => (
                       <option key={yr} value={yr}>
@@ -243,7 +243,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                 </div>
                 
                 {/* Gregorian Month/Year range equivalent */}
-                <div className="text-[10px] text-slate-400 font-sans font-medium tracking-wide mt-0.5" dir="ltr">
+                <div className="text-[10px] text-muted-foreground font-sans font-medium tracking-wide mt-0.5" dir="ltr">
                   {getGregorianHeaderLabel(currentYear, currentMonth)}
                 </div>
               </div>
@@ -252,7 +252,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                 type="button"
                 aria-label="ماه قبل"
                 onClick={handlePrevMonth}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -261,7 +261,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
             {/* Weekdays */}
             <div className="grid grid-cols-7 gap-1 mb-2">
               {WEEK_DAYS.map(day => (
-                <div key={day} className="text-center text-[10px] font-bold text-slate-400 pb-2">
+                <div key={day} className="text-center text-[10px] font-bold text-muted-foreground pb-2">
                   {day}
                 </div>
               ))}
@@ -297,7 +297,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                       h-10 w-full flex flex-col items-center justify-center rounded-lg font-mono transition-all relative
                       ${isSelected 
                         ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/20' 
-                        : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
+                        : 'text-foreground hover:bg-indigo-50 hover:text-indigo-600'
                       }
                     `}
                     title={`${thisDate} معادل ${getGregorianEquivalent(thisDate)}`}
@@ -306,7 +306,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                       {day.toString().padStart(2, '0')}
                     </span>
                     {gregDay && (
-                      <span className={`text-[8px] leading-none mt-1 font-sans ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                      <span className={`text-[8px] leading-none mt-1 font-sans ${isSelected ? 'text-white/80' : 'text-muted-foreground'}`}>
                         {gregDay}
                       </span>
                     )}
@@ -316,7 +316,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
             </div>
             
             {/* Today Action & Legend */}
-            <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-sans px-1">
+            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground font-sans px-1">
               <span>اعداد کوچک‌تر: روز میلادی</span>
               <button 
                 type="button"

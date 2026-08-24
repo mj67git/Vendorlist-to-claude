@@ -652,9 +652,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       case 'C': return 'bg-amber-100 text-amber-800 border-amber-300';
       case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-slate-300';
+      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
       case 'D': return 'bg-rose-100 text-rose-800 border-rose-300';
-      default: return 'bg-muted text-foreground border-slate-300';
+      default: return 'bg-muted text-foreground border-border';
     }
   };
 
@@ -667,7 +667,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       case 'D': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
       case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
       case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
-      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-slate-300' };
+      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-border' };
     }
   };
 
@@ -682,7 +682,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       case 'Not Submitted':
         return { label: 'Not Submitted', desc: 'ارائه نشده (۰٪)', badge: 'bg-rose-500/15 text-rose-700 border-rose-300' };
       default:
-        return { label: 'انتخاب نشده', desc: 'بدون وضعیت', badge: 'bg-muted text-muted-foreground border-slate-300' };
+        return { label: 'انتخاب نشده', desc: 'بدون وضعیت', badge: 'bg-muted text-muted-foreground border-border' };
     }
   };
 
@@ -736,7 +736,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-foreground font-mono">{stats.total}</div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">Total Partners</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Total Partners</div>
         </div>
 
         {/* Manufacturers */}
@@ -748,7 +748,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-indigo-600 font-mono">{stats.manufacturers}</div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">Manufacturers</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Manufacturers</div>
         </div>
 
         {/* Suppliers */}
@@ -760,7 +760,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-emerald-600 font-mono">{stats.suppliers}</div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">Suppliers</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Suppliers</div>
         </div>
 
         {/* Approved Suppliers */}
@@ -772,7 +772,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-teal-600 font-mono">{stats.approvedSuppliers}</div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">Grade A/B Approved</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Grade A/B Approved</div>
         </div>
 
         {/* Conditional / Rejected Suppliers */}
@@ -784,7 +784,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-amber-600 font-mono">{stats.rejectedOrConditionalSuppliers}</div>
-          <div className="text-[10px] text-slate-400 font-mono mt-0.5">Conditional / Rejected</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Conditional / Rejected</div>
         </div>
       </div>
 
@@ -793,7 +793,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
           {/* Smart Search Input */}
           <div className="relative w-full lg:w-96">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={search}
@@ -805,7 +805,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
           {/* Type Filter Selector Buttons */}
           <div className="flex items-center gap-1.5 bg-muted border border-border rounded-lg p-1 text-xs shrink-0 overflow-x-auto">
-            <Filter className="w-3.5 h-3.5 text-slate-400 mr-1 shrink-0" />
+            <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1 shrink-0" />
             <button
               onClick={() => { setTypeFilter('All'); setCurrentPage(1); }}
               className={`px-3 py-1 rounded-md font-medium transition-colors ${typeFilter === 'All' ? 'bg-card shadow text-foreground font-bold' : 'text-muted-foreground hover:text-foreground'}`}
@@ -919,41 +919,41 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('name')}>
                   <div className="flex items-center gap-1">
                     <span>نام شرکت</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('type')}>
                   <div className="flex items-center gap-1">
                     <span>نوع</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('country')}>
                   <div className="flex items-center gap-1">
                     <span>کشور / شهر</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3 px-4">نتیجهٔ ارزیابی SOP</th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('status')}>
                   <div className="flex items-center gap-1">
                     <span>وضعیت سیستم</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('createdAt')}>
                   <div className="flex items-center gap-1">
                     <span>تاریخ ثبت</span>
-                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
                   </div>
                 </th>
                 <th className="py-3 px-4 text-center">عملیات</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-border text-xs">
               {paginatedPartners.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <Building2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     هیچ شریک تجاری با مشخصات وارد شده یافت نشد.
                   </td>
@@ -987,9 +987,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {/* Country / City */}
                       <td className="py-3 px-4 text-muted-foreground">
                         <div className="flex items-center gap-1">
-                          <Globe className="w-3.5 h-3.5 text-slate-400" />
+                          <Globe className="w-3.5 h-3.5 text-muted-foreground" />
                           <span>{partner.country}</span>
-                          {partner.city && <span className="text-slate-400">({partner.city})</span>}
+                          {partner.city && <span className="text-muted-foreground">({partner.city})</span>}
                         </div>
                       </td>
 
@@ -1002,7 +1002,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 <Award className="w-3 h-3" />
                                 {gradeApprovalLabel(partner.evaluation.grade).label}
                               </span>
-                              <span className="text-[10px] font-mono text-slate-400 font-bold">
+                              <span className="text-[10px] font-mono text-muted-foreground font-bold">
                                 ({partner.evaluation.totalScore}/100)
                               </span>
                             </div>
@@ -1024,7 +1024,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             </div>
                           )
                         ) : (
-                          <span className="text-slate-400 text-[11px] font-mono">- (فقط مخصوص Supplier)</span>
+                          <span className="text-muted-foreground text-[11px] font-mono">- (فقط مخصوص Supplier)</span>
                         )}
                       </td>
 
@@ -1104,7 +1104,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Add / Edit Partner Modal with Portal & Sticky Header/Footer */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsModalOpen(false)} 
             className="absolute inset-0" 
@@ -1116,7 +1116,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
                   <CheckCircle className="w-16 h-16 text-emerald-500 bounce-in" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#1D1D1F] mb-2">
+                <h3 className="text-2xl font-bold text-foreground mb-2">
                   {editingPartner ? 'تغییرات شریک تجاری با موفقیت ذخیره شد' : 'شریک تجاری جدید با موفقیت ثبت شد'}
                 </h3>
                 <p className="text-[#6E6E73] text-sm font-medium">اطلاعات شریک تجاری با موفقیت در سیستم ثبت گردید. در حال بازگشت...</p>
@@ -1141,7 +1141,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="p-2 text-slate-400 hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
+                    className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
                     title="بستن"
                   >
                     <X className="w-5 h-5" />
@@ -1407,7 +1407,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       const statusInfo = getDocStatusInfo(doc.status);
 
                       return (
-                        <div key={def.key} className="p-3.5 bg-muted border border-border rounded-xl space-y-3 hover:border-slate-300 transition-colors">
+                        <div key={def.key} className="p-3.5 bg-muted border border-border rounded-xl space-y-3 hover:border-border transition-colors">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
                             <div className="flex items-center gap-2">
                               <span className="w-6 h-6 rounded-full bg-slate-200 text-foreground font-mono text-xs font-bold flex items-center justify-center shrink-0">
@@ -1465,7 +1465,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                       {doc.fileName}
                                     </span>
                                     {doc.fileSize && (
-                                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                                      <span className="text-[10px] text-muted-foreground font-mono shrink-0">
                                         ({formatFileSize(doc.fileSize)})
                                       </span>
                                     )}
@@ -1499,7 +1499,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   </div>
                                 </div>
                               ) : (
-                                <label className="flex items-center justify-center gap-2 p-2 bg-card border border-dashed border-slate-300 rounded-lg text-muted-foreground hover:border-blue-500 hover:text-blue-600 cursor-pointer text-xs transition-colors">
+                                <label className="flex items-center justify-center gap-2 p-2 bg-card border border-dashed border-border rounded-lg text-muted-foreground hover:border-blue-500 hover:text-blue-600 cursor-pointer text-xs transition-colors">
                                   <Upload className="w-3.5 h-3.5" />
                                   <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک</span>
                                   <input
@@ -1527,7 +1527,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <Award className="w-4 h-4 text-emerald-400" />
                         <span>نتیجه ارزیابی کیفی Supplier (Live SOP Result)</span>
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-[10px] text-muted-foreground font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
                       </span>
                     </div>
@@ -1535,13 +1535,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">مجموع امتیاز (Total Score)</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">مجموع امتیاز (Total Score)</span>
                         <div className="text-xl font-black text-white font-mono">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="text-slate-400 text-sm">-- / ۱۰۰</span>
+                            <span className="text-muted-foreground text-sm">-- / ۱۰۰</span>
                           ) : (
                             <>
-                              {computedEval.totalScore} <span className="text-xs text-slate-400">/ ۱۰۰</span>
+                              {computedEval.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
                             </>
                           )}
                         </div>
@@ -1549,7 +1549,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Grade */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">رتبه کیفیت (Grade)</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
                             <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 border border-slate-600">
@@ -1567,7 +1567,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Supplier Status */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">وضعیت Supplier Status</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
                             <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 border border-slate-600">
@@ -1650,7 +1650,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Comprehensive View Details Modal (Dashboard for Manufacturer / 3 Cards for Supplier) */}
       {isViewModalOpen && selectedPartner && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
           <div 
             onClick={() => setIsViewModalOpen(false)} 
             className="absolute inset-0" 
@@ -1731,7 +1731,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => setIsViewModalOpen(false)}
-                  className="p-2 text-slate-400 hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
+                  className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
                   title="بستن"
                 >
                   <X className="w-5 h-5" />
@@ -1766,32 +1766,32 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">نام تولیدکننده</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">نام تولیدکننده</span>
                       <span className="font-bold text-foreground">{selectedPartner.name}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">کشور / شهر</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">کشور / شهر</span>
                       <span className="font-bold text-foreground">{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">مسئول تماس / رابط</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">مسئول تماس / رابط</span>
                       <span className="font-bold text-foreground">{selectedPartner.contactPerson || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">شماره تماس</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">شماره تماس</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">ایمیل</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">ایمیل</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">وبسایت رسمی</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">وبسایت رسمی</span>
                       {selectedPartner.website ? (
                         <a
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
@@ -1809,7 +1809,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     {selectedPartner.address && (
                       <div className="sm:col-span-2 md:col-span-3">
-                        <span className="text-slate-400 text-[10px] block font-medium">آدرس کامل</span>
+                        <span className="text-muted-foreground text-[10px] block font-medium">آدرس کامل</span>
                         <span className="text-foreground leading-relaxed">{selectedPartner.address}</span>
                       </div>
                     )}
@@ -1834,32 +1834,32 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">نام فروشنده / Supplier</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">نام فروشنده / Supplier</span>
                       <span className="font-black text-foreground">{selectedPartner.name}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">کشور / شهر</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">کشور / شهر</span>
                       <span className="font-bold text-foreground">{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">مسئول تماس / رابط</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">مسئول تماس / رابط</span>
                       <span className="font-bold text-foreground">{selectedPartner.contactPerson || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">شماره تماس</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">شماره تماس</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">ایمیل رسمی</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">ایمیل رسمی</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">وبسایت</span>
+                      <span className="text-muted-foreground text-[10px] block font-medium">وبسایت</span>
                       {selectedPartner.website ? (
                         <a
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
@@ -1877,7 +1877,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     {selectedPartner.address && (
                       <div className="sm:col-span-2 md:col-span-3">
-                        <span className="text-slate-400 text-[10px] block font-medium">آدرس کامل</span>
+                        <span className="text-muted-foreground text-[10px] block font-medium">آدرس کامل</span>
                         <span className="text-foreground leading-relaxed">{selectedPartner.address}</span>
                       </div>
                     )}
@@ -1891,22 +1891,22 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <Award className="w-4 h-4 text-emerald-400" />
                       <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
 
                   {selectedPartner.evaluation && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">مجموع امتیاز ارزیابی (Score)</span>
                         <div className="text-2xl font-black text-white font-mono">
-                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-slate-400">/ ۱۰۰</span>
+                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
                         </div>
                       </div>
 
                       {/* Grade */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">رتبه کیفیت (Grade)</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-3 py-0.5 rounded-lg font-mono font-black text-sm border ${getGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                             {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending Review' :
@@ -1918,7 +1918,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Supplier Status */}
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-slate-400 font-bold block">وضعیت Supplier Status</span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(selectedPartner.evaluation.grade).cls}`}>
                             {gradeApprovalLabel(selectedPartner.evaluation.grade).label}
@@ -1929,7 +1929,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   ) : (
                     <div className="p-4 bg-slate-800/80 border border-slate-700 rounded-xl text-center space-y-1">
                       <span className="text-amber-400 font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
-                      <p className="text-[11px] text-slate-400">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
+                      <p className="text-[11px] text-muted-foreground">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
                 </div>
@@ -1940,7 +1940,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <History className="w-4 h-4 text-indigo-600" />
-                        <span>تاریخچه و روند ارزیابی SOP <span className="text-slate-400 font-normal font-mono">(Evaluation History)</span></span>
+                        <span>تاریخچه و روند ارزیابی SOP <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
                       </h3>
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{evalHistory.length} تغییر</span>
                     </div>
@@ -1983,10 +1983,10 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                                 <td className="py-2 px-2 text-center font-mono font-bold text-foreground">{h.totalScore}</td>
                                 <td className="py-2 px-2 text-center font-mono">
-                                  {delta === null || delta === 0 ? <span className="text-slate-400">—</span> : delta > 0 ? <span className="text-emerald-600">▲ {delta}</span> : <span className="text-red-500">▼ {Math.abs(delta)}</span>}
+                                  {delta === null || delta === 0 ? <span className="text-muted-foreground">—</span> : delta > 0 ? <span className="text-emerald-600">▲ {delta}</span> : <span className="text-red-500">▼ {Math.abs(delta)}</span>}
                                 </td>
                                 <td className="py-2 px-2 text-center">
-                                  {h.grade ? <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getGradeBadgeClass(h.grade)}`}>{h.grade}</span> : <span className="text-slate-400">—</span>}
+                                  {h.grade ? <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getGradeBadgeClass(h.grade)}`}>{h.grade}</span> : <span className="text-muted-foreground">—</span>}
                                 </td>
                                 <td className="py-2 px-2 text-muted-foreground">{h.user}</td>
                               </tr>
@@ -2016,7 +2016,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             <th className="py-2.5 px-3 text-center">فایل پیوست</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-border">
                           {SOP_DOCUMENTS_DEF.map(def => {
                             const doc = selectedPartner.evaluation?.documents?.[def.key];
                             const statusInfo = getDocStatusInfo(doc?.status || null);
@@ -2057,7 +2057,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className="text-slate-400 text-[10px]">ثبت نشده</span>
+                                    <span className="text-muted-foreground text-[10px]">ثبت نشده</span>
                                   )}
                                 </td>
                               </tr>
@@ -2067,7 +2067,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </table>
                     </div>
                   ) : (
-                    <div className="p-4 bg-muted border border-border rounded-xl text-center text-slate-400 text-xs">
+                    <div className="p-4 bg-muted border border-border rounded-xl text-center text-muted-foreground text-xs">
                       مدارک ثبت نشده است.
                     </div>
                   )}
@@ -2098,7 +2098,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Blacklist Confirmation Modal (reason required) */}
       {blacklistTarget && createPortal(
-        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-600 text-white rounded-xl">
@@ -2148,7 +2148,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Custom Deletion Confirmation Modal */}
       {partnerToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
@@ -2198,7 +2198,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       {/* Custom Deletion Constraints Warning Modal */}
       {deleteConstraintError && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
           <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-lg p-6 space-y-4 text-right fade-in">
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
