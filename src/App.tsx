@@ -36,6 +36,7 @@ import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } f
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
+import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
 import { PrintableSampleForm, PrintableEvaluationForm } from './components/PrintableForms';
@@ -231,7 +232,7 @@ export default function App() {
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
     try {
       const saved = localStorage.getItem('app_business_partners');
-      return saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB;
+      return (saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB).map(reconcileSupplierEvaluation);
     } catch {
       return INITIAL_BUSINESS_PARTNERS_DB;
     }
@@ -257,7 +258,9 @@ export default function App() {
       })
       .then((data: BusinessPartner[]) => {
         if (Array.isArray(data)) {
-          setBusinessPartners(data);
+          // Re-derive each stored SOP evaluation from its documents so a stale
+          // score/grade cannot outlive the documents it was computed from.
+          setBusinessPartners(data.map(reconcileSupplierEvaluation));
         }
       })
       .catch(err => {
