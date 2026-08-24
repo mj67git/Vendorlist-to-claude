@@ -49,6 +49,7 @@ import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
 import { authFetch, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
@@ -1539,10 +1540,14 @@ export default function App() {
         </main>
 
         {/* Unsaved-changes confirmation before leaving an open edit form */}
-        {pendingNav && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" dir="rtl">
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm fade-in" onClick={() => setPendingNav(null)} />
-            <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 dialog-enter" role="alertdialog" aria-modal="true">
+        <FormModal
+          open={!!pendingNav}
+          onClose={() => setPendingNav(null)}
+          size="sm"
+          role="alertdialog"
+          className="p-6"
+          ariaLabel="تغییرات ذخیره‌نشده"
+        >
               <div className="flex items-start gap-3.5">
                 <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center shrink-0">
                   <ShieldAlert className="w-5 h-5" />
@@ -1568,9 +1573,7 @@ export default function App() {
                   ماندن در صفحه
                 </button>
               </div>
-            </div>
-          </div>
-        )}
+        </FormModal>
 
         {/* Global command palette (⌘K) */}
         <CommandPalette
@@ -2497,9 +2500,13 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
             nothing ever set showNewMfgModal. Both partner kinds are now created
             through the single "ثبت تأمین‌کننده جدید" modal below. */}
 
-        {showNewSupplierModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden">
+        <FormModal
+          open={showNewSupplierModal}
+          onClose={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}
+          size="md"
+          className="p-6"
+          ariaLabel="ثبت تأمین‌کننده جدید"
+        >
               <div className="flex justify-between items-center border-b border-border pb-3 mb-3 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
                   <Handshake className="w-5 h-5 text-[#0071E3]" />
@@ -2677,9 +2684,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                   </button>
                 </div>
               </form>
-            </motion.div>
-          </div>
-        )}
+        </FormModal>
       </AnimatePresence>
 
       <div className="p-5 border-b border-border flex justify-between items-center bg-muted/40 rounded-t-2xl">

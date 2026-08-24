@@ -23,10 +23,14 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 export type FormModalSize = 'sm' | 'md' | 'lg';
 
+/**
+ * Width plus height behaviour. Only the record-sized panel stretches to fill a
+ * phone screen; a short confirmation staying `h-auto` there is the point.
+ */
 const SIZE_CLASS: Record<FormModalSize, string> = {
-  sm: 'max-w-md',    // confirmations, single-question dialogs
-  md: 'max-w-2xl',   // focused, single-purpose forms
-  lg: 'max-w-4xl',   // full record forms (material, business partner)
+  sm: 'max-w-md max-h-[92vh]',                    // confirmations, single-question dialogs
+  md: 'max-w-2xl max-h-[92vh]',                   // focused, single-purpose forms
+  lg: 'max-w-4xl max-h-[92vh] h-full sm:h-auto',  // full record forms (material, business partner)
 };
 
 interface FormModalProps {
@@ -35,6 +39,8 @@ interface FormModalProps {
   size?: FormModalSize;
   /** Set false to require an explicit button press (destructive confirmations). */
   closeOnBackdrop?: boolean;
+  /** 'alertdialog' for a confirmation that interrupts a destructive path. */
+  role?: 'dialog' | 'alertdialog';
   /** id of the element naming this dialog, for screen readers. */
   labelledBy?: string;
   ariaLabel?: string;
@@ -47,6 +53,7 @@ export function FormModal({
   onClose,
   size = 'lg',
   closeOnBackdrop = true,
+  role = 'dialog',
   labelledBy,
   ariaLabel,
   className = '',
@@ -106,6 +113,13 @@ export function FormModal({
     };
   }, [open, onClose]);
 
+  // Hold on to the last rendered children so the panel still has content while
+  // it animates out — callers usually clear the record being shown in the same
+  // tick they close, which would otherwise flash an empty panel.
+  const lastChildren = useRef<React.ReactNode>(null);
+  if (open) lastChildren.current = children;
+  const body = open ? children : lastChildren.current;
+
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -124,18 +138,18 @@ export function FormModal({
 
           <motion.div
             ref={panelRef}
-            role="dialog"
+            role={role}
             aria-modal="true"
             aria-labelledby={labelledBy}
             aria-label={labelledBy ? undefined : ariaLabel}
             tabIndex={-1}
-            className={`relative z-10 w-full ${SIZE_CLASS[size]} max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right focus:outline-none ${className}`}
+            className={`relative z-10 w-full ${SIZE_CLASS[size]} bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right focus:outline-none ${className}`}
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.965 }}
             animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: reduce ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
           >
-            {children}
+            {body}
           </motion.div>
         </div>
       )}

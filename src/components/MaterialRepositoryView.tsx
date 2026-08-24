@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { FormModal } from './FormModal';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, 
@@ -781,14 +780,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* VIEW MODAL - Clean Enterprise Detail Viewer with Portal */}
-      {isViewModalOpen && selectedMaterial && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
-          <div 
-            onClick={() => setIsViewModalOpen(false)} 
-            className="absolute inset-0" 
-          />
-          
-          <div className="relative w-full max-w-3xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+      <FormModal open={!!(isViewModalOpen && selectedMaterial)} onClose={() => setIsViewModalOpen(false)} size="lg" ariaLabel="جزئیات ماده اولیه">
+        {selectedMaterial && (<>
             <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
@@ -929,17 +922,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 بستن
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
 
       {/* CUSTOM MATERIAL DELETE MODAL with Portal */}
-      {materialToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm fade-in">
-          <div onClick={() => setMaterialToDelete(null)} className="absolute inset-0" />
-          
-          <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">
+      <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm" className="p-6" ariaLabel="تأیید حذف ماده اولیه">
+        {materialToDelete && (<>
             <div className="flex items-center gap-3 text-rose-600 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
                 <Trash2 className="w-5 h-5" />
@@ -998,17 +986,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </>
               )}
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
 
       {/* CUSTOM SPEC FILE DELETE MODAL with Portal */}
-      {specToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm fade-in">
-          <div onClick={() => setSpecToDelete(false)} className="absolute inset-0" />
-          
-          <div className="relative w-full max-w-md bg-card rounded-2xl shadow-2xl p-6 border border-border z-10 text-right">
+      <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm" className="p-6" ariaLabel="تأیید حذف فایل Specification">
             <div className="flex items-center gap-3 text-rose-600 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
                 <FileText className="w-5 h-5" />
@@ -1035,10 +1017,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      </FormModal>
     </div>
   );
 };

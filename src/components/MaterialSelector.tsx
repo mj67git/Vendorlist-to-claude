@@ -1,3 +1,4 @@
+import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, Package, X, Upload, FileText } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia } from '../types';
@@ -236,9 +237,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
       </div>
 
       {/* Comprehensive Material Creation Modal (Matching MaterialRepositoryView) */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
-          <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-right">
+      <FormModal open={showCreateModal} onClose={() => setShowCreateModal(false)} size="md" ariaLabel="ثبت ماده اولیه جدید">
             {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-muted/80 shrink-0">
               <div className="flex items-center gap-2">
@@ -431,9 +430,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </FormModal>
     </div>
   );
 };
