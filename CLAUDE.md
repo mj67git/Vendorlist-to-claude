@@ -20,9 +20,19 @@
 5. **فایل‌های SOP تنبل (lazy):** لیست شرکا base64 حمل نمی‌کند؛ فقط `hasFile`. blob از `GET /api/business-partners/:id/documents/:key/file` گرفته می‌شود. هنگام ذخیره، فایل موجود حفظ می‌شود مگر صریحاً حذف شود.
 6. **سازگاری به‌عقب:** `Vendor.status`/`grade` رشتهٔ آزادند (نه enum) تا ~۳۰ endpoint نشکند. مدل‌های موجود را فقط افزایشی تغییر بده.
 7. **Theme tokens:** برای UI جدید از توکن‌ها استفاده کن (`bg-card`, `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`, `bg-background`)، نه رنگ hardcode (`bg-white`, `bg-slate-*`, `text-slate-*`, hex روشن). dark mode با کلاس `.dark` روی `documentElement`؛ سوییچر تم در هدر (`useTheme`).
-8. **انیمیشن/ناوبری (یکدست):** کلاس‌های تعریف‌شده در `index.css`: `fade-in` (۲۰۰ms), `dialog-enter` (پاپ مودال), `slide-in-drawer`, `toast-enter`, `bounce-in`, `page-transition`. **ناوبری بین صفحات** توسط `AnimatePresence`+`motion.div` (کلید `keyName`) در `renderContent` انجام می‌شود — صفحهٔ جدید نساز که خودش transition جدا بزند. **مودال‌ها:** backdrop استاندارد = `fixed inset-0 ... bg-slate-900/50 backdrop-blur-sm ... fade-in` و پنل داخل همان. از `animate-fadeIn` (تعریف‌نشده در Tailwind v4) استفاده نکن. `prefers-reduced-motion` رعایت می‌شود.
+8. **هر لایهٔ روی صفحه از `FormModal` می‌آید (`src/components/FormModal.tsx`).** backdrop، Esc، کلیک بیرون، قفل اسکرول، focus trap و انیمیشن **متقارن** ورود/خروج آنجاست — مودال دستی نساز. سه اندازه: `sm` تأییدیه، `md` فرم تک‌منظوره، `lg` فرم کامل رکورد.
+   - کالر باید `<FormModal open={...}>` را **بدون شرط** رندر کند (نه `{cond && <FormModal/>}`)، وگرنه `AnimatePresence` انیمیشن خروج را نمی‌بیند.
+   - **children حتی وقتی بسته است ارزیابی می‌شوند.** اگر محتوا به رکوردی وابسته است که ممکن است null باشد، داخل children گاردش کن (`{entity && (<>…</>)}`) وگرنه صفحه crash می‌کند.
+   - تأییدیه‌های مخرب: `closeOnBackdrop={false}` بگذار (Esc همچنان لغو می‌کند).
+   - استثناها: `CommandPalette`، `PrintableForms` (نمای چاپ)، پاپ‌اورهای انکرشده (اعلان‌ها، منوی کاربر) و اسکریم سایدبار موبایل.
 
-9. **مدل ناوبری (`src/App.tsx`) — رعایت کن:** منبع حقیقتِ ناوبری، استکِ `viewHistory` است (persist در localStorage با کلید `app_viewHistory`).
+8b. **فرم سورس یک صفحه است، نه مودال:** مسیرهای `#/category/<cat>/new` و `#/category/<cat>/vendor/<id>/edit`. چون خودش دیالوگ باز می‌کند، مودال‌کردنش «مودال داخل مودال» می‌ساخت. محافظ تغییرات ذخیره‌نشده داخل `VendorForm` ثبت می‌شود (dirty-check واقعی، نه صرفِ باز بودن فرم).
+   - `handleSelectVendor` هنگام push باید `formMode: null` بگذارد و اگر از صفحهٔ فرم می‌آید آن ورودی را **جایگزین** کند؛ وگرنه رکورد تازه‌ساخته `formMode` را ارث می‌برد و دوباره فرم رندر می‌شود.
+   - خروج بعد از ذخیره با `closeSourceForm`/ناوبری صریح است، نه `history.back()` — پشت صفحهٔ فرم لزوماً لیست نیست.
+
+9. **انیمیشن/ناوبری (یکدست):** کلاس‌های تعریف‌شده در `index.css`: `fade-in` (۲۰۰ms), `dialog-enter` (پاپ مودال), `slide-in-drawer`, `toast-enter`, `bounce-in`, `page-transition`. **ناوبری بین صفحات** توسط `AnimatePresence`+`motion.div` (کلید `keyName`) در `renderContent` انجام می‌شود — صفحهٔ جدید نساز که خودش transition جدا بزند. **مودال‌ها:** backdrop استاندارد = `fixed inset-0 ... bg-slate-900/50 backdrop-blur-sm ... fade-in` و پنل داخل همان. از `animate-fadeIn` (تعریف‌نشده در Tailwind v4) استفاده نکن. `prefers-reduced-motion` رعایت می‌شود.
+
+10. **مدل ناوبری (`src/App.tsx`) — رعایت کن:** منبع حقیقتِ ناوبری، استکِ `viewHistory` است (persist در localStorage با کلید `app_viewHistory`).
    - `navigate()` رفتار **تعویض تب** دارد نه drill-down: اگر مقصد در stack باشد به آن unwind می‌شود (ورودی تکراری push نکن). `handleSelectVendor()` یک سطح push می‌کند، `goBack()` یک سطح pop، `goToHistoryIndex(i)` پرش مستقیم (breadcrumb).
    - **همهٔ** مسیرهای ناوبری باید از `runGuarded()` رد شوند تا محافظ «تغییرات ذخیره‌نشده» کار کند. صفحهٔ جزئیاتِ جدید که فرم ویرایش دارد باید `registerNavGuard(() => isDirty)` را در `useEffect` ثبت و در cleanup با `null` پاک کند.
    - `expandedMaterial` داخل ورودیِ `viewHistory` زندگی می‌کند (نه state جدا) تا با بازگشت و reload حفظ شود.
@@ -34,15 +44,15 @@
    - hash نامعتبر → خانه (نه بازیابی موقعیت کش‌شدهٔ قبلی).
    - سقف استک `MAX_VIEW_HISTORY = 25`؛ در localStorage فقط snapshot سبکِ vendor ذخیره کن (رکورد کامل از `db` با id بازسازی می‌شود).
 
-10. **وضعیت «مردود/لیست سیاه» محاسبه‌شونده است، نه ذخیره‌شونده (`src/utils/vendorState.ts`).**
+11. **وضعیت «مردود/لیست سیاه» محاسبه‌شونده است، نه ذخیره‌شونده (`src/utils/vendorState.ts`).**
    - تنها منبع تصمیم `isVendorRejected(v)` است؛ همه‌جا (دونات داشبورد، کارت‌ها، بج سایدبار، فیلتر دسته‌بندی، آرشیو، اکسل) باید از همین استفاده کند — شرط دستیِ `status==='rejected' || grade==='rejected'` ننویس.
    - **`grade` هرگز ورودی این تصمیم نیست، فقط خروجی است.** قبلاً `grade='rejected'` یک قفل یک‌طرفه بود: با حذف نتیجهٔ آزمایش، `status` برمی‌گشت ولی `grade` نه، و برای سورس‌ها حتی `status` را هم به عقب می‌کشید.
    - واقعیت‌ها: نمونه با **یک** رکورد Reject سیاه می‌شود؛ سورس فقط با تصمیم صریح (باکس ادمین یا فرم). دلایلِ با پیشوند «مردود در آزمون QC» فقط بازتاب رکوردها هستند و به‌تنهایی نگه‌دارندهٔ وضعیت نیستند.
    - `applyDerivedState(v)` idempotent است و در `normalizeAndCleanVendor` روی هر load/save اجرا می‌شود، پس دادهٔ قدیمیِ قفل‌شده خودش ترمیم می‌شود.
 
-11. **PATCHهای سورس باید ترتیبی (sequential) بمانند.** هر endpoint (`/profile`, `/contact`, `/scores`, `/analysis`, `/logs`, `/risk`) کل vendor را read-modify-write می‌کند؛ اگر دوتا هم‌زمان در پرواز باشند، کندتری نسخهٔ کهنهٔ خودش را برمی‌گرداند و **دادهٔ حذف‌شده زنده می‌شود**. در `handleUpdateVendor` صفِ `syncQueue` با `await` پشت‌سرهم اجرا می‌شود — موازی نکن.
+12. **PATCHهای سورس باید ترتیبی (sequential) بمانند.** هر endpoint (`/profile`, `/contact`, `/scores`, `/analysis`, `/logs`, `/risk`) کل vendor را read-modify-write می‌کند؛ اگر دوتا هم‌زمان در پرواز باشند، کندتری نسخهٔ کهنهٔ خودش را برمی‌گرداند و **دادهٔ حذف‌شده زنده می‌شود**. در `handleUpdateVendor` صفِ `syncQueue` با `await` پشت‌سرهم اجرا می‌شود — موازی نکن.
 
-12. **رابریک گرید SOP تثبیت‌شده است (`src/utils/sopEvaluation.ts`):** امتیاز هر مدرک Approved=20 / Permit Approval=10 / Expired=5 / Not Submitted=0، و مرزهای گرید **۸۰ / ۶۰ / ۴۰ / ۳۰** → `A, B, C, Pending Review, Blacklist`. **گرید `D` وجود ندارد** (واژگان قدیمی بود و حذف شد). این قوانین را در جای دیگری کپی نکن — از `computeSupplierEvaluation` و `calculateGradeAndStatus` استفاده کن.
+13. **رابریک گرید SOP تثبیت‌شده است (`src/utils/sopEvaluation.ts`):** امتیاز هر مدرک Approved=20 / Permit Approval=10 / Expired=5 / Not Submitted=0، و مرزهای گرید **۸۰ / ۶۰ / ۴۰ / ۳۰** → `A, B, C, Pending Review, Blacklist`. **گرید `D` وجود ندارد** (واژگان قدیمی بود و حذف شد). این قوانین را در جای دیگری کپی نکن — از `computeSupplierEvaluation` و `calculateGradeAndStatus` استفاده کن.
    - `reconcileSupplierEvaluation` روی load اجرا می‌شود تا ارزیابی ذخیره‌شدهٔ ناسازگار با مدارکش خودترمیم شود؛ `updatedAt/updatedBy` عمداً حفظ می‌شود تا محاسبهٔ مجدد شبیه ارزیابی تازهٔ انسانی نباشد.
    - نکته: `getRankParams` (سورس‌ها) گرید `D` دارد ولی مقیاس دیگری است (A: ۸۰-۱۰۰ … D: ۰-۳۹) و به SOP ربطی ندارد.
 

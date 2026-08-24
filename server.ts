@@ -578,6 +578,10 @@ async function getVendorsList(): Promise<any[]> {
         status: v.status,
         grade: v.grade,
         initialSampleStatus: (v as any).initialSampleStatus || "",
+        // The edit form validates against materialId, so it has to travel with
+        // the vendor — without it every existing source failed validation with
+        // "choose a material" even though one was linked.
+        materialId: link ? link.materialId : null,
         material: materialObj ? materialObj.name : "نامشخص",
         materialEn: materialObj ? materialObj.nameEn : "Unknown",
         cas: materialObj ? materialObj.cas : "N/A",

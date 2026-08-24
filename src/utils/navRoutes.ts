@@ -15,6 +15,8 @@ export interface RouteState {
   categoryId: string | null;
   vendorId: string | null;
   expandedMaterial?: string | null;
+  /** The source form is a page of its own, so it has a URL like any other view. */
+  formMode?: 'create' | 'edit' | null;
 }
 
 export const CATEGORY_IDS = ['foreign', 'domestic', 'veterinary', 'packaging', 'sample', 'blacklist'];
@@ -22,8 +24,8 @@ export const CATEGORY_IDS = ['foreign', 'domestic', 'veterinary', 'packaging', '
 const SIMPLE_VIEWS: RouteView[] = ['archive', 'supplier-audit', 'audit-trail', 'materials', 'business-partners'];
 
 /** Stable identity of a location, used to match a URL against the nav stack. */
-export function routeKey(s: { view: string; categoryId?: string | null; vendorId?: string | null }): string {
-  return `${s.view}|${s.categoryId ?? ''}|${s.vendorId ?? ''}`;
+export function routeKey(s: { view: string; categoryId?: string | null; vendorId?: string | null; formMode?: string | null }): string {
+  return `${s.view}|${s.categoryId ?? ''}|${s.vendorId ?? ''}|${s.formMode ?? ''}`;
 }
 
 /** Serialize a location to a hash string (including the leading '#'). */
@@ -35,9 +37,13 @@ export function encodeRoute(s: RouteState): string {
   if (s.vendorId) {
     // Keep the parent category in the URL when there is one, so a shared link
     // restores a meaningful breadcrumb rather than a bare detail page.
+    const suffix = s.formMode === 'edit' ? '/edit' : '';
     return s.categoryId
-      ? `#/category/${encodeURIComponent(s.categoryId)}/vendor/${encodeURIComponent(s.vendorId)}`
-      : `#/vendor/${encodeURIComponent(s.vendorId)}`;
+      ? `#/category/${encodeURIComponent(s.categoryId)}/vendor/${encodeURIComponent(s.vendorId)}${suffix}`
+      : `#/vendor/${encodeURIComponent(s.vendorId)}${suffix}`;
+  }
+  if (s.formMode === 'create' && s.categoryId) {
+    return `#/category/${encodeURIComponent(s.categoryId)}/new`;
   }
   if (s.view === 'category' && s.categoryId) {
     return `#/category/${encodeURIComponent(s.categoryId)}${q}`;
@@ -65,14 +71,24 @@ export function decodeRoute(rawHash: string): RouteState | null {
     const categoryId = segs[1];
     if (!categoryId || !CATEGORY_IDS.includes(categoryId)) return null;
     if (segs[2] === 'vendor' && segs[3]) {
+      if (segs[4] === 'edit' && segs.length === 5) {
+        return { view: 'category', categoryId, vendorId: segs[3], expandedMaterial, formMode: 'edit' };
+      }
+      if (segs.length > 4) return null;
       return { view: 'category', categoryId, vendorId: segs[3], expandedMaterial };
+    }
+    if (segs[2] === 'new' && segs.length === 3) {
+      return { view: 'category', categoryId, vendorId: null, expandedMaterial, formMode: 'create' };
     }
     if (segs.length > 2) return null;
     return { view: 'category', categoryId, vendorId: null, expandedMaterial };
   }
 
-  if (segs[0] === 'vendor' && segs[1] && segs.length === 2) {
-    return { view: 'home', categoryId: null, vendorId: segs[1] };
+  if (segs[0] === 'vendor' && segs[1]) {
+    if (segs[2] === 'edit' && segs.length === 3) {
+      return { view: 'home', categoryId: null, vendorId: segs[1], formMode: 'edit' };
+    }
+    if (segs.length === 2) return { view: 'home', categoryId: null, vendorId: segs[1] };
   }
 
   if (segs.length === 1 && SIMPLE_VIEWS.includes(segs[0] as RouteView)) {
@@ -102,6 +118,14 @@ export function buildStackFromRoute(r: RouteState): RouteState[] {
     stack.push({ view: r.view, categoryId: null, vendorId: null });
   }
 
-  if (r.vendorId) stack.push({ ...r });
+  if (r.vendorId) {
+    // An edit page sits on top of that source's detail page, so Back lands there.
+    if (r.formMode === 'edit') {
+      stack.push({ ...r, formMode: null });
+    }
+    stack.push({ ...r });
+  } else if (r.formMode === 'create') {
+    stack.push({ ...r });
+  }
   return stack;
 }

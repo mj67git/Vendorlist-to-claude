@@ -274,6 +274,8 @@ export default function App() {
     categoryId: Category | null;
     selectedVendor: Vendor | null;
     expandedMaterial?: string | null;
+    /** The source form is a page, not an overlay — this is which page. */
+    formMode?: 'create' | 'edit' | null;
   };
 
   // Cap the navigation stack so a long session cannot grow it without bound.
@@ -287,6 +289,7 @@ export default function App() {
     categoryId: (r.categoryId as Category | null) ?? null,
     selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
     expandedMaterial: r.expandedMaterial ?? null,
+    formMode: r.formMode ?? null,
   });
 
   const viewStateToRoute = (s: ViewState): RouteState => ({
@@ -294,6 +297,7 @@ export default function App() {
     categoryId: s.categoryId ?? null,
     vendorId: s.selectedVendor?.id ?? null,
     expandedMaterial: s.expandedMaterial ?? null,
+    formMode: s.formMode ?? null,
   });
 
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
@@ -339,6 +343,7 @@ export default function App() {
   const currentViewState = viewHistory[viewHistory.length - 1] || { view: 'home', categoryId: null, selectedVendor: null };
   const view = currentViewState.view;
   const categoryId = currentViewState.categoryId;
+  const formMode = currentViewState.formMode ?? null;
   // A vendor reached through a shared link is only an id until `db` arrives, so
   // distinguish "still loading" from "this link points at a source that no
   // longer exists" instead of rendering a detail page full of blanks.
@@ -378,7 +383,7 @@ export default function App() {
   // never lands mid-page on a freshly opened screen. (A material group that
   // needs to be revealed scrolls itself into view shortly afterwards.)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}`;
+  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}|${formMode ?? ''}`;
   useEffect(() => {
     const reset = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     reset();
@@ -599,14 +604,20 @@ export default function App() {
       runGuarded(() => {
         setViewHistory(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.selectedVendor?.id === vendor.id) {
+          if (last && last.selectedVendor?.id === vendor.id && !last.formMode) {
             return prev;
           }
           // Mark the material as expanded on the underlying list entry so that
           // returning (goBack) restores the same expanded material, then push
           // the vendor-detail entry on top (carrying the same marker).
-          const base = { ...last, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
-          return capHistory([...prev.slice(0, -1), base, { ...base, selectedVendor: vendor }]);
+          // A detail page is never a form page, so drop formMode — otherwise
+          // saving a new source (which lands on its record) would inherit
+          // 'create' and render the form again.
+          const base = { ...last, formMode: null, selectedVendor: null, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
+          // Arriving from the form page means that page is finished: the record
+          // replaces it, so Back goes to the list rather than back into the form.
+          const head = last?.formMode ? prev.slice(0, -1) : [...prev.slice(0, -1), base];
+          return capHistory([...head, { ...base, selectedVendor: vendor }]);
         });
       });
     } else {
@@ -626,6 +637,30 @@ export default function App() {
     });
   };
 
+  // The source form is a page of its own: pushing it onto the stack gives it a
+  // URL, a breadcrumb and a working Back button for free, and keeps its own
+  // "new partner" dialog from becoming a modal inside a modal.
+  const openSourceForm = (mode: 'create' | 'edit', cat?: Category | null) => {
+    runGuarded(() => {
+      setViewHistory(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.formMode === mode) return prev;
+        const base = mode === 'edit'
+          ? last
+          : { ...last, view: 'category' as const, categoryId: cat ?? last?.categoryId ?? 'domestic', selectedVendor: null };
+        return capHistory([...prev, { ...base, formMode: mode }]);
+      });
+      setSidebarOpen(false);
+    });
+  };
+
+  // Leaving the form page after a successful save must land somewhere definite,
+  // so it pops the form entry from the stack rather than asking the browser to
+  // go "back" — the entry behind it is not guaranteed to be the list.
+  const closeSourceForm = () => {
+    setViewHistory(prev => (prev[prev.length - 1]?.formMode ? prev.slice(0, -1) : prev));
+  };
+
   // Jump directly to a given depth of the navigation stack (breadcrumb click).
   const goToHistoryIndex = (index: number) => {
     const steps = viewHistory.length - 1 - index;
@@ -637,6 +672,8 @@ export default function App() {
   };
 
   const getViewStateLabel = (state: ViewState) => {
+    if (state.formMode === 'create') return 'سورس جدید';
+    if (state.formMode === 'edit') return 'ویرایش سورس';
     if (state.selectedVendor) {
       return state.selectedVendor.name || 'جزییات سورس';
     }
@@ -1004,7 +1041,29 @@ export default function App() {
     let content;
     let keyName = '';
 
-    if (vendorLinkPending) {
+    if (formMode) {
+      // The source form as a full page: it is the longest form in the app and
+      // opens dialogs of its own, so it gets the content area rather than an
+      // overlay.
+      const editing = formMode === 'edit' ? selectedVendor ?? undefined : undefined;
+      keyName = `source-form-${formMode}-${editing?.id ?? categoryId ?? 'new'}`;
+      content = (
+        <VendorForm
+          db={db}
+          materials={materials}
+          onAddMaterial={handleAddMaterial}
+          categoryId={(editing?.category as Category) || (categoryId as Category) || 'domestic'}
+          existingVendor={editing}
+          onClose={goBack}
+          onSaved={closeSourceForm}
+          onSave={(v, msg) => { editing ? handleUpdateVendor(v, msg) : handleAddVendor(v); }}
+          currentUser={currentUser}
+          partners={businessPartners}
+          onAddPartner={handleAddBusinessPartner}
+          registerNavGuard={registerNavGuard}
+        />
+      );
+    } else if (vendorLinkPending) {
       // Deep link into a source: wait for the dataset, then report honestly if
       // the id is not in it.
       const stillLoading = isSyncing || db.length === 0;
@@ -1033,17 +1092,17 @@ export default function App() {
       );
     } else if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
-      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} />;
+      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
     } else if (view === 'home') {
       keyName = 'home';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
       if (currentUser?.role === 'admin') {
         keyName = 'archive';
         content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
       } else {
         keyName = 'home-fallback';
-        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
       }
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
@@ -1102,7 +1161,7 @@ export default function App() {
       content = <CategoryView db={db} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     }
 
     return (
@@ -1698,8 +1757,7 @@ const categoryCardStyles: Record<string, {
 };
 
 // --- View: Home ---
-function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void }) {
-  const [showAddModal, setShowAddModal] = useState(false);
+function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
   const stats = useMemo(() => {
     return {
       total: db.length,
@@ -1796,7 +1854,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             {currentUser && (
               <Button 
-                onClick={() => setShowAddModal(true)}
+                onClick={onOpenSourceForm}
                 className="w-full sm:w-auto h-11 px-6 shadow-sm gap-2 text-sm font-bold shrink-0"
               >
                 <Plus className="w-4 h-4" />
@@ -1807,9 +1865,6 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
         </div>
       </div>
 
-      <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showAddModal ? 'opacity-100 max-h-[2000px]' : 'opacity-0 max-h-0'}`}>
-        {showAddModal && <VendorForm db={db} materials={materials} onAddMaterial={onAddMaterial} categoryId="domestic" onClose={() => setShowAddModal(false)} onSave={(v) => { onAddVendor(v); }} currentUser={currentUser} partners={partners} onAddPartner={onAddPartner} />}
-      </div>
 
       {/* KPI ROW */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
@@ -2112,7 +2167,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
 }
 
 // --- View: Vendor Form (Add / Edit) ---
-function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void }) {
+function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: () => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
   // Create autocomplete suggestions
@@ -2338,6 +2393,21 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
     setShowNewSupplierModal(false);
   };
 
+  // While this form is a page of its own, leaving it is ordinary navigation —
+  // so it registers the same unsaved-changes guard a detail page uses. It
+  // reports dirty only once something actually changed, otherwise merely
+  // opening and leaving the form would nag.
+  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (!registerNavGuard) return;
+    registerNavGuard(() => {
+      if (savedRef.current) return false;
+      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }) !== pristineRef.current;
+    });
+    return () => registerNavGuard(null);
+  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -2472,10 +2542,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       activityLogs: [...(existingVendor?.activityLogs || []), newLog]
     } as Vendor;
 
+    savedRef.current = true;
+    registerNavGuard?.(null);
     onSave(vendorContext, null);
     setIsSuccess(true);
     setTimeout(() => {
-      onClose();
+      (onSaved ?? onClose)();
     }, 1000);
   };
 
@@ -4943,30 +5015,10 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
 }
 
 // --- View: Vendor Detail ---
-function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const editFormRef = useRef<HTMLDivElement>(null);
-
-  // Warn before navigating away (or closing the tab) with the edit form open.
-  useEffect(() => {
-    registerNavGuard?.(() => isEditing);
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isEditing) { e.preventDefault(); e.returnValue = ''; }
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      registerNavGuard?.(null);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    };
-  }, [isEditing, registerNavGuard]);
-
-  useEffect(() => {
-    if (isEditing) {
-      setTimeout(() => {
-        editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 150);
-    }
-  }, [isEditing]);
+function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
+  // Editing happens on its own page (#/…/vendor/<id>/edit), so this screen just
+  // navigates to it. The unsaved-changes guard lives in VendorForm now, where
+  // the form state it has to inspect actually is.
 
   const [showRiskAssessment, setShowRiskAssessment] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -5339,24 +5391,6 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         </div>
       )}
 
-      {/* Editing Form */}
-      <div ref={editFormRef} className={`overflow-hidden transition-all duration-300 ease-in-out ${isEditing ? 'opacity-100 max-h-[2000px] mb-6' : 'opacity-0 max-h-0'}`}>
-        {isEditing && (
-          <VendorForm 
-            db={db}
-            materials={materials}
-            onAddMaterial={onAddMaterial}
-            categoryId={vendor.category} 
-            existingVendor={vendor}
-            onClose={() => setIsEditing(false)} 
-            onSave={(v, msg) => { onSave(v, msg); }} 
-            currentUser={currentUser}
-            partners={partners}
-            onAddPartner={onAddPartner}
-          />
-        )}
-      </div>
-
       {/* HERO CARD */}
       <div className={`bg-card border border-border/60 rounded-2xl p-6 mb-6 shadow-sm ${scoreConfig.heroBorder}`}>
         <div className="flex flex-col xl:flex-row items-start justify-between gap-5 pb-1">
@@ -5413,11 +5447,11 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
               {currentUser.role === 'admin' && (
                 <>
                   <button 
-                    onClick={() => setIsEditing(!isEditing)}
-                    className={`flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold ${isEditing ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-card text-foreground hover:bg-accent border-border shadow-sm'}`}
+                    onClick={() => onEditVendor?.()}
+                    className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
                   >
                     <Pencil className="w-4 h-4" />
-                    <span>{isEditing ? 'انصراف' : 'ویرایش اطلاعات'}</span>
+                    <span>ویرایش اطلاعات</span>
                   </button>
                   <button 
                     onClick={() => setShowConfirmDelete(true)}

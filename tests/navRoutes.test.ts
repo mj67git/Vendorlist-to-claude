@@ -73,3 +73,43 @@ test('builds ancestors so a deep link gets a breadcrumb and a Back target', () =
 test('home builds a single-entry stack', () => {
   assert.equal(buildStackFromRoute(r({ view: 'home' })).length, 1);
 });
+
+test('the source form is a page with its own URL', () => {
+  assert.equal(encodeRoute(r({ view: 'category', categoryId: 'foreign', formMode: 'create' })), '#/category/foreign/new');
+  assert.equal(
+    encodeRoute(r({ view: 'category', categoryId: 'foreign', vendorId: 'V1', formMode: 'edit' })),
+    '#/category/foreign/vendor/V1/edit',
+  );
+});
+
+test('form routes round-trip', () => {
+  for (const c of [
+    r({ view: 'category', categoryId: 'domestic', formMode: 'create' }),
+    r({ view: 'category', categoryId: 'foreign', vendorId: 'V-9', formMode: 'edit' }),
+    r({ view: 'home', vendorId: 'V-9', formMode: 'edit' }),
+  ]) {
+    const back = decodeRoute(encodeRoute(c));
+    assert.ok(back, `failed to decode ${encodeRoute(c)}`);
+    assert.equal(routeKey(back!), routeKey(c));
+  }
+});
+
+test('a create page stacks on the list, an edit page on the detail', () => {
+  const create = buildStackFromRoute(r({ view: 'category', categoryId: 'foreign', formMode: 'create' }));
+  assert.deepEqual(create.map(s => s.formMode ?? null), [null, null, 'create']);
+
+  const edit = buildStackFromRoute(r({ view: 'category', categoryId: 'foreign', vendorId: 'V1', formMode: 'edit' }));
+  assert.equal(edit.length, 4, 'home > category > detail > edit');
+  assert.deepEqual(edit.map(s => s.formMode ?? null), [null, null, null, 'edit']);
+  assert.equal(edit[2].vendorId, 'V1', 'Back from edit lands on that source');
+});
+
+test('a plain detail route is unchanged by the form additions', () => {
+  const d = decodeRoute('#/category/foreign/vendor/V1');
+  assert.equal(d!.formMode ?? null, null);
+});
+
+test('malformed form routes are rejected', () => {
+  assert.equal(decodeRoute('#/category/foreign/vendor/V1/bogus'), null);
+  assert.equal(decodeRoute('#/category/foreign/new/extra'), null);
+});
