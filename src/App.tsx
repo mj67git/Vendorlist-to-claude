@@ -2173,22 +2173,13 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
   });
 
   // Modal display states for partner creation
-  const [showNewMfgModal, setShowNewMfgModal] = useState(false);
   const [showNewSupplierModal, setShowNewSupplierModal] = useState(false);
+  // The inline "new partner" modal covers both partner kinds; suppliers are the
+  // only ones that carry an SOP evaluation (flat partner model).
+  const [newPartnerType, setNewPartnerType] = useState<'Manufacturer' | 'Supplier'>('Manufacturer');
+  const [newPartnerError, setNewPartnerError] = useState<string | null>(null);
 
   // Modals Data State
-  const [newMfgData, setNewMfgData] = useState({
-    name: '',
-    nameEn: '',
-    country: 'ایران',
-    city: '',
-    address: '',
-    email: '',
-    contactPerson: '',
-    phone: '',
-    website: '',
-    status: 'Active' as 'Active' | 'Inactive' | 'Blacklisted'
-  });
 
   const [newSupplierTab, setNewSupplierTab] = useState<'general' | 'evaluation'>('general');
   const [newSupplierData, setNewSupplierData] = useState({
@@ -2240,55 +2231,6 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
     }).catch(err => console.error("Failed to sync selection audit log:", err));
   };
 
-  const handleCreateMfg = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMfgData.name.trim()) return;
-
-    const newMfg: BusinessPartner = {
-      id: 'bp_mfg_' + Math.random().toString(36).substring(2, 9),
-      type: 'Manufacturer',
-      name: newMfgData.name.trim(),
-      nameEn: newMfgData.nameEn.trim() || undefined,
-      country: newMfgData.country.trim(),
-      city: newMfgData.city.trim() || undefined,
-      address: newMfgData.address.trim() || undefined,
-      email: newMfgData.email.trim() || undefined,
-      contactPerson: newMfgData.contactPerson.trim() || undefined,
-      phone: newMfgData.phone.trim() || undefined,
-      website: newMfgData.website.trim() || undefined,
-      status: newMfgData.status,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    if (onAddPartner) {
-      onAddPartner(newMfg);
-    }
-
-    setSelectedManufacturerId(newMfg.id);
-    setSelectedSupplierId('');
-
-    logSourceSelectionAudit(
-      'CreateManufacturerInsideSource',
-      `ایجاد تولیدکننده جدید از داخل فرم سورس: ${newMfg.name}`,
-      null,
-      newMfg
-    );
-
-    setNewMfgData({
-      name: '',
-      nameEn: '',
-      country: 'ایران',
-      city: '',
-      address: '',
-      email: '',
-      contactPerson: '',
-      phone: '',
-      website: '',
-      status: 'Active'
-    });
-    setShowNewMfgModal(false);
-  };
 
   // Scoring and grading live in utils/sopEvaluation — this form must not carry
   // its own copy of the rubric, or the two drift apart.
@@ -2311,13 +2253,29 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
 
   const handleCreateSupplier = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSupplierData.name.trim() || !selectedManufacturerId) return;
 
-    const evaluation = computeNewSupplierEval();
+    // Report what is missing instead of returning silently. This form used to
+    // also require a previously selected manufacturer, which the flat partner
+    // model removed — leaving the submit button doing nothing at all.
+    if (!newSupplierData.name.trim()) {
+      setNewPartnerError('نام شریک تجاری الزامی است.');
+      setNewSupplierTab('general');
+      return;
+    }
+    if (!newSupplierData.country.trim()) {
+      setNewPartnerError('کشور مبدا الزامی است.');
+      setNewSupplierTab('general');
+      return;
+    }
+    setNewPartnerError(null);
+
+    const isSupplier = newPartnerType === 'Supplier';
+    // Only suppliers are SOP-evaluated.
+    const evaluation = isSupplier ? computeNewSupplierEval() : undefined;
 
     const newSupplier: BusinessPartner = {
-      id: 'bp_sup_' + Math.random().toString(36).substring(2, 9),
-      type: 'Supplier',
+      id: (isSupplier ? 'bp_sup_' : 'bp_mfg_') + Math.random().toString(36).substring(2, 9),
+      type: newPartnerType,
       name: newSupplierData.name.trim(),
       nameEn: newSupplierData.nameEn.trim() || undefined,
       country: newSupplierData.country.trim(),
@@ -2327,7 +2285,6 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       contactPerson: newSupplierData.contactPerson.trim() || undefined,
       phone: newSupplierData.phone.trim() || undefined,
       website: newSupplierData.website.trim() || undefined,
-      manufacturerId: selectedManufacturerId,
       status: newSupplierData.status,
       evaluation: evaluation as any,
       createdAt: new Date().toISOString(),
@@ -2338,11 +2295,19 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       onAddPartner(newSupplier);
     }
 
-    setSelectedSupplierId(newSupplier.id);
+    // Route the new partner into the matching field so the source form picks it
+    // up straight away (the two are mutually exclusive).
+    if (isSupplier) {
+      setSelectedSupplierId(newSupplier.id);
+      setSelectedManufacturerId('');
+    } else {
+      setSelectedManufacturerId(newSupplier.id);
+      setSelectedSupplierId('');
+    }
 
     logSourceSelectionAudit(
-      'CreateSupplierInsideSource',
-      `ایجاد فروشنده جدید از داخل فرم سورس: ${newSupplier.name}`,
+      isSupplier ? 'CreateSupplierInsideSource' : 'CreateManufacturerInsideSource',
+      `ایجاد ${isSupplier ? 'فروشنده' : 'تولیدکننده'} جدید از داخل فرم سورس: ${newSupplier.name}`,
       null,
       newSupplier
     );
@@ -2528,73 +2493,9 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       
       {/* Modals inside form */}
       <AnimatePresence>
-        {showNewMfgModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
-              <div className="flex justify-between items-center border-b border-border pb-3 mb-4 shrink-0">
-                <h3 className="font-bold text-foreground text-base flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-primary" />
-                  ثبت تولیدکننده مرجع جدید (New Manufacturer)
-                </h3>
-                <Button variant="ghost" size="icon" type="button" onClick={() => setShowNewMfgModal(false)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              <form onSubmit={handleCreateMfg} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">نام کارخانه سازنده (فارسی): *</label>
-                    <input required type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={newMfgData.name} onChange={e => setNewMfgData({...newMfgData, name: e.target.value})} placeholder="مثلاً: داروسازی اکتاویس" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">Manufacturer Name (English):</label>
-                    <input type="text" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.nameEn} onChange={e => setNewMfgData({...newMfgData, nameEn: e.target.value})} placeholder="e.g. Actavis Pharma" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">کشور مبدا: *</label>
-                    <input required type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.country} onChange={e => setNewMfgData({...newMfgData, country: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">شهر:</label>
-                    <input type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.city} onChange={e => setNewMfgData({...newMfgData, city: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">نام رابط (Contact Person):</label>
-                    <input type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.contactPerson} onChange={e => setNewMfgData({...newMfgData, contactPerson: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">شماره تماس رابط:</label>
-                    <input type="text" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.phone} onChange={e => setNewMfgData({...newMfgData, phone: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">پست الکترونیکی (Email):</label>
-                    <input type="email" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.email} onChange={e => setNewMfgData({...newMfgData, email: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                    <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newMfgData.website} onChange={e => setNewMfgData({...newMfgData, website: e.target.value})} placeholder="https://..." />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                    <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newMfgData.status} onChange={e => setNewMfgData({...newMfgData, status: e.target.value as any})}>
-                      <option value="Active">فعال (Active)</option>
-                      <option value="Inactive">غیرفعال (Inactive)</option>
-                      <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2 space-y-1">
-                    <label className="text-foreground font-semibold block">نشانی دقیق کارخانه:</label>
-                    <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newMfgData.address} onChange={e => setNewMfgData({...newMfgData, address: e.target.value})} />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => setShowNewMfgModal(false)} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">ثبت و انتخاب تولیدکننده</button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
+        {/* The standalone "new manufacturer" modal was unreachable dead UI —
+            nothing ever set showNewMfgModal. Both partner kinds are now created
+            through the single "ثبت تأمین‌کننده جدید" modal below. */}
 
         {showNewSupplierModal && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
@@ -2602,52 +2503,89 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
               <div className="flex justify-between items-center border-b border-border pb-3 mb-3 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
                   <Handshake className="w-5 h-5 text-[#0071E3]" />
-                  ثبت فروشنده / واسطه جدید (New Supplier)
+                  ثبت تأمین‌کننده جدید (New Business Partner)
                 </h3>
-                <button type="button" onClick={() => setShowNewSupplierModal(false)} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
+                <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Navigation Tabs */}
-              <div className="flex gap-2 border-b border-border pb-2 mb-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setNewSupplierTab('general')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    newSupplierTab === 'general' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
-                  }`}
-                >
-                  ۱. مشخصات عمومی
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewSupplierTab('evaluation')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    newSupplierTab === 'evaluation' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
-                  }`}
-                >
-                  ۲. ارزیابی مدارک SOP
-                  <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
-                    امتیاز: {computeNewSupplierEval().totalScore}
-                  </span>
-                </button>
+              {/* Partner kind — manufacturers and suppliers are independent records */}
+              <div className="shrink-0 mb-3">
+                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">نوع شریک تجاری:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'Manufacturer', label: 'تولیدکننده', sub: 'Manufacturer', icon: Building2 },
+                    { key: 'Supplier', label: 'فروشنده', sub: 'Supplier', icon: Handshake },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => { setNewPartnerType(opt.key); setNewSupplierTab('general'); setNewPartnerError(null); }}
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-right transition-all ${
+                        newPartnerType === opt.key
+                          ? 'bg-[#0071E3]/10 border-[#0071E3] text-[#0071E3]'
+                          : 'bg-card border-border text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      <opt.icon className="w-4 h-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold">{opt.label}</span>
+                        <span className="block text-[10px] opacity-70 font-mono">{opt.sub}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  {newPartnerType === 'Supplier'
+                    ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
+                    : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
+                </p>
               </div>
 
-              <form onSubmit={handleCreateSupplier} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
-                <div className="bg-blue-50/50 border border-blue-200 rounded-lg p-3 text-blue-800 leading-relaxed font-medium mb-3">
-                  تولیدکننده مرجع متصل: <strong className="text-blue-900">{selectedManufacturer?.name}</strong>
-                  <p className="mt-1 text-[10px] text-muted-foreground">فروشنده جدید برای کارخانه تولیدی بالا ایجاد می‌شود و به صورت خودکار ارزیابی و درجه‌بندی کیفی می‌گردد.</p>
+              {/* Navigation Tabs — the SOP step exists for suppliers only */}
+              {newPartnerType === 'Supplier' && (
+                <div className="flex gap-2 border-b border-border pb-2 mb-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setNewSupplierTab('general')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      newSupplierTab === 'general' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                    }`}
+                  >
+                    ۱. مشخصات عمومی
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewSupplierTab('evaluation')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      newSupplierTab === 'evaluation' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                    }`}
+                  >
+                    ۲. ارزیابی مدارک SOP
+                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
+                      امتیاز: {computeNewSupplierEval().totalScore}
+                    </span>
+                  </button>
                 </div>
+              )}
 
-                {newSupplierTab === 'general' ? (
+              <form onSubmit={handleCreateSupplier} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
+                {newPartnerError && (
+                  <div className="bg-rose-50 border border-rose-300 text-rose-800 dark:bg-rose-950/40 dark:border-rose-700/50 dark:text-rose-300 rounded-xl p-3 mb-3 flex items-center gap-2 font-semibold fade-in">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    {newPartnerError}
+                  </div>
+                )}
+
+                {(newSupplierTab === 'general' || newPartnerType !== 'Supplier') ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام شرکت فروشنده (فارسی): *</label>
+                      <label className="text-foreground font-semibold block">نام شرکت {newPartnerType === 'Supplier' ? 'فروشنده' : 'تولیدکننده'} (فارسی): *</label>
                       <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">Supplier Name (English):</label>
+                      <label className="text-foreground font-semibold block">{newPartnerType === 'Supplier' ? 'Supplier' : 'Manufacturer'} Name (English):</label>
                       <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
                     </div>
                     <div className="space-y-1">
@@ -2683,7 +2621,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                       </select>
                     </div>
                     <div className="md:col-span-2 space-y-1">
-                      <label className="text-foreground font-semibold block">نشانی دقیق دفتر فروشنده:</label>
+                      <label className="text-foreground font-semibold block">نشانی دقیق {newPartnerType === 'Supplier' ? 'دفتر فروشنده' : 'کارخانه'}:</label>
                       <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
                     </div>
                   </div>
@@ -2733,8 +2671,10 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                 )}
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => setShowNewSupplierModal(false)} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">ثبت و انتخاب فروشنده</button>
+                  <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
+                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">
+                    {newPartnerType === 'Supplier' ? 'ثبت و انتخاب فروشنده' : 'ثبت و انتخاب تولیدکننده'}
+                  </button>
                 </div>
               </form>
             </motion.div>
@@ -2872,7 +2812,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                     newName
                   );
                 }}
-                onAddNew={() => setShowNewSupplierModal(true)}
+                onAddNew={() => {
+                  setNewPartnerType('Manufacturer');
+                  setNewSupplierTab('general');
+                  setNewPartnerError(null);
+                  setShowNewSupplierModal(true);
+                }}
               />
               <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-muted-foreground" />

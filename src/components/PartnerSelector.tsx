@@ -144,7 +144,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
           }`}
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>{isManufacturer ? 'ثبت تولیدکننده جدید' : 'ثبت فروشنده جدید'}</span>
+          <span>{anyType ? 'ثبت تأمین‌کننده جدید' : isManufacturer ? 'ثبت تولیدکننده جدید' : 'ثبت فروشنده جدید'}</span>
         </button>
       </div>
 
@@ -443,7 +443,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                 className="text-[#0071E3] hover:text-[#0025D2] font-bold text-xs flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ ثبت {isManufacturer ? 'تولیدکننده جدید' : 'فروشنده جدید'}</span>
+                <span>+ ثبت {anyType ? 'تأمین‌کننده جدید' : isManufacturer ? 'تولیدکننده جدید' : 'فروشنده جدید'}</span>
               </button>
             </div>
           </div>
