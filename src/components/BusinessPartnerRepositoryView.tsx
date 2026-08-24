@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { FormModal } from './FormModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
@@ -1101,14 +1102,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* Add / Edit Partner Modal with Portal & Sticky Header/Footer */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
-          <div 
-            onClick={() => setIsModalOpen(false)} 
-            className="absolute inset-0" 
-          />
-
-          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم شریک تجاری">
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -1641,10 +1635,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 </div>
               </>
             )}
-          </div>
-        </div>,
-        document.body
-      )}
+      </FormModal>
 
       {/* Comprehensive View Details Modal (Dashboard for Manufacturer / 3 Cards for Supplier) */}
       {isViewModalOpen && selectedPartner && createPortal(

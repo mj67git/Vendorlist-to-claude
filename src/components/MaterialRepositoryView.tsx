@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { FormModal } from './FormModal';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, 
   FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker, 
@@ -503,14 +504,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* CREATE/EDIT MODAL - High Quality Responsive Enterprise Modal with Portal */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
-          <div 
-            onClick={() => setIsModalOpen(false)} 
-            className="absolute inset-0" 
-          />
-          
-          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم ماده اولیه">
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -784,10 +778,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
               </>
             )}
-          </div>
-        </div>,
-        document.body
-      )}
+      </FormModal>
 
       {/* VIEW MODAL - Clean Enterprise Detail Viewer with Portal */}
       {isViewModalOpen && selectedMaterial && createPortal(
