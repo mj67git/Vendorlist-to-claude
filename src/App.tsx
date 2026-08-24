@@ -289,6 +289,7 @@ export default function App() {
     view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
     categoryId: Category | null;
     selectedVendor: Vendor | null;
+    expandedMaterial?: string | null;
   };
 
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
@@ -315,7 +316,17 @@ export default function App() {
     ? (db.find(v => v.id === currentViewState.selectedVendor!.id) || currentViewState.selectedVendor)
     : null;
 
-  const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
+  // Expanded material is scoped to the current view entry (persists across
+  // reloads via viewHistory, and is restored automatically on back-navigation).
+  const expandedMaterial = currentViewState.expandedMaterial ?? null;
+  const setExpandedMaterial = (mat: string | null) => {
+    setViewHistory(prev => {
+      if (!prev.length) return prev;
+      const nh = [...prev];
+      nh[nh.length - 1] = { ...nh[nh.length - 1], expandedMaterial: mat };
+      return nh;
+    });
+  };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -393,7 +404,6 @@ export default function App() {
   }
 
   const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners', newCat: Category | null = null) => {
-    setExpandedMaterial(null);
     setViewHistory(prev => {
       if (newView === 'home') {
         return [{ view: 'home', categoryId: null, selectedVendor: null }];
@@ -409,15 +419,16 @@ export default function App() {
 
   const handleSelectVendor = (vendor: Vendor | null) => {
     if (vendor) {
-      if (vendor.materialEn) {
-        setExpandedMaterial(vendor.materialEn);
-      }
       setViewHistory(prev => {
         const last = prev[prev.length - 1];
         if (last && last.selectedVendor?.id === vendor.id) {
           return prev;
         }
-        return [...prev, { ...last, selectedVendor: vendor }];
+        // Mark the material as expanded on the underlying list entry so that
+        // returning (goBack) restores the same expanded material, then push
+        // the vendor-detail entry on top (carrying the same marker).
+        const base = { ...last, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
+        return [...prev.slice(0, -1), base, { ...base, selectedVendor: vendor }];
       });
     } else {
       setViewHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
@@ -3119,6 +3130,8 @@ const MaterialGroup: React.FC<{
   partners?: BusinessPartner[]
 }> = ({ group, onSelectVendor, currentUser, categoryId, expandedMaterial, onToggleMaterial, partners = [] }) => {
   const [localOpen, setLocalOpen] = useState(group.en === expandedMaterial);
+  const [highlight, setHighlight] = useState(false);
+  const manualRef = useRef(false);
   const elementId = `group-${group.en.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
 
   const getPartnerDetails = (vendor: Vendor) => {
@@ -3141,14 +3154,30 @@ const MaterialGroup: React.FC<{
 
   useEffect(() => {
     if (group.en === expandedMaterial) {
+      // This material is the active one: open it, scroll it into view, and —
+      // when the open was triggered externally (e.g. returning from a source
+      // detail, not a manual click) — briefly highlight it so the user can
+      // confirm they landed back on the right material.
       setLocalOpen(true);
-      const timer = setTimeout(() => {
+      const external = !manualRef.current;
+      manualRef.current = false;
+      let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+      if (external) {
+        setHighlight(true);
+        highlightTimer = setTimeout(() => setHighlight(false), 1600);
+      }
+      const scrollTimer = setTimeout(() => {
         const el = document.getElementById(elementId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }, 250);
-      return () => clearTimeout(timer);
+      return () => { clearTimeout(scrollTimer); if (highlightTimer) clearTimeout(highlightTimer); };
+    } else if (expandedMaterial !== null) {
+      // A different material became the active one — collapse this one so the
+      // list behaves as a real accordion (only one open at a time).
+      manualRef.current = false;
+      setLocalOpen(false);
     }
   }, [expandedMaterial, group.en, elementId]);
 
@@ -3156,6 +3185,7 @@ const MaterialGroup: React.FC<{
 
   const toggleGroup = () => {
     const nextOpen = !isOpen;
+    manualRef.current = true;
     setLocalOpen(nextOpen);
     if (nextOpen) {
       onToggleMaterial(group.en);
@@ -3165,7 +3195,7 @@ const MaterialGroup: React.FC<{
   };
 
   return (
-    <Card id={elementId} className="overflow-hidden border-border/80 shadow-xs hover:shadow-sm transition-all scroll-mt-52 sm:scroll-mt-48">
+    <Card id={elementId} className={`overflow-hidden shadow-xs hover:shadow-sm transition-all duration-500 scroll-mt-52 sm:scroll-mt-48 ${highlight ? 'border-primary ring-2 ring-primary/40 shadow-md' : 'border-border/80'}`}>
       <div 
         role="button"
         tabIndex={0}
