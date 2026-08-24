@@ -35,7 +35,7 @@ import { GradeBadge } from './components/GradeBadge';
 import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } from './components/ScoreBar';
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
-import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
+import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject } from './utils/vendorState';
 import { reconcileSupplierEvaluation, computeSupplierEvaluation, SOP_DOCUMENTS_DEF } from './utils/sopEvaluation';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
@@ -2372,12 +2372,11 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       };
       finalInitialSampleStatus = initialMap[sampleStatus] || 'approved';
 
-      const rejectCount = existingVendor?.analysisRecords ? existingVendor.analysisRecords.filter(r => r.decision === 'Reject').length : 0;
-      if (rejectCount >= 1) {
-        finalStatus = 'rejected';
-      } else {
-        finalStatus = finalInitialSampleStatus;
-      }
+      // A sample is blacklisted by a single failing QC result. Use the shared
+      // predicate rather than re-counting here, so this form cannot drift from
+      // the rule the rest of the app applies (applyDerivedState re-checks it on
+      // save anyway).
+      finalStatus = hasQcReject(existingVendor) ? 'rejected' : finalInitialSampleStatus;
     } else {
       finalInitialSampleStatus = null;
       if (existingVendor) {
@@ -2395,11 +2394,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
           }
         }
       } else {
+        // A brand-new source always starts as 'new'; it can only reach the
+        // blacklist through an explicit decision later. (The branch that used
+        // to read formData.grade here was unreachable — this form never sets
+        // those fields — and grade must never feed the rejection decision.)
         finalStatus = 'new';
         finalGrade = 'new';
-        if (formData.status === 'rejected' || formData.grade === 'rejected') {
-          finalCategory = 'blacklist';
-        }
       }
     }
 
@@ -2770,7 +2770,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                       <option value="rejected">Reject (رد شده)</option>
                     </select>
 
-                    {existingVendor && (existingVendor.analysisRecords || []).filter(r => r.decision === 'Reject').length >= 1 && (
+                    {existingVendor && hasQcReject(existingVendor) && (
                       <p className="text-rose-500 text-xs mt-1.5 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-100 leading-relaxed text-right">
                         این Source دارای نتیجه آزمایشگاهی Reject است و وضعیت آن تا زمان اصلاح نتایج آزمایشگاه قابل تغییر نیست.
                       </p>
