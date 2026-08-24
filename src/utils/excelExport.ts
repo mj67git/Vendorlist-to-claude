@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx-js-style';
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
+import { isVendorRejected, isInBlacklistCategory } from './vendorState';
 
 /**
  * Calculates the overall evaluation score for a vendor.
@@ -164,7 +165,7 @@ export function buildCategoryWorksheet(
   const filteredVendors = vendors.filter(v => {
     if (categoryId === 'all') return true;
     if (categoryId === 'sample') return v.isSample || v.category === 'sample';
-    if (categoryId === 'blacklist') return !v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected');
+    if (categoryId === 'blacklist') return isInBlacklistCategory(v);
     return v.category === categoryId;
   });
 
@@ -212,7 +213,7 @@ export function buildCategoryWorksheet(
       else effectiveGrade = 'Blacklist';
     } else if (gradeVal && gradeVal !== 'new' && gradeVal !== 'rejected') {
       effectiveGrade = gradeVal;
-    } else if (v.status === 'rejected') {
+    } else if (isVendorRejected(v)) {
       effectiveGrade = 'Blacklist';
     }
 

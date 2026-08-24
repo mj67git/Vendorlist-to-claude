@@ -35,6 +35,7 @@ import { GradeBadge } from './components/GradeBadge';
 import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } from './components/ScoreBar';
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
+import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
 import { PrintableSampleForm, PrintableEvaluationForm } from './components/PrintableForms';
@@ -90,17 +91,16 @@ export default function App() {
 
   const normalizeAndCleanVendor = (v: any): Vendor => {
     if (v.isSample) {
-      if (v.status === 'rejected') {
-        return { ...v, grade: 'rejected' };
-      }
-      return v;
+      // Rejection (and its removal) is derived from the QC records, so a deleted
+      // Reject result clears the blacklist stamp instead of latching it.
+      return applyDerivedState(v) as Vendor;
     }
 
     const isInitialVendor = typeof v.id === 'string' && v.id.startsWith('vF');
     const hasBeenEvaluatedByUser = (v.rawScores && Object.keys(v.rawScores).length > 0) || (v.scores && (v.scores.commercial > 0 || v.scores.qa > 0));
 
     if (isInitialVendor && !hasBeenEvaluatedByUser && !v.scores) {
-      const isRejected = v.status === 'rejected' || v.category === 'blacklist' || v.grade === 'rejected';
+      const isRejected = isVendorRejected(v);
       v.scores = null;
       v.rawScores = null;
       v.status = isRejected ? 'rejected' : 'new';
@@ -111,30 +111,9 @@ export default function App() {
        v.scores.planning = v.scores.qc;
        delete v.scores.qc;
     }
-    if (v.status === 'rejected' || v.grade === 'rejected') {
-       return { ...v, status: 'rejected', grade: 'rejected' };
-    }
-    const isFullyScored = v.scores && v.scores.commercial > 0 && v.scores.qa > 0 && v.scores.planning > 0 && v.scores.finance > 0;
-    if (isFullyScored) {
-       const rounded = calculateOverallScore(v.scores, true) || 0;
-       let calcGrade: Grade = v.grade;
-       let calcStatus: Status = v.status;
-       if (rounded >= 80) {
-          calcGrade = 'A';
-          calcStatus = 'approved';
-       } else if (rounded >= 60) {
-          calcGrade = 'B';
-          calcStatus = 'approved';
-       } else if (rounded >= 40) {
-          calcGrade = 'C';
-          calcStatus = 'conditional';
-       } else {
-          calcGrade = 'rejected';
-          calcStatus = 'rejected';
-       }
-       return { ...v, grade: calcGrade, status: calcStatus };
-    }
-    return v;
+
+    // `applyDerivedState` owns the rejection stamp and the score-derived grade.
+    return applyDerivedState(v) as Vendor;
   };
 
   const [db, setDb] = useState<Vendor[]>(() => {
@@ -713,15 +692,18 @@ export default function App() {
 
     if (isLocalMode()) {
       const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      const rejected = normalized.status === 'rejected' && original?.status !== 'rejected';
+      const wasRejected = original ? isVendorRejected(original) : false;
+      const nowRejected = isVendorRejected(normalized);
+      const rejected = nowRejected && !wasRejected;
+      const restored = wasRejected && !nowRejected;
       appendLocalAudit({
         user: currentUser?.name, role: currentUser?.role,
         module: isSource ? 'Source Management' : 'Supplier Management',
         action: original ? 'Update' : 'Create',
         entityType: isSource ? 'Source' : 'Supplier',
         entityName: normalized.material || normalized.name || 'سورس',
-        severity: rejected ? 'Critical' : original ? 'Warning' : 'Info',
-        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : ''}`,
+        severity: rejected || restored ? 'Critical' : original ? 'Warning' : 'Info',
+        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : restored ? ' — خروج از لیست سیاه (علت رد برطرف شد)' : ''}`,
         before: original || null, after: normalized,
         reason: (normalized as any).reasonForChange || 'به‌روزرسانی رکورد',
       });
@@ -761,9 +743,15 @@ export default function App() {
                            original.isSample !== normalized.isSample ||
                            original.initialSampleStatus !== normalized.initialSampleStatus;
 
-    // Dispatch precision requests based on modified data blocks
+    // Dispatch precision requests based on modified data blocks.
+    // These MUST run one after another: every endpoint does a full
+    // read-modify-write of the vendor, so two in flight at once means the
+    // slower one writes back its stale copy of the other's data — which is how
+    // a deleted lab result used to reappear after a reload.
+    const syncQueue: Array<() => Promise<unknown>> = [];
+
     if (profileChanged) {
-      authFetch(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -781,11 +769,11 @@ export default function App() {
           initialSampleStatus: normalized.initialSampleStatus,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Profile sync failed:", err));
+      }).catch(err => console.error("Profile sync failed:", err)));
     }
 
     if (contactChanged) {
-      authFetch(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -794,11 +782,11 @@ export default function App() {
           ircExpiryDate: normalized.ircExpiryDate,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Contact sync failed:", err));
+      }).catch(err => console.error("Contact sync failed:", err)));
     }
 
     if (scoresChanged) {
-      authFetch(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -807,11 +795,11 @@ export default function App() {
           rejectionReasons: normalized.rejectionReasons,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Scores sync failed:", err));
+      }).catch(err => console.error("Scores sync failed:", err)));
     }
 
     if (analysisChanged) {
-      authFetch(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -819,28 +807,34 @@ export default function App() {
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Analysis sync failed:", err));
+      }).catch(err => console.error("Analysis sync failed:", err)));
     } else if (logsChanged) {
-      authFetch(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Logs sync failed:", err));
+      }).catch(err => console.error("Logs sync failed:", err)));
     }
 
     if (riskChanged) {
-      authFetch(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Risk sync failed:", err));
+      }).catch(err => console.error("Risk sync failed:", err)));
     }
+
+    void (async () => {
+      for (const send of syncQueue) {
+        await send();
+      }
+    })();
   };
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
@@ -1224,7 +1218,7 @@ export default function App() {
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
                 id === 'sample' ? (v.category === 'sample' || v.isSample) :
-                id === 'blacklist' ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected')) :
+                id === 'blacklist' ? isInBlacklistCategory(v) :
                 (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
               ).length;
               return (
@@ -1706,11 +1700,11 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
       gradeA: db.filter(v => v.grade === 'A').length,
       gradeB: db.filter(v => v.grade === 'B').length,
       gradeC: db.filter(v => v.grade === 'C').length,
-      rejected: db.filter(v => v.grade === 'rejected' || v.status === 'rejected').length
+      rejected: db.filter(isVendorRejected).length
     };
   }, [db]);
 
-  const rejectedVendors = db.filter(v => v.status === 'rejected');
+  const rejectedVendors = db.filter(isVendorRejected);
 
   const expiringVendors = useMemo(() => {
     return db
@@ -3144,7 +3138,7 @@ function CategoryView({
       return db.filter(v => v.isSample || v.category === 'sample');
     }
     if (categoryId === 'blacklist') {
-      return db.filter(v => !v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'));
+      return db.filter(isInBlacklistCategory);
     }
     return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
   }, [db, categoryId]);
@@ -3168,7 +3162,7 @@ function CategoryView({
     switch (activeFilter) {
       case 'approved': return v.status === 'approved';
       case 'conditional': return v.status === 'conditional';
-      case 'rejected': return v.status === 'rejected' || v.grade === 'rejected';
+      case 'rejected': return isVendorRejected(v);
       case 'A': return v.grade === 'A';
       case 'B': return v.grade === 'B';
       case 'C': return v.grade === 'C';
@@ -3346,7 +3340,7 @@ function CategoryView({
                       Approved conditional: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
                     </Badge>
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
-                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'rejected').length}</span>
+                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? null : (
@@ -3361,7 +3355,7 @@ function CategoryView({
                       Grade C: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'C').length}</span>
                     </Badge>
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
-                      لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'rejected' || v.status === 'rejected').length}</span>
+                      لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 )}
@@ -3556,7 +3550,7 @@ const MaterialGroup: React.FC<{
                   {/* Right side: Name & Status */}
                   <div className="flex items-center gap-3.5">
                     <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      vendor.status === 'rejected' || vendor.grade === 'rejected' ? 'bg-red-500' :
+                      isVendorRejected(vendor) ? 'bg-red-500' :
                       vendor.isSample ? (
                         vendor.status === 'approved' ? 'bg-emerald-500' :
                         vendor.status === 'conditional' ? 'bg-amber-500' : 'bg-cyan-500'
@@ -4823,9 +4817,9 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
             : (categoryFilter as string) === 'approved_samples' 
             ? (v.isSample && (v.status === 'approved' || v.status === 'conditional'))
             : (categoryFilter as string) === 'rejected_samples'
-            ? (v.isSample && v.status === 'rejected')
+            ? (v.isSample && isVendorRejected(v))
             : (categoryFilter as string) === 'blacklist'
-            ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'))
+            ? isInBlacklistCategory(v)
             : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
           )
         : true;

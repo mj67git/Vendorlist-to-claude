@@ -34,6 +34,14 @@
    - hash نامعتبر → خانه (نه بازیابی موقعیت کش‌شدهٔ قبلی).
    - سقف استک `MAX_VIEW_HISTORY = 25`؛ در localStorage فقط snapshot سبکِ vendor ذخیره کن (رکورد کامل از `db` با id بازسازی می‌شود).
 
+10. **وضعیت «مردود/لیست سیاه» محاسبه‌شونده است، نه ذخیره‌شونده (`src/utils/vendorState.ts`).**
+   - تنها منبع تصمیم `isVendorRejected(v)` است؛ همه‌جا (دونات داشبورد، کارت‌ها، بج سایدبار، فیلتر دسته‌بندی، آرشیو، اکسل) باید از همین استفاده کند — شرط دستیِ `status==='rejected' || grade==='rejected'` ننویس.
+   - **`grade` هرگز ورودی این تصمیم نیست، فقط خروجی است.** قبلاً `grade='rejected'` یک قفل یک‌طرفه بود: با حذف نتیجهٔ آزمایش، `status` برمی‌گشت ولی `grade` نه، و برای سورس‌ها حتی `status` را هم به عقب می‌کشید.
+   - واقعیت‌ها: نمونه با **یک** رکورد Reject سیاه می‌شود؛ سورس فقط با تصمیم صریح (باکس ادمین یا فرم). دلایلِ با پیشوند «مردود در آزمون QC» فقط بازتاب رکوردها هستند و به‌تنهایی نگه‌دارندهٔ وضعیت نیستند.
+   - `applyDerivedState(v)` idempotent است و در `normalizeAndCleanVendor` روی هر load/save اجرا می‌شود، پس دادهٔ قدیمیِ قفل‌شده خودش ترمیم می‌شود.
+
+11. **PATCHهای سورس باید ترتیبی (sequential) بمانند.** هر endpoint (`/profile`, `/contact`, `/scores`, `/analysis`, `/logs`, `/risk`) کل vendor را read-modify-write می‌کند؛ اگر دوتا هم‌زمان در پرواز باشند، کندتری نسخهٔ کهنهٔ خودش را برمی‌گرداند و **دادهٔ حذف‌شده زنده می‌شود**. در `handleUpdateVendor` صفِ `syncQueue` با `await` پشت‌سرهم اجرا می‌شود — موازی نکن.
+
 ## ساختار داده (۱۲ جدول نرمال — `prisma/schema.prisma`)
 - **Auth:** `users` (نقش enum، رمز hash+salt)
 - **Materials:** `materials` (فیلدهای غنی: role, pharmacopoeia, iupac, ...)
@@ -67,6 +75,8 @@ psql -U postgres -h localhost -p 5433 -d vlse -c "UPDATE users SET must_change_p
 setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null & disown   # http://localhost:3000
 # لاگین تست: admin / 123
 ```
+**مهم هنگام تست زنده:** `server.ts` فرانت را از طریق **Vite dev middleware** سرو می‌کند (نه `dist/`). پس `vite build` روی چیزی که مرورگر می‌بیند اثر ندارد و اگر فایل جدیدی اضافه کردی، **سرور را ری‌استارت کن** وگرنه کد قدیمی را تست می‌کنی.
+
 **اسکرین‌شات با مرورگر:** Chromium در `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`؛ `playwright-core` را موقت نصب کن (`bun add playwright-core`) و بعد `bun install` برای بازگرداندن. برای dark mode: `document.documentElement.classList.add('dark')`.
 **پاک‌سازی pkill:** هرگز `pkill -f "tsx"` نزن (خودِ shell را می‌کشد)؛ با PID بکش: `for pid in $(pgrep -f 'bin/tsx'); do [ "$pid" != "$$" ] && kill $pid; done`.
 
