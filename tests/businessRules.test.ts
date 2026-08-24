@@ -14,13 +14,27 @@ test('SOP document scoring remains unchanged', () => {
   assert.equal(calculateDocScore(null), 0);
 });
 
-test('SOP grade boundary behavior remains unchanged', () => {
-  assert.deepEqual(calculateGradeAndStatus(90), { grade: 'A', status: 'Approved Supplier' });
-  assert.deepEqual(calculateGradeAndStatus(89), { grade: 'B', status: 'Approved with Monitoring' });
-  assert.deepEqual(calculateGradeAndStatus(75), { grade: 'B', status: 'Approved with Monitoring' });
-  assert.deepEqual(calculateGradeAndStatus(74), { grade: 'C', status: 'Conditional Approval' });
-  assert.deepEqual(calculateGradeAndStatus(60), { grade: 'C', status: 'Conditional Approval' });
-  assert.deepEqual(calculateGradeAndStatus(59), { grade: 'D', status: 'Rejected' });
+// The authoritative SOP rubric: 80 / 60 / 40 / 30, grading into
+// A, B, C, Pending Review, Blacklist. An earlier version of this test asserted
+// a different scale (90/75/60 into A/B/C/D) that the code never implemented,
+// which left the app straddling two vocabularies; the rubric below is the one
+// the business confirmed.
+test('SOP grade boundaries follow the 80/60/40/30 rubric', () => {
+  assert.deepEqual(calculateGradeAndStatus(100), { grade: 'A', status: 'Approved Supplier' });
+  assert.deepEqual(calculateGradeAndStatus(80), { grade: 'A', status: 'Approved Supplier' });
+  assert.deepEqual(calculateGradeAndStatus(79), { grade: 'B', status: 'Approved with Monitoring' });
+  assert.deepEqual(calculateGradeAndStatus(60), { grade: 'B', status: 'Approved with Monitoring' });
+  assert.deepEqual(calculateGradeAndStatus(59), { grade: 'C', status: 'Conditional Supplier' });
+  assert.deepEqual(calculateGradeAndStatus(40), { grade: 'C', status: 'Conditional Supplier' });
+  assert.deepEqual(calculateGradeAndStatus(39), { grade: 'Pending Review', status: 'Pending Review' });
+  assert.deepEqual(calculateGradeAndStatus(30), { grade: 'Pending Review', status: 'Pending Review' });
+  assert.deepEqual(calculateGradeAndStatus(29), { grade: 'Blacklist', status: 'Blacklist' });
+  assert.deepEqual(calculateGradeAndStatus(0), { grade: 'Blacklist', status: 'Blacklist' });
+});
+
+test('an unevaluated supplier is never graded', () => {
+  assert.deepEqual(calculateGradeAndStatus(0, false), { grade: 'Not Evaluated', status: 'Not Evaluated' });
+  assert.deepEqual(calculateGradeAndStatus(100, false), { grade: 'Not Evaluated', status: 'Not Evaluated' });
 });
 
 test('FMEA assessment preserves RPN, SRI, and risk-level outputs', () => {

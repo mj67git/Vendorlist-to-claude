@@ -545,7 +545,6 @@ export function buildPartnersWorksheet(
       case 'A': return 'Approved';
       case 'B': return 'Permit Approval';
       case 'C': return 'Expired';
-      case 'D': return 'Black List';
       case 'Blacklist': return 'Black List';
       case 'Pending Review': return 'Pending Review';
       default: return grade || '—';

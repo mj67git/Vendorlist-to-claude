@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
-import { Category, Status, Grade, Scores, Vendor, User, Role, RiskAssessmentData, AnalysisRecord, Material, BusinessPartner, SOPDocumentStatus } from './types';
+import { Category, Status, Grade, Scores, Vendor, User, Role, RiskAssessmentData, AnalysisRecord, Material, BusinessPartner, SOPDocumentStatus, SOPDocumentKey, SOPDocumentEval, SupplierEvaluation } from './types';
 import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from './utils/excelExport';
 // @ts-ignore
 import temadLogo from './assets/logo.png';
@@ -36,7 +36,7 @@ import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } f
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
-import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
+import { reconcileSupplierEvaluation, computeSupplierEvaluation, SOP_DOCUMENTS_DEF } from './utils/sopEvaluation';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
 import { PrintableSampleForm, PrintableEvaluationForm } from './components/PrintableForms';
@@ -2290,48 +2290,22 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
     setShowNewMfgModal(false);
   };
 
-  const calculateSopScore = (status: SOPDocumentStatus) => {
-    switch (status) {
-      case 'Approved': return 20;
-      case 'Permit Approval': return 10;
-      case 'Expired': return 5;
-      case 'Not Submitted': return 0;
-      default: return 0;
-    }
-  };
-
-  const computeNewSupplierEval = () => {
-    const scores = [
-      calculateSopScore(newSupplierSopDocs.manufacturerLetter),
-      calculateSopScore(newSupplierSopDocs.authorizedSignatory),
-      calculateSopScore(newSupplierSopDocs.businessLicense),
-      calculateSopScore(newSupplierSopDocs.officialEnglishTranslation),
-      calculateSopScore(newSupplierSopDocs.legalization)
-    ];
-    const total = scores.reduce((a, b) => a + b, 0);
-
-    let grade: 'A' | 'B' | 'C' | 'Pending Review' | 'Blacklist' = 'A';
-    let status: any = 'Approved Supplier';
-
-    if (total >= 80) { grade = 'A'; status = 'Approved Supplier'; }
-    else if (total >= 60) { grade = 'B'; status = 'Approved with Monitoring'; }
-    else if (total >= 40) { grade = 'C'; status = 'Conditional Supplier'; }
-    else if (total >= 30) { grade = 'Pending Review'; status = 'Pending Review'; }
-    else { grade = 'Blacklist'; status = 'Blacklist'; }
-
+  // Scoring and grading live in utils/sopEvaluation — this form must not carry
+  // its own copy of the rubric, or the two drift apart.
+  const computeNewSupplierEval = (): SupplierEvaluation => {
+    const documents = {} as Record<SOPDocumentKey, SOPDocumentEval>;
+    SOP_DOCUMENTS_DEF.forEach(def => {
+      documents[def.key] = {
+        key: def.key,
+        nameFa: def.nameFa,
+        nameEn: def.nameEn,
+        status: newSupplierSopDocs[def.key] ?? null,
+        score: 0,
+      };
+    });
     return {
-      documents: {
-        manufacturerLetter: { key: 'manufacturerLetter', nameFa: 'نامه نمایندگی از سازنده', nameEn: 'Manufacturer Authorization Letter', status: newSupplierSopDocs.manufacturerLetter, score: calculateSopScore(newSupplierSopDocs.manufacturerLetter) },
-        authorizedSignatory: { key: 'authorizedSignatory', nameFa: 'تعهدنامه صاحبان امضای مجاز', nameEn: 'Authorized Signatory Commitment', status: newSupplierSopDocs.authorizedSignatory, score: calculateSopScore(newSupplierSopDocs.authorizedSignatory) },
-        businessLicense: { key: 'businessLicense', nameFa: 'پروانه کسب یا مدرک ثبتی معتبر', nameEn: 'Business License', status: newSupplierSopDocs.businessLicense, score: calculateSopScore(newSupplierSopDocs.businessLicense) },
-        officialEnglishTranslation: { key: 'officialEnglishTranslation', nameFa: 'ترجمه رسمی انگلیسی مدارک', nameEn: 'Official English Translation', status: newSupplierSopDocs.officialEnglishTranslation, score: calculateSopScore(newSupplierSopDocs.officialEnglishTranslation) },
-        legalization: { key: 'legalization', nameFa: 'تاییدیه سفارت یا آپوستیل', nameEn: 'Embassy Legalization / Apostille', status: newSupplierSopDocs.legalization, score: calculateSopScore(newSupplierSopDocs.legalization) }
-      },
-      totalScore: total,
-      grade,
-      status,
-      updatedAt: new Date().toISOString(),
-      updatedBy: currentUser?.name || 'مدیر سیستم'
+      ...computeSupplierEvaluation(documents),
+      updatedBy: currentUser?.name || 'مدیر سیستم',
     };
   };
 

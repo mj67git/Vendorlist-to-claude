@@ -62,12 +62,18 @@ test('an unevaluated supplier stays Not Evaluated', () => {
   assert.equal(computeSupplierEvaluation(ev.documents).grade, 'Not Evaluated');
 });
 
-test('the rubric never produces grade D, though the UI maps one', () => {
-  // Guards the vocabulary mismatch documented in STATUS.md: gradeApprovalLabel
-  // has a 'D' case that the scoring rules cannot reach.
-  const reachable = new Set<string>();
-  for (const s of ['Approved', 'Permit Approval', 'Expired', 'Not Submitted']) {
-    reachable.add(computeSupplierEvaluation(docsWith(Object.fromEntries(SOP_DOCUMENTS_DEF.map(d => [d.key, s])))).grade);
+test('every uniform document status lands on a grade the rubric defines', () => {
+  // The app briefly carried a second vocabulary (a 'D' grade) that the scoring
+  // rules could never produce; this keeps the two from diverging again.
+  const defined = new Set(['A', 'B', 'C', 'Pending Review', 'Blacklist', 'Not Evaluated']);
+  const cases: Record<string, string> = {
+    'Approved': 'A',          // 5 x 20 = 100
+    'Permit Approval': 'B',   // 5 x 10 = 50 -> C
+    'Expired': 'Pending Review',
+    'Not Submitted': 'Blacklist',
+  };
+  for (const status of Object.keys(cases)) {
+    const grade = computeSupplierEvaluation(docsWith(Object.fromEntries(SOP_DOCUMENTS_DEF.map(d => [d.key, status])))).grade;
+    assert.ok(defined.has(grade), `unexpected grade ${grade} for all-${status}`);
   }
-  assert.ok(!reachable.has('D' as any), 'no uniform document status yields D');
 });

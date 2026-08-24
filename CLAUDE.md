@@ -42,6 +42,10 @@
 
 11. **PATCHهای سورس باید ترتیبی (sequential) بمانند.** هر endpoint (`/profile`, `/contact`, `/scores`, `/analysis`, `/logs`, `/risk`) کل vendor را read-modify-write می‌کند؛ اگر دوتا هم‌زمان در پرواز باشند، کندتری نسخهٔ کهنهٔ خودش را برمی‌گرداند و **دادهٔ حذف‌شده زنده می‌شود**. در `handleUpdateVendor` صفِ `syncQueue` با `await` پشت‌سرهم اجرا می‌شود — موازی نکن.
 
+12. **رابریک گرید SOP تثبیت‌شده است (`src/utils/sopEvaluation.ts`):** امتیاز هر مدرک Approved=20 / Permit Approval=10 / Expired=5 / Not Submitted=0، و مرزهای گرید **۸۰ / ۶۰ / ۴۰ / ۳۰** → `A, B, C, Pending Review, Blacklist`. **گرید `D` وجود ندارد** (واژگان قدیمی بود و حذف شد). این قوانین را در جای دیگری کپی نکن — از `computeSupplierEvaluation` و `calculateGradeAndStatus` استفاده کن.
+   - `reconcileSupplierEvaluation` روی load اجرا می‌شود تا ارزیابی ذخیره‌شدهٔ ناسازگار با مدارکش خودترمیم شود؛ `updatedAt/updatedBy` عمداً حفظ می‌شود تا محاسبهٔ مجدد شبیه ارزیابی تازهٔ انسانی نباشد.
+   - نکته: `getRankParams` (سورس‌ها) گرید `D` دارد ولی مقیاس دیگری است (A: ۸۰-۱۰۰ … D: ۰-۳۹) و به SOP ربطی ندارد.
+
 ## ساختار داده (۱۲ جدول نرمال — `prisma/schema.prisma`)
 - **Auth:** `users` (نقش enum، رمز hash+salt)
 - **Materials:** `materials` (فیلدهای غنی: role, pharmacopoeia, iupac, ...)
@@ -93,7 +97,6 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 - push گاهی 502 می‌دهد؛ با backoff retry کن.
 
 ## باگ موجود از قبل (مربوط به کار ما نیست)
-- تست `businessRules.test.ts` → «SOP grade boundary» fail می‌شود (باگ منطقی در `sopEvaluation`). دست‌نخورده مانده.
 - **`database/vendors.json` خالی است** (همهٔ کلیدها `{}`)، پس `prisma/seed.ts` با پیام «✅ Seeding completed» تمام می‌شود ولی **۰ سورس/ماده** درج می‌کند — فقط کاربران seed می‌شوند. برای تست UI باید دستی داده ساخت. سریع‌ترین راه، درج مستقیم در دیتابیس است (POST `/api/vendors` اعتبارسنجی سخت‌گیری دارد):
   ```sql
   INSERT INTO materials (id,name,name_en,cas,irc) VALUES ('M-1','پاراستامول','Paracetamol','103-90-2','N/A');
