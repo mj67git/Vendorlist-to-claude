@@ -1,7 +1,7 @@
 # STATUS.md — وضعیت زندهٔ کار
 
 > بعد از **هر تغییر** به‌روزرسانی می‌شود. برای ادامه در سشن جدید: اول `CLAUDE.md` بعد این را بخوان.
-> آخرین به‌روزرسانی: یکدست‌سازی فرم‌ها — `FormModal` مشترک + فرم سورس به‌صورت صفحه با URL
+> آخرین به‌روزرسانی: شکستن `App.tsx` (۷۹۵۶ → ۱۶۶۸ خط، ۱۴ ماژول جدا)
 
 ## وضعیت کلی
 - **برنچ کاری فعلی:** `claude/vlse-modules-p3` (از main تازه) — کار جدید اینجا
@@ -103,6 +103,15 @@
 14. ✅ lazy-load فایل‌های SOP (حذف base64 از لیست) (`ca830af`)
 15. ✅ گردش‌کار Blacklist با دلیل الزامی + گارد انتخاب (`3dd8e78`)
 16. ✅ یکدست‌سازی theme / dark mode (`23b3980`)
+
+### معماری فرانت — شکستن `App.tsx`
+17. ✅ **`src/App.tsx`: ۷۹۵۶ → ۱۶۶۸ خط.** ~۷۹۰ خط کد مرده حذف شد (`UnusedFallback*`، استاب‌های `LegacyPrintable*`) و ۱۴ ماژول استخراج شد:
+    - `components/views/`: `HomeView`, `CategoryView`, `MaterialGroup`, `MaterialsComparisonSection`, `ArchiveView`, `SupplierAuditView`
+    - `components/vendor/`: `VendorDetail`, `VendorForm`, `EvaluationForm`, `RiskAssessmentForm` (+`RiskHeatmap`)
+    - `constants/`: `categories.ts`, `evaluationLayout.ts`, `categoryCardStyles.ts` · `utils/scoreUtils.ts`
+    - **کد فقط جابه‌جا شد، بازنویسی نشد** — هیچ تغییر رفتاری. props (به‌ویژه `registerNavGuard`) دست‌نخورده.
+    - خودِ `App()` عمداً یکپارچه ماند (state ناوبری + `renderContent`) — شکستنش قواعد ترتیب هوک‌ها را لمس می‌کند و مرحلهٔ جداست.
+    - تأیید: `tsc` ✓ · `vite build` ✓ · ۴۴ تست ✓ · تست زندهٔ مرورگری روی هر ۹ نمای جابه‌جاشده با **۰ خطای کنسول** (داشبورد، لیست دسته، باز شدن ماده، جزئیات سورس، فرم ارزیابی، فرم ریسک، صفحهٔ فرم سورس + round-trip ذخیره، آرشیو، Supplier 360).
 
 ## کارهای باقی‌مانده (نقشهٔ راه)
 

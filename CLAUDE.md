@@ -9,7 +9,11 @@
 ## استک فنی
 - **Frontend:** React 19 + Vite 6 + TypeScript، Tailwind CSS 4، shadcn/ui (Radix)، lucide-react، recharts، motion، فونت Vazirmatn.
 - **Backend:** Express 5 در `server.ts` (مونولیت، ~۲۹۰۰ خط)، Prisma 5 → **PostgreSQL**.
-- **Entry points:** `server.ts` (بک‌اند + serve فرانت)، `src/main.tsx` → `src/App.tsx` (فرانت، ~۷۰۰۰ خط، God component).
+- **Entry points:** `server.ts` (بک‌اند + serve فرانت)، `src/main.tsx` → `src/App.tsx` (فرانت، ~۱۷۰۰ خط — فقط تابع `App()`: state ناوبری، sync، و `renderContent`).
+  - **کامپوننت‌ها فایل خودشان را دارند** — چیز جدیدی داخل `App.tsx` ننویس:
+    - `src/components/views/` → `HomeView`, `CategoryView`, `MaterialGroup`, `MaterialsComparisonSection`, `ArchiveView`, `SupplierAuditView`
+    - `src/components/vendor/` → `VendorDetail`, `VendorForm`, `EvaluationForm`, `RiskAssessmentForm` (+`RiskHeatmap`)
+    - `src/constants/` → `categories.ts` (`categoryLabels`), `evaluationLayout.ts`, `categoryCardStyles.ts` · `src/utils/scoreUtils.ts`
 - **Deploy:** Vercel (`api/handler.ts` آداپتر) / Docker / PM2.
 
 ## قواعد و تصمیم‌های معماری (مهم — رعایت کن)
