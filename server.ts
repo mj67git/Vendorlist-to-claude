@@ -477,16 +477,34 @@ async function seedDefaultBusinessPartners() {
   }
 }
 
-async function getVendorsList(): Promise<any[]> {
+/**
+ * Build the vendor objects the API serves.
+ *
+ * Pass `vendorId` to build just one. Without it every query below runs
+ * unfiltered, which is correct for the list endpoint and ruinous for the
+ * sixteen handlers that only ever wanted a single record: fetching one vendor
+ * used to mean loading every vendor, every evaluation, every activity log and
+ * every analysis result, then discarding all but one. The `where` clauses use
+ * indexes that already exist on the schema.
+ */
+async function getVendorsList(vendorId?: string): Promise<any[]> {
   const prisma = requirePrisma();
   {
-    const vendors = await prisma.vendor.findMany();
-    const vendorMaterials = await prisma.vendorMaterial.findMany();
-    const materials = await prisma.material.findMany();
-    const evaluations = await prisma.evaluation.findMany();
-    const activityLogRows = await prisma.activityLog.findMany({ orderBy: { createdAt: "asc" } });
-    const riskRows = await prisma.riskAssessment.findMany();
-    const analysisRows = await prisma.analysisRecord.findMany({ orderBy: { createdAt: "asc" } });
+    // An empty `where` is a no-op, so the same code path serves both the full
+    // list and a single record.
+    const only: any = vendorId ? { vendorId } : {};
+    const vendors = await prisma.vendor.findMany({ where: vendorId ? { id: vendorId } : {} });
+    const vendorMaterials = await prisma.vendorMaterial.findMany({ where: only });
+    // Materials are reached through the links above, so when building a single
+    // vendor only the ones it actually references need loading.
+    const materialIds = [...new Set(vendorMaterials.map(vm => vm.materialId).filter(Boolean))] as string[];
+    const materials = await prisma.material.findMany({
+      where: vendorId ? { id: { in: materialIds } } : {},
+    });
+    const evaluations = await prisma.evaluation.findMany({ where: only });
+    const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });
+    const riskRows = await prisma.riskAssessment.findMany({ where: only });
+    const analysisRows = await prisma.analysisRecord.findMany({ where: only, orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
     const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
@@ -533,9 +551,17 @@ async function getVendorsList(): Promise<any[]> {
       analysisByVendor.set(a.vendorId, existing);
     });
 
+    // Indexed by vendor rather than scanned per vendor: the previous .find()
+    // inside this loop made the list endpoint O(n²) — at 1,200 vendors that is
+    // over a million comparisons for a single request.
+    const linkByVendor = new Map<string, any>();
+    for (const vm of vendorMaterials) {
+      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
+    }
+
     const result: any[] = [];
     for (const v of vendors) {
-      const link = vendorMaterials.find(vm => vm.vendorId === v.id);
+      const link = linkByVendor.get(v.id);
       const materialObj = link ? materialsMap.get(link.materialId) : null;
       const evalObj = evaluationsMap.get(v.id);
 
@@ -611,9 +637,52 @@ async function getVendorsList(): Promise<any[]> {
   }
 }
 
+/**
+ * The minimum needed to place a vendor in the ranking: an id, its scores, and
+ * whether it is a sample (samples rank among samples).
+ *
+ * Ranking a single vendor used to call getVendorsList() twice — before and
+ * after the save — which loaded every activity log and analysis record in the
+ * database to produce one integer. The ranking logic itself is untouched;
+ * rankVendor still receives objects of the shape it expects.
+ */
+async function getRankingSnapshot(): Promise<any[]> {
+  const prisma = requirePrisma();
+  const [links, evaluations] = await Promise.all([
+    prisma.vendorMaterial.findMany({ select: { vendorId: true, isSample: true, category: true } }),
+    prisma.evaluation.findMany({
+      select: {
+        vendorId: true, scores: true,
+        commercialScore: true, qaScore: true, planningScore: true, financeScore: true,
+      },
+    }),
+  ]);
+
+  const linkByVendor = new Map<string, any>();
+  for (const l of links) if (!linkByVendor.has(l.vendorId)) linkByVendor.set(l.vendorId, l);
+
+  return evaluations.map(ev => {
+    let scores: any = null;
+    try { scores = ev.scores ? JSON.parse(ev.scores as any) : null; } catch { /* fall through */ }
+    if (!scores) {
+      scores = {
+        commercial: ev.commercialScore, qa: ev.qaScore,
+        planning: ev.planningScore, finance: ev.financeScore,
+      };
+    }
+    const link = linkByVendor.get(ev.vendorId);
+    return {
+      id: ev.vendorId,
+      scores,
+      isSample: link ? link.isSample : false,
+      category: link ? link.category : "foreign",
+    };
+  });
+}
+
 async function getVendorById(id: string): Promise<any> {
-  const list = await getVendorsList();
-  return list.find(v => v.id === id) || null;
+  const list = await getVendorsList(id);
+  return list[0] || null;
 }
 
 async function saveVendorToDb(v: any): Promise<boolean> {
@@ -1789,7 +1858,7 @@ async function startServer() {
         });
       }
 
-      const allVendorsBefore = await getVendorsList();
+      const allVendorsBefore = await getRankingSnapshot();
       const prevRank = getVendorRank(id, allVendorsBefore);
 
       const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -1834,7 +1903,7 @@ async function startServer() {
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 
-      const allVendorsAfter = await getVendorsList();
+      const allVendorsAfter = await getRankingSnapshot();
       const newRank = getVendorRank(id, allVendorsAfter);
 
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };

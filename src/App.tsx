@@ -128,8 +128,28 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Offline cache only — PostgreSQL is the source of truth, so losing this is a
+  // degraded experience, never data loss. Two things matter here:
+  //
+  //  - The per-record history is dropped. Logs, analysis results and the
+  //    per-question raw scores are roughly two thirds of a vendor's JSON and
+  //    are never read from the cache (the detail page always refetches), so
+  //    caching them just consumed the browser's ~5MB budget for nothing. The
+  //    arrays are kept as empty arrays rather than removed, so a cached record
+  //    still has the shape every component expects.
+  //  - Writing is guarded. localStorage measures in UTF-16, so a list that is
+  //    3MB over the wire needs ~6MB of quota; past that setItem throws
+  //    QuotaExceededError, and an uncaught throw in an effect takes the whole
+  //    page down. On failure the stale cache is dropped and the app carries on
+  //    against the server.
   useEffect(() => {
-    localStorage.setItem('app_db', JSON.stringify(db));
+    try {
+      const slim = db.map(v => ({ ...v, activityLogs: [], analysisRecords: [], rawScores: undefined }));
+      localStorage.setItem('app_db', JSON.stringify(slim));
+    } catch (err) {
+      console.warn('Vendor cache exceeded the browser storage quota; continuing without it.', err);
+      try { localStorage.removeItem('app_db'); } catch { /* nothing left to do */ }
+    }
   }, [db]);
 
   // Re-check the restored account against the server once per load. currentUser
