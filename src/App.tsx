@@ -27,6 +27,7 @@ import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
 import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
@@ -1479,7 +1480,7 @@ export default function App() {
                         <React.Fragment key={idx}>
                           {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
                           {isLast ? (
-                            <span className="font-bold text-foreground truncate max-w-[180px]" aria-current="page">{label}</span>
+                            <EntityName name={label} lines={1} aria-current="page" className="font-bold text-foreground max-w-[180px]" />
                           ) : (
                             <button
                               onClick={() => goToHistoryIndex(idx)}

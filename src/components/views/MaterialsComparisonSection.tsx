@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle, ChevronDown, Microscope } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Category, Vendor } from '../../types';
+import { EntityName } from '../EntityName';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 
@@ -174,9 +175,15 @@ export const MaterialsComparisonSection: React.FC<{
                 const isChosen = selection?.vendorId === item.vendor.id;
                 return (
                   <div key={item.vendor.id} className="space-y-1.5">
-                    <div className="flex justify-between items-center text-xs gap-2">
-                      <span className="font-bold text-foreground truncate max-w-[180px] flex items-center gap-1.5" title={item.name}>
-                        {item.name}
+                    {/* The name used to share a hard 180px cap with the badges,
+                        all of which are shrink-0 — so every pixel of pressure
+                        landed on the name, leaving as little as ~77px for it
+                        inside a card that is 600px wide. It now takes the space
+                        that is actually there, and the badges wrap to a second
+                        line rather than squeezing it. */}
+                    <div className="flex justify-between items-start text-xs gap-3">
+                      <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                        <EntityName name={item.name} lines={2} className="font-bold text-foreground" />
                         {isChosen && <span className="text-[10px] text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-md font-bold shrink-0">منتخب</span>}
                         {isBest && !isLevel && !isChosen && <span className="text-[10px] text-[#0071E3] bg-[#0071E3]/10 px-1.5 py-0.5 rounded-md font-normal shrink-0">برتر</span>}
                         {/* Completeness, so a partly evaluated source is not read as an equal peer. */}
@@ -190,7 +197,7 @@ export const MaterialsComparisonSection: React.FC<{
                         >
                           {item.scoredDepartments}/۴{item.hasRisk ? '' : ' ⚠'}
                         </span>
-                      </span>
+                      </div>
                       <span className="font-mono font-bold text-foreground shrink-0">
                         {item.engineScore.toFixed(1)}
                         <span className="text-gray-400 font-normal text-[10px]"> (پایه {item.score})</span>

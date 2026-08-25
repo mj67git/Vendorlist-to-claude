@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, X, Globe, Database, Building2, Home, Archive, History, Handshake, CornerDownLeft } from 'lucide-react';
+import { EntityName } from './EntityName';
 import type { Vendor, Material, BusinessPartner, Category } from '../types';
 
 interface CommandItem {
@@ -127,8 +128,8 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
                       <it.icon className="w-3.5 h-3.5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold truncate">{it.title}</div>
-                      {it.subtitle && <div className="text-[10px] text-muted-foreground truncate">{it.subtitle}</div>}
+                      <EntityName as="div" name={it.title} lines={1} className="text-xs font-bold" />
+                      {it.subtitle && <EntityName as="div" name={it.subtitle} lines={1} className="text-[10px] text-muted-foreground" />}
                     </div>
                     {idx === activeIndex && <CornerDownLeft className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </button>

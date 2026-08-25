@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Award, Briefcase, Building, Building2, CheckCircle, ChevronLeft, Coins, Factory, Globe, Handshake, Microscope, Pencil, Search, ShieldAlert, Warehouse, X } from 'lucide-react';
 import { BusinessPartner, Scores, User, Vendor } from '../../types';
+import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
@@ -512,9 +513,12 @@ import { canScoreDepartment } from '../../utils/permissions';
                          <span className="text-[10px] font-bold text-muted-foreground block mb-1.5 uppercase font-sans">محصولات ثبت‌شده در دیتابیس:</span>
                          <div className="flex flex-wrap gap-1 justify-start">
                            {supplier.vendors.slice(0, 3).map((v) => (
-                             <span key={v.id} className="text-[10px] bg-muted text-muted-foreground px-2 py-1 rounded border border-slate-150 font-medium max-w-[120px] truncate">
-                               {v.material}
-                             </span>
+                             <EntityName
+                               key={v.id}
+                               name={v.material}
+                               lines={1}
+                               className="text-[10px] bg-muted text-muted-foreground px-2 py-1 rounded border border-slate-150 font-medium max-w-[160px]"
+                             />
                            ))}
                            {supplier.vendors.length > 3 && (
                              <span className="text-[9px] bg-slate-900 text-white px-1.5 py-1 rounded font-bold font-mono">

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe, ShieldCheck, Sparkles } from 'lucide-react';
 import { BusinessPartner, BusinessPartnerType } from '../types';
+import { EntityName } from './EntityName';
 
 interface PartnerSelectorProps {
   type: BusinessPartnerType;
@@ -185,9 +186,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             {selectedPartner ? (
               <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
                 <div className="min-w-0">
-                  <div className="font-bold text-foreground truncate text-xs sm:text-sm">
-                    {selectedPartner.name}
-                  </div>
+                  <EntityName
+                    as="div"
+                    name={selectedPartner.name}
+                    lines={2}
+                    className="font-bold text-foreground text-xs sm:text-sm"
+                  />
                   <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
                     {selectedPartner.nameEn && (
                       <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">
@@ -380,10 +384,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold truncate flex items-center gap-2">
-                            <span>{p.name}</span>
+                          {/* The clip was on this flex row, not on the name, so
+                              the blacklist badge cut the name off with no
+                              ellipsis to show anything was missing. */}
+                          <div className="text-xs font-bold flex items-center gap-2 min-w-0">
+                            <EntityName name={p.name} lines={1} />
                             {p.status === 'Blacklisted' && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold">
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold shrink-0">
                                 بلک‌لیست
                               </span>
                             )}

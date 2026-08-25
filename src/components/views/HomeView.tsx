@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Award, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
+import { EntityName } from '../../components/EntityName';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -310,9 +311,12 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                 className="bg-card hover:bg-accent/50 border border-border hover:border-primary/40 p-3.5 rounded-xl transition-all shadow-2xs cursor-pointer flex flex-col justify-between space-y-2 group"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="font-bold text-xs text-foreground group-hover:text-primary transition-colors truncate">
-                    {vendor.material || vendor.name}
-                  </div>
+                  <EntityName
+                    as="div"
+                    name={vendor.material || vendor.name}
+                    lines={2}
+                    className="font-bold text-xs text-foreground group-hover:text-primary transition-colors"
+                  />
                   {check.status === 'expired' ? (
                     <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-bold shrink-0">
                       منقضی
@@ -323,9 +327,14 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                     </Badge>
                   )}
                 </div>
-                <div className="text-[11px] text-muted-foreground truncate flex items-center justify-between">
-                  <span>سورس: <strong className="text-foreground">{vendor.name}</strong></span>
-                  {vendor.irc && <span className="font-mono text-[10px] text-muted-foreground">IRC: {vendor.irc}</span>}
+                {/* The clip used to sit on this flex row, so the IRC chip ate
+                    the source name rather than the row eliding as a whole. */}
+                <div className="text-[11px] text-muted-foreground flex items-center justify-between gap-2">
+                  <span className="min-w-0 flex-1 flex items-baseline gap-1">
+                    <span className="shrink-0">سورس:</span>
+                    <EntityName name={vendor.name} lines={1} className="text-foreground font-bold" />
+                  </span>
+                  {vendor.irc && <span className="font-mono text-[10px] text-muted-foreground shrink-0">IRC: {vendor.irc}</span>}
                 </div>
                 <div className="text-[11px] text-muted-foreground border-t border-border pt-2 flex items-center justify-between">
                   <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
@@ -403,8 +412,8 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
             {db.filter(v => v.status === 'new').slice(0, 3).map(v => (
               <div key={v.id} className="bg-muted/40 border border-border/60 rounded-xl p-3 flex items-center justify-between hover:bg-muted transition-colors">
                 <div className="min-w-0 pr-1">
-                  <div className="text-foreground font-bold text-xs truncate">{v.name}</div>
-                  <div className="text-muted-foreground text-[11px] truncate">{v.material}</div>
+                  <EntityName as="div" name={v.name} lines={2} className="text-foreground font-bold text-xs" />
+                  <EntityName as="div" name={v.material} lines={1} className="text-muted-foreground text-[11px]" />
                 </div>
                 <Button 
                   variant="ghost" 

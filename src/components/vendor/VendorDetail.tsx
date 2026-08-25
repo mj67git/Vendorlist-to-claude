@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
+import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
 import { ScoreCard } from '../../components/ScoringGuide';
@@ -630,7 +631,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   {isDirectFromManufacturer
                     ? <Factory className="w-4 h-4 text-indigo-600 shrink-0" />
                     : <Handshake className="w-4 h-4 text-emerald-600 shrink-0" />}
-                  <span className="truncate">{sourcePartner.roleLabel}: {sourcePartner.name}</span>
+                  {/* The role label is kept out of the clip so it cannot spend
+                      the budget the partner name needs. */}
+                  <span className="shrink-0">{sourcePartner.roleLabel}:</span>
+                  <EntityName name={sourcePartner.name} lines={2} />
                 </div>
 
                 <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1">
