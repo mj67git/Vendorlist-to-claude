@@ -5,8 +5,8 @@
 
 ## وضعیت کلی
 - **برنچ کاری فعلی:** `claude/vlse-modules-p3` (از main تازه) — کار جدید اینجا
-- **PRها:** #2 merged (نرمال‌سازی دیتابیس) · #3 merged (بهبود ماژول‌ها) — **همهٔ کار در `main` است**
-- **سلامت:** `tsc` سبز ✓ · `vite build` سبز ✓ · تست‌ها **۵۴ pass / ۰ fail** ✓
+- **PRها:** #2، #3، #6، #7، #8 merged · **#9 باز است** (کار جاری: رفع باگ‌ها + ماژول کاربران + سطوح دسترسی)
+- **سلامت:** `tsc` سبز ✓ · `vite build` سبز ✓ · تست‌ها **۸۱ pass / ۰ fail** ✓
 - **git:** کار جاری روی `claude/vlse-modules-p3` push شده (جلوتر از main؛ PR بعدی به main)
 
 ## حالت آزمایشی محلی (Local/Demo Mode) — تست بدون دیتابیس
@@ -253,14 +253,18 @@
 - [ ] **داشبورد/سایدبار (بقیه):** heatmap ریسک پرتفولیو، KPI با دلتا/روند، دسترسی‌محورکردن آیتم‌ها
 
 ### فرابخشی (P0 امنیت — Critical از فاز ۱)
-- [ ] حذف secretها از `docker-compose.yml` + حذف JWT پیش‌فرض hardcode
-- [ ] افزودن `helmet` + `express-rate-limit` روی login
-- [ ] JWT از localStorage → httpOnly cookie
-- [ ] افزایش iteration های PBKDF2 (۱۰۰۰ → ۶۰۰٬۰۰۰) یا مهاجرت به argon2
-- [ ] راه‌اندازی ESLint + CI (lint/test/build)
-- [ ] رفع باگ تست `SOP grade boundary`
-- [ ] شکستن `App.tsx` (~۷۰۰۰ خط) + `server.ts` به ماژول‌ها + لایهٔ data (React Query)
-- [ ] code-splitting (باندل ~۲MB)
+> وضعیت هر ردیف با خواندن کد تأیید شده است (نه از حافظه). ارجاع‌ها دقیق‌اند تا سشن بعدی دنبال نگردد.
+
+- [ ] **`JWT_SECRET` پیش‌فرض hardcode** — `server.ts:770` → `process.env.JWT_SECRET || "internal-regulatory-compliance-secret-key-321"`. اگر env ست نشود هر کسی که مخزن را دیده می‌تواند توکن معتبر بسازد. باید بدون مقدار پیش‌فرض باشد و در نبودش fail-fast کند (مثل `requirePrisma`).
+- [ ] **secretها داخل `docker-compose.yml`** — خط ۱۴ `JWT_SECRET=...` و خط ۲۴ `POSTGRES_PASSWORD=SecurePassword123`.
+- [ ] **بدون `helmet` و `express-rate-limit`** — هیچ‌کدام در `package.json` نیستند ⇒ brute-force روی login هیچ محدودیتی ندارد.
+- [ ] **PBKDF2 با ۱۰۰۰ تکرار** (`src/server/security/passwordService.ts:11`) → ~۶۰۰٬۰۰۰ یا argon2. ⚠️ هش‌های موجود **قابل ارتقای درجا نیستند**؛ نیاز به rehash در اولین ورود موفق + نسخهٔ الگوریتم در رکورد. `verifyPassword` هنوز رمز ساده (plaintext) را هم می‌پذیرد و باید حذف شود.
+- [ ] **JWT در `localStorage`** → httpOnly cookie (در برابر XSS).
+- [ ] **ESLint + CI** — نه `eslint.config`ای هست نه `.github/workflows`. یعنی هیچ گیتی جز اجرای دستی، typecheck/test/build را قبل از merge بررسی نمی‌کند.
+- [x] ~~رفع باگ تست `SOP grade boundary`~~ ✅ — با تثبیت رابریک ۸۰/۶۰/۴۰/۳۰ و حذف گرید `D` رفع شد؛ کل سوییت سبز است.
+- [x] ~~شکستن `App.tsx`~~ ✅ — ۷۹۵۶ → **۱۸۳۲** خط (ردیف‌های ۱۷ و بعد).
+- [ ] **شکستن `server.ts`** — هنوز **۳۴۳۲ خط** است (مونولیت) + لایهٔ data (React Query) پیاده نشده.
+- [ ] **code-splitting** — باندل هنوز یک فایل **~۲.۳MB** است (`dist/assets/index-*.js`).
 
 ## نکات مهم برای ادامه
 - الگوی «تاریخچه از audit» برای هر موجودیتی که audit before/after دارد قابل تکرار است.

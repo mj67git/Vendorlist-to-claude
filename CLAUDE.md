@@ -8,7 +8,7 @@
 
 ## استک فنی
 - **Frontend:** React 19 + Vite 6 + TypeScript، Tailwind CSS 4، shadcn/ui (Radix)، lucide-react، recharts، motion، فونت Vazirmatn.
-- **Backend:** Express 5 در `server.ts` (مونولیت، ~۲۹۰۰ خط)، Prisma 5 → **PostgreSQL**.
+- **Backend:** Express 5 در `server.ts` (مونولیت، ~۳۴۰۰ خط)، Prisma 5 → **PostgreSQL**.
 - **Entry points:** `server.ts` (بک‌اند + serve فرانت)، `src/main.tsx` → `src/App.tsx` (فرانت، ~۱۷۰۰ خط — فقط تابع `App()`: state ناوبری، sync، و `renderContent`).
   - **کامپوننت‌ها فایل خودشان را دارند** — چیز جدیدی داخل `App.tsx` ننویس:
     - `src/components/views/` → `HomeView`, `CategoryView`, `MaterialGroup`, `MaterialsComparisonSection`, `ArchiveView`, `SupplierAuditView`
@@ -90,7 +90,7 @@
 bun install                 # نصب (پروژه از bun.lock استفاده می‌کند)
 ./node_modules/.bin/tsc --noEmit          # typecheck (== npm run lint)
 ./node_modules/.bin/vite build            # build فرانت (تأیید UI)
-./node_modules/.bin/tsx --test tests/*.test.ts   # تست‌ها
+./node_modules/.bin/tsx --test tests/*.test.ts   # تست‌ها (اکنون ۸۱ مورد)
 ```
 **تست زندهٔ محلی (این محیط docker ندارد، postgres را با کاربر `postgres` اجرا کن):**
 ```bash
@@ -116,7 +116,7 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 - **لاگین روی Vercel:** `admin / 123456` (از `DEFAULT_USERS` در `server.ts`) با `mustChangePassword: true` — اولین ورود، تغییر رمز خواسته می‌شود. (محلی با `prisma/seed.ts` رمز `123` است.)
 
 ## Git / تحویل
-- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
+- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`، با PR #9 باز به main). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
 - **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها) — همه در `main`.
 - هر تغییر: typecheck + build + تست زنده (در صورت لمس backend) → commit با پیام واضح → push. **`STATUS.md` را بعد از هر تغییر به‌روزرسانی کن.**
 - push گاهی 502 می‌دهد؛ با backoff retry کن.
