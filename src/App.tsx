@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
@@ -20,6 +20,7 @@ import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteStat
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { AuditTrailView } from './components/AuditTrailView';
+import { UsersView } from './components/UsersView';
 import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
@@ -277,7 +278,7 @@ export default function App() {
   }, [currentUser]);
 
   type ViewState = {
-    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
+    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users';
     categoryId: Category | null;
     selectedVendor: Vendor | null;
     expandedMaterial?: string | null;
@@ -591,7 +592,7 @@ export default function App() {
     action();
   };
 
-  const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners', newCat: Category | null = null) => {
+  const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users', newCat: Category | null = null) => {
     runGuarded(() => {
       setViewHistory(prev => {
         if (newView === 'home') {
@@ -697,6 +698,7 @@ export default function App() {
     if (state.view === 'materials') return 'مخزن مواد اولیه';
     if (state.view === 'audit-trail') return 'Audit Trail';
     if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
+    if (state.view === 'users') return 'مدیریت کاربران';
     if (state.view === 'category' && state.categoryId) {
       return categoryLabels[state.categoryId]?.fa || 'دسته‌بندی';
     }
@@ -1170,6 +1172,30 @@ export default function App() {
           </div>
         );
       }
+    } else if (view === 'users') {
+      if (currentUser?.role === 'admin') {
+        keyName = 'users';
+        content = <UsersView currentUser={currentUser} />;
+      } else {
+        keyName = 'users-denied';
+        content = (
+          <div className="p-8 max-w-xl mx-auto my-12 bg-rose-50 border border-rose-200 rounded-2xl text-center space-y-4 shadow-sm" style={{ direction: 'rtl' }}>
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-black text-rose-900">عدم دسترسی به مدیریت کاربران</h2>
+            <p className="text-xs text-rose-700 leading-relaxed font-medium">
+              تعریف و تغییر دسترسی پرسنل تنها در اختیار مدیران ارشد سیستم (Administrator) است.
+            </p>
+            <button
+              onClick={() => navigate('home')}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              بازگشت به صفحه اصلی
+            </button>
+          </div>
+        );
+      }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
       content = <CategoryView db={db} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
@@ -1348,6 +1374,12 @@ export default function App() {
                   variant="audit-trail"
                   active={view === 'audit-trail'} 
                   onClick={() => navigate('audit-trail')} 
+                />
+                <SidebarButton collapsed={sidebarCollapsed}
+                  icon={UserCog} label="مدیریت کاربران" sub="User Management"
+                  variant="audit-trail"
+                  active={view === 'users'}
+                  onClick={() => navigate('users')}
                 />
               </>
             )}
@@ -1581,6 +1613,15 @@ export default function App() {
                             </span>
                             <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
                           </button>
+                          {currentUser.role === 'admin' && (
+                            <button
+                              onClick={() => { setShowUserMenu(false); navigate('users'); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
+                            >
+                              <UserCog className="w-4 h-4 text-primary" />
+                              مدیریت کاربران
+                            </button>
+                          )}
                           <button
                             onClick={() => { setShowUserMenu(false); setShowChangePasswordModal(true); }}
                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"

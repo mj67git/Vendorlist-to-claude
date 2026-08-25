@@ -8,7 +8,7 @@
 
 export type RouteView =
   | 'home' | 'category' | 'archive' | 'supplier-audit'
-  | 'audit-trail' | 'materials' | 'business-partners';
+  | 'audit-trail' | 'materials' | 'business-partners' | 'users';
 
 export interface RouteState {
   view: RouteView;
@@ -21,7 +21,7 @@ export interface RouteState {
 
 export const CATEGORY_IDS = ['foreign', 'domestic', 'veterinary', 'packaging', 'sample', 'blacklist'];
 
-const SIMPLE_VIEWS: RouteView[] = ['archive', 'supplier-audit', 'audit-trail', 'materials', 'business-partners'];
+const SIMPLE_VIEWS: RouteView[] = ['archive', 'supplier-audit', 'audit-trail', 'materials', 'business-partners', 'users'];
 
 /** Stable identity of a location, used to match a URL against the nav stack. */
 export function routeKey(s: { view: string; categoryId?: string | null; vendorId?: string | null; formMode?: string | null }): string {

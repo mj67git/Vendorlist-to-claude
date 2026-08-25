@@ -10,6 +10,7 @@ test('encodes each top-level view', () => {
   assert.equal(encodeRoute(r({ view: 'materials' })), '#/materials');
   assert.equal(encodeRoute(r({ view: 'business-partners' })), '#/business-partners');
   assert.equal(encodeRoute(r({ view: 'audit-trail' })), '#/audit-trail');
+  assert.equal(encodeRoute(r({ view: 'users' })), '#/users');
   assert.equal(encodeRoute(r({ view: 'category', categoryId: 'foreign' })), '#/category/foreign');
 });
 
@@ -26,6 +27,7 @@ test('round-trips every location', () => {
     r({ view: 'home' }),
     r({ view: 'materials' }),
     r({ view: 'supplier-audit' }),
+    r({ view: 'users' }),
     r({ view: 'category', categoryId: 'domestic' }),
     r({ view: 'category', categoryId: 'foreign', vendorId: 'V-42' }),
     r({ view: 'home', vendorId: 'V-42' }),

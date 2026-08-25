@@ -784,6 +784,8 @@ interface AppUser {
   password: { hash: string; salt: string };
   permissions: any;
   mustChangePassword: boolean;
+  isActive: boolean;
+  lastLoginAt: Date | null;
 }
 
 function mapUserRow(row: any): AppUser {
@@ -794,6 +796,11 @@ function mapUserRow(row: any): AppUser {
     password: { hash: row.passwordHash, salt: row.passwordSalt },
     permissions: row.permissions ?? [],
     mustChangePassword: row.mustChangePassword !== false,
+    // Both of these columns existed but were dropped here, which is why nothing
+    // in the app could see them: an account could be marked inactive and still
+    // sign in, and "last login" was never available to show.
+    isActive: row.isActive !== false,
+    lastLoginAt: row.lastLoginAt ?? null,
   };
 }
 
@@ -857,6 +864,44 @@ function requireAuth(req: any, res: any, next: any) {
  * endpoints and grant themselves admin — which would undermine the audit trail,
  * since its value rests on access control being trustworthy.
  */
+/**
+ * Refuse changes that would leave nobody able to administer the system.
+ *
+ * Without these an admin can lock the whole organisation out of user
+ * management with one click — demote or close the only admin account and there
+ * is no longer any route back in short of editing the database by hand.
+ * Returns a message when the change must be refused, or null when it is safe.
+ */
+async function checkAdminSafety(
+  actor: { username: string },
+  targetUsername: string,
+  change: { role?: string; isActive?: boolean; deleting?: boolean },
+): Promise<string | null> {
+  const target = targetUsername.toLowerCase();
+  const isSelf = actor.username.toLowerCase() === target;
+
+  if (isSelf) {
+    if (change.deleting) return "حذف حساب کاربری خودتان امکان‌پذیر نیست.";
+    if (change.isActive === false) return "غیرفعال‌کردن حساب کاربری خودتان امکان‌پذیر نیست.";
+    if (change.role && change.role !== "admin") return "تغییر نقش خودتان از مدیر سیستم امکان‌پذیر نیست.";
+  }
+
+  const losesAdmin =
+    change.deleting || change.isActive === false || (change.role && change.role !== "admin");
+  if (!losesAdmin) return null;
+
+  const current = await getUserByUsername(target);
+  if (!current || current.role !== "admin" || current.isActive === false) return null;
+
+  const activeAdmins = await requirePrisma().user.count({
+    where: { role: "admin" as any, isActive: true },
+  });
+  if (activeAdmins <= 1) {
+    return "این تنها مدیر فعال سامانه است؛ ابتدا یک مدیر دیگر تعریف یا فعال کنید.";
+  }
+  return null;
+}
+
 function requireRole(...roles: string[]) {
   return function (req: any, res: any, next: any) {
     if (!req.user || !roles.includes(req.user.role)) {
@@ -998,12 +1043,43 @@ async function startServer() {
       return res.status(401).json({ error: "Incorrect username or password. Please try again." });
     }
 
+    // A deactivated account is refused here, after the password check, so the
+    // response cannot be used to tell a closed account from a wrong password.
+    if (matchedUser.isActive === false) {
+      AuditService.createAuditRecord({
+        auditId,
+        userId: matchedUser.username,
+        userName: matchedUser.name,
+        role: matchedUser.role,
+        module: "احراز هویت",
+        eventType: "Authentication",
+        ipAddress,
+        userAgent,
+        entityType: "Security Event",
+        entityId: matchedUser.username,
+        entityName: matchedUser.name,
+        action: "FAILED_LOGIN",
+        severity: "Warning",
+        description: `تلاش برای ورود با حساب کاربری غیرفعال ${matchedUser.username}`,
+        reasonForChange: "حساب کاربری توسط مدیر سیستم غیرفعال شده است",
+        beforeData: null,
+        afterData: { attemptedUsername: matchedUser.username, ip: ipAddress, device: userAgent }
+      }).catch(err => console.error("Audit for inactive login failed:", err));
+
+      return res.status(403).json({ error: "این حساب کاربری غیرفعال است. با مدیر سیستم تماس بگیرید." });
+    }
+
     // Sign the JWT securely
     const token = jwt.sign(
       { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
+
+    // Record the sign-in time so the user menu and the admin list can show it.
+    requirePrisma().user
+      .update({ where: { username: matchedUser.username.toLowerCase() }, data: { lastLoginAt: new Date() } })
+      .catch(err => console.error("Failed to record last login:", err));
 
     const mustChangePassword = matchedUser.mustChangePassword !== false;
 
@@ -1168,7 +1244,10 @@ async function startServer() {
     const username = req.user.username;
     const matchedUser = await getUserByUsername(username);
 
-    if (!matchedUser) {
+    // 401 here so authFetch ends the session: an account that was closed or
+    // deactivated mid-session should be signed out on the next load rather than
+    // keeping its access until the seven-day token runs out.
+    if (!matchedUser || matchedUser.isActive === false) {
       return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
     }
 
@@ -2358,7 +2437,9 @@ async function startServer() {
         name: u.name,
         role: u.role,
         permissions: u.permissions || [],
-        mustChangePassword: u.mustChangePassword !== false
+        mustChangePassword: u.mustChangePassword !== false,
+        isActive: u.isActive !== false,
+        lastLoginAt: u.lastLoginAt || null
       }));
       res.json(usersList);
     } catch (err: any) {
@@ -2439,12 +2520,21 @@ async function startServer() {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
 
-      const { name, role, permissions, reasonForChange } = req.body;
-      const originalData = { name: current.name, role: current.role, permissions: current.permissions || [] };
+      const { name, role, permissions, isActive, reasonForChange } = req.body;
+      const originalData = {
+        name: current.name,
+        role: current.role,
+        permissions: current.permissions || [],
+        isActive: current.isActive !== false,
+      };
+
+      const unsafe = await checkAdminSafety(req.user, targetUsername, { role, isActive });
+      if (unsafe) return res.status(400).json({ error: unsafe });
 
       if (name) current.name = name;
       if (role) current.role = role;
       if (permissions) current.permissions = permissions;
+      if (typeof isActive === "boolean") current.isActive = isActive;
 
       await requirePrisma().user.update({
         where: { username: targetUsername },
@@ -2452,6 +2542,7 @@ async function startServer() {
           name: current.name,
           role: normalizeUserRole(current.role) as any,
           permissions: current.permissions ?? [],
+          isActive: current.isActive !== false,
         },
       });
 
@@ -2476,10 +2567,10 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "بروزرسانی سمت سازمانی / دسترسی‌های سیستمی",
         beforeData: originalData,
-        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
       });
 
-      res.json({ success: true, user: { username: current.username, name: current.name, role: current.role, permissions: current.permissions } });
+      res.json({ success: true, user: { username: current.username, name: current.name, role: current.role, permissions: current.permissions, isActive: current.isActive !== false } });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2492,6 +2583,9 @@ async function startServer() {
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
+
+      const unsafeDelete = await checkAdminSafety(req.user, targetUsername, { deleting: true });
+      if (unsafeDelete) return res.status(400).json({ error: unsafeDelete });
 
       const reasonForChange = req.query.reasonForChange as string || "حذف دسترسی پرسنل تسویه شده";
       const beforeData = { username: current.username, name: current.name, role: current.role, permissions: current.permissions || [] };
@@ -2541,6 +2635,9 @@ async function startServer() {
         return res.status(400).json({ error: "فیلد role الزامی است" });
       }
 
+      const unsafeRole = await checkAdminSafety(req.user, targetUsername, { role });
+      if (unsafeRole) return res.status(400).json({ error: unsafeRole });
+
       const oldRole = current.role;
       current.role = role;
       await requirePrisma().user.update({
@@ -2573,6 +2670,66 @@ async function startServer() {
 
       res.json({ success: true, role });
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // An admin sets a temporary password for someone who is locked out. The
+  // account is flagged to change it on the next sign-in, so the admin never
+  // ends up knowing a password the user keeps using.
+  app.post("/api/users/:username/reset-password", requireAuth, requireRole("admin"), async (req: any, res) => {
+    try {
+      const targetUsername = req.params.username.toLowerCase();
+      const current = await getUserByUsername(targetUsername);
+      if (!current) {
+        return res.status(404).json({ error: "کاربر یافت نشد" });
+      }
+
+      const { newPassword, reasonForChange } = req.body;
+      if (!newPassword || String(newPassword).length < 6) {
+        return res.status(400).json({ error: "کلمه عبور موقت باید حداقل ۶ کاراکتر باشد." });
+      }
+      if (newPassword === "123" || newPassword === "123456") {
+        return res.status(400).json({ error: "کلمه عبور موقت نمی‌تواند رمز پیش‌فرض باشد." });
+      }
+
+      const newSalt = generateSalt();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: {
+          passwordHash: hashPassword(newPassword, newSalt),
+          passwordSalt: newSalt,
+          mustChangePassword: true,
+        },
+      });
+
+      const now = new Date();
+      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await AuditService.createAuditRecord({
+        auditId,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت کاربران",
+        action: "RESET_PASSWORD",
+        severity: "Critical",
+        description: `کلمه عبور حساب کاربری ${targetUsername} توسط ${req.user.name} بازنشانی شد و تغییر آن در ورود بعدی الزامی گردید.`,
+        entityType: "User",
+        entityId: targetUsername,
+        entityName: current.name,
+        eventType: "Authorization",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        reasonForChange: reasonForChange || "بازنشانی کلمه عبور به درخواست کاربر",
+        // The password itself is never recorded — only the fact of the reset.
+        beforeData: { mustChangePassword: current.mustChangePassword !== false },
+        afterData: { mustChangePassword: true, passwordReset: true, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Failed to reset password:", err);
       res.status(500).json({ error: err.message });
     }
   });
