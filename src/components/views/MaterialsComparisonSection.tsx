@@ -132,14 +132,10 @@ export const MaterialsComparisonSection: React.FC<{
           <p className="text-xs text-muted-foreground mt-1">مقایسه امتیاز کل مکتسبه و تحلیل جهت بهترین انتخاب تأمین کالا</p>
         </div>
         
+        {/* Only the engine's own verdict lives here. The recorded human decision
+            has its own box further down, with the reason and who made it — two
+            chips saying the same name was noise. */}
         <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          {selection && selectedEntry && (
-            <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-full text-xs text-emerald-800 dark:text-emerald-300 font-bold"
-              title={`ثبت‌شده توسط ${selection.decidedBy}`}>
-              <CheckCircle className="w-3.5 h-3.5" />
-              سورس منتخب: {selectedEntry.name}
-            </div>
-          )}
           {bestVendor && bestVendor.score > 0 && (
             isLevel ? (
               <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-full text-xs text-amber-800 dark:text-amber-300 font-bold">
@@ -284,53 +280,81 @@ export const MaterialsComparisonSection: React.FC<{
         </div>
 
         <div className="lg:col-span-5 bg-[#0071E3]/2 p-5 rounded-xl border border-[#0071E3]/5 flex flex-col justify-between">
+          {/* Result first, explanation on demand.
+              The three bullets that used to sit here restated, in prose, the
+              same three numbers as the formula line below them — and this panel
+              repeats under every material, so the teaching text was read once
+              and skipped thereafter. The numbers stay visible as chips; the
+              wording moved behind the toggle that `showEngineGuide` was already
+              declared for but never wired to. */}
           <div>
-            <div className="text-[10px] text-[#0071E3] font-bold tracking-wider mb-2 uppercase border border-[#0071E3]/20 bg-[#0071E3]/10 px-2 py-0.5 rounded inline-block">موتور تحلیل سیستم (Local Engine)</div>
-            <h5 className="font-bold text-foreground text-sm mb-3 mt-1">چرا {bestVendor.name} پیشنهاد می‌شود؟</h5>
-            
-            <div className="space-y-3 text-xs text-[#424245] leading-relaxed">
-              <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 bg-[#0071E3] rounded-full mt-1.5 shrink-0" />
-                <p>
-                  <strong>موتور آفلاین سیستم</strong> برای انتخاب کالا از یک مکانیسم امتیازدهی ترکیبی شفاف استفاده می‌کند:
-                  <br/>
-                  <span className="inline-block mt-2 font-mono text-[#0071E3] bg-[#0071E3]/5 px-2 py-1 rounded border border-[#0071E3]/20 font-bold" dir="ltr">
-                    Engine Score = BaseScore × RiskMod × LabMod
-                  </span>
-                </p>
-              </div>
-              
-              <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 bg-[#0071E3] rounded-full mt-1.5 shrink-0" />
-                <p>
-                  <strong>۱. امتیاز کل (Base Score):</strong> {bestVendor.score} از ۱۰۰ (محاسبه شده از میانگین وزنی فرم‌های ارزیابی بخش‌های تخصصی).
-                </p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-[10px] text-[#0071E3] font-bold tracking-wider uppercase border border-[#0071E3]/20 bg-[#0071E3]/10 px-2 py-0.5 rounded">موتور تحلیل سیستم (Local Engine)</div>
+              <button
+                type="button"
+                onClick={() => setShowEngineGuide(!showEngineGuide)}
+                className="text-[10px] font-bold text-[#0071E3] bg-[#0071E3]/10 hover:bg-[#0071E3]/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <span>چطور محاسبه می‌شود؟</span>
+                <motion.span
+                  animate={{ rotate: showEngineGuide ? 180 : 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="inline-block"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </motion.span>
+              </button>
+            </div>
+            <h5 className="font-bold text-foreground text-sm mb-3">چرا {bestVendor.name} پیشنهاد می‌شود؟</h5>
+
+            <div className="text-xs text-[#424245] leading-relaxed">
+              {/* The whole reasoning in one row of chips. */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-[11px] bg-card border border-border px-2 py-1 rounded-lg">
+                  پایه <strong className="text-foreground">{bestVendor.score}</strong>
+                </span>
+                <span className={`font-mono text-[11px] px-2 py-1 rounded-lg border ${
+                  bestVendor.hasRisk
+                    ? 'bg-card border-border'
+                    : 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400'
+                }`} title={bestVendor.hasRisk ? undefined : 'ارزیابی ریسک ثبت نشده؛ ضریب پیش‌فرض ۰.۹۵ اعمال شده که یک جریمهٔ محتاطانه است، نه ضریب خنثی.'}>
+                  ریسک {bestVendor.vendor.riskAssessment?.riskLevel || '—'} <strong dir="ltr">×{bestVendor.riskMod.toFixed(2)}</strong>
+                </span>
+                <span className={`font-mono text-[11px] px-2 py-1 rounded-lg border ${
+                  bestVendor.hasLabAssessment
+                    ? 'bg-card border-border'
+                    : 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400'
+                }`} title={bestVendor.hasLabAssessment ? undefined : 'سابقهٔ تست آزمایشگاهی وجود ندارد؛ ضریب خنثی لحاظ شده است.'}>
+                  آزمایشگاه <strong dir="ltr">×{bestVendor.labMod.toFixed(2)}</strong>
+                </span>
               </div>
 
-              <div className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 bg-[#0071E3] rounded-full mt-1.5 shrink-0" />
-                <p>
-                  <strong>۲. ضریب ریسک (Risk Mod):</strong> سطح ریسک فعلی <strong>{bestVendor.vendor.riskAssessment?.riskLevel || 'Low'}</strong> است که معادل ضریب <strong>{bestVendor.riskMod.toFixed(2)}x</strong> محاسبه می‌شود.
-                </p>
-              </div>
+              <AnimatePresence initial={false}>
+                {showEngineGuide && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-[10px] text-muted-foreground leading-relaxed">
+                      <p>
+                        <strong className="text-foreground">موتور آفلاین سیستم</strong> از یک مکانیسم امتیازدهی ترکیبی شفاف استفاده می‌کند:
+                        <span className="block mt-1.5 font-mono text-[#0071E3] bg-[#0071E3]/5 px-2 py-1 rounded border border-[#0071E3]/20 font-bold w-fit" dir="ltr">
+                          Engine Score = BaseScore × RiskMod × LabMod
+                        </span>
+                      </p>
+                      <p><strong className="text-foreground">۱. امتیاز کل (Base Score):</strong> میانگین وزنی فرم‌های ارزیابی بخش‌های تخصصی، از ۱۰۰.</p>
+                      <p><strong className="text-foreground">۲. ضریب ریسک (Risk Mod):</strong> از سطح ریسک ثبت‌شده در ارزیابی FMEA سورس گرفته می‌شود. در نبود ارزیابی، ضریب پیش‌فرض <span className="font-mono" dir="ltr">0.95x</span> اعمال می‌شود — یعنی سورس ارزیابی‌نشده جریمهٔ محتاطانه می‌گیرد و امتیازش با سورس کم‌ریسک برابر نیست.</p>
+                      <p><strong className="text-foreground">۳. ضریب نتایج آزمایشگاه (Lab Mod):</strong> از سوابق QC و نسبت تست‌های قبول/رد. جزئیات فرمول در جدول «مقایسه نتایج تست آزمایشگاهی» آمده است. در نبود سابقه، ضریب خنثی <span className="font-mono" dir="ltr">1.00x</span>.</p>
+                      <p className="text-amber-800 dark:text-amber-400">این عدد یک <strong>پیشنهاد</strong> است، نه تصمیم ثبت‌شده. انتخاب نهایی سورس باید توسط کارشناس و با ثبت دلیل انجام شود.</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              {bestVendor.hasLabAssessment ? (
-                <div className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-1.5 shrink-0" />
-                  <p>
-                    <strong>۳. ضریب نتایج آزمایشگاه (Lab Mod):</strong> بر اساس سوابق QC و نسبت تست‌های قبول/رد شده، معادل <strong>{bestVendor.labMod.toFixed(2)}x</strong> روی امتیاز کل اعمال شده است.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-1.5 shrink-0" />
-                  <p>
-                    <strong>۳. ضریب نتایج آزمایشگاه (Lab Mod):</strong> سابقه قبلی تست وجود ندارد (تأثیر خنثی معادل <strong>1.00x</strong>).
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-4 pt-3 border-t border-[#0071E3]/20 flex items-center justify-between">
+              <div className="mt-3 pt-3 border-t border-[#0071E3]/20 flex items-center justify-between gap-2">
                  <span className="font-bold text-foreground">امتیاز نهایی سیستم:</span>
                  <span className="font-mono text-sm" dir="ltr">
                    {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} = <strong className="text-[16px] text-[#0071E3] bg-card px-2 rounded-md shadow-sm border border-border">{bestVendor.engineScore.toFixed(1)}</strong>
