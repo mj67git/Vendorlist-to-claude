@@ -58,14 +58,18 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
         setIsOpen(false);
       }
     };
+    let focusTimer: number | undefined;
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      setTimeout(() => {
+      focusTimer = window.setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      // Without this, closing the dropdown inside the delay still fired the
+      // focus and pulled the caret into a now-hidden search box.
+      if (focusTimer !== undefined) window.clearTimeout(focusTimer);
     };
   }, [isOpen]);
 

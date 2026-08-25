@@ -63,6 +63,17 @@ export function FormModal({
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const reduce = useReducedMotion();
 
+  // Callers pass an inline arrow for onClose, so its identity changes on every
+  // render of the parent — and the parent re-renders on every keystroke,
+  // because that is where the form state lives. Keeping onClose out of the
+  // effect's dependencies is what makes this effect run once per open instead
+  // of once per typed character; with it as a dependency the cleanup below
+  // pulled focus out of the field mid-word.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   // Escape closes, and Tab is kept inside the panel while it is open.
   useEffect(() => {
     if (!open) return;
@@ -72,7 +83,7 @@ export function FormModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
@@ -109,9 +120,15 @@ export function FormModal({
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = prevOverflow;
       window.clearTimeout(t);
-      restoreFocusRef.current?.focus?.();
+
+      // Hand focus back to whatever opened this dialog — but only if focus is
+      // still ours to give. If something outside the panel already holds it,
+      // taking it away would be the dialog stealing focus, not restoring it.
+      const active = document.activeElement as HTMLElement | null;
+      const focusIsOurs = !active || active === document.body || panelRef.current?.contains(active);
+      if (focusIsOurs) restoreFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   // Hold on to the last rendered children so the panel still has content while
   // it animates out — callers usually clear the record being shown in the same
