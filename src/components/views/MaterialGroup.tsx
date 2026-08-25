@@ -8,7 +8,7 @@ import { BusinessPartner, Category, Scores, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
-import { MaterialsComparisonSection } from './MaterialsComparisonSection';
+import { MaterialsComparisonSection, type SourceSelectionRecord } from './MaterialsComparisonSection';
 
 // extracted from App.tsx
 
@@ -19,8 +19,10 @@ export const MaterialGroup: React.FC<{
   categoryId?: Category,
   expandedMaterial: string | null,
   onToggleMaterial: (mat: string | null) => void,
-  partners?: BusinessPartner[]
-}> = ({ group, onSelectVendor, currentUser, categoryId, expandedMaterial, onToggleMaterial, partners = [] }) => {
+  partners?: BusinessPartner[],
+  selection?: SourceSelectionRecord | null,
+  onSelectSource?: (vendorId: string) => void
+}> = ({ group, onSelectVendor, currentUser, categoryId, expandedMaterial, onToggleMaterial, partners = [], selection, onSelectSource }) => {
   const [localOpen, setLocalOpen] = useState(group.en === expandedMaterial);
   const [highlight, setHighlight] = useState(false);
   const manualRef = useRef(false);
@@ -283,7 +285,7 @@ export const MaterialGroup: React.FC<{
             })}
           </div>
           
-          <MaterialsComparisonSection vendors={group.vendors || []} categoryId={categoryId} />
+          <MaterialsComparisonSection vendors={group.vendors || []} categoryId={categoryId} selection={selection} onSelectSource={onSelectSource} />
         </div>
       </div>
     </Card>

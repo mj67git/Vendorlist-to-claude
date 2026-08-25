@@ -102,24 +102,24 @@ model User {
 // ---------------------------------------------------------------------------
 
 model Material {
-  id       String @id @map("id") @db.VarChar(50)
-  name     String @map("name")
-  nameEn   String @map("name_en")
-  cas      String @map("cas")
-  irc      String @map("irc")
+  id     String @id @map("id") @db.VarChar(50)
+  name   String @map("name")
+  nameEn String @map("name_en")
+  cas    String @map("cas")
+  irc    String @map("irc")
 
   // Enriched regulatory attributes (optional for backward compatibility)
-  iupac           String?   @map("iupac")
-  role            String?   @map("role")
-  finalProduct    String?   @map("final_product")
-  finalProductEn  String?   @map("final_product_en")
-  pharmacopoeia   String?   @map("pharmacopoeia")
-  standardNameFa  String?   @map("standard_name_fa")
-  standardNameEn  String?   @map("standard_name_en")
-  specificationFile String? @map("specification_file")
-  ircReceiveDate  String?   @map("irc_receive_date")
-  ircExpiryDate   String?   @map("irc_expiry_date")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  iupac             String?  @map("iupac")
+  role              String?  @map("role")
+  finalProduct      String?  @map("final_product")
+  finalProductEn    String?  @map("final_product_en")
+  pharmacopoeia     String?  @map("pharmacopoeia")
+  standardNameFa    String?  @map("standard_name_fa")
+  standardNameEn    String?  @map("standard_name_en")
+  specificationFile String?  @map("specification_file")
+  ircReceiveDate    String?  @map("irc_receive_date")
+  ircExpiryDate     String?  @map("irc_expiry_date")
+  createdAt         DateTime @default(now()) @map("created_at")
 
   vendors     VendorMaterial[]
   evaluations Evaluation[]
@@ -160,12 +160,12 @@ model BusinessPartner {
 }
 
 model SupplierEvaluation {
-  id         String  @id @default(uuid()) @map("id") @db.VarChar(50)
-  partnerId  String  @unique @map("partner_id") @db.VarChar(50)
-  totalScore Float   @default(0) @map("total_score")
-  grade      String  @map("grade")
-  status     String  @map("status")
-  updatedBy  String? @map("updated_by")
+  id         String   @id @default(uuid()) @map("id") @db.VarChar(50)
+  partnerId  String   @unique @map("partner_id") @db.VarChar(50)
+  totalScore Float    @default(0) @map("total_score")
+  grade      String   @map("grade")
+  status     String   @map("status")
+  updatedBy  String?  @map("updated_by")
   updatedAt  DateTime @updatedAt @map("updated_at")
   createdAt  DateTime @default(now()) @map("created_at")
 
@@ -176,17 +176,17 @@ model SupplierEvaluation {
 }
 
 model SopDocument {
-  id           String            @id @default(uuid()) @map("id") @db.VarChar(50)
-  evaluationId String            @map("evaluation_id") @db.VarChar(50)
-  key          SopDocumentKey    @map("key")
-  nameFa       String            @map("name_fa")
-  nameEn       String            @map("name_en")
+  id           String             @id @default(uuid()) @map("id") @db.VarChar(50)
+  evaluationId String             @map("evaluation_id") @db.VarChar(50)
+  key          SopDocumentKey     @map("key")
+  nameFa       String             @map("name_fa")
+  nameEn       String             @map("name_en")
   status       SopDocumentStatus? @map("status")
-  score        Float             @default(0) @map("score")
-  fileName     String?           @map("file_name")
-  fileSize     Int?              @map("file_size")
-  fileDataUrl  String?           @map("file_data_url") @db.Text
-  uploadedAt   DateTime?         @map("uploaded_at")
+  score        Float              @default(0) @map("score")
+  fileName     String?            @map("file_name")
+  fileSize     Int?               @map("file_size")
+  fileDataUrl  String?            @map("file_data_url") @db.Text
+  uploadedAt   DateTime?          @map("uploaded_at")
 
   evaluation SupplierEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
 
@@ -200,16 +200,16 @@ model SopDocument {
 // ---------------------------------------------------------------------------
 
 model Vendor {
-  id               String  @id @map("id") @db.VarChar(50)
-  name             String  @map("name")
-  nameEn           String  @map("name_en")
-  country          String  @map("country")
-  contactInfo      String? @map("contact_info") @db.Text
-  registrationDate String? @map("registration_date")
-  status           String  @default("new") @map("status")
-  grade            String? @map("grade")
+  id                  String  @id @map("id") @db.VarChar(50)
+  name                String  @map("name")
+  nameEn              String  @map("name_en")
+  country             String  @map("country")
+  contactInfo         String? @map("contact_info") @db.Text
+  registrationDate    String? @map("registration_date")
+  status              String  @default("new") @map("status")
+  grade               String? @map("grade")
   initialSampleStatus String? @map("initial_sample_status")
-  ircExpiryDate    String? @map("irc_expiry_date")
+  ircExpiryDate       String? @map("irc_expiry_date")
 
   // Optional links to normalized business partners
   manufacturerId String? @map("manufacturer_id") @db.VarChar(50)
@@ -225,6 +225,7 @@ model Vendor {
   riskAssessments       RiskAssessment[]
   analysisRecordEntries AnalysisRecord[]
   activityLogs          ActivityLog[]
+  sourceSelections      SourceSelection[]
 
   @@index([status])
   @@index([grade])
@@ -371,4 +372,30 @@ model AuditLog {
   @@index([entityId])
   @@index([correlationId])
   @@map("audit_log")
+}
+
+/// The chosen source for one material within one purchasing category.
+///
+/// The comparison panel could only ever *recommend*; nothing recorded what was
+/// actually decided. Under GxP the question an auditor asks is "why did you buy
+/// from this supplier", and the answer has to be written down — so the reason is
+/// mandatory and the change is mirrored into audit_log like every other write.
+///
+/// Keyed by the material's English name because that is what the category page
+/// groups sources by (CategoryView builds its groups on `materialEn`).
+model SourceSelection {
+  id          String   @id @default(uuid())
+  materialKey String   @map("material_key") @db.VarChar(255)
+  category    String   @map("category") @db.VarChar(50)
+  vendorId    String   @map("vendor_id")
+  reason      String   @map("reason") @db.Text
+  decidedBy   String   @map("decided_by") @db.VarChar(100)
+  decidedAt   DateTime @default(now()) @map("decided_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([materialKey, category])
+  @@index([vendorId])
+  @@map("source_selections")
 }

@@ -78,6 +78,7 @@
 - **Risk (FMEA):** `risk_assessments` · **Lab:** `analysis_records` · **Activity:** `activity_logs`
 - **Business Partners:** `business_partners`, `supplier_evaluations`, `sop_documents`
 - **Audit:** `audit_log` (canonical، کاملاً ایندکس)
+- **انتخاب سورس:** `source_selections` (یکتا روی `material_key + category`؛ تصمیم انسانیِ «سورس برندهٔ این ماده» با دلیل الزامی. موتور امتیازدهی فقط **پیشنهاد** می‌دهد — پیشنهاد را تصمیم ثبت‌شده حساب نکن.)
 - همهٔ FKها با CASCADE/SET NULL صریح. دیاگرام: artifact «نقشهٔ دیتابیس VLSE».
 
 ## الگوهای مهم کد

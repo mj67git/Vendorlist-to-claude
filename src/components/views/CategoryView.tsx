@@ -11,6 +11,10 @@ import { exportCategoryToExcel } from '../../utils/excelExport';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
+import type { SourceSelectionRecord } from './MaterialsComparisonSection';
+import { FormModal } from '../../components/FormModal';
+import { authFetch, isLocalMode } from '../../services/authFetch';
+import { can } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -39,6 +43,61 @@ export function CategoryView({
   const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+
+  // ---- recorded source selections -----------------------------------------
+  // Which source is actually bought for each material. The comparison panel
+  // only ever recommended; this is the decision someone made and signed for.
+  const canChoose = can(currentUser, 'vendor.write');
+  const [selections, setSelections] = useState<SourceSelectionRecord[]>([]);
+  const [selectDialog, setSelectDialog] = useState<{ materialKey: string; materialFa: string; vendors: Vendor[]; vendorId: string } | null>(null);
+  const [selectReason, setSelectReason] = useState('');
+  const [selectError, setSelectError] = useState<string | null>(null);
+  const [selectSaving, setSelectSaving] = useState(false);
+
+  const loadSelections = React.useCallback(() => {
+    if (isLocalMode()) return;
+    authFetch('/api/source-selections')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (Array.isArray(data)) setSelections(data); })
+      .catch(() => { /* the panel simply shows no recorded choice */ });
+  }, []);
+  useEffect(() => { loadSelections(); }, [loadSelections]);
+
+  const openSelectionDialog = (group: { fa: string; en: string; vendors: Vendor[] }, vendorId: string) => {
+    const existing = selections.find(x => x.materialKey === group.en && x.category === categoryId);
+    setSelectDialog({ materialKey: group.en, materialFa: group.fa, vendors: group.vendors, vendorId });
+    setSelectReason(existing?.reason || '');
+    setSelectError(null);
+  };
+
+  const submitSelection = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectDialog) return;
+    const reason = selectReason.trim();
+    if (reason.length < 10) {
+      setSelectError('ثبت دلیل انتخاب الزامی است و باید حداقل ۱۰ کاراکتر باشد.');
+      return;
+    }
+    setSelectSaving(true);
+    setSelectError(null);
+    authFetch('/api/source-selections', {
+      method: 'PUT',
+      body: JSON.stringify({
+        materialKey: selectDialog.materialKey,
+        category: categoryId,
+        vendorId: selectDialog.vendorId,
+        reason,
+      }),
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'ثبت انتخاب ناموفق بود.');
+        setSelectDialog(null);
+        loadSelections();
+      })
+      .catch(err => setSelectError(err.message))
+      .finally(() => setSelectSaving(false));
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -294,6 +353,8 @@ export function CategoryView({
             expandedMaterial={expandedMaterial}
             onToggleMaterial={onToggleMaterial}
             partners={partners}
+            selection={selections.find(x => x.materialKey === group.en && x.category === categoryId) || null}
+            onSelectSource={canChoose ? (vendorId) => openSelectionDialog(group, vendorId) : undefined}
           />
         ))}
         {groupsList.length === 0 && (
@@ -324,6 +385,76 @@ export function CategoryView({
           onPageChange={setCurrentPage}
         />
       </div>
+
+      {/* Record which source is bought for a material. Rendered unconditionally
+          so the exit animation is seen; children guarded because they are
+          evaluated while closed. */}
+      <FormModal open={!!selectDialog} onClose={() => setSelectDialog(null)} size="md" labelledBy="select-source-title">
+        {selectDialog && (
+          <form onSubmit={submitSelection}>
+            <div className="px-6 py-4 border-b border-border bg-muted/50">
+              <h3 id="select-source-title" className="text-sm font-black text-foreground">
+                ثبت سورس منتخب برای «{selectDialog.materialFa}»
+              </h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                این تصمیم با نام شما و دلیل آن در ردیابی تغییرات (Audit) ثبت می‌شود.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {selectError && (
+                <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                  <X className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{selectError}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label htmlFor="select-vendor" className="block text-xs font-bold text-foreground">تأمین‌کنندهٔ منتخب</label>
+                <select
+                  id="select-vendor"
+                  value={selectDialog.vendorId}
+                  onChange={e => setSelectDialog({ ...selectDialog, vendorId: e.target.value })}
+                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {selectDialog.vendors.map(v => (
+                    <option key={v.id} value={v.id}>{v.name}{v.grade ? ` — Grade ${v.grade}` : ''}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground pt-1">
+                  انتخاب شما می‌تواند با پیشنهاد موتور متفاوت باشد؛ در آن صورت دلیل اهمیت بیشتری دارد.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="select-reason" className="block text-xs font-bold text-foreground">
+                  دلیل انتخاب <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  id="select-reason"
+                  value={selectReason}
+                  onChange={e => setSelectReason(e.target.value)}
+                  rows={4}
+                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  placeholder="مثلاً: بالاترین امتیاز کیفی، سابقهٔ آزمایشگاهی بدون انحراف، و تأمین پایدار در دو سال گذشته."
+                />
+                <p className="text-[10px] text-muted-foreground">حداقل ۱۰ کاراکتر.</p>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setSelectDialog(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                انصراف
+              </button>
+              <button type="submit" disabled={selectSaving}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50">
+                ثبت انتخاب
+              </button>
+            </div>
+          </form>
+        )}
+      </FormModal>
     </div>
   );
 }
