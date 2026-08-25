@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/card';
 import { BusinessPartner, Category, Scores, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
+import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { MaterialsComparisonSection } from './MaterialsComparisonSection';
 
 // extracted from App.tsx
@@ -25,23 +26,6 @@ export const MaterialGroup: React.FC<{
   const manualRef = useRef(false);
   const elementId = `group-${group.en.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
 
-  const getPartnerDetails = (vendor: Vendor) => {
-    // A source links to a single partner (manufacturer OR supplier).
-    let partner =
-      partners.find(p => p.id === vendor.supplierId) ||
-      partners.find(p => p.id === vendor.manufacturerId);
-
-    // Name-match fallback for legacy/imported records.
-    if (!partner) {
-      partner = partners.find(p => p.name.trim().toLowerCase() === vendor.name.trim().toLowerCase());
-    }
-
-    return {
-      partnerName: partner ? partner.name : vendor.name,
-      partnerLabel: partner?.type === 'Supplier' ? 'فروشنده' : 'تولیدکننده',
-      isSupplier: partner?.type === 'Supplier',
-    };
-  };
 
   useEffect(() => {
     if (group.en === expandedMaterial) {
@@ -127,7 +111,7 @@ export const MaterialGroup: React.FC<{
         <div className="overflow-hidden">
           <div className="divide-y divide-border/60 bg-card">
             {group.vendors.map(vendor => {
-              const { partnerName, partnerLabel } = getPartnerDetails(vendor);
+              const { name: partnerName, roleLabel: partnerLabel } = resolveVendorPartner(vendor, partners);
               return (
                 <div 
                   key={vendor.id}

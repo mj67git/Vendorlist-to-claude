@@ -5,7 +5,8 @@ import {
   AlertTriangle, Microscope, Handshake, CheckCircle 
 } from 'lucide-react';
 import { Vendor, Grade, BusinessPartner, Material } from '../types';
-import { calculateOverallScore, getDisplayCountry } from '../utils/vendorUtils';
+import { calculateOverallScore } from '../utils/vendorUtils';
+import { resolveVendorPartner } from '../utils/vendorPartner';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-ignore
 import temadLogo from '../assets/logo.png';
@@ -31,30 +32,33 @@ function getRawScoreValue(vendor: Vendor, deptId: string, critKey: string): numb
   return 5;
 }
 
+/**
+ * Fill the form's two fixed cells from the source's single partner.
+ *
+ * The printed form is a controlled document with a fixed grid, so both the
+ * manufacturer cell and the seller cell stay — but only the one matching the
+ * partner's actual role carries its name. The other says so plainly instead of
+ * repeating the same company under a second heading.
+ */
 function getPartnerDetails(v: Vendor, partners: BusinessPartner[] = []) {
-  let mfgPartner = partners.find(p => p.id === v.manufacturerId);
-  let supPartner = partners.find(p => p.id === v.supplierId);
+  const p = resolveVendorPartner(v, partners);
+  const country = p.country || 'ثبت\u200cنشده';
 
-  const matchedPartner = partners.find(p => p.name.trim().toLowerCase() === v.name.trim().toLowerCase());
-  if (matchedPartner) {
-    if (matchedPartner.type === 'Supplier') {
-      if (!supPartner) supPartner = matchedPartner;
-      if (!mfgPartner && matchedPartner.manufacturerId) {
-        mfgPartner = partners.find(p => p.id === matchedPartner.manufacturerId);
-      }
-    } else if (matchedPartner.type === 'Manufacturer') {
-      if (!mfgPartner) mfgPartner = matchedPartner;
-    }
+  if (p.role === 'supplier') {
+    return {
+      mfgName: 'ثبت\u200cنشده',
+      mfgCountry: '-',
+      supName: p.name,
+      supCountry: country,
+    };
   }
 
-  const mfgName = mfgPartner ? mfgPartner.name : v.name;
-  const rawMfgCountry = mfgPartner?.country || v.country || getDisplayCountry(v);
-  const mfgCountry = rawMfgCountry && rawMfgCountry.trim() && rawMfgCountry.toLowerCase() !== 'unknown' && rawMfgCountry.toLowerCase() !== 'n/a' && rawMfgCountry !== 'نامشخص' ? rawMfgCountry : 'ثبت‌نشده';
-
-  const supName = supPartner ? supPartner.name : 'خرید بی‌واسطه از تولیدکننده';
-  const supCountry = supPartner?.country && supPartner.country.trim() && supPartner.country.toLowerCase() !== 'unknown' && supPartner.country.toLowerCase() !== 'n/a' && supPartner.country !== 'نامشخص' ? supPartner.country : (supPartner ? 'ثبت‌نشده' : 'مستقیم');
-
-  return { mfgName, mfgCountry, supName, supCountry };
+  return {
+    mfgName: p.name,
+    mfgCountry: country,
+    supName: 'خرید بی\u200cواسطه از تولیدکننده',
+    supCountry: 'مستقیم',
+  };
 }
 
 function getMaterialTypeLabel(v: Vendor) {

@@ -8,11 +8,12 @@ import { ShamsiDatePicker } from '../../components/ShamsiDatePicker';
 import { authFetch } from '../../services/authFetch';
 import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from '../../types';
 import { Badge } from '../ui/badge';
-import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
+import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { getRawScoreValue } from '../../utils/scoreUtils';
+import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
 
 // extracted from App.tsx
 
@@ -329,20 +330,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   }
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
-  // Business Partner Repository resolution for Manufacturer and Supplier
-  // A source links to a single partner (manufacturer or supplier).
-  const mfgPartner = partners.find(p => p.id === vendor.supplierId) || partners.find(p => p.id === vendor.manufacturerId);
-  const partnerLabel = mfgPartner?.type === 'Supplier' ? 'فروشنده' : 'تولیدکننده';
-  const mfgName = mfgPartner ? mfgPartner.name : vendor.name;
-  const rawMfgCountry = mfgPartner ? mfgPartner.country : (vendor.country || getDisplayCountry(vendor));
-  const mfgCountry = rawMfgCountry && rawMfgCountry.trim() && rawMfgCountry.toLowerCase() !== 'unknown' && rawMfgCountry.toLowerCase() !== 'n/a' && rawMfgCountry !== 'نامشخص' && rawMfgCountry !== 'مشخص نشده' ? rawMfgCountry : null;
-
-  const supPartner = partners.find(p => p.id === vendor.supplierId);
-  const supName = supPartner ? supPartner.name : null;
-  const rawSupCountry = supPartner ? supPartner.country : null;
-  const supCountry = rawSupCountry && rawSupCountry.trim() && rawSupCountry.toLowerCase() !== 'unknown' && rawSupCountry.toLowerCase() !== 'n/a' && rawSupCountry !== 'نامشخص' && rawSupCountry !== 'مشخص نشده' ? rawSupCountry : null;
-  const rawSupGrade = supPartner?.evaluation?.grade;
-  const supGrade = rawSupGrade ? String(rawSupGrade) : null;
+  // Who this source buys from, and in what role. A source links to exactly one
+  // partner — resolving a "manufacturer" and a "supplier" separately used to
+  // land on the same record and render it twice. See utils/vendorPartner.
+  const sourcePartner = resolveVendorPartner(vendor, partners);
+  const isDirectFromManufacturer = sourcePartner.role === 'manufacturer';
 
   // Material Repository resolution for standard names
   const matchedMaterial = materials.find(m => 
@@ -404,42 +396,29 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             </div>
             
             <div className="text-right">
-              {/* Manufacturer display (Bold) */}
+              {/* The partner, labelled by the role it actually has. */}
               <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
-                <span>تولید کننده : {mfgName}</span>
-                {mfgCountry && (
+                <span>{sourcePartner.roleLabel} : {sourcePartner.name}</span>
+                {sourcePartner.country && (
                   <>
                     <span className="mx-3 sm:mx-4 text-slate-300 font-normal">|</span>
-                    <span>کشور : {mfgCountry}</span>
+                    <span>کشور : {sourcePartner.country}</span>
                   </>
                 )}
               </div>
 
-              {/* Supplier display (Regular) or Direct Purchase Badge */}
-              {supPartner ? (
-                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
-                  <span>فروشنده : {supName}</span>
-                  {supCountry && (
-                    <>
-                      <span className="mx-3 text-slate-300">|</span>
-                      <span>کشور : {supCountry}</span>
-                    </>
-                  )}
-                  {supGrade && (
-                    <>
-                      <span className="mx-3 text-slate-300">|</span>
-                      <span>Grade : {supGrade}</span>
-                    </>
-                  )}
-                </div>
-              ) : (
+              {isDirectFromManufacturer ? (
                 <div className="flex items-center gap-2 mt-1">
                   <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
                     <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
                     خرید بی‌واسطه از تولیدکننده
                   </span>
                 </div>
-              )}
+              ) : sourcePartner.grade ? (
+                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
+                  <span>Grade : {sourcePartner.grade}</span>
+                </div>
+              ) : null}
             </div>
           </div>
           
@@ -632,123 +611,71 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             </div>
           </div>
 
-          {/* کادر اطلاعات تماس و آدرس به تفکیک تولیدکننده و فروشنده */}
+          {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده) */}
           <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs space-y-4">
             <div className="flex items-center gap-2 text-foreground font-bold text-xs sm:text-sm border-b border-border/60 pb-3">
               <Building2 className="w-4 h-4 text-cyan-600" />
-              <span>اطلاعات تماس و آدرس (تولیدکننده و فروشنده)</span>
+              <span>اطلاعات تماس و آدرس</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* بخش تولیدکننده */}
+            <div className={`grid grid-cols-1 gap-4 ${isDirectFromManufacturer ? 'md:grid-cols-2' : ''}`}>
               <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                <div className="flex items-center gap-2 text-indigo-900 font-extrabold text-sm border-b border-border pb-2">
-                  <Factory className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span className="truncate">{partnerLabel}: {mfgPartner ? mfgPartner.name : vendor.name}</span>
+                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${isDirectFromManufacturer ? 'text-indigo-900' : 'text-emerald-900'}`}>
+                  {isDirectFromManufacturer
+                    ? <Factory className="w-4 h-4 text-indigo-600 shrink-0" />
+                    : <Handshake className="w-4 h-4 text-emerald-600 shrink-0" />}
+                  <span className="truncate">{sourcePartner.roleLabel}: {sourcePartner.name}</span>
                 </div>
 
                 <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1">
                   <div className="flex items-start gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                    <span><strong>کشور / شهر:</strong> {(mfgPartner?.country && mfgPartner.country.toLowerCase() !== 'unknown' && mfgPartner.country.toLowerCase() !== 'n/a' && mfgPartner.country !== 'نامشخص' ? mfgPartner.country : (vendor.country && vendor.country.toLowerCase() !== 'unknown' && vendor.country.toLowerCase() !== 'n/a' && vendor.country !== 'نامشخص' ? vendor.country : (getDisplayCountry(vendor) || 'ثبت‌نشده')))}{mfgPartner?.city ? ` - ${mfgPartner.city}` : ''}</span>
+                    <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
                   </div>
 
-                  {(mfgPartner?.address || (!mfgPartner && vendor.contactInfo)) && (
+                  {sourcePartner.address && (
                     <div className="flex items-start gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <span><strong>آدرس:</strong> {mfgPartner?.address || vendor.contactInfo}</span>
+                      <span><strong>آدرس:</strong> {sourcePartner.address}</span>
                     </div>
                   )}
 
-                  {mfgPartner?.contactPerson && (
+                  {sourcePartner.contactPerson && (
                     <div className="flex items-center gap-1.5">
                       <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span><strong>شخص رابط:</strong> {mfgPartner.contactPerson}</span>
+                      <span><strong>شخص رابط:</strong> {sourcePartner.contactPerson}</span>
                     </div>
                   )}
 
-                  {(mfgPartner?.phone || mfgPartner?.email) && (
+                  {(sourcePartner.phone || sourcePartner.email) && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-                      {mfgPartner?.phone && (
+                      {sourcePartner.phone && (
                         <div className="flex items-center gap-1.5">
                           <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{mfgPartner.phone}</span>
+                          <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
                         </div>
                       )}
-                      {mfgPartner?.email && (
+                      {sourcePartner.email && (
                         <div className="flex items-center gap-1.5">
                           <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{mfgPartner.email}</span>
+                          <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {mfgPartner?.website && (
+                  {sourcePartner.website && (
                     <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={mfgPartner.website.startsWith('http') ? mfgPartner.website : `https://${mfgPartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline font-mono text-[11px]">
-                        {mfgPartner.website}
+                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline font-mono text-[11px]">
+                        {sourcePartner.website}
                       </a>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* بخش فروشنده (در صورت وجود) */}
-              {supPartner ? (
-                <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                  <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-sm border-b border-border pb-2">
-                    <Handshake className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span className="truncate">فروشنده: {supPartner.name}</span>
-                  </div>
-
-                  <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1">
-                    <div className="flex items-start gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <span><strong>کشور / شهر:</strong> {(supPartner.country && supPartner.country.toLowerCase() !== 'unknown' && supPartner.country.toLowerCase() !== 'n/a' && supPartner.country !== 'نامشخص' ? supPartner.country : 'ثبت‌نشده')}{supPartner.city ? ` - ${supPartner.city}` : ''}</span>
-                    </div>
-
-                    {supPartner.address && (
-                      <div className="flex items-start gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                        <span><strong>آدرس:</strong> {supPartner.address}</span>
-                      </div>
-                    )}
-
-                    {supPartner.contactPerson && (
-                      <div className="flex items-center gap-1.5">
-                        <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        <span><strong>شخص رابط:</strong> {supPartner.contactPerson}</span>
-                      </div>
-                    )}
-
-                    {(supPartner.phone || supPartner.email) && (
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-                        {supPartner.phone && (
-                          <div className="flex items-center gap-1.5">
-                            <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            <span dir="ltr" className="font-mono">{supPartner.phone}</span>
-                          </div>
-                        )}
-                        {supPartner.email && (
-                          <div className="flex items-center gap-1.5">
-                            <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            <span dir="ltr" className="font-mono">{supPartner.email}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {supPartner.website && (
-                      <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                        <a href={supPartner.website.startsWith('http') ? supPartner.website : `https://${supPartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline font-mono text-[11px]">
-                          {supPartner.website}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
+              {/* Only meaningful when the partner IS the factory: there is no middleman. */}
+              {isDirectFromManufacturer && (
                 <div className="bg-emerald-50/50 border border-emerald-200/80 rounded-xl p-4 flex flex-col justify-center text-right text-emerald-900 text-xs space-y-2 min-h-[120px]">
                   <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
                     <div className="flex items-center gap-1.5 font-bold text-emerald-800">
