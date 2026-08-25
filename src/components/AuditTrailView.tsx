@@ -6,6 +6,7 @@ import {
   RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
   Calculator, Award, TrendingUp, Cpu
 } from 'lucide-react';
+import { FormModal } from './FormModal';
 import { Pagination } from './Pagination';
 import { isLocalMode } from '../services/authFetch';
 import { readLocalAudit } from '../services/localAudit';
@@ -923,28 +924,22 @@ export const AuditTrailView: React.FC = () => {
         )}
       </div>
 
-      {/* DETAIL MODAL */}
-      <div 
-        className={`fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 transition-all duration-300 ${
-          selectedLog ? 'opacity-100 visible' : 'opacity-0 invisible'
-        }`}
-        style={{ direction: 'rtl' }}
+      {/* DETAIL MODAL
+          This used to hand-roll its own `fixed inset-0` overlay, which put it
+          in the wrong place and painted it under the app header: views render
+          inside a motion.div that animates `filter`, and a non-none filter is
+          both a containing block for fixed children and a stacking context, so
+          `inset-0` resolved against the page box and `z-50` was trapped
+          beneath the header. FormModal portals to document.body, so it escapes
+          both — and brings Escape, the focus trap and the scroll lock with it. */}
+      <FormModal
+        open={!!selectedLog}
+        onClose={() => setSelectedLog(null)}
+        size="lg"
+        labelledBy="audit-detail-title"
       >
-        {/* BACKDROP */}
-        <div 
-          onClick={() => setSelectedLog(null)}
-          className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${
-            selectedLog ? 'opacity-100' : 'opacity-0'
-          }`}
-        />
-        
-        {/* MODAL CONTENT */}
-        <div 
-          className={`relative w-full max-w-4xl bg-card rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transition-all duration-300 ${
-            selectedLog ? 'scale-100 translate-y-0 opacity-100' : 'scale-95 translate-y-4 opacity-0'
-          }`}
-        >
-          {selectedLog && (
+        {/* Children are evaluated even while closed, so this guard is required. */}
+        {selectedLog && (
             <>
               {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-muted/50">
@@ -952,7 +947,7 @@ export const AuditTrailView: React.FC = () => {
                 <span className="text-[10px] font-bold font-mono text-muted-foreground bg-slate-200/50 px-2 py-0.5 rounded-md">
                   {selectedLog.id}
                 </span>
-                <h3 className="text-sm font-black text-foreground mt-1">جزئیات ثبت ردیابی تغییرات (Audit)</h3>
+                <h3 id="audit-detail-title" className="text-sm font-black text-foreground mt-1">جزئیات ثبت ردیابی تغییرات (Audit)</h3>
               </div>
               <button 
                 onClick={() => setSelectedLog(null)}
@@ -1417,8 +1412,7 @@ export const AuditTrailView: React.FC = () => {
             </div>
           </>
         )}
-      </div>
-      </div>
+      </FormModal>
     </div>
   );
 };
