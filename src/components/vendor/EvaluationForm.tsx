@@ -48,7 +48,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Only the departments this user may score are rendered — admin gets all four.
-  const visibleFormLayout = FORM_LAYOUT.filter(d => canScoreDepartment(currentUser?.role, d.id));
+  const visibleFormLayout = FORM_LAYOUT.filter(d => canScoreDepartment(currentUser, d.id));
 
   const handleSlider = (deptId: string, critKey: string, val: string) => {
     setScores(prev => ({

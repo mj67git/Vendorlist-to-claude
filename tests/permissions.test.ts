@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   can, canScoreDepartment, canScoreAny, scorableDepartments,
   forbiddenScoreChanges, forbiddenRawScoreChanges,
-  SCORING_DEPARTMENTS, type Permission, type Role,
+  effectivePermissions, hasCustomPermissions, roleTemplate, sanitizePermissions,
+  ALL_PERMISSIONS, SCORING_DEPARTMENTS, type Permission, type Role,
 } from '../src/utils/permissions';
 
 /**
@@ -12,19 +13,13 @@ import {
  * than as a role quietly gaining or losing an ability in production.
  */
 const MATRIX: Record<Role, Permission[]> = {
-  admin: ['vendor.write', 'vendor.delete', 'vendor.analysis', 'vendor.risk',
-          'material.write', 'partner.write', 'audit.read', 'archive.read', 'users.manage'],
-  commercial: ['vendor.write', 'partner.write'],
-  qa: ['vendor.analysis', 'material.write'],
-  planning: [],
-  finance: [],
+  admin: [...ALL_PERMISSIONS],
+  commercial: ['vendor.write', 'partner.write', 'score.commercial'],
+  qa: ['vendor.analysis', 'material.write', 'score.qa'],
+  planning: ['score.planning'],
+  finance: ['score.finance'],
   lab: [],
 };
-
-const ALL_PERMISSIONS: Permission[] = [
-  'vendor.write', 'vendor.delete', 'vendor.analysis', 'vendor.risk',
-  'material.write', 'partner.write', 'audit.read', 'archive.read', 'users.manage',
-];
 
 test('every role holds exactly the permissions in the approved matrix', () => {
   for (const role of Object.keys(MATRIX) as Role[]) {
@@ -56,11 +51,18 @@ test('only admin may delete a source', () => {
   }
 });
 
-test('lab and the score-only roles hold no write permission at all', () => {
-  for (const role of ['lab', 'planning', 'finance'] as Role[]) {
+test('the score-only roles hold nothing beyond their own department', () => {
+  for (const role of ['planning', 'finance'] as Role[]) {
     for (const permission of ALL_PERMISSIONS) {
-      assert.equal(can(role, permission), false, `${role} unexpectedly holds ${permission}`);
+      const expected = permission === `score.${role}`;
+      assert.equal(can(role, permission), expected, `${role} / ${permission}`);
     }
+  }
+});
+
+test('lab holds nothing at all', () => {
+  for (const permission of ALL_PERMISSIONS) {
+    assert.equal(can('lab', permission), false, `lab unexpectedly holds ${permission}`);
   }
 });
 
@@ -94,12 +96,77 @@ test('admin may score on behalf of any department, but only real ones', () => {
   assert.equal(canScoreDepartment('admin', 'nonsense'), false);
 });
 
+// ---- per-user overrides -------------------------------------------------
+
+test('an empty override list means "follow the role"', () => {
+  // This is the state every account was in before overrides existed, so it has
+  // to behave exactly like the role template — no migration needed.
+  for (const permissions of [undefined, null, []]) {
+    const user = { role: 'finance', permissions } as any;
+    assert.deepEqual(effectivePermissions(user), roleTemplate('finance'));
+    assert.equal(hasCustomPermissions(user), false);
+    assert.equal(can(user, 'score.finance'), true);
+    assert.equal(can(user, 'material.write'), false);
+  }
+});
+
+test('an override list can grant beyond the role', () => {
+  const user = { role: 'finance', permissions: ['score.finance', 'material.write'] };
+  assert.equal(can(user, 'material.write'), true, 'granted beyond the finance template');
+  assert.equal(can(user, 'score.finance'), true);
+  assert.equal(hasCustomPermissions(user), true);
+});
+
+test('an override list can take away what the role would have given', () => {
+  const user = { role: 'commercial', permissions: ['score.commercial'] };
+  assert.equal(can(user, 'vendor.write'), false, 'revoked despite the commercial template');
+  assert.equal(can(user, 'partner.write'), false);
+  assert.equal(can(user, 'score.commercial'), true);
+});
+
+test('overrides replace the template rather than adding to it', () => {
+  const user = { role: 'admin', permissions: ['audit.read'] };
+  assert.deepEqual(effectivePermissions(user), ['audit.read']);
+  assert.equal(can(user, 'users.manage'), false, 'an admin can be narrowed');
+});
+
+test('a user may be given more than one department to score', () => {
+  const user = { role: 'finance', permissions: ['score.finance', 'score.planning'] };
+  assert.deepEqual(scorableDepartments(user), ['planning', 'finance']);
+  assert.deepEqual(forbiddenScoreChanges(user, { planning: 1, finance: 1 }, { planning: 9, finance: 9 }), []);
+  assert.deepEqual(forbiddenScoreChanges(user, { qa: 1 }, { qa: 9 }), ['qa']);
+});
+
+test('unrecognised override entries do not lock a user out', () => {
+  // A stale or misspelt name must fall back to the role, not to nothing.
+  const user = { role: 'qa', permissions: ['not.a.permission'] };
+  assert.deepEqual(effectivePermissions(user), roleTemplate('qa'));
+  assert.equal(can(user, 'vendor.analysis'), true);
+
+  // mixed input keeps only what is real
+  const mixed = { role: 'qa', permissions: ['material.write', 'bogus'] };
+  assert.deepEqual(effectivePermissions(mixed), ['material.write']);
+});
+
+test('sanitizePermissions keeps only known names, deduplicated and ordered', () => {
+  assert.deepEqual(sanitizePermissions(['bogus', 'audit.read', 'vendor.write', 'audit.read']),
+    ['vendor.write', 'audit.read']);
+  assert.deepEqual(sanitizePermissions('nonsense' as any), []);
+  assert.deepEqual(sanitizePermissions(null), []);
+});
+
+test('a bare role string still works where only the role is known', () => {
+  assert.equal(can('qa', 'vendor.analysis'), true);
+  assert.equal(canScoreDepartment('qa', 'qa'), true);
+});
+
 test('scorableDepartments matches who may score', () => {
   assert.deepEqual(scorableDepartments('admin'), [...SCORING_DEPARTMENTS]);
   assert.deepEqual(scorableDepartments('finance'), ['finance']);
   assert.deepEqual(scorableDepartments('lab'), []);
   assert.equal(canScoreAny('qa'), true);
   assert.equal(canScoreAny('lab'), false);
+  assert.equal(canScoreAny('planning'), true);
 });
 
 test('a payload that only changes the caller\'s own department is accepted', () => {

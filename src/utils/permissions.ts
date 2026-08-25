@@ -12,6 +12,11 @@
  * The server is still the authority: the UI reads this to decide what to show,
  * the server reads it to decide what to allow. Hiding a button is a courtesy,
  * refusing the request is the control.
+ *
+ * A role is a *template*, not the final word. An admin may tick permissions on
+ * or off for one person, and those overrides are stored on the user record. An
+ * empty override list means "follow the role", which is what every account had
+ * before per-user permissions existed — so nothing needed migrating.
  */
 
 export type Role = 'admin' | 'lab' | 'commercial' | 'qa' | 'planning' | 'finance';
@@ -25,6 +30,12 @@ export type Permission =
   | 'vendor.analysis'
   /** Record or edit the FMEA risk assessment. */
   | 'vendor.risk'
+  /** Score one department's evaluation. One permission per department, so a
+   *  person can be given more than one — which a role alone could not express. */
+  | 'score.commercial'
+  | 'score.qa'
+  | 'score.planning'
+  | 'score.finance'
   /** Create, edit or delete a material in the master repository. */
   | 'material.write'
   /** Create, edit, blacklist or delete a business partner. */
@@ -33,67 +44,141 @@ export type Permission =
   | 'audit.read'
   /** Read the full data archive. */
   | 'archive.read'
-  /** Administer user accounts. */
+  /** Administer user accounts, including their permissions. */
   | 'users.manage';
 
-/**
- * Departments that carry an evaluation score. A role of the same name may edit
- * that department's score and no other — see canScoreDepartment.
- */
+/** Departments that carry an evaluation score. */
 export const SCORING_DEPARTMENTS = ['commercial', 'qa', 'planning', 'finance'] as const;
 export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 
+/** Every permission there is, in the order the admin screen groups them. */
+export const ALL_PERMISSIONS: Permission[] = [
+  'vendor.write', 'vendor.delete',
+  'score.commercial', 'score.qa', 'score.planning', 'score.finance',
+  'vendor.analysis', 'vendor.risk',
+  'material.write', 'partner.write',
+  'archive.read', 'audit.read', 'users.manage',
+];
+
+/** Persian labels, used by the permissions dialog. */
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  'vendor.write': 'ثبت و ویرایش سورس',
+  'vendor.delete': 'حذف سورس',
+  'score.commercial': 'امتیازدهی بازرگانی و خرید',
+  'score.qa': 'امتیازدهی تضمین کیفیت (QA)',
+  'score.planning': 'امتیازدهی برنامه‌ریزی و انبار',
+  'score.finance': 'امتیازدهی مالی و حسابداری',
+  'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
+  'vendor.risk': 'ارزیابی ریسک (FMEA)',
+  'material.write': 'مدیریت مخزن مواد اولیه',
+  'partner.write': 'مدیریت شرکای تجاری',
+  'archive.read': 'آرشیو کامل داده‌ها',
+  'audit.read': 'ردیابی تغییرات (Audit)',
+  'users.manage': 'مدیریت کاربران',
+};
+
+export const PERMISSION_GROUPS: Array<{ title: string; permissions: Permission[] }> = [
+  { title: 'سورس‌ها', permissions: ['vendor.write', 'vendor.delete'] },
+  { title: 'ارزیابی', permissions: ['score.commercial', 'score.qa', 'score.planning', 'score.finance', 'vendor.analysis', 'vendor.risk'] },
+  { title: 'مخازن', permissions: ['material.write', 'partner.write'] },
+  { title: 'مدیریتی', permissions: ['archive.read', 'audit.read', 'users.manage'] },
+];
+
 /**
- * Reading is not restricted: every signed-in user can see the whole vendor
- * list, the repositories and each source's detail page. Only writes are
- * divided, and only the entries listed here are granted.
+ * The default set each role starts from. Reading is not restricted anywhere:
+ * every signed-in user can see the vendor list, the repositories and each
+ * source's detail page. Only writes are divided.
  *
- * `lab` intentionally holds nothing. The role exists in the database enum and
- * no account uses it; risk assessment, which it used to share with qa, is now
- * admin-only. It is left in place because removing it would mean a schema
+ * `lab` intentionally holds nothing. It exists in the database enum, no account
+ * uses it, and it is left alone because removing it would mean a schema
  * migration for a role nobody has.
  */
-const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  admin: [
-    'vendor.write', 'vendor.delete', 'vendor.analysis', 'vendor.risk',
-    'material.write', 'partner.write',
-    'audit.read', 'archive.read', 'users.manage',
-  ],
-  commercial: ['vendor.write', 'partner.write'],
-  qa: ['vendor.analysis', 'material.write'],
-  planning: [],
-  finance: [],
+const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
+  admin: ALL_PERMISSIONS,
+  commercial: ['vendor.write', 'partner.write', 'score.commercial'],
+  qa: ['vendor.analysis', 'material.write', 'score.qa'],
+  planning: ['score.planning'],
+  finance: ['score.finance'],
   lab: [],
 };
 
-/** Does this role hold this permission? Unknown roles hold nothing. */
-export function can(role: string | undefined | null, permission: Permission): boolean {
-  if (!role) return false;
-  const granted = ROLE_PERMISSIONS[role as Role];
-  return !!granted && granted.includes(permission);
+/** What a role grants before any per-user adjustment. */
+export function roleTemplate(role: string | undefined | null): Permission[] {
+  if (!role) return [];
+  return [...(ROLE_TEMPLATES[role as Role] ?? [])];
+}
+
+/** The shape `can()` needs: a role, plus optional per-user overrides. */
+export interface PermissionSubject {
+  role?: string | null;
+  permissions?: unknown;
+}
+
+function parseOverrides(raw: unknown): Permission[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const known = raw.filter((p): p is Permission =>
+    typeof p === 'string' && (ALL_PERMISSIONS as string[]).includes(p));
+  // An override list of only unrecognised entries is treated as no override
+  // rather than as "nothing allowed", so a stale name cannot silently lock a
+  // user out of everything.
+  return known.length > 0 ? known : null;
+}
+
+/** True when this user's access has been adjusted away from their role. */
+export function hasCustomPermissions(subject: PermissionSubject | null | undefined): boolean {
+  return !!subject && parseOverrides(subject.permissions) !== null;
 }
 
 /**
- * May this role write the score of this department?
- *
- * An admin may score on behalf of any department. Everyone else may only touch
- * the one that matches their own role, which is what keeps a finance user from
- * writing the QA score in the same request that carries their own.
+ * The permissions actually in force: the per-user list when one is set,
+ * otherwise the role's template.
  */
-export function canScoreDepartment(role: string | undefined | null, department: string): boolean {
-  if (!role) return false;
-  if (role === 'admin') return (SCORING_DEPARTMENTS as readonly string[]).includes(department);
-  return role === department && (SCORING_DEPARTMENTS as readonly string[]).includes(department);
+export function effectivePermissions(subject: PermissionSubject | null | undefined): Permission[] {
+  if (!subject) return [];
+  return parseOverrides(subject.permissions) ?? roleTemplate(subject.role);
 }
 
-/** Departments this role may score — drives which sections the forms render. */
-export function scorableDepartments(role: string | undefined | null): ScoringDepartment[] {
-  return SCORING_DEPARTMENTS.filter(d => canScoreDepartment(role, d));
+/**
+ * Does this user hold this permission?
+ *
+ * Accepts the user rather than a bare role, because a role is only the default
+ * now. Passing a plain role string still works for the places that genuinely
+ * only know the role.
+ */
+export function can(
+  subject: PermissionSubject | string | undefined | null,
+  permission: Permission,
+): boolean {
+  if (!subject) return false;
+  const resolved: PermissionSubject = typeof subject === 'string' ? { role: subject } : subject;
+  return effectivePermissions(resolved).includes(permission);
 }
 
-/** True when the role may write at least one department's score. */
-export function canScoreAny(role: string | undefined | null): boolean {
-  return scorableDepartments(role).length > 0;
+/** May this user write the score of this department? */
+export function canScoreDepartment(
+  subject: PermissionSubject | string | undefined | null,
+  department: string,
+): boolean {
+  if (!(SCORING_DEPARTMENTS as readonly string[]).includes(department)) return false;
+  return can(subject, `score.${department}` as Permission);
+}
+
+/** Departments this user may score — drives which sections the forms render. */
+export function scorableDepartments(
+  subject: PermissionSubject | string | undefined | null,
+): ScoringDepartment[] {
+  return SCORING_DEPARTMENTS.filter(d => canScoreDepartment(subject, d));
+}
+
+/** True when the user may write at least one department's score. */
+export function canScoreAny(subject: PermissionSubject | string | undefined | null): boolean {
+  return scorableDepartments(subject).length > 0;
+}
+
+/** Keep only the recognised permissions from arbitrary input, without duplicates. */
+export function sanitizePermissions(raw: unknown): Permission[] {
+  if (!Array.isArray(raw)) return [];
+  return ALL_PERMISSIONS.filter(p => raw.includes(p));
 }
 
 /**
@@ -103,11 +188,9 @@ export function canScoreAny(role: string | undefined | null): boolean {
  * The scores endpoint replaces the whole object rather than patching one field,
  * so an allow/deny check on the route is not enough on its own: without this a
  * permitted caller could carry someone else's department along in the payload.
- * Values are compared loosely because they arrive as numbers or numeric
- * strings depending on the form.
  */
 export function forbiddenScoreChanges(
-  role: string | undefined | null,
+  subject: PermissionSubject | string | undefined | null,
   previous: Record<string, unknown> | null | undefined,
   next: Record<string, unknown> | null | undefined,
 ): string[] {
@@ -117,7 +200,7 @@ export function forbiddenScoreChanges(
 
   for (const department of Object.keys(next)) {
     const changed = normalizeScore(next[department]) !== normalizeScore((before as any)[department]);
-    if (changed && !canScoreDepartment(role, department)) offending.push(department);
+    if (changed && !canScoreDepartment(subject, department)) offending.push(department);
   }
   return offending;
 }
@@ -140,7 +223,7 @@ function normalizeScore(value: unknown): string {
  * (department -> question -> value).
  */
 export function forbiddenRawScoreChanges(
-  role: string | undefined | null,
+  subject: PermissionSubject | string | undefined | null,
   previous: Record<string, unknown> | null | undefined,
   next: Record<string, unknown> | null | undefined,
 ): string[] {
@@ -150,7 +233,7 @@ export function forbiddenRawScoreChanges(
 
   for (const department of Object.keys(next)) {
     const changed = JSON.stringify(next[department] ?? null) !== JSON.stringify((before as any)[department] ?? null);
-    if (changed && !canScoreDepartment(role, department)) offending.push(department);
+    if (changed && !canScoreDepartment(subject, department)) offending.push(department);
   }
   return offending;
 }

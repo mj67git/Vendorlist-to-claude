@@ -375,7 +375,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             </select>
           </div>
 
-          {can(currentUser?.role, 'material.write') && (
+          {can(currentUser, 'material.write') && (
             <button
               onClick={handleOpenAdd}
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
@@ -467,7 +467,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        {can(currentUser?.role, 'material.write') && (
+                        {can(currentUser, 'material.write') && (
                           <button 
                             onClick={() => handleDelete(material)} 
                             className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-100" 

@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle, CheckCircle, KeyRound, Loader2, Pencil, Plus, Search,
-  ShieldCheck, Trash2, UserCog, UserX, Users as UsersIcon,
+  ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX, Users as UsersIcon,
 } from 'lucide-react';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { Role, User } from '../types';
+import {
+  ALL_PERMISSIONS, PERMISSION_GROUPS, PERMISSION_LABELS,
+  roleTemplate, type Permission,
+} from '../utils/permissions';
 
 /**
  * Administration of the user accounts.
@@ -24,6 +28,10 @@ export interface ManagedUser {
   isActive: boolean;
   mustChangePassword: boolean;
   lastLoginAt: string | null;
+  /** Per-user overrides. Empty means "follow the role". */
+  permissions: Permission[];
+  /** What is actually in force — overrides when set, otherwise the template. */
+  effectivePermissions: Permission[];
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -70,6 +78,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [resetTarget, setResetTarget] = useState<ManagedUser | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
+
+  const [permTarget, setPermTarget] = useState<ManagedUser | null>(null);
+  const [permDraft, setPermDraft] = useState<Permission[]>([]);
+  const [permError, setPermError] = useState<string | null>(null);
+  const [permSaving, setPermSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -216,6 +229,37 @@ export function UsersView({ currentUser }: UsersViewProps) {
       .catch(err => setResetError(err.message));
   };
 
+  const openPermissions = (u: ManagedUser) => {
+    setPermTarget(u);
+    setPermDraft([...u.effectivePermissions]);
+    setPermError(null);
+  };
+
+  const togglePermission = (permission: Permission) => {
+    setPermDraft(prev => prev.includes(permission)
+      ? prev.filter(p => p !== permission)
+      : ALL_PERMISSIONS.filter(p => p === permission || prev.includes(p)));
+  };
+
+  const savePermissions = () => {
+    if (!permTarget) return;
+    setPermError(null);
+    setPermSaving(true);
+    authFetch(`/api/users/${encodeURIComponent(permTarget.username)}/permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions: permDraft }),
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'ذخیرهٔ سطح دسترسی ناموفق بود.');
+        setPermTarget(null);
+        flash(`سطح دسترسی «${permTarget.name}» به‌روزرسانی شد.`);
+        loadUsers();
+      })
+      .catch(err => setPermError(err.message))
+      .finally(() => setPermSaving(false));
+  };
+
   const confirmDelete = () => {
     if (!deleteTarget) return;
     setActionError(null);
@@ -340,6 +384,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       {u.role === 'admin' && <ShieldCheck className="w-3 h-3" />}
                       {ROLE_LABELS[u.role] || u.role}
                     </span>
+                    {u.permissions.length > 0 && (
+                      <span title="سطح دسترسی این کاربر دستی تنظیم شده و از الگوی نقش پیروی نمی‌کند"
+                        className="mr-1.5 inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
+                        سفارشی
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-col gap-1">
@@ -361,6 +411,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       <button type="button" title="ویرایش" onClick={() => openEdit(u)}
                         className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
                         <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" title="سطح دسترسی"
+                        onClick={() => openPermissions(u)}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
                       </button>
                       <button type="button" title="بازنشانی کلمه عبور"
                         onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
@@ -451,6 +506,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
               >
                 {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
+              {editing && editing.permissions.length > 0 && draft.role !== editing.role && (
+                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                  با تغییر سمت، دسترسی‌های سفارشی این کاربر پاک می‌شود و الگوی سمت جدید اعمال می‌گردد.
+                </p>
+              )}
               {editing && editing.role === 'admin' && activeAdmins <= 1 && (
                 <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   این تنها مدیر فعال سامانه است و سمت او قابل تغییر نیست.
@@ -527,6 +587,82 @@ export function UsersView({ currentUser }: UsersViewProps) {
               </button>
             </div>
           </form>
+        )}
+      </FormModal>
+
+      {/* PERMISSIONS */}
+      <FormModal open={!!permTarget} onClose={() => setPermTarget(null)} size="md" labelledBy="users-perm-title">
+        {permTarget && (
+          <div className="flex flex-col max-h-full">
+            <div className="px-6 py-4 border-b border-border bg-muted/50">
+              <h3 id="users-perm-title" className="text-sm font-black text-foreground">
+                سطح دسترسی «{permTarget.name}»
+              </h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                سمت سازمانی ({ROLE_LABELS[permTarget.role] || permTarget.role}) الگوی پیش‌فرض را تعیین می‌کند؛ در اینجا می‌توانید برای همین کاربر استثنا بگذارید.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {permError && (
+                <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{permError}</span>
+                </div>
+              )}
+
+              {PERMISSION_GROUPS.map(group => (
+                <div key={group.title} className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-muted-foreground block border-b border-border/60 pb-1.5">{group.title}</span>
+                  {group.permissions.map(permission => {
+                    const inTemplate = roleTemplate(permTarget.role).includes(permission);
+                    const checked = permDraft.includes(permission);
+                    return (
+                      <label key={permission}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors cursor-pointer">
+                        <span className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => togglePermission(permission)}
+                            className="w-4 h-4 accent-primary cursor-pointer"
+                          />
+                          <span className="text-xs font-semibold text-foreground">{PERMISSION_LABELS[permission]}</span>
+                        </span>
+                        {inTemplate !== checked && (
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                            checked
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
+                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
+                          }`}>
+                            {checked ? 'افزوده به سمت' : 'سلب‌شده از سمت'}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-between gap-2 shrink-0">
+              <button type="button" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
+                className="px-3 py-2 rounded-xl text-[11px] font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                بازگشت به پیش‌فرض سمت
+              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPermTarget(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                  انصراف
+                </button>
+                <button type="button" onClick={savePermissions} disabled={permSaving}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 flex items-center gap-2">
+                  {permSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  ذخیره سطح دسترسی
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </FormModal>
 

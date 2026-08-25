@@ -1114,7 +1114,7 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      if (can(currentUser?.role, 'archive.read')) {
+      if (can(currentUser, 'archive.read')) {
         keyName = 'archive';
         content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
       } else {
@@ -1150,7 +1150,7 @@ export default function App() {
       );
     } else if (view === 'audit-trail') {
 
-      if (can(currentUser?.role, 'audit.read')) {
+      if (can(currentUser, 'audit.read')) {
         keyName = 'audit-trail';
         content = <AuditTrailView />;
       } else {
@@ -1174,7 +1174,7 @@ export default function App() {
         );
       }
     } else if (view === 'users') {
-      if (can(currentUser?.role, 'users.manage')) {
+      if (can(currentUser, 'users.manage')) {
         keyName = 'users';
         content = <UsersView currentUser={currentUser} />;
       } else {

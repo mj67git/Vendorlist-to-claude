@@ -8,8 +8,11 @@ import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import {
   can,
+  effectivePermissions,
   forbiddenScoreChanges,
   forbiddenRawScoreChanges,
+  sanitizePermissions,
+  roleTemplate,
   type Permission,
 } from "./src/utils/permissions.js";
 import { 
@@ -913,14 +916,61 @@ async function checkAdminSafety(
  * policy table that the UI reads too. The UI hides what a role cannot do; this
  * is what actually prevents it — a hidden button is still a reachable endpoint.
  */
+/**
+ * Refuse a permission change that would leave nobody able to administer users.
+ *
+ * `users.manage` is the way back in: strip it from the last account that holds
+ * it and the only remaining route to user management is the database.
+ */
+async function checkPermissionSafety(
+  actor: { username: string },
+  targetUsername: string,
+  nextPermissions: Permission[],
+): Promise<string | null> {
+  const target = targetUsername.toLowerCase();
+  const keepsAdmin = nextPermissions.includes("users.manage");
+  if (keepsAdmin) return null;
+
+  if (actor.username.toLowerCase() === target) {
+    return "برداشتن دسترسی «مدیریت کاربران» از حساب خودتان امکان‌پذیر نیست.";
+  }
+
+  const current = await getUserByUsername(target);
+  if (!current || current.isActive === false) return null;
+  if (!can(current, "users.manage")) return null;
+
+  const others = (await getAllUsers()).filter(
+    u => u.username.toLowerCase() !== target && u.isActive !== false && can(u, "users.manage"),
+  );
+  if (others.length === 0) {
+    return "این تنها حساب دارای دسترسی «مدیریت کاربران» است؛ ابتدا این دسترسی را به کاربر دیگری بدهید.";
+  }
+  return null;
+}
+
 function requirePermission(permission: Permission) {
-  return function (req: any, res: any, next: any) {
-    if (!can(req.user?.role, permission)) {
-      return res.status(403).json({
-        error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
-      });
+  return async function (req: any, res: any, next: any) {
+    // The account is loaded rather than read off the token. The token lives for
+    // seven days and carries only the role, so an admin's change to someone's
+    // permissions would not take effect until it expired — which would defeat
+    // the point of being able to change them. This is one primary-key lookup on
+    // write requests; reads do not go through here.
+    try {
+      const account = await getUserByUsername(req.user?.username || "");
+      if (!account || account.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      if (!can(account, permission)) {
+        return res.status(403).json({
+          error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
+        });
+      }
+      req.account = account;
+      next();
+    } catch (err: any) {
+      console.error("Permission check failed:", err);
+      return res.status(500).json({ error: "بررسی سطح دسترسی با خطا مواجه شد." });
     }
-    next();
   };
 }
 
@@ -1133,6 +1183,8 @@ async function startServer() {
         username: matchedUser.username,
         role: matchedUser.role,
         name: matchedUser.name,
+        // The effective list, so the UI gates on exactly what the server will.
+        permissions: effectivePermissions(matchedUser),
         mustChangePassword
       }
     });
@@ -1251,6 +1303,7 @@ async function startServer() {
         username: matchedUser.username,
         role: matchedUser.role,
         name: matchedUser.name,
+        permissions: effectivePermissions(matchedUser),
         mustChangePassword: false
       }
     });
@@ -1279,6 +1332,7 @@ async function startServer() {
         username: matchedUser.username,
         role: matchedUser.role,
         name: matchedUser.name,
+        permissions: effectivePermissions(matchedUser),
         mustChangePassword: matchedUser.mustChangePassword !== false
       }
     });
@@ -1687,9 +1741,13 @@ async function startServer() {
       // scores object rather than patching one field, so a caller entitled to
       // send it could carry another department's score along in the payload.
       // Compare against what is stored and refuse anything they may not touch.
+      const scorer = await getUserByUsername(req.user?.username || "");
+      if (!scorer || scorer.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
       const offending = [
-        ...forbiddenScoreChanges(req.user?.role, current.scores as any, s.scores as any),
-        ...forbiddenRawScoreChanges(req.user?.role, current.rawScores as any, s.rawScores as any),
+        ...forbiddenScoreChanges(scorer, current.scores as any, s.scores as any),
+        ...forbiddenRawScoreChanges(scorer, current.rawScores as any, s.rawScores as any),
       ];
       if (offending.length > 0) {
         const unique = [...new Set(offending)].join('، ');
@@ -2473,7 +2531,8 @@ async function startServer() {
         username: u.username,
         name: u.name,
         role: u.role,
-        permissions: u.permissions || [],
+        permissions: sanitizePermissions(u.permissions),
+        effectivePermissions: effectivePermissions(u),
         mustChangePassword: u.mustChangePassword !== false,
         isActive: u.isActive !== false,
         lastLoginAt: u.lastLoginAt || null
@@ -2569,9 +2628,19 @@ async function startServer() {
       if (unsafe) return res.status(400).json({ error: unsafe });
 
       if (name) current.name = name;
-      if (role) current.role = role;
-      if (permissions) current.permissions = permissions;
       if (typeof isActive === "boolean") current.isActive = isActive;
+
+      const roleChanged = !!role && role !== current.role;
+      if (role) current.role = role;
+
+      if (permissions) {
+        current.permissions = sanitizePermissions(permissions);
+      } else if (roleChanged) {
+        // Moving someone to a new role clears their old exceptions. Carrying
+        // them across would silently follow a person into a different job —
+        // the new role's template is the honest starting point.
+        current.permissions = [];
+      }
 
       await requirePrisma().user.update({
         where: { username: targetUsername },
@@ -2607,7 +2676,16 @@ async function startServer() {
         afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
       });
 
-      res.json({ success: true, user: { username: current.username, name: current.name, role: current.role, permissions: current.permissions, isActive: current.isActive !== false } });
+      res.json({
+        success: true,
+        permissionsReset: roleChanged && !permissions,
+        user: {
+          username: current.username, name: current.name, role: current.role,
+          permissions: sanitizePermissions(current.permissions),
+          effectivePermissions: effectivePermissions(current),
+          isActive: current.isActive !== false,
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2780,15 +2858,24 @@ async function startServer() {
       }
 
       const { permissions, reasonForChange } = req.body;
-      if (!permissions) {
-        return res.status(400).json({ error: "فیلد permissions الزامی است" });
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
       }
 
-      const oldPermissions = current.permissions || [];
-      current.permissions = permissions;
+      // Unknown names are dropped rather than stored, so a typo cannot end up
+      // as a permission nobody can see in the dialog but that sits in the row.
+      const cleaned = sanitizePermissions(permissions);
+
+      // Same lockout class as role changes: nobody may strip the last account
+      // that can still administer users, and nobody may strip their own.
+      const unsafe = await checkPermissionSafety(req.user, targetUsername, cleaned);
+      if (unsafe) return res.status(400).json({ error: unsafe });
+
+      const oldPermissions = sanitizePermissions(current.permissions);
+      current.permissions = cleaned;
       await requirePrisma().user.update({
         where: { username: targetUsername },
-        data: { permissions },
+        data: { permissions: cleaned },
       });
 
       const now = new Date();
@@ -2811,10 +2898,10 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "تغییر اختیارات فرآیندی در ماژول‌های سامانه",
         beforeData: { permissions: oldPermissions },
-        afterData: { permissions, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { permissions: cleaned, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
       });
 
-      res.json({ success: true, permissions });
+      res.json({ success: true, permissions: cleaned });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

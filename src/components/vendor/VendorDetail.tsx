@@ -14,7 +14,7 @@ import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
-import { can, canScoreDepartment } from '../../utils/permissions';
+import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -29,10 +29,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
   // Only the stages the current user is allowed to perform are shown.
-  const canRisk = can(currentUser?.role, 'vendor.risk');
-  const canAnalysis = can(currentUser?.role, 'vendor.analysis');
-  const canEditVendor = can(currentUser?.role, 'vendor.write');
-  const canDeleteVendor = can(currentUser?.role, 'vendor.delete');
+  const canRisk = can(currentUser, 'vendor.risk');
+  const canAnalysis = can(currentUser, 'vendor.analysis');
+  const canEditVendor = can(currentUser, 'vendor.write');
+  const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
     ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
     ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
@@ -325,8 +325,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
-  if (currentUser && currentUser.role !== 'admin' && canScoreDepartment(currentUser.role, currentUser.role)) {
-    displayedScore = (vendor.scores as any)?.[currentUser.role] ?? null;
+  // Someone responsible for a single department sees that department's score
+  // rather than the weighted total. With per-user permissions a person can now
+  // hold more than one, and then the overall figure is the meaningful one.
+  const myDepartments = scorableDepartments(currentUser);
+  if (currentUser && myDepartments.length === 1 && !can(currentUser, 'archive.read')) {
+    displayedScore = (vendor.scores as any)?.[myDepartments[0]] ?? null;
   }
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
@@ -967,7 +971,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       if (deptScore === undefined || deptScore === null) return null;
                       
                       // Only the department a user may score is shown to them.
-                      if (!canScoreDepartment(currentUser?.role, layout.id)) return null;
+                      if (!canScoreDepartment(currentUser, layout.id)) return null;
                       
                       return (
                         <ScoreCard 

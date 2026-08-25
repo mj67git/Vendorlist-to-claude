@@ -7,6 +7,10 @@ export interface User {
   username: string;
   role: Role;
   name: string;
+  /** Effective permissions from the server: the per-user overrides when set,
+   *  otherwise the role's template. Absent for sessions restored from an older
+   *  cache, in which case the role template applies. */
+  permissions?: string[];
   mustChangePassword?: boolean;
 }
 

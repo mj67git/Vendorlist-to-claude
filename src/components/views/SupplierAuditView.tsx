@@ -403,7 +403,7 @@ import { canScoreDepartment } from '../../utils/permissions';
                  { id: 'qa', name: 'کیفیت', avg: stats.deptAverages.qa, icon: Microscope, color: 'bg-emerald-600' },
                  { id: 'planning', name: 'برنامه‌ریزی و انبار', avg: stats.deptAverages.planning, icon: Warehouse, color: 'bg-violet-600' },
                  { id: 'finance', name: 'مالی', avg: stats.deptAverages.finance, icon: Coins, color: 'bg-amber-600' }
-               ].filter(dept => canScoreDepartment(currentUser?.role, dept.id)).map((dept) => (
+               ].filter(dept => canScoreDepartment(currentUser, dept.id)).map((dept) => (
                  <div key={dept.id} className="bg-muted border border-border rounded-xl p-4 flex flex-col justify-between hover:shadow-md hover:border-border transition-all">
                    <div>
                      <div className="flex items-center justify-between text-foreground font-bold text-sm mb-4">

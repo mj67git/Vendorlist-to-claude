@@ -98,7 +98,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!can(currentUser?.role, 'vendor.risk')) {
+    if (!can(currentUser, 'vendor.risk')) {
       alert('شما دسترسی ثبت ارزیابی ریسک را ندارید.');
       return;
     }
