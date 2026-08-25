@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInBlacklistCategory } from './vendorState';
+import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 
 /**
  * Calculates the overall evaluation score for a vendor.
@@ -111,46 +112,6 @@ function getDeviationsSummary(vendor: Vendor): string {
   return `دارای سوابق: ${parts.join(' | ')}`;
 }
 
-function getPartnerDetails(v: Vendor, partners: BusinessPartner[] = []) {
-  let mfgPartner = partners.find(p => p.id === v.manufacturerId);
-  let supPartner = partners.find(p => p.id === v.supplierId);
-
-  const matchedPartner = partners.find(p => p.name.trim().toLowerCase() === v.name.trim().toLowerCase());
-  if (matchedPartner) {
-    if (matchedPartner.type === 'Supplier') {
-      if (!supPartner) supPartner = matchedPartner;
-      if (!mfgPartner && matchedPartner.manufacturerId) {
-        mfgPartner = partners.find(p => p.id === matchedPartner.manufacturerId);
-      }
-    } else if (matchedPartner.type === 'Manufacturer') {
-      if (!mfgPartner) mfgPartner = matchedPartner;
-    }
-  }
-
-  // Manufacturer Name
-  const mfgName = mfgPartner ? mfgPartner.name : v.name;
-
-  // Manufacturer Address / Contact
-  let mfgContact = '';
-  if (mfgPartner) {
-    const parts = [mfgPartner.country, mfgPartner.address, mfgPartner.phone, mfgPartner.email].filter(Boolean);
-    mfgContact = parts.length > 0 ? parts.join(' - ') : (mfgPartner.country || 'نامشخص');
-  } else {
-    mfgContact = v.contactInfo || (v.country && v.country !== 'نامشخص' ? v.country : 'ثبت‌نشده');
-  }
-
-  // Supplier Name & Address / Contact
-  let supName = 'خرید بی‌واسطه از تولیدکننده';
-  let supContact = 'مستقیم از کارخانه سازنده';
-
-  if (supPartner) {
-    supName = supPartner.name;
-    const parts = [supPartner.country, supPartner.address, supPartner.phone, supPartner.email].filter(Boolean);
-    supContact = parts.length > 0 ? parts.join(' - ') : (supPartner.country || 'نامشخص');
-  }
-
-  return { mfgName, mfgContact, supName, supContact };
-}
 
 /**
  * Exports targeted database categories to beautifully-styled Microsoft Excel files.
@@ -188,10 +149,9 @@ export function buildCategoryWorksheet(
     'نام استاندارد انگلیسی',
     'کد IRC',
     'تاریخ صدور/ثبت کالا',
-    'تولید کننده',
-    'آدرس تولید کننده',
-    'فروشنده',
-    'آدرس فروشنده',
+    'تأمین‌کننده',
+    'نوع تأمین‌کننده',
+    'آدرس و اطلاعات تماس',
     'امتیاز ارزیابی کل (از ۱۰۰)',
     'سطح ریسک کیفی',
     'کد QC',
@@ -252,7 +212,7 @@ export function buildCategoryWorksheet(
     const uniqueQcCodes = Array.from(new Set(qcCodesList));
     const qcCodesStr = uniqueQcCodes.length > 0 ? uniqueQcCodes.join(' | ') : 'ثبت‌نشده';
 
-    const partnerInfo = getPartnerDetails(v, partners);
+    const partnerInfo = resolveVendorPartner(v, partners);
 
     // Fill in the IRC/registration date from lastAudit (which holds IRC Issue Date) or registrationDate
     const registrationDateStr = v.lastAudit || v.registrationDate || 'ثبت‌نشده';
@@ -268,10 +228,9 @@ export function buildCategoryWorksheet(
       standardNameEnStr,
       v.irc || 'N/A',
       registrationDateStr,
-      partnerInfo.mfgName,
-      partnerInfo.mfgContact,
-      partnerInfo.supName,
-      partnerInfo.supContact,
+      partnerInfo.name,
+      partnerInfo.roleLabel,
+      formatContactLine(partnerInfo),
       scoreStr,
       riskText,
       qcCodesStr,
@@ -444,14 +403,13 @@ export function buildCategoryWorksheet(
     { wch: 25 },  // Standard Name En (7)
     { wch: 15 },  // IRC Code (8)
     { wch: 18 },  // IRC / Registration Date (9)
-    { wch: 28 },  // Manufacturer Name (10)
-    { wch: 38 },  // Manufacturer Address (11)
-    { wch: 28 },  // Supplier Name (12)
-    { wch: 38 },  // Supplier Address (13)
-    { wch: 18 },  // Overall Score (14)
-    { wch: 15 },  // Risk Level (15)
-    { wch: 22 },  // QC Code Column width (16)
-    { wch: 58 },  // Deviations summary (17)
+    { wch: 30 },  // Partner Name (10)
+    { wch: 14 },  // Partner Role (11)
+    { wch: 48 },  // Partner Address / contact (12)
+    { wch: 18 },  // Overall Score (13)
+    { wch: 15 },  // Risk Level (14)
+    { wch: 22 },  // QC Code Column width (15)
+    { wch: 58 },  // Deviations summary (16)
   ];
 
   // Set page margins / right-to-left layout indicator in sheet view
