@@ -6,6 +6,12 @@ import { createServer as createViteServer } from "vite";
 import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
+import {
+  can,
+  forbiddenScoreChanges,
+  forbiddenRawScoreChanges,
+  type Permission,
+} from "./src/utils/permissions.js";
 import { 
   vendorSchema,
   vendorProfileSchema,
@@ -902,6 +908,22 @@ async function checkAdminSafety(
   return null;
 }
 
+/**
+ * Restrict a route to the roles holding a permission, read from the shared
+ * policy table that the UI reads too. The UI hides what a role cannot do; this
+ * is what actually prevents it — a hidden button is still a reachable endpoint.
+ */
+function requirePermission(permission: Permission) {
+  return function (req: any, res: any, next: any) {
+    if (!can(req.user?.role, permission)) {
+      return res.status(403).json({
+        error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
+      });
+    }
+    next();
+  };
+}
+
 function requireRole(...roles: string[]) {
   return function (req: any, res: any, next: any) {
     if (!req.user || !roles.includes(req.user.role)) {
@@ -1344,7 +1366,7 @@ async function startServer() {
   });
 
   // Create or Update single vendor (Unified Database)
-  app.post("/api/vendors", requireAuth, async (req: any, res) => {
+  app.post("/api/vendors", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
     try {
       const validationResult = vendorSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -1498,7 +1520,7 @@ async function startServer() {
   });
 
   // Update vendor profile (Unified Database)
-  app.patch("/api/vendors/:id/profile", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1573,7 +1595,7 @@ async function startServer() {
   });
 
   // Update vendor contact details (Unified Database)
-  app.patch("/api/vendors/:id/contact", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1660,6 +1682,21 @@ async function startServer() {
         return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
       }
       const s = validationResult.data;
+
+      // A simple allow/deny on this route is not enough. It replaces the whole
+      // scores object rather than patching one field, so a caller entitled to
+      // send it could carry another department's score along in the payload.
+      // Compare against what is stored and refuse anything they may not touch.
+      const offending = [
+        ...forbiddenScoreChanges(req.user?.role, current.scores as any, s.scores as any),
+        ...forbiddenRawScoreChanges(req.user?.role, current.rawScores as any, s.rawScores as any),
+      ];
+      if (offending.length > 0) {
+        const unique = [...new Set(offending)].join('، ');
+        return res.status(403).json({
+          error: `عدم دسترسی: شما تنها مجاز به ثبت امتیاز دپارتمان خود هستید (تلاش برای تغییر: ${unique}).`,
+        });
+      }
 
       const allVendorsBefore = await getVendorsList();
       const prevRank = getVendorRank(id, allVendorsBefore);
@@ -1797,7 +1834,7 @@ async function startServer() {
   });
 
   // Update vendor activity logs (Unified Database)
-  app.patch("/api/vendors/:id/logs", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1823,7 +1860,7 @@ async function startServer() {
   });
 
   // Update vendor analysis records & logs (Unified Database)
-  app.patch("/api/vendors/:id/analysis", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/analysis", requireAuth, requirePermission("vendor.analysis"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2099,7 +2136,7 @@ async function startServer() {
   });
 
   // Update vendor risk assessment (Unified Database)
-  app.patch("/api/vendors/:id/risk", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/risk", requireAuth, requirePermission("vendor.risk"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2236,7 +2273,7 @@ async function startServer() {
   });
 
   // Delete vendor (Unified Database)
-  app.delete("/api/vendors/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/vendors/:id", requireAuth, requirePermission("vendor.delete"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2797,7 +2834,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/materials", requireAuth, async (req: any, res) => {
+  app.post("/api/materials", requireAuth, requirePermission("material.write"), async (req: any, res) => {
     try {
       const b = req.body;
       const reasonForChange = b.reasonForChange;
@@ -2847,7 +2884,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/materials/:id", requireAuth, async (req: any, res) => {
+  app.patch("/api/materials/:id", requireAuth, requirePermission("material.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const b = req.body;
@@ -2906,7 +2943,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/materials/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/materials/:id", requireAuth, requirePermission("material.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
@@ -2977,7 +3014,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/materials/:id/status", requireAuth, async (req: any, res) => {
+  app.put("/api/materials/:id/status", requireAuth, requirePermission("material.write"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
@@ -3085,7 +3122,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/business-partners", requireAuth, async (req: any, res) => {
+  app.post("/api/business-partners", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const partner = req.body;
@@ -3127,7 +3164,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+  app.put("/api/business-partners/:id", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
@@ -3166,7 +3203,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;

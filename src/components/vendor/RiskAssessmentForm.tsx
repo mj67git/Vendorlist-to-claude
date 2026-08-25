@@ -3,6 +3,7 @@ import { CheckCircle, ShieldAlert, X } from 'lucide-react';
 import { RiskAssessmentData, User, Vendor } from '../../types';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
+import { can } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -97,7 +98,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentUser?.role !== 'qa' && currentUser?.role !== 'lab' && currentUser?.role !== 'admin') {
+    if (!can(currentUser?.role, 'vendor.risk')) {
       alert('شما دسترسی ثبت ارزیابی ریسک را ندارید.');
       return;
     }

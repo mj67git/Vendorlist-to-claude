@@ -21,6 +21,7 @@ import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './ut
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { AuditTrailView } from './components/AuditTrailView';
 import { UsersView } from './components/UsersView';
+import { can } from './utils/permissions';
 import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
@@ -1113,7 +1114,7 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      if (currentUser?.role === 'admin') {
+      if (can(currentUser?.role, 'archive.read')) {
         keyName = 'archive';
         content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
       } else {
@@ -1149,7 +1150,7 @@ export default function App() {
       );
     } else if (view === 'audit-trail') {
 
-      if (currentUser?.role === 'admin') {
+      if (can(currentUser?.role, 'audit.read')) {
         keyName = 'audit-trail';
         content = <AuditTrailView />;
       } else {
@@ -1173,7 +1174,7 @@ export default function App() {
         );
       }
     } else if (view === 'users') {
-      if (currentUser?.role === 'admin') {
+      if (can(currentUser?.role, 'users.manage')) {
         keyName = 'users';
         content = <UsersView currentUser={currentUser} />;
       } else {

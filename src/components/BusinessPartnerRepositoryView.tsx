@@ -31,6 +31,7 @@ import {
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
 import { openDocumentPreview } from '../utils/documentPreview';
+import { can } from '../utils/permissions';
 
 interface Props {
   partners: BusinessPartner[];
@@ -712,13 +713,15 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <Download className="w-4 h-4" />
               <span>خروجی اکسل شرکا (XLSX)</span>
             </button>
-            <button
-              onClick={handleOpenAdd}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
-            >
-              <Plus className="w-4 h-4" />
-              <span>ثبت شریک تجاری جدید</span>
-            </button>
+            {can(currentUser?.role, 'partner.write') && (
+              <button
+                onClick={handleOpenAdd}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
+              >
+                <Plus className="w-4 h-4" />
+                <span>ثبت شریک تجاری جدید</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1068,7 +1071,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          {currentUser?.role === 'admin' && (
+                          {can(currentUser?.role, 'partner.write') && (
                             <button
                               onClick={() => handleDeletePartnerClick(partner)}
                               className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
@@ -1602,7 +1605,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {editingPartner && currentUser?.role === 'admin' && (
+                    {editingPartner && can(currentUser?.role, 'partner.write') && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1669,7 +1672,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {currentUser?.role === 'admin' && selectedPartner.status !== 'Blacklisted' && (
+                {can(currentUser?.role, 'partner.write') && selectedPartner.status !== 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => { setBlacklistTarget(selectedPartner); setBlacklistReason(''); }}
@@ -1680,7 +1683,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>لیست سیاه</span>
                   </button>
                 )}
-                {currentUser?.role === 'admin' && selectedPartner.status === 'Blacklisted' && (
+                {can(currentUser?.role, 'partner.write') && selectedPartner.status === 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => handleRestoreFromBlacklist(selectedPartner)}
@@ -1691,7 +1694,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>خروج از لیست سیاه</span>
                   </button>
                 )}
-                {currentUser?.role === 'admin' && (
+                {can(currentUser?.role, 'partner.write') && (
                   <button
                     type="button"
                     onClick={() => handleDeletePartnerClick(selectedPartner)}

@@ -14,6 +14,7 @@ import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
+import { can, canScoreDepartment } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -28,8 +29,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
   // Only the stages the current user is allowed to perform are shown.
-  const canRisk = currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab';
-  const canAnalysis = currentUser?.role === 'admin' || currentUser?.role === 'qa';
+  const canRisk = can(currentUser?.role, 'vendor.risk');
+  const canAnalysis = can(currentUser?.role, 'vendor.analysis');
+  const canEditVendor = can(currentUser?.role, 'vendor.write');
+  const canDeleteVendor = can(currentUser?.role, 'vendor.delete');
   const evalStages = [
     ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
     ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
@@ -322,11 +325,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
-  if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'lab') {
-    const deptId = currentUser.role;
-    if (deptId === 'qa' || deptId === 'commercial' || deptId === 'planning' || deptId === 'finance') {
-      displayedScore = (vendor.scores as any)?.[deptId] ?? null;
-    }
+  if (currentUser && currentUser.role !== 'admin' && canScoreDepartment(currentUser.role, currentUser.role)) {
+    displayedScore = (vendor.scores as any)?.[currentUser.role] ?? null;
   }
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
@@ -424,23 +424,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           
           <div className="flex flex-col items-start xl:items-end gap-2">
             <div className="flex gap-2">
-              {currentUser.role === 'admin' && (
-                <>
-                  <button 
-                    onClick={() => onEditVendor?.()}
-                    className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
-                  >
-                    <Pencil className="w-4 h-4" />
-                    <span>ویرایش اطلاعات</span>
-                  </button>
-                  <button 
-                    onClick={() => setShowConfirmDelete(true)}
-                    className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 shadow-sm"
-                    title="حذف"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
+              {/* Editing and deleting are separate permissions: commercial may
+                  register and correct a source, but only an admin removes one. */}
+              {canEditVendor && (
+                <button 
+                  onClick={() => onEditVendor?.()}
+                  className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span>ویرایش اطلاعات</span>
+                </button>
+              )}
+              {canDeleteVendor && (
+                <button 
+                  onClick={() => setShowConfirmDelete(true)}
+                  className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 shadow-sm"
+                  title="حذف"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
             </div>
 
@@ -964,8 +966,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       const deptScore = vendor.scores[layout.id as keyof typeof vendor.scores];
                       if (deptScore === undefined || deptScore === null) return null;
                       
-                      // Security Restriction: Only show the score of the user's role, except for Admin
-                      if (currentUser?.role !== 'admin' && layout.id !== currentUser?.role) return null;
+                      // Only the department a user may score is shown to them.
+                      if (!canScoreDepartment(currentUser?.role, layout.id)) return null;
                       
                       return (
                         <ScoreCard 
@@ -1096,14 +1098,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 3. ارزیابی ریسک تامین کنندگان */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && (currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab') && (
+      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && canRisk && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
               <ShieldAlert className="w-4 h-4 text-amber-500" />
               <h3 className="font-bold text-foreground text-sm">ارزیابی ریسک تامین کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk Assessment)</span></h3>
             </div>
-            {(currentUser.role === 'qa' || currentUser.role === 'lab' || currentUser.role === 'admin') && !showRiskAssessment && (
+            {canRisk && !showRiskAssessment && (
               <button 
                 onClick={() => setShowRiskAssessment(true)}
                 className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors text-xs font-bold"
@@ -1250,7 +1252,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 4. ثبت نتایج آزمایشگاه */}
-      {(!showEvalWizard || evalStage === 'analysis') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+      {(!showEvalWizard || evalStage === 'analysis') && canAnalysis && (
         <div id="purchase-history-analysis-section" className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-border pb-4">
             <div className="flex items-center gap-3">
@@ -1452,7 +1454,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
 
                 {/* Admin decision box for sources/suppliers (not samples) */}
-                {!(vendor.isSample || vendor.category === 'sample') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+                {!(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
                   <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/40 border-amber-200'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'}`} />
