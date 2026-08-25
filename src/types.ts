@@ -121,16 +121,15 @@ export interface SOPDocumentEval {
   uploadedAt?: string;
 }
 
-export type SOPGrade = 'A' | 'B' | 'C' | 'Pending Review' | 'Blacklist' | 'Not Evaluated' | 'D';
-export type SOPSupplierStatus = 
-  | 'Approved Supplier' 
-  | 'Approved with Monitoring' 
-  | 'Conditional Supplier' 
-  | 'Pending Review' 
-  | 'Blacklist' 
-  | 'Not Evaluated' 
-  | 'Conditional Approval' 
-  | 'Rejected';
+// Grades produced by calculateGradeAndStatus (rubric: 80/60/40/30).
+export type SOPGrade = 'A' | 'B' | 'C' | 'Pending Review' | 'Blacklist' | 'Not Evaluated';
+export type SOPSupplierStatus =
+  | 'Approved Supplier'
+  | 'Approved with Monitoring'
+  | 'Conditional Supplier'
+  | 'Pending Review'
+  | 'Blacklist'
+  | 'Not Evaluated';
 
 export interface SupplierEvaluation {
   documents: Record<SOPDocumentKey, SOPDocumentEval>;

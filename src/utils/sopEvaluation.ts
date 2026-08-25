@@ -141,3 +141,26 @@ export function validateSupplierEvaluation(documents: Record<SOPDocumentKey, SOP
     missingDocs
   };
 }
+
+/**
+ * Re-derive a partner's stored SOP evaluation from its documents.
+ *
+ * `totalScore`, `grade` and `status` are outputs of `computeSupplierEvaluation`,
+ * but they are also persisted, so a record written by an older build (or edited
+ * outside the app) can disagree with its own documents and the UI would keep
+ * showing the stale figure. Running this on load makes the stored copy
+ * self-healing, and it is a no-op when the two already agree.
+ *
+ * `updatedAt` is deliberately preserved: it records when a human last evaluated
+ * the supplier, and recomputing must not look like a fresh evaluation.
+ */
+export function reconcileSupplierEvaluation<T extends { type?: string; evaluation?: SupplierEvaluation }>(partner: T): T {
+  const ev = partner?.evaluation;
+  if (!ev || !ev.documents) return partner;
+
+  const fresh = computeSupplierEvaluation(ev.documents);
+  if (fresh.totalScore === ev.totalScore && fresh.grade === ev.grade && fresh.status === ev.status) {
+    return partner;
+  }
+  return { ...partner, evaluation: { ...fresh, updatedBy: ev.updatedBy, updatedAt: ev.updatedAt } };
+}

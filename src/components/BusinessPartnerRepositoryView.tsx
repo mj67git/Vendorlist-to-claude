@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { FormModal } from './FormModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
@@ -243,7 +243,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     ).length;
 
     const rejectedOrConditionalSuppliers = suppliers.filter(s => 
-      s.evaluation?.grade === 'C' || s.evaluation?.grade === 'Pending Review' || s.evaluation?.grade === 'Blacklist' || s.evaluation?.grade === 'D'
+      s.evaluation?.grade === 'C' || s.evaluation?.grade === 'Pending Review' || s.evaluation?.grade === 'Blacklist'
     ).length;
 
     return { 
@@ -653,7 +653,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
       case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      case 'D': return 'bg-rose-100 text-rose-800 border-rose-300';
       default: return 'bg-muted text-foreground border-border';
     }
   };
@@ -664,7 +663,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       case 'A': return { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
       case 'B': return { label: 'Permit Approval', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
       case 'C': return { label: 'Expired', cls: 'bg-amber-100 text-amber-800 border-amber-300' };
-      case 'D': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
       case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
       case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
       default: return { label: grade || '—', cls: 'bg-muted text-foreground border-border' };
@@ -1103,14 +1101,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* Add / Edit Partner Modal with Portal & Sticky Header/Footer */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
-          <div 
-            onClick={() => setIsModalOpen(false)} 
-            className="absolute inset-0" 
-          />
-
-          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم شریک تجاری">
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -1643,20 +1634,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 </div>
               </>
             )}
-          </div>
-        </div>,
-        document.body
-      )}
+      </FormModal>
 
       {/* Comprehensive View Details Modal (Dashboard for Manufacturer / 3 Cards for Supplier) */}
-      {isViewModalOpen && selectedPartner && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-sm overflow-hidden fade-in">
-          <div 
-            onClick={() => setIsViewModalOpen(false)} 
-            className="absolute inset-0" 
-          />
-
-          <div className="relative w-full max-w-4xl max-h-[92vh] h-full sm:h-auto bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right z-10">
+      <FormModal open={!!(isViewModalOpen && selectedPartner)} onClose={() => setIsViewModalOpen(false)} size="lg" ariaLabel="جزئیات شریک تجاری">
+        {selectedPartner && (<>
             {/* Sticky Top Header */}
             <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
               <div className="flex items-center gap-3">
@@ -2091,15 +2073,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 بستن
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
 
       {/* Blacklist Confirmation Modal (reason required) */}
-      {blacklistTarget && createPortal(
-        <div className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
-          <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
+      <FormModal open={!!blacklistTarget} onClose={() => setBlacklistTarget(null)} size="sm" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید انتقال به لیست سیاه">
+        {blacklistTarget && (<>
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-600 text-white rounded-xl">
                 <AlertTriangle className="w-5 h-5" />
@@ -2141,15 +2120,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <span>تأیید و افزودن به لیست سیاه</span>
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
 
       {/* Custom Deletion Confirmation Modal */}
-      {partnerToDelete && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
-          <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-md p-6 space-y-4 text-right fade-in">
+      <FormModal open={!!partnerToDelete} onClose={() => setPartnerToDelete(null)} size="sm" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید حذف شریک تجاری">
+        {partnerToDelete && (<>
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
                 <AlertCircle className="w-6 h-6" />
@@ -2191,15 +2167,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 بله، حذف شود
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
 
       {/* Custom Deletion Constraints Warning Modal */}
-      {deleteConstraintError && createPortal(
-        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
-          <div className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-lg p-6 space-y-4 text-right fade-in">
+      <FormModal open={!!deleteConstraintError} onClose={() => setDeleteConstraintError(null)} size="md" closeOnBackdrop={true} className="p-6 space-y-4" ariaLabel="هشدار محدودیت حذف">
+        {deleteConstraintError && (<>
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
                 <AlertCircle className="w-6 h-6" />
@@ -2258,10 +2231,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 متوجه شدم
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+</>)}
+      </FormModal>
     </div>
   );
 };

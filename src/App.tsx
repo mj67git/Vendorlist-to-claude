@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
-import { Category, Status, Grade, Scores, Vendor, User, Role, RiskAssessmentData, AnalysisRecord, Material, BusinessPartner, SOPDocumentStatus } from './types';
+import { Category, Status, Grade, Scores, Vendor, User, Role, RiskAssessmentData, AnalysisRecord, Material, BusinessPartner, SOPDocumentStatus, SOPDocumentKey, SOPDocumentEval, SupplierEvaluation } from './types';
 import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from './utils/excelExport';
 // @ts-ignore
 import temadLogo from './assets/logo.png';
@@ -35,6 +35,8 @@ import { GradeBadge } from './components/GradeBadge';
 import { ScoreBar, getScoreColorClass, getSRIColorClass, getScoreColorConfig } from './components/ScoreBar';
 import { extractCountry, getDisplayCountry, calculateOverallScore, setCalculationWeights, CALCULATION_WEIGHTS, checkLicenseExpiry, toEnglishDigits } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
+import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject } from './utils/vendorState';
+import { reconcileSupplierEvaluation, computeSupplierEvaluation, SOP_DOCUMENTS_DEF } from './utils/sopEvaluation';
 import { FmeaService } from './utils/fmeaService';
 import { ScoringGuide, ScoreCard } from './components/ScoringGuide';
 import { PrintableSampleForm, PrintableEvaluationForm } from './components/PrintableForms';
@@ -47,6 +49,7 @@ import { PartnerSelector } from './components/PartnerSelector';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
 import { authFetch, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
@@ -90,17 +93,16 @@ export default function App() {
 
   const normalizeAndCleanVendor = (v: any): Vendor => {
     if (v.isSample) {
-      if (v.status === 'rejected') {
-        return { ...v, grade: 'rejected' };
-      }
-      return v;
+      // Rejection (and its removal) is derived from the QC records, so a deleted
+      // Reject result clears the blacklist stamp instead of latching it.
+      return applyDerivedState(v) as Vendor;
     }
 
     const isInitialVendor = typeof v.id === 'string' && v.id.startsWith('vF');
     const hasBeenEvaluatedByUser = (v.rawScores && Object.keys(v.rawScores).length > 0) || (v.scores && (v.scores.commercial > 0 || v.scores.qa > 0));
 
     if (isInitialVendor && !hasBeenEvaluatedByUser && !v.scores) {
-      const isRejected = v.status === 'rejected' || v.category === 'blacklist' || v.grade === 'rejected';
+      const isRejected = isVendorRejected(v);
       v.scores = null;
       v.rawScores = null;
       v.status = isRejected ? 'rejected' : 'new';
@@ -111,30 +113,9 @@ export default function App() {
        v.scores.planning = v.scores.qc;
        delete v.scores.qc;
     }
-    if (v.status === 'rejected' || v.grade === 'rejected') {
-       return { ...v, status: 'rejected', grade: 'rejected' };
-    }
-    const isFullyScored = v.scores && v.scores.commercial > 0 && v.scores.qa > 0 && v.scores.planning > 0 && v.scores.finance > 0;
-    if (isFullyScored) {
-       const rounded = calculateOverallScore(v.scores, true) || 0;
-       let calcGrade: Grade = v.grade;
-       let calcStatus: Status = v.status;
-       if (rounded >= 80) {
-          calcGrade = 'A';
-          calcStatus = 'approved';
-       } else if (rounded >= 60) {
-          calcGrade = 'B';
-          calcStatus = 'approved';
-       } else if (rounded >= 40) {
-          calcGrade = 'C';
-          calcStatus = 'conditional';
-       } else {
-          calcGrade = 'rejected';
-          calcStatus = 'rejected';
-       }
-       return { ...v, grade: calcGrade, status: calcStatus };
-    }
-    return v;
+
+    // `applyDerivedState` owns the rejection stamp and the score-derived grade.
+    return applyDerivedState(v) as Vendor;
   };
 
   const [db, setDb] = useState<Vendor[]>(() => {
@@ -252,7 +233,7 @@ export default function App() {
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
     try {
       const saved = localStorage.getItem('app_business_partners');
-      return saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB;
+      return (saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB).map(reconcileSupplierEvaluation);
     } catch {
       return INITIAL_BUSINESS_PARTNERS_DB;
     }
@@ -278,7 +259,9 @@ export default function App() {
       })
       .then((data: BusinessPartner[]) => {
         if (Array.isArray(data)) {
-          setBusinessPartners(data);
+          // Re-derive each stored SOP evaluation from its documents so a stale
+          // score/grade cannot outlive the documents it was computed from.
+          setBusinessPartners(data.map(reconcileSupplierEvaluation));
         }
       })
       .catch(err => {
@@ -291,6 +274,8 @@ export default function App() {
     categoryId: Category | null;
     selectedVendor: Vendor | null;
     expandedMaterial?: string | null;
+    /** The source form is a page, not an overlay — this is which page. */
+    formMode?: 'create' | 'edit' | null;
   };
 
   // Cap the navigation stack so a long session cannot grow it without bound.
@@ -304,6 +289,7 @@ export default function App() {
     categoryId: (r.categoryId as Category | null) ?? null,
     selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
     expandedMaterial: r.expandedMaterial ?? null,
+    formMode: r.formMode ?? null,
   });
 
   const viewStateToRoute = (s: ViewState): RouteState => ({
@@ -311,6 +297,7 @@ export default function App() {
     categoryId: s.categoryId ?? null,
     vendorId: s.selectedVendor?.id ?? null,
     expandedMaterial: s.expandedMaterial ?? null,
+    formMode: s.formMode ?? null,
   });
 
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
@@ -356,6 +343,7 @@ export default function App() {
   const currentViewState = viewHistory[viewHistory.length - 1] || { view: 'home', categoryId: null, selectedVendor: null };
   const view = currentViewState.view;
   const categoryId = currentViewState.categoryId;
+  const formMode = currentViewState.formMode ?? null;
   // A vendor reached through a shared link is only an id until `db` arrives, so
   // distinguish "still loading" from "this link points at a source that no
   // longer exists" instead of rendering a detail page full of blanks.
@@ -395,7 +383,7 @@ export default function App() {
   // never lands mid-page on a freshly opened screen. (A material group that
   // needs to be revealed scrolls itself into view shortly afterwards.)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}`;
+  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}|${formMode ?? ''}`;
   useEffect(() => {
     const reset = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     reset();
@@ -616,14 +604,20 @@ export default function App() {
       runGuarded(() => {
         setViewHistory(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.selectedVendor?.id === vendor.id) {
+          if (last && last.selectedVendor?.id === vendor.id && !last.formMode) {
             return prev;
           }
           // Mark the material as expanded on the underlying list entry so that
           // returning (goBack) restores the same expanded material, then push
           // the vendor-detail entry on top (carrying the same marker).
-          const base = { ...last, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
-          return capHistory([...prev.slice(0, -1), base, { ...base, selectedVendor: vendor }]);
+          // A detail page is never a form page, so drop formMode — otherwise
+          // saving a new source (which lands on its record) would inherit
+          // 'create' and render the form again.
+          const base = { ...last, formMode: null, selectedVendor: null, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
+          // Arriving from the form page means that page is finished: the record
+          // replaces it, so Back goes to the list rather than back into the form.
+          const head = last?.formMode ? prev.slice(0, -1) : [...prev.slice(0, -1), base];
+          return capHistory([...head, { ...base, selectedVendor: vendor }]);
         });
       });
     } else {
@@ -643,6 +637,30 @@ export default function App() {
     });
   };
 
+  // The source form is a page of its own: pushing it onto the stack gives it a
+  // URL, a breadcrumb and a working Back button for free, and keeps its own
+  // "new partner" dialog from becoming a modal inside a modal.
+  const openSourceForm = (mode: 'create' | 'edit', cat?: Category | null) => {
+    runGuarded(() => {
+      setViewHistory(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.formMode === mode) return prev;
+        const base = mode === 'edit'
+          ? last
+          : { ...last, view: 'category' as const, categoryId: cat ?? last?.categoryId ?? 'domestic', selectedVendor: null };
+        return capHistory([...prev, { ...base, formMode: mode }]);
+      });
+      setSidebarOpen(false);
+    });
+  };
+
+  // Leaving the form page after a successful save must land somewhere definite,
+  // so it pops the form entry from the stack rather than asking the browser to
+  // go "back" — the entry behind it is not guaranteed to be the list.
+  const closeSourceForm = () => {
+    setViewHistory(prev => (prev[prev.length - 1]?.formMode ? prev.slice(0, -1) : prev));
+  };
+
   // Jump directly to a given depth of the navigation stack (breadcrumb click).
   const goToHistoryIndex = (index: number) => {
     const steps = viewHistory.length - 1 - index;
@@ -654,6 +672,8 @@ export default function App() {
   };
 
   const getViewStateLabel = (state: ViewState) => {
+    if (state.formMode === 'create') return 'سورس جدید';
+    if (state.formMode === 'edit') return 'ویرایش سورس';
     if (state.selectedVendor) {
       return state.selectedVendor.name || 'جزییات سورس';
     }
@@ -713,15 +733,18 @@ export default function App() {
 
     if (isLocalMode()) {
       const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      const rejected = normalized.status === 'rejected' && original?.status !== 'rejected';
+      const wasRejected = original ? isVendorRejected(original) : false;
+      const nowRejected = isVendorRejected(normalized);
+      const rejected = nowRejected && !wasRejected;
+      const restored = wasRejected && !nowRejected;
       appendLocalAudit({
         user: currentUser?.name, role: currentUser?.role,
         module: isSource ? 'Source Management' : 'Supplier Management',
         action: original ? 'Update' : 'Create',
         entityType: isSource ? 'Source' : 'Supplier',
         entityName: normalized.material || normalized.name || 'سورس',
-        severity: rejected ? 'Critical' : original ? 'Warning' : 'Info',
-        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : ''}`,
+        severity: rejected || restored ? 'Critical' : original ? 'Warning' : 'Info',
+        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : restored ? ' — خروج از لیست سیاه (علت رد برطرف شد)' : ''}`,
         before: original || null, after: normalized,
         reason: (normalized as any).reasonForChange || 'به‌روزرسانی رکورد',
       });
@@ -761,9 +784,15 @@ export default function App() {
                            original.isSample !== normalized.isSample ||
                            original.initialSampleStatus !== normalized.initialSampleStatus;
 
-    // Dispatch precision requests based on modified data blocks
+    // Dispatch precision requests based on modified data blocks.
+    // These MUST run one after another: every endpoint does a full
+    // read-modify-write of the vendor, so two in flight at once means the
+    // slower one writes back its stale copy of the other's data — which is how
+    // a deleted lab result used to reappear after a reload.
+    const syncQueue: Array<() => Promise<unknown>> = [];
+
     if (profileChanged) {
-      authFetch(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -781,11 +810,11 @@ export default function App() {
           initialSampleStatus: normalized.initialSampleStatus,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Profile sync failed:", err));
+      }).catch(err => console.error("Profile sync failed:", err)));
     }
 
     if (contactChanged) {
-      authFetch(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -794,11 +823,11 @@ export default function App() {
           ircExpiryDate: normalized.ircExpiryDate,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Contact sync failed:", err));
+      }).catch(err => console.error("Contact sync failed:", err)));
     }
 
     if (scoresChanged) {
-      authFetch(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -807,11 +836,11 @@ export default function App() {
           rejectionReasons: normalized.rejectionReasons,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Scores sync failed:", err));
+      }).catch(err => console.error("Scores sync failed:", err)));
     }
 
     if (analysisChanged) {
-      authFetch(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -819,28 +848,34 @@ export default function App() {
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Analysis sync failed:", err));
+      }).catch(err => console.error("Analysis sync failed:", err)));
     } else if (logsChanged) {
-      authFetch(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Logs sync failed:", err));
+      }).catch(err => console.error("Logs sync failed:", err)));
     }
 
     if (riskChanged) {
-      authFetch(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Risk sync failed:", err));
+      }).catch(err => console.error("Risk sync failed:", err)));
     }
+
+    void (async () => {
+      for (const send of syncQueue) {
+        await send();
+      }
+    })();
   };
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
@@ -1006,7 +1041,29 @@ export default function App() {
     let content;
     let keyName = '';
 
-    if (vendorLinkPending) {
+    if (formMode) {
+      // The source form as a full page: it is the longest form in the app and
+      // opens dialogs of its own, so it gets the content area rather than an
+      // overlay.
+      const editing = formMode === 'edit' ? selectedVendor ?? undefined : undefined;
+      keyName = `source-form-${formMode}-${editing?.id ?? categoryId ?? 'new'}`;
+      content = (
+        <VendorForm
+          db={db}
+          materials={materials}
+          onAddMaterial={handleAddMaterial}
+          categoryId={(editing?.category as Category) || (categoryId as Category) || 'domestic'}
+          existingVendor={editing}
+          onClose={goBack}
+          onSaved={closeSourceForm}
+          onSave={(v, msg) => { editing ? handleUpdateVendor(v, msg) : handleAddVendor(v); }}
+          currentUser={currentUser}
+          partners={businessPartners}
+          onAddPartner={handleAddBusinessPartner}
+          registerNavGuard={registerNavGuard}
+        />
+      );
+    } else if (vendorLinkPending) {
       // Deep link into a source: wait for the dataset, then report honestly if
       // the id is not in it.
       const stillLoading = isSyncing || db.length === 0;
@@ -1035,17 +1092,17 @@ export default function App() {
       );
     } else if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
-      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} />;
+      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
     } else if (view === 'home') {
       keyName = 'home';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
       if (currentUser?.role === 'admin') {
         keyName = 'archive';
         content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
       } else {
         keyName = 'home-fallback';
-        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
       }
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
@@ -1104,7 +1161,7 @@ export default function App() {
       content = <CategoryView db={db} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} />;
+      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     }
 
     return (
@@ -1224,7 +1281,7 @@ export default function App() {
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
                 id === 'sample' ? (v.category === 'sample' || v.isSample) :
-                id === 'blacklist' ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected')) :
+                id === 'blacklist' ? isInBlacklistCategory(v) :
                 (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
               ).length;
               return (
@@ -1542,10 +1599,14 @@ export default function App() {
         </main>
 
         {/* Unsaved-changes confirmation before leaving an open edit form */}
-        {pendingNav && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" dir="rtl">
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm fade-in" onClick={() => setPendingNav(null)} />
-            <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 dialog-enter" role="alertdialog" aria-modal="true">
+        <FormModal
+          open={!!pendingNav}
+          onClose={() => setPendingNav(null)}
+          size="sm"
+          role="alertdialog"
+          className="p-6"
+          ariaLabel="تغییرات ذخیره‌نشده"
+        >
               <div className="flex items-start gap-3.5">
                 <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center shrink-0">
                   <ShieldAlert className="w-5 h-5" />
@@ -1571,9 +1632,7 @@ export default function App() {
                   ماندن در صفحه
                 </button>
               </div>
-            </div>
-          </div>
-        )}
+        </FormModal>
 
         {/* Global command palette (⌘K) */}
         <CommandPalette
@@ -1698,19 +1757,18 @@ const categoryCardStyles: Record<string, {
 };
 
 // --- View: Home ---
-function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void }) {
-  const [showAddModal, setShowAddModal] = useState(false);
+function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
   const stats = useMemo(() => {
     return {
       total: db.length,
       gradeA: db.filter(v => v.grade === 'A').length,
       gradeB: db.filter(v => v.grade === 'B').length,
       gradeC: db.filter(v => v.grade === 'C').length,
-      rejected: db.filter(v => v.grade === 'rejected' || v.status === 'rejected').length
+      rejected: db.filter(isVendorRejected).length
     };
   }, [db]);
 
-  const rejectedVendors = db.filter(v => v.status === 'rejected');
+  const rejectedVendors = db.filter(isVendorRejected);
 
   const expiringVendors = useMemo(() => {
     return db
@@ -1796,7 +1854,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             {currentUser && (
               <Button 
-                onClick={() => setShowAddModal(true)}
+                onClick={onOpenSourceForm}
                 className="w-full sm:w-auto h-11 px-6 shadow-sm gap-2 text-sm font-bold shrink-0"
               >
                 <Plus className="w-4 h-4" />
@@ -1807,9 +1865,6 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
         </div>
       </div>
 
-      <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showAddModal ? 'opacity-100 max-h-[2000px]' : 'opacity-0 max-h-0'}`}>
-        {showAddModal && <VendorForm db={db} materials={materials} onAddMaterial={onAddMaterial} categoryId="domestic" onClose={() => setShowAddModal(false)} onSave={(v) => { onAddVendor(v); }} currentUser={currentUser} partners={partners} onAddPartner={onAddPartner} />}
-      </div>
 
       {/* KPI ROW */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
@@ -2112,7 +2167,7 @@ function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, on
 }
 
 // --- View: Vendor Form (Add / Edit) ---
-function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void }) {
+function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: () => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
   // Create autocomplete suggestions
@@ -2176,22 +2231,13 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
   });
 
   // Modal display states for partner creation
-  const [showNewMfgModal, setShowNewMfgModal] = useState(false);
   const [showNewSupplierModal, setShowNewSupplierModal] = useState(false);
+  // The inline "new partner" modal covers both partner kinds; suppliers are the
+  // only ones that carry an SOP evaluation (flat partner model).
+  const [newPartnerType, setNewPartnerType] = useState<'Manufacturer' | 'Supplier'>('Manufacturer');
+  const [newPartnerError, setNewPartnerError] = useState<string | null>(null);
 
   // Modals Data State
-  const [newMfgData, setNewMfgData] = useState({
-    name: '',
-    nameEn: '',
-    country: 'ایران',
-    city: '',
-    address: '',
-    email: '',
-    contactPerson: '',
-    phone: '',
-    website: '',
-    status: 'Active' as 'Active' | 'Inactive' | 'Blacklisted'
-  });
 
   const [newSupplierTab, setNewSupplierTab] = useState<'general' | 'evaluation'>('general');
   const [newSupplierData, setNewSupplierData] = useState({
@@ -2243,110 +2289,51 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
     }).catch(err => console.error("Failed to sync selection audit log:", err));
   };
 
-  const handleCreateMfg = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMfgData.name.trim()) return;
 
-    const newMfg: BusinessPartner = {
-      id: 'bp_mfg_' + Math.random().toString(36).substring(2, 9),
-      type: 'Manufacturer',
-      name: newMfgData.name.trim(),
-      nameEn: newMfgData.nameEn.trim() || undefined,
-      country: newMfgData.country.trim(),
-      city: newMfgData.city.trim() || undefined,
-      address: newMfgData.address.trim() || undefined,
-      email: newMfgData.email.trim() || undefined,
-      contactPerson: newMfgData.contactPerson.trim() || undefined,
-      phone: newMfgData.phone.trim() || undefined,
-      website: newMfgData.website.trim() || undefined,
-      status: newMfgData.status,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    if (onAddPartner) {
-      onAddPartner(newMfg);
-    }
-
-    setSelectedManufacturerId(newMfg.id);
-    setSelectedSupplierId('');
-
-    logSourceSelectionAudit(
-      'CreateManufacturerInsideSource',
-      `ایجاد تولیدکننده جدید از داخل فرم سورس: ${newMfg.name}`,
-      null,
-      newMfg
-    );
-
-    setNewMfgData({
-      name: '',
-      nameEn: '',
-      country: 'ایران',
-      city: '',
-      address: '',
-      email: '',
-      contactPerson: '',
-      phone: '',
-      website: '',
-      status: 'Active'
+  // Scoring and grading live in utils/sopEvaluation — this form must not carry
+  // its own copy of the rubric, or the two drift apart.
+  const computeNewSupplierEval = (): SupplierEvaluation => {
+    const documents = {} as Record<SOPDocumentKey, SOPDocumentEval>;
+    SOP_DOCUMENTS_DEF.forEach(def => {
+      documents[def.key] = {
+        key: def.key,
+        nameFa: def.nameFa,
+        nameEn: def.nameEn,
+        status: newSupplierSopDocs[def.key] ?? null,
+        score: 0,
+      };
     });
-    setShowNewMfgModal(false);
-  };
-
-  const calculateSopScore = (status: SOPDocumentStatus) => {
-    switch (status) {
-      case 'Approved': return 20;
-      case 'Permit Approval': return 10;
-      case 'Expired': return 5;
-      case 'Not Submitted': return 0;
-      default: return 0;
-    }
-  };
-
-  const computeNewSupplierEval = () => {
-    const scores = [
-      calculateSopScore(newSupplierSopDocs.manufacturerLetter),
-      calculateSopScore(newSupplierSopDocs.authorizedSignatory),
-      calculateSopScore(newSupplierSopDocs.businessLicense),
-      calculateSopScore(newSupplierSopDocs.officialEnglishTranslation),
-      calculateSopScore(newSupplierSopDocs.legalization)
-    ];
-    const total = scores.reduce((a, b) => a + b, 0);
-
-    let grade: 'A' | 'B' | 'C' | 'Pending Review' | 'Blacklist' = 'A';
-    let status: any = 'Approved Supplier';
-
-    if (total >= 80) { grade = 'A'; status = 'Approved Supplier'; }
-    else if (total >= 60) { grade = 'B'; status = 'Approved with Monitoring'; }
-    else if (total >= 40) { grade = 'C'; status = 'Conditional Supplier'; }
-    else if (total >= 30) { grade = 'Pending Review'; status = 'Pending Review'; }
-    else { grade = 'Blacklist'; status = 'Blacklist'; }
-
     return {
-      documents: {
-        manufacturerLetter: { key: 'manufacturerLetter', nameFa: 'نامه نمایندگی از سازنده', nameEn: 'Manufacturer Authorization Letter', status: newSupplierSopDocs.manufacturerLetter, score: calculateSopScore(newSupplierSopDocs.manufacturerLetter) },
-        authorizedSignatory: { key: 'authorizedSignatory', nameFa: 'تعهدنامه صاحبان امضای مجاز', nameEn: 'Authorized Signatory Commitment', status: newSupplierSopDocs.authorizedSignatory, score: calculateSopScore(newSupplierSopDocs.authorizedSignatory) },
-        businessLicense: { key: 'businessLicense', nameFa: 'پروانه کسب یا مدرک ثبتی معتبر', nameEn: 'Business License', status: newSupplierSopDocs.businessLicense, score: calculateSopScore(newSupplierSopDocs.businessLicense) },
-        officialEnglishTranslation: { key: 'officialEnglishTranslation', nameFa: 'ترجمه رسمی انگلیسی مدارک', nameEn: 'Official English Translation', status: newSupplierSopDocs.officialEnglishTranslation, score: calculateSopScore(newSupplierSopDocs.officialEnglishTranslation) },
-        legalization: { key: 'legalization', nameFa: 'تاییدیه سفارت یا آپوستیل', nameEn: 'Embassy Legalization / Apostille', status: newSupplierSopDocs.legalization, score: calculateSopScore(newSupplierSopDocs.legalization) }
-      },
-      totalScore: total,
-      grade,
-      status,
-      updatedAt: new Date().toISOString(),
-      updatedBy: currentUser?.name || 'مدیر سیستم'
+      ...computeSupplierEvaluation(documents),
+      updatedBy: currentUser?.name || 'مدیر سیستم',
     };
   };
 
   const handleCreateSupplier = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSupplierData.name.trim() || !selectedManufacturerId) return;
 
-    const evaluation = computeNewSupplierEval();
+    // Report what is missing instead of returning silently. This form used to
+    // also require a previously selected manufacturer, which the flat partner
+    // model removed — leaving the submit button doing nothing at all.
+    if (!newSupplierData.name.trim()) {
+      setNewPartnerError('نام شریک تجاری الزامی است.');
+      setNewSupplierTab('general');
+      return;
+    }
+    if (!newSupplierData.country.trim()) {
+      setNewPartnerError('کشور مبدا الزامی است.');
+      setNewSupplierTab('general');
+      return;
+    }
+    setNewPartnerError(null);
+
+    const isSupplier = newPartnerType === 'Supplier';
+    // Only suppliers are SOP-evaluated.
+    const evaluation = isSupplier ? computeNewSupplierEval() : undefined;
 
     const newSupplier: BusinessPartner = {
-      id: 'bp_sup_' + Math.random().toString(36).substring(2, 9),
-      type: 'Supplier',
+      id: (isSupplier ? 'bp_sup_' : 'bp_mfg_') + Math.random().toString(36).substring(2, 9),
+      type: newPartnerType,
       name: newSupplierData.name.trim(),
       nameEn: newSupplierData.nameEn.trim() || undefined,
       country: newSupplierData.country.trim(),
@@ -2356,7 +2343,6 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       contactPerson: newSupplierData.contactPerson.trim() || undefined,
       phone: newSupplierData.phone.trim() || undefined,
       website: newSupplierData.website.trim() || undefined,
-      manufacturerId: selectedManufacturerId,
       status: newSupplierData.status,
       evaluation: evaluation as any,
       createdAt: new Date().toISOString(),
@@ -2367,11 +2353,19 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       onAddPartner(newSupplier);
     }
 
-    setSelectedSupplierId(newSupplier.id);
+    // Route the new partner into the matching field so the source form picks it
+    // up straight away (the two are mutually exclusive).
+    if (isSupplier) {
+      setSelectedSupplierId(newSupplier.id);
+      setSelectedManufacturerId('');
+    } else {
+      setSelectedManufacturerId(newSupplier.id);
+      setSelectedSupplierId('');
+    }
 
     logSourceSelectionAudit(
-      'CreateSupplierInsideSource',
-      `ایجاد فروشنده جدید از داخل فرم سورس: ${newSupplier.name}`,
+      isSupplier ? 'CreateSupplierInsideSource' : 'CreateManufacturerInsideSource',
+      `ایجاد ${isSupplier ? 'فروشنده' : 'تولیدکننده'} جدید از داخل فرم سورس: ${newSupplier.name}`,
       null,
       newSupplier
     );
@@ -2398,6 +2392,21 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
     setNewSupplierTab('general');
     setShowNewSupplierModal(false);
   };
+
+  // While this form is a page of its own, leaving it is ordinary navigation —
+  // so it registers the same unsaved-changes guard a detail page uses. It
+  // reports dirty only once something actually changed, otherwise merely
+  // opening and leaving the form would nag.
+  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (!registerNavGuard) return;
+    registerNavGuard(() => {
+      if (savedRef.current) return false;
+      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }) !== pristineRef.current;
+    });
+    return () => registerNavGuard(null);
+  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2436,12 +2445,11 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       };
       finalInitialSampleStatus = initialMap[sampleStatus] || 'approved';
 
-      const rejectCount = existingVendor?.analysisRecords ? existingVendor.analysisRecords.filter(r => r.decision === 'Reject').length : 0;
-      if (rejectCount >= 1) {
-        finalStatus = 'rejected';
-      } else {
-        finalStatus = finalInitialSampleStatus;
-      }
+      // A sample is blacklisted by a single failing QC result. Use the shared
+      // predicate rather than re-counting here, so this form cannot drift from
+      // the rule the rest of the app applies (applyDerivedState re-checks it on
+      // save anyway).
+      finalStatus = hasQcReject(existingVendor) ? 'rejected' : finalInitialSampleStatus;
     } else {
       finalInitialSampleStatus = null;
       if (existingVendor) {
@@ -2459,11 +2467,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
           }
         }
       } else {
+        // A brand-new source always starts as 'new'; it can only reach the
+        // blacklist through an explicit decision later. (The branch that used
+        // to read formData.grade here was unreachable — this form never sets
+        // those fields — and grade must never feed the rejection decision.)
         finalStatus = 'new';
         finalGrade = 'new';
-        if (formData.status === 'rejected' || formData.grade === 'rejected') {
-          finalCategory = 'blacklist';
-        }
       }
     }
 
@@ -2533,10 +2542,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       activityLogs: [...(existingVendor?.activityLogs || []), newLog]
     } as Vendor;
 
+    savedRef.current = true;
+    registerNavGuard?.(null);
     onSave(vendorContext, null);
     setIsSuccess(true);
     setTimeout(() => {
-      onClose();
+      (onSaved ?? onClose)();
     }, 1000);
   };
 
@@ -2557,126 +2568,103 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
       
       {/* Modals inside form */}
       <AnimatePresence>
-        {showNewMfgModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
-              <div className="flex justify-between items-center border-b border-border pb-3 mb-4 shrink-0">
-                <h3 className="font-bold text-foreground text-base flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-primary" />
-                  ثبت تولیدکننده مرجع جدید (New Manufacturer)
-                </h3>
-                <Button variant="ghost" size="icon" type="button" onClick={() => setShowNewMfgModal(false)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              <form onSubmit={handleCreateMfg} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">نام کارخانه سازنده (فارسی): *</label>
-                    <input required type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring" value={newMfgData.name} onChange={e => setNewMfgData({...newMfgData, name: e.target.value})} placeholder="مثلاً: داروسازی اکتاویس" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">Manufacturer Name (English):</label>
-                    <input type="text" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.nameEn} onChange={e => setNewMfgData({...newMfgData, nameEn: e.target.value})} placeholder="e.g. Actavis Pharma" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">کشور مبدا: *</label>
-                    <input required type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.country} onChange={e => setNewMfgData({...newMfgData, country: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">شهر:</label>
-                    <input type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.city} onChange={e => setNewMfgData({...newMfgData, city: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">نام رابط (Contact Person):</label>
-                    <input type="text" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground" value={newMfgData.contactPerson} onChange={e => setNewMfgData({...newMfgData, contactPerson: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">شماره تماس رابط:</label>
-                    <input type="text" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.phone} onChange={e => setNewMfgData({...newMfgData, phone: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">پست الکترونیکی (Email):</label>
-                    <input type="email" dir="ltr" className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground text-left font-mono" value={newMfgData.email} onChange={e => setNewMfgData({...newMfgData, email: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                    <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newMfgData.website} onChange={e => setNewMfgData({...newMfgData, website: e.target.value})} placeholder="https://..." />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                    <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newMfgData.status} onChange={e => setNewMfgData({...newMfgData, status: e.target.value as any})}>
-                      <option value="Active">فعال (Active)</option>
-                      <option value="Inactive">غیرفعال (Inactive)</option>
-                      <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2 space-y-1">
-                    <label className="text-foreground font-semibold block">نشانی دقیق کارخانه:</label>
-                    <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newMfgData.address} onChange={e => setNewMfgData({...newMfgData, address: e.target.value})} />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => setShowNewMfgModal(false)} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">ثبت و انتخاب تولیدکننده</button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
+        {/* The standalone "new manufacturer" modal was unreachable dead UI —
+            nothing ever set showNewMfgModal. Both partner kinds are now created
+            through the single "ثبت تأمین‌کننده جدید" modal below. */}
 
-        {showNewSupplierModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto fade-in">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-card rounded-2xl max-w-2xl w-full border border-border p-6 text-right max-h-[90vh] flex flex-col overflow-hidden">
+        <FormModal
+          open={showNewSupplierModal}
+          onClose={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}
+          size="md"
+          className="p-6"
+          ariaLabel="ثبت تأمین‌کننده جدید"
+        >
               <div className="flex justify-between items-center border-b border-border pb-3 mb-3 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
                   <Handshake className="w-5 h-5 text-[#0071E3]" />
-                  ثبت فروشنده / واسطه جدید (New Supplier)
+                  ثبت تأمین‌کننده جدید (New Business Partner)
                 </h3>
-                <button type="button" onClick={() => setShowNewSupplierModal(false)} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
+                <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Navigation Tabs */}
-              <div className="flex gap-2 border-b border-border pb-2 mb-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setNewSupplierTab('general')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    newSupplierTab === 'general' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
-                  }`}
-                >
-                  ۱. مشخصات عمومی
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewSupplierTab('evaluation')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    newSupplierTab === 'evaluation' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
-                  }`}
-                >
-                  ۲. ارزیابی مدارک SOP
-                  <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
-                    امتیاز: {computeNewSupplierEval().totalScore}
-                  </span>
-                </button>
+              {/* Partner kind — manufacturers and suppliers are independent records */}
+              <div className="shrink-0 mb-3">
+                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">نوع شریک تجاری:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'Manufacturer', label: 'تولیدکننده', sub: 'Manufacturer', icon: Building2 },
+                    { key: 'Supplier', label: 'فروشنده', sub: 'Supplier', icon: Handshake },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => { setNewPartnerType(opt.key); setNewSupplierTab('general'); setNewPartnerError(null); }}
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-right transition-all ${
+                        newPartnerType === opt.key
+                          ? 'bg-[#0071E3]/10 border-[#0071E3] text-[#0071E3]'
+                          : 'bg-card border-border text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      <opt.icon className="w-4 h-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold">{opt.label}</span>
+                        <span className="block text-[10px] opacity-70 font-mono">{opt.sub}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  {newPartnerType === 'Supplier'
+                    ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
+                    : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
+                </p>
               </div>
 
-              <form onSubmit={handleCreateSupplier} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
-                <div className="bg-blue-50/50 border border-blue-200 rounded-lg p-3 text-blue-800 leading-relaxed font-medium mb-3">
-                  تولیدکننده مرجع متصل: <strong className="text-blue-900">{selectedManufacturer?.name}</strong>
-                  <p className="mt-1 text-[10px] text-muted-foreground">فروشنده جدید برای کارخانه تولیدی بالا ایجاد می‌شود و به صورت خودکار ارزیابی و درجه‌بندی کیفی می‌گردد.</p>
+              {/* Navigation Tabs — the SOP step exists for suppliers only */}
+              {newPartnerType === 'Supplier' && (
+                <div className="flex gap-2 border-b border-border pb-2 mb-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setNewSupplierTab('general')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      newSupplierTab === 'general' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                    }`}
+                  >
+                    ۱. مشخصات عمومی
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewSupplierTab('evaluation')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      newSupplierTab === 'evaluation' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                    }`}
+                  >
+                    ۲. ارزیابی مدارک SOP
+                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
+                      امتیاز: {computeNewSupplierEval().totalScore}
+                    </span>
+                  </button>
                 </div>
+              )}
 
-                {newSupplierTab === 'general' ? (
+              <form onSubmit={handleCreateSupplier} className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
+                {newPartnerError && (
+                  <div className="bg-rose-50 border border-rose-300 text-rose-800 dark:bg-rose-950/40 dark:border-rose-700/50 dark:text-rose-300 rounded-xl p-3 mb-3 flex items-center gap-2 font-semibold fade-in">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    {newPartnerError}
+                  </div>
+                )}
+
+                {(newSupplierTab === 'general' || newPartnerType !== 'Supplier') ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام شرکت فروشنده (فارسی): *</label>
+                      <label className="text-foreground font-semibold block">نام شرکت {newPartnerType === 'Supplier' ? 'فروشنده' : 'تولیدکننده'} (فارسی): *</label>
                       <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">Supplier Name (English):</label>
+                      <label className="text-foreground font-semibold block">{newPartnerType === 'Supplier' ? 'Supplier' : 'Manufacturer'} Name (English):</label>
                       <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
                     </div>
                     <div className="space-y-1">
@@ -2712,7 +2700,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                       </select>
                     </div>
                     <div className="md:col-span-2 space-y-1">
-                      <label className="text-foreground font-semibold block">نشانی دقیق دفتر فروشنده:</label>
+                      <label className="text-foreground font-semibold block">نشانی دقیق {newPartnerType === 'Supplier' ? 'دفتر فروشنده' : 'کارخانه'}:</label>
                       <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
                     </div>
                   </div>
@@ -2762,13 +2750,13 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                 )}
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => setShowNewSupplierModal(false)} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">ثبت و انتخاب فروشنده</button>
+                  <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
+                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">
+                    {newPartnerType === 'Supplier' ? 'ثبت و انتخاب فروشنده' : 'ثبت و انتخاب تولیدکننده'}
+                  </button>
                 </div>
               </form>
-            </motion.div>
-          </div>
-        )}
+        </FormModal>
       </AnimatePresence>
 
       <div className="p-5 border-b border-border flex justify-between items-center bg-muted/40 rounded-t-2xl">
@@ -2859,7 +2847,7 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                       <option value="rejected">Reject (رد شده)</option>
                     </select>
 
-                    {existingVendor && (existingVendor.analysisRecords || []).filter(r => r.decision === 'Reject').length >= 1 && (
+                    {existingVendor && hasQcReject(existingVendor) && (
                       <p className="text-rose-500 text-xs mt-1.5 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-100 leading-relaxed text-right">
                         این Source دارای نتیجه آزمایشگاهی Reject است و وضعیت آن تا زمان اصلاح نتایج آزمایشگاه قابل تغییر نیست.
                       </p>
@@ -2901,7 +2889,12 @@ function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, 
                     newName
                   );
                 }}
-                onAddNew={() => setShowNewSupplierModal(true)}
+                onAddNew={() => {
+                  setNewPartnerType('Manufacturer');
+                  setNewSupplierTab('general');
+                  setNewPartnerError(null);
+                  setShowNewSupplierModal(true);
+                }}
               />
               <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-muted-foreground" />
@@ -3144,7 +3137,7 @@ function CategoryView({
       return db.filter(v => v.isSample || v.category === 'sample');
     }
     if (categoryId === 'blacklist') {
-      return db.filter(v => !v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'));
+      return db.filter(isInBlacklistCategory);
     }
     return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
   }, [db, categoryId]);
@@ -3168,7 +3161,7 @@ function CategoryView({
     switch (activeFilter) {
       case 'approved': return v.status === 'approved';
       case 'conditional': return v.status === 'conditional';
-      case 'rejected': return v.status === 'rejected' || v.grade === 'rejected';
+      case 'rejected': return isVendorRejected(v);
       case 'A': return v.grade === 'A';
       case 'B': return v.grade === 'B';
       case 'C': return v.grade === 'C';
@@ -3346,7 +3339,7 @@ function CategoryView({
                       Approved conditional: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
                     </Badge>
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
-                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'rejected').length}</span>
+                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? null : (
@@ -3361,7 +3354,7 @@ function CategoryView({
                       Grade C: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'C').length}</span>
                     </Badge>
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
-                      لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'rejected' || v.status === 'rejected').length}</span>
+                      لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 )}
@@ -3556,7 +3549,7 @@ const MaterialGroup: React.FC<{
                   {/* Right side: Name & Status */}
                   <div className="flex items-center gap-3.5">
                     <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      vendor.status === 'rejected' || vendor.grade === 'rejected' ? 'bg-red-500' :
+                      isVendorRejected(vendor) ? 'bg-red-500' :
                       vendor.isSample ? (
                         vendor.status === 'approved' ? 'bg-emerald-500' :
                         vendor.status === 'conditional' ? 'bg-amber-500' : 'bg-cyan-500'
@@ -4823,9 +4816,9 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
             : (categoryFilter as string) === 'approved_samples' 
             ? (v.isSample && (v.status === 'approved' || v.status === 'conditional'))
             : (categoryFilter as string) === 'rejected_samples'
-            ? (v.isSample && v.status === 'rejected')
+            ? (v.isSample && isVendorRejected(v))
             : (categoryFilter as string) === 'blacklist'
-            ? (!v.isSample && v.category !== 'sample' && (v.category === 'blacklist' || v.status === 'rejected' || v.grade === 'rejected'))
+            ? isInBlacklistCategory(v)
             : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
           )
         : true;
@@ -5022,30 +5015,10 @@ function ArchiveView({ db, currentUser, partners = [], materials = [] }: { db: V
 }
 
 // --- View: Vendor Detail ---
-function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const editFormRef = useRef<HTMLDivElement>(null);
-
-  // Warn before navigating away (or closing the tab) with the edit form open.
-  useEffect(() => {
-    registerNavGuard?.(() => isEditing);
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isEditing) { e.preventDefault(); e.returnValue = ''; }
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      registerNavGuard?.(null);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    };
-  }, [isEditing, registerNavGuard]);
-
-  useEffect(() => {
-    if (isEditing) {
-      setTimeout(() => {
-        editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 150);
-    }
-  }, [isEditing]);
+function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
+  // Editing happens on its own page (#/…/vendor/<id>/edit), so this screen just
+  // navigates to it. The unsaved-changes guard lives in VendorForm now, where
+  // the form state it has to inspect actually is.
 
   const [showRiskAssessment, setShowRiskAssessment] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -5418,24 +5391,6 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
         </div>
       )}
 
-      {/* Editing Form */}
-      <div ref={editFormRef} className={`overflow-hidden transition-all duration-300 ease-in-out ${isEditing ? 'opacity-100 max-h-[2000px] mb-6' : 'opacity-0 max-h-0'}`}>
-        {isEditing && (
-          <VendorForm 
-            db={db}
-            materials={materials}
-            onAddMaterial={onAddMaterial}
-            categoryId={vendor.category} 
-            existingVendor={vendor}
-            onClose={() => setIsEditing(false)} 
-            onSave={(v, msg) => { onSave(v, msg); }} 
-            currentUser={currentUser}
-            partners={partners}
-            onAddPartner={onAddPartner}
-          />
-        )}
-      </div>
-
       {/* HERO CARD */}
       <div className={`bg-card border border-border/60 rounded-2xl p-6 mb-6 shadow-sm ${scoreConfig.heroBorder}`}>
         <div className="flex flex-col xl:flex-row items-start justify-between gap-5 pb-1">
@@ -5492,11 +5447,11 @@ function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, mater
               {currentUser.role === 'admin' && (
                 <>
                   <button 
-                    onClick={() => setIsEditing(!isEditing)}
-                    className={`flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold ${isEditing ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-card text-foreground hover:bg-accent border-border shadow-sm'}`}
+                    onClick={() => onEditVendor?.()}
+                    className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
                   >
                     <Pencil className="w-4 h-4" />
-                    <span>{isEditing ? 'انصراف' : 'ویرایش اطلاعات'}</span>
+                    <span>ویرایش اطلاعات</span>
                   </button>
                   <button 
                     onClick={() => setShowConfirmDelete(true)}

@@ -1,3 +1,4 @@
+import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Shield, Key, AlertCircle, CheckCircle, Eye, EyeOff, X } from 'lucide-react';
 import { User } from '../types';
@@ -231,13 +232,14 @@ export function ChangePasswordModal({
 
   // Otherwise, render as a Standard Overlay Modal
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 font-sans" dir="rtl">
-      <div
-        className="bg-card border border-border rounded-3xl p-6 max-w-md w-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] fade-in relative"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="change-password-title"
-      >
+    <FormModal
+      open
+      onClose={() => onClose?.()}
+      size="sm"
+      closeOnBackdrop={false}
+      labelledBy="change-password-title"
+      className="p-6 font-sans"
+    >
         <button
           type="button"
           aria-label="بستن پنجره تغییر رمز عبور"
@@ -369,7 +371,6 @@ export function ChangePasswordModal({
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </FormModal>
   );
 }
