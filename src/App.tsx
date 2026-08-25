@@ -26,7 +26,7 @@ import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton
 import { CommandPalette } from './components/CommandPalette';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
-import { authFetch, isLocalMode } from './services/authFetch';
+import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -129,7 +129,44 @@ export default function App() {
     localStorage.setItem('app_db', JSON.stringify(db));
   }, [db]);
 
+  // Re-check the restored account against the server once per load. currentUser
+  // is rehydrated from localStorage, and every role gate in the UI reads it, so
+  // without this a user whose role was changed — or whose account was closed —
+  // keeps their old access until some other call happens to return 401.
+  // Deliberately runs on mount only: it verifies what was restored, and must not
+  // re-fire when the value it writes back changes.
+  const revalidatedRef = useRef(false);
   useEffect(() => {
+    if (!currentUser || revalidatedRef.current || isLocalMode()) return;
+    revalidatedRef.current = true;
+
+    authFetch('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        const fresh = data?.user;
+        if (!fresh) return;
+        setCurrentUser(prev => {
+          if (!prev) return prev;
+          const changed =
+            prev.role !== fresh.role ||
+            prev.name !== fresh.name ||
+            (prev.mustChangePassword ?? false) !== (fresh.mustChangePassword ?? false);
+          return changed ? { ...prev, ...fresh } : prev;
+        });
+      })
+      .catch(() => {
+        // Offline or unreachable: authFetch already signs the user out on a
+        // 401/403, so anything else here is a transport problem, not a verdict
+        // on the account. Keep the cached session rather than locking them out.
+      });
+  }, [currentUser]);
+
+  useEffect(() => {
+    // Both endpoints below are auth-gated, so this must wait for a signed-in
+    // user: on the login screen a 401 would make authFetch clear the session
+    // and reload, which reloads straight back into this effect.
+    if (!currentUser) return;
+
     const isAllowedVendor = (v: any) => {
       if (!v || !v.id) return false;
       if (typeof v.id === 'string' && v.id.startsWith('vF')) {
@@ -172,7 +209,7 @@ export default function App() {
             setIsSyncing(false);
           });
       });
-  }, []);
+  }, [currentUser]);
 
   const [materials, setMaterials] = useState<Material[]>(() => {
     try {
@@ -492,11 +529,18 @@ export default function App() {
   const { isDark, toggleTheme } = useTheme();
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
-  const handleLogout = () => {
-    localStorage.removeItem('app_jwt_token');
-    localStorage.removeItem('app_currentUser');
-    localStorage.removeItem('app_viewHistory');
-    localStorage.removeItem('app_local_mode');
+  const handleLogout = async () => {
+    // Tell the server first, so the LOGOUT record actually reaches the audit
+    // trail: logging out purely client-side left the log with sign-ins and no
+    // matching sign-outs, which breaks its completeness under ALCOA+. The local
+    // session is cleared either way — a failed request must never trap the user
+    // in a signed-in state.
+    try {
+      await authFetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      /* offline, expired token, or local mode — clear the session regardless */
+    }
+    clearAuthenticationSession();
     setCurrentUser(null);
   };
 

@@ -51,7 +51,12 @@ export function authFetch(url: string, options: RequestInit = {}): Promise<Respo
   };
 
   return fetch(url, { ...options, headers }).then(response => {
-    if (response.status === 401 || response.status === 403) {
+    // Only 401 ends the session. 403 means the server knows who this is and is
+    // refusing the action, which is a normal outcome for a role-restricted
+    // endpoint — signing the user out for it logged non-admins straight back to
+    // the login screen, because the dashboard asks for the admin-only audit
+    // feed on load. Callers see the 403 and handle it themselves.
+    if (response.status === 401) {
       clearAuthenticationSession();
       window.location.reload();
       throw new Error('Session has expired. Please log in again.');

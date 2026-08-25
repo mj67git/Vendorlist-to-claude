@@ -840,8 +840,32 @@ function requireAuth(req: any, res: any, next: any) {
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ error: "Access Denied: Session integrity verification failed" });
+    // 401, not 403: the token is missing or no longer verifies, which is a
+    // failure to authenticate. 403 is reserved for a known user who is not
+    // allowed to do this, so the client can tell the two apart.
+    return res.status(401).json({ error: "Access Denied: Session integrity verification failed" });
   }
+}
+
+/**
+ * Restrict a route to specific roles. Chain it after requireAuth, which is what
+ * populates req.user from the token.
+ *
+ * The role checks the UI performs are for usability only: currentUser is read
+ * from localStorage and can be edited in devtools, so the server has to be the
+ * one that decides. Without this every signed-in user could reach the user
+ * endpoints and grant themselves admin — which would undermine the audit trail,
+ * since its value rests on access control being trustworthy.
+ */
+function requireRole(...roles: string[]) {
+  return function (req: any, res: any, next: any) {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: "عدم دسترسی: این عملیات فقط برای مدیران سیستم مجاز است.",
+      });
+    }
+    next();
+  };
 }
 
 async function startServer() {
@@ -1135,18 +1159,26 @@ async function startServer() {
   });
 
   // Fetch / verify logged in user's profile state
+  // The client calls this on boot to re-check the account it restored from
+  // localStorage. Role and name therefore come from the database rather than
+  // from the token: the token is valid for seven days, so reading the role back
+  // out of it would just echo whatever was true when the user signed in and
+  // could never report a role change or a closed account.
   app.get("/api/auth/me", requireAuth, async (req: any, res) => {
     const username = req.user.username;
     const matchedUser = await getUserByUsername(username);
-    const mustChangePassword = matchedUser ? matchedUser.mustChangePassword !== false : false;
 
-    res.json({ 
-      success: true, 
+    if (!matchedUser) {
+      return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+    }
+
+    res.json({
+      success: true,
       user: {
-        username: req.user.username,
-        role: req.user.role,
-        name: req.user.name,
-        mustChangePassword
+        username: matchedUser.username,
+        role: matchedUser.role,
+        name: matchedUser.name,
+        mustChangePassword: matchedUser.mustChangePassword !== false
       }
     });
   });
@@ -1160,7 +1192,7 @@ async function startServer() {
   });
 
   // Get all vendors (Unified Database)
-  app.get("/api/vendors", async (req, res) => {
+  app.get("/api/vendors", requireAuth, async (req: any, res) => {
     try {
       const list = await getVendorsList();
       res.json(list);
@@ -2319,7 +2351,7 @@ async function startServer() {
   // --- User Management Endpoints ---
   // ==========================================
 
-  app.get("/api/users", requireAuth, async (req: any, res) => {
+  app.get("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const usersList = (await getAllUsers()).map(u => ({
         username: u.username,
@@ -2334,7 +2366,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/users", requireAuth, async (req: any, res) => {
+  app.post("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const { username, name, role, password, permissions, reasonForChange } = req.body;
       if (!username || !name || !role) {
@@ -2399,7 +2431,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/users/:username", requireAuth, async (req: any, res) => {
+  app.patch("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2453,7 +2485,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/users/:username", requireAuth, async (req: any, res) => {
+  app.delete("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2496,7 +2528,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/users/:username/role", requireAuth, async (req: any, res) => {
+  app.put("/api/users/:username/role", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2545,7 +2577,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/users/:username/permissions", requireAuth, async (req: any, res) => {
+  app.put("/api/users/:username/permissions", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
