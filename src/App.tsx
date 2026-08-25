@@ -21,7 +21,8 @@ import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './ut
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { AuditTrailView } from './components/AuditTrailView';
 import { UsersView } from './components/UsersView';
-import { can } from './utils/permissions';
+import { can, effectivePermissions } from './utils/permissions';
+import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
 import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
@@ -528,6 +529,30 @@ export default function App() {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Session facts for the user menu. The remaining time is recomputed each time
+  // the menu opens rather than ticking, since it is a coarse label.
+  const [myActivity, setMyActivity] = useState<any[] | null>(null);
+  const [sessionLeftLabel, setSessionLeftLabel] = useState<string | null>(null);
+  const [sessionExpiringSoon, setSessionExpiringSoon] = useState(false);
+  const myPermissionCount = effectivePermissions(currentUser).length;
+  const myPermissionsCustom = currentUser?.permissionsCustom === true;
+
+  useEffect(() => {
+    if (!showUserMenu || !currentUser) return;
+
+    const remaining = sessionRemainingMs();
+    setSessionLeftLabel(formatRemaining(remaining));
+    setSessionExpiringSoon(remaining !== null && remaining < 24 * 60 * 60 * 1000);
+
+    if (isLocalMode()) { setMyActivity([]); return; }
+    let cancelled = false;
+    authFetch('/api/auth/my-activity?limit=4')
+      .then(res => (res.ok ? res.json() : null))
+      .then(j => { if (!cancelled) setMyActivity(Array.isArray(j?.data) ? j.data : []); })
+      .catch(() => { if (!cancelled) setMyActivity([]); });
+    return () => { cancelled = true; };
+  }, [showUserMenu, currentUser]);
   const { isDark, toggleTheme } = useTheme();
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
@@ -1593,7 +1618,7 @@ export default function App() {
                   {showUserMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-60 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
+                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
                         <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
                           <Avatar className="h-9 w-9 border border-border">
                             <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
@@ -1603,6 +1628,59 @@ export default function App() {
                             <span className="text-[10px] font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                           </div>
                         </div>
+                        {/* Session facts: when they were last here, how long this
+                            session has left, and what they can do. */}
+                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-[10px] text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <History className="w-3 h-3" />
+                              ورود قبلی
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {formatDateTime(currentUser.previousLoginAt) || 'اولین ورود'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="w-3 h-3" />
+                              اعتبار نشست
+                            </span>
+                            <span className={`font-semibold ${sessionExpiringSoon ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
+                              {sessionLeftLabel || '—'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <Shield className="w-3 h-3" />
+                              سطح دسترسی
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {myPermissionCount} مورد{myPermissionsCustom ? ' (سفارشی)' : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* My recent activity, straight from the audit trail. */}
+                        <div className="px-3.5 py-2.5 border-b border-border">
+                          <span className="text-[10px] font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
+                          {myActivity === null ? (
+                            <span className="text-[10px] text-muted-foreground italic">در حال بارگذاری...</span>
+                          ) : myActivity.length === 0 ? (
+                            <span className="text-[10px] text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
+                          ) : (
+                            <ul className="space-y-1">
+                              {myActivity.map((a: any) => (
+                                <li key={a.id} className="flex items-start gap-1.5 text-[10px] leading-snug">
+                                  <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
+                                  <span className="text-muted-foreground truncate" title={a.description}>
+                                    {a.description || a.action}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
                         <div className="p-1.5">
                           <button
                             onClick={toggleTheme}

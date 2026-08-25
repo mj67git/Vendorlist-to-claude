@@ -9,6 +9,7 @@ import { AuditService } from "./src/utils/auditService.js";
 import {
   can,
   effectivePermissions,
+  hasCustomPermissions,
   forbiddenScoreChanges,
   forbiddenRawScoreChanges,
   sanitizePermissions,
@@ -1148,7 +1149,12 @@ async function startServer() {
       { expiresIn: "7d" }
     );
 
-    // Record the sign-in time so the user menu and the admin list can show it.
+    // Read the previous sign-in before overwriting it: what a person wants to
+    // see when they log in is when they were *last* here, not the moment they
+    // just arrived. It is returned once at login and then left alone, since
+    // /api/auth/me deliberately does not send it back.
+    const previousLoginAt = matchedUser.lastLoginAt ? new Date(matchedUser.lastLoginAt).toISOString() : null;
+
     requirePrisma().user
       .update({ where: { username: matchedUser.username.toLowerCase() }, data: { lastLoginAt: new Date() } })
       .catch(err => console.error("Failed to record last login:", err));
@@ -1185,6 +1191,10 @@ async function startServer() {
         name: matchedUser.name,
         // The effective list, so the UI gates on exactly what the server will.
         permissions: effectivePermissions(matchedUser),
+        // The client only ever receives the effective list, so it cannot work
+        // out on its own whether that came from the role or from an override.
+        permissionsCustom: hasCustomPermissions(matchedUser),
+        previousLoginAt,
         mustChangePassword
       }
     });
@@ -1333,9 +1343,32 @@ async function startServer() {
         role: matchedUser.role,
         name: matchedUser.name,
         permissions: effectivePermissions(matchedUser),
+        // The client only ever receives the effective list, so it cannot work
+        // out on its own whether that came from the role or from an override.
+        permissionsCustom: hasCustomPermissions(matchedUser),
         mustChangePassword: matchedUser.mustChangePassword !== false
       }
     });
+  });
+
+  /**
+   * The signed-in user's own recent activity.
+   *
+   * The audit trail itself is admin-only, but reading back what *you* did is
+   * not a privileged act, and it is the fastest way for someone to notice
+   * activity on their account that was not theirs. The filter is taken from the
+   * token, never from the query string, so this cannot be pointed at anyone
+   * else's history.
+   */
+  app.get("/api/auth/my-activity", requireAuth, async (req: any, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 8, 25);
+      const result = await AuditService.getAuditLogs({ userId: req.user.username }, 1, limit);
+      res.json({ success: true, data: result?.data ?? [], total: result?.total ?? 0 });
+    } catch (err: any) {
+      console.error("Failed to fetch own activity:", err);
+      res.status(500).json({ error: "دریافت فعالیت اخیر با خطا مواجه شد." });
+    }
   });
 
   // Dynamic configuration endpoint for scoring weights & mapping criteria

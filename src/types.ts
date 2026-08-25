@@ -11,6 +11,14 @@ export interface User {
    *  otherwise the role's template. Absent for sessions restored from an older
    *  cache, in which case the role template applies. */
   permissions?: string[];
+  /** When this account last signed in *before* the current session. Sent once
+   *  at login and deliberately not refreshed, so it keeps meaning "last time",
+   *  not "this time". */
+  /** True when an admin adjusted this account away from its role template.
+   *  Comes from the server: the client only receives the effective list and so
+   *  cannot tell the two apart by itself. */
+  permissionsCustom?: boolean;
+  previousLoginAt?: string | null;
   mustChangePassword?: boolean;
 }
 
