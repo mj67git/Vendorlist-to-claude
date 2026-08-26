@@ -16,7 +16,7 @@ import { VendorForm } from './components/vendor/VendorForm';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
-import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
+import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { AuditTrailView } from './components/AuditTrailView';
@@ -27,6 +27,7 @@ import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { WorklistView } from './components/views/WorklistView';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
@@ -301,9 +302,11 @@ export default function App() {
   }, [currentUser]);
 
   type ViewState = {
-    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users';
+    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users' | 'tasks';
     categoryId: Category | null;
     selectedVendor: Vendor | null;
+    /** Which backlog the worklist page is showing. */
+    taskKey?: TaskKey | null;
     expandedMaterial?: string | null;
     /** The source form is a page, not an overlay — this is which page. */
     formMode?: 'create' | 'edit' | null;
@@ -321,6 +324,7 @@ export default function App() {
     selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
     expandedMaterial: r.expandedMaterial ?? null,
     formMode: r.formMode ?? null,
+    taskKey: r.taskKey ?? null,
   });
 
   const viewStateToRoute = (s: ViewState): RouteState => ({
@@ -329,6 +333,7 @@ export default function App() {
     vendorId: s.selectedVendor?.id ?? null,
     expandedMaterial: s.expandedMaterial ?? null,
     formMode: s.formMode ?? null,
+    taskKey: s.taskKey ?? null,
   });
 
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
@@ -639,7 +644,7 @@ export default function App() {
     action();
   };
 
-  const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users', newCat: Category | null = null) => {
+  const navigate = (newView: ViewState['view'], newCat: Category | null = null, taskKey: TaskKey | null = null) => {
     runGuarded(() => {
       setViewHistory(prev => {
         if (newView === 'home') {
@@ -650,12 +655,13 @@ export default function App() {
         // of pushing a duplicate (which previously made "back" re-enter a source
         // detail the user had deliberately left).
         const existing = prev.map((s, i) => ({ s, i }))
-          .filter(({ s }) => s.view === newView && s.categoryId === newCat && s.selectedVendor === null)
+          .filter(({ s }) => s.view === newView && s.categoryId === newCat
+            && (s.taskKey ?? null) === taskKey && s.selectedVendor === null)
           .pop();
         if (existing) {
           return prev.slice(0, existing.i + 1);
         }
-        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null }]);
+        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null, taskKey }]);
       });
       setSidebarOpen(false);
     });
@@ -746,6 +752,7 @@ export default function App() {
     if (state.view === 'audit-trail') return 'Audit Trail';
     if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
     if (state.view === 'users') return 'مدیریت کاربران';
+    if (state.view === 'tasks') return 'کارتابل اقدامات';
     if (state.view === 'category' && state.categoryId) {
       return categoryLabels[state.categoryId]?.fa || 'دسته‌بندی';
     }
@@ -1166,6 +1173,20 @@ export default function App() {
       // endpoint — see the note on LEGACY_PERMISSIONS.
       keyName = 'archive';
       content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
+    } else if (view === 'tasks') {
+      const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
+      keyName = `tasks-${taskKey}`;
+      content = (
+        <WorklistView
+          taskKey={taskKey}
+          db={db}
+          partners={businessPartners}
+          currentUser={currentUser}
+          onSelectVendor={handleSelectVendor}
+          onNavigate={v => navigate(v as any)}
+          onSwitchTask={k => navigate('tasks', null, k)}
+        />
+      );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
       content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;

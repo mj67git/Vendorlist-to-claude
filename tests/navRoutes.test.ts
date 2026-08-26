@@ -115,3 +115,38 @@ test('malformed form routes are rejected', () => {
   assert.equal(decodeRoute('#/category/foreign/vendor/V1/bogus'), null);
   assert.equal(decodeRoute('#/category/foreign/new/extra'), null);
 });
+
+test('each worklist backlog is its own address', () => {
+  for (const key of ['eval', 'risk', 'sop', 'irc']) {
+    const d = decodeRoute(`#/tasks/${key}`);
+    assert.equal(d!.view, 'tasks');
+    assert.equal(d!.taskKey, key);
+    assert.equal(encodeRoute(d as any), `#/tasks/${key}`, 'round-trips unchanged');
+  }
+});
+
+test('a bare worklist URL opens the first backlog', () => {
+  const d = decodeRoute('#/tasks');
+  assert.equal(d!.taskKey, 'eval');
+  // Normalised on the way out so the address bar always names the tab shown.
+  assert.equal(encodeRoute(d as any), '#/tasks/eval');
+});
+
+test('an unknown backlog is rejected rather than silently shown', () => {
+  assert.equal(decodeRoute('#/tasks/bogus'), null);
+  assert.equal(decodeRoute('#/tasks/eval/extra'), null);
+});
+
+test('the worklist stacks on home, so Back leaves the backlog', () => {
+  const stack = buildStackFromRoute(r({ view: 'tasks', taskKey: 'irc' } as any));
+  assert.deepEqual(stack.map(s => s.view), ['home', 'tasks']);
+  assert.equal(stack[1].taskKey, 'irc');
+});
+
+test('two backlogs are distinct locations', () => {
+  assert.notEqual(
+    routeKey({ view: 'tasks', taskKey: 'eval' }),
+    routeKey({ view: 'tasks', taskKey: 'risk' }),
+    'switching tabs must not be mistaken for the same page',
+  );
+});

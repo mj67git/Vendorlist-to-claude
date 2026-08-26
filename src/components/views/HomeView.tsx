@@ -59,10 +59,10 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     const noRisk = realVendors.filter(v => v.status !== 'rejected' && !v.riskAssessment);
     const sopPending = (partners || []).filter(p => p.type === 'Supplier' && (!p.evaluation || p.evaluation.grade === 'Not Evaluated'));
     return [
-      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, items: notEvaluated, icon: ClipboardList, tone: 'amber' },
-      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, items: noRisk, icon: ShieldAlert, tone: 'orange' },
-      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, items: [], icon: Award, tone: 'blue' },
-      { key: 'irc', label: 'IRC نزدیک انقضا / منقضی', count: expiringVendors.length, items: expiringVendors.map(e => e.vendor), icon: Calendar, tone: 'rose' },
+      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, icon: ClipboardList, tone: 'amber' },
+      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, icon: ShieldAlert, tone: 'orange' },
+      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
+      { key: 'irc', label: 'IRC نزدیک انقضا / منقضی', count: expiringVendors.length, icon: Calendar, tone: 'rose' },
     ];
   }, [db, partners, expiringVendors]);
 
@@ -199,13 +199,16 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           </div>
           <div className="grid grid-cols-2 gap-3">
             {pendingActions.map(a => {
-              const clickable = a.items.length > 0;
+              // Opening the backlog, not the first record in it: jumping
+              // straight into one of twelve told the user neither which record
+              // they had landed on nor what else was waiting.
+              const clickable = a.count > 0;
               return (
                 <button
                   key={a.key}
                   type="button"
                   disabled={!clickable}
-                  onClick={() => { if (clickable) onSelectVendor(a.items[0]); }}
+                  onClick={() => { if (clickable) onNavigate('tasks', null, a.key); }}
                   className={`text-right rounded-xl border p-3 transition-all ${toneClasses[a.tone]} ${clickable ? 'hover:shadow-sm cursor-pointer' : 'opacity-70 cursor-default'}`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
@@ -281,70 +284,10 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </Card>
       </div>
 
-      {/* LICENSE EXPIRY ALERTS (IF ANY) */}
-      {expiringVendors.length > 0 && (
-        <Card className="border-amber-300/80 dark:border-amber-600/40 bg-amber-50/40 dark:bg-amber-950/20 p-5 space-y-3.5">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-                <AlertTriangle className="w-4 h-4 animate-bounce" />
-              </div>
-              <div>
-                <div className="font-extrabold text-sm text-foreground flex items-center gap-2">
-                  <span>هشدار انقضای مجوزهای قانونی (IRC / IVC)</span>
-                  <Badge variant="warning" className="text-[10px] font-mono font-bold">
-                    {expiringVendors.length} مورد نیازمند تمدید
-                  </Badge>
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  مجوزهای زیر کمتر از ۲ ماه تا انقضا فاصله دارند یا تاریخ اعتبار آن‌ها سپری شده است:
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-            {expiringVendors.slice(0, 6).map(({ vendor, check }) => (
-              <div
-                key={vendor.id}
-                onClick={() => onSelectVendor(vendor)}
-                className="bg-card hover:bg-accent/50 border border-border hover:border-primary/40 p-3.5 rounded-xl transition-all shadow-2xs cursor-pointer flex flex-col justify-between space-y-2 group"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <EntityName
-                    as="div"
-                    name={vendor.material || vendor.name}
-                    lines={2}
-                    className="font-bold text-xs text-foreground group-hover:text-primary transition-colors"
-                  />
-                  {check.status === 'expired' ? (
-                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-bold shrink-0">
-                      منقضی
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-bold shrink-0">
-                      {check.daysLeft} روز مانده
-                    </Badge>
-                  )}
-                </div>
-                {/* The clip used to sit on this flex row, so the IRC chip ate
-                    the source name rather than the row eliding as a whole. */}
-                <div className="text-[11px] text-muted-foreground flex items-center justify-between gap-2">
-                  <span className="min-w-0 flex-1 flex items-baseline gap-1">
-                    <span className="shrink-0">سورس:</span>
-                    <EntityName name={vendor.name} lines={1} className="text-foreground font-bold" />
-                  </span>
-                  {vendor.irc && <span className="font-mono text-[10px] text-muted-foreground shrink-0">IRC: {vendor.irc}</span>}
-                </div>
-                <div className="text-[11px] text-muted-foreground border-t border-border pt-2 flex items-center justify-between">
-                  <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                  <span className="text-primary font-bold text-[10px] group-hover:underline">بررسی سورس ←</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      {/* The expiring-licence list used to be rendered here. It moved to the
+          worklist (#/tasks/irc): the dashboard grew longer exactly as the
+          backlog grew, which is backwards — a dashboard should summarise and
+          hand off. The counter in the pending-actions card is the entry point. */}
 
       {/* CATEGORY CARDS */}
       <div>
