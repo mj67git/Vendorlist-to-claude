@@ -37,6 +37,23 @@ import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
 
+/**
+ * The header clock's date, read the way a date is spoken in Persian: day,
+ * month, year, then the weekday.
+ *
+ * `toLocaleDateString` with all four parts returns "۱۴۰۵ شهریور ۴, چهارشنبه" —
+ * year first and the weekday stranded behind a comma. The parts are requested
+ * separately and assembled instead, which also avoids stripping punctuation out
+ * of a formatted string afterwards.
+ */
+function formatSystemDate(d: Date): string {
+  const day = d.toLocaleDateString('fa-IR', { day: 'numeric' });
+  const month = d.toLocaleDateString('fa-IR', { month: 'long' });
+  const year = d.toLocaleDateString('fa-IR', { year: 'numeric' });
+  const weekday = d.toLocaleDateString('fa-IR', { weekday: 'long' });
+  return `${day} ${month} ${year} · ${weekday}`;
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -50,7 +67,7 @@ export default function App() {
   const [systemTime, setSystemTime] = useState(() => {
     const d = new Date();
     return {
-      faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).replace(/،/g, ''),
+      faDate: formatSystemDate(d),
       time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
   });
@@ -59,7 +76,7 @@ export default function App() {
     const timer = setInterval(() => {
       const d = new Date();
       setSystemTime({
-        faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).replace(/،/g, ''),
+        faDate: formatSystemDate(d),
         time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       });
     }, 1000);
@@ -1517,12 +1534,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Beautiful Live System Clock & Calendar */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
-                <span className="font-semibold text-foreground">{systemTime.faDate}</span>
-                <span className="text-border">|</span>
-                <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
-              </div>
             </div>
             
             <div className="flex items-center gap-2 sm:gap-3">
@@ -1632,6 +1643,13 @@ export default function App() {
                   <span className="hidden md:inline">پشتیبان‌گیری (JSON)</span>
                 </Button>
               )}
+
+              {/* Live clock, in the top-left beside the account box. */}
+              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
+                <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
+                <span className="text-border">|</span>
+                <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
+              </div>
 
               <div className="hidden lg:flex bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full items-center gap-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

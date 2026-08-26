@@ -337,40 +337,6 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </div>
       </div>
 
-      {/* ALERT PANELS */}
-      <div className="space-y-4">
-        {/* NEW VENDORS PANEL */}
-        <Card className="p-5 space-y-3 bg-card border-border/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Plus className="w-4 h-4 text-primary" />
-              <div className="font-bold text-foreground text-sm">در انتظار ارزیابی اولیه کیفی</div>
-            </div>
-            <Badge variant="info" className="font-mono text-xs">
-              {db.filter(v => v.status === 'new').length} مورد جدید
-            </Badge>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
-            {db.filter(v => v.status === 'new').slice(0, 3).map(v => (
-              <div key={v.id} className="bg-muted/40 border border-border/60 rounded-xl p-3 flex items-center justify-between hover:bg-muted transition-colors">
-                <div className="min-w-0 pr-1">
-                  <EntityName as="div" name={v.name} lines={2} className="text-foreground font-bold text-xs" />
-                  <EntityName as="div" name={v.material} lines={1} className="text-muted-foreground text-[11px]" />
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => onSelectVendor(v)} 
-                  className="text-primary hover:text-primary/80 text-xs h-7 px-2 shrink-0 font-bold"
-                >
-                  مشاهده
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
     </div>
   );
 }
