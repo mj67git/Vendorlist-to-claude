@@ -160,7 +160,19 @@ export function FormModal({
             aria-labelledby={labelledBy}
             aria-label={labelledBy ? undefined : ariaLabel}
             tabIndex={-1}
-            className={`relative z-10 w-full ${SIZE_CLASS[size]} bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right focus:outline-none ${className}`}
+            /* `[&>*]:min-h-0` is load-bearing, not cosmetic. A flex item's
+               automatic minimum size stops it shrinking below its content — so
+               a caller's `flex flex-col` wrapper kept its full natural height
+               (975px in the permissions dialog), the panel's `overflow-hidden`
+               clipped whatever fell past 92vh, and the footer holding the save
+               button was simply cut off the screen. The wrapper's own
+               `overflow-y-auto` body never scrolled either, because it was
+               handed more height than the panel had. Allowing the direct child
+               to shrink hands the overflow to that inner scroll area, which is
+               where it belonged. (Scroll containers already compute their
+               automatic minimum to zero, which is why only the wrapper needs
+               this.) */
+            className={`relative z-10 w-full ${SIZE_CLASS[size]} bg-card rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden text-right focus:outline-none [&>*]:min-h-0 ${className}`}
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.965 }}
             animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
