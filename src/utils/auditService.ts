@@ -1,11 +1,16 @@
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
+import { severityMatches } from "./auditTaxonomy.js";
 
 // Types for Audit Log Service
 export interface AuditLogFilters {
   userId?: string;
+  /** Matches either the stored userId or the stored userName (the filter form offers names). */
+  user?: string;
   module?: string;
+  /** Coarse event group, expanded to a set of module values by the caller. */
+  modules?: string[];
   eventType?: string;
   action?: 'Create' | 'Update' | 'Delete' | 'Restore' | 'Archive' | 'System Update' | 'System Calculation' | 'LOGIN' | 'LOGOUT' | 'FAILED_LOGIN' | 'ROLE_CHANGE' | 'PERMISSION_CHANGE' | 'CREATE_USER' | 'UPDATE_USER' | 'DELETE_USER' | string;
   severity?: 'Information' | 'Warning' | 'Critical' | string;
@@ -395,12 +400,15 @@ export class AuditService {
 
       if (filters) {
         if (filters.userId) where.userId = filters.userId;
+        if (filters.user) where.OR = [{ userId: filters.user }, { userName: filters.user }];
         if (filters.module && filters.module !== "all") where.module = filters.module;
+        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
         if (filters.action && filters.action !== "all") where.action = filters.action;
-        if (filters.severity && filters.severity !== "all") where.severity = filters.severity;
+        // `Info` and `Information` are the same level; see auditTaxonomy.ts.
+        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
         if (filters.entityId) where.entityId = filters.entityId;
         if (filters.correlationId) where.correlationId = filters.correlationId;
-        
+
         if (filters.startDate || filters.endDate) {
           where.timestamp = {};
           if (filters.startDate) where.timestamp.gte = filters.startDate;
@@ -523,11 +531,24 @@ export class AuditService {
 
       if (filters) {
         if (filters.userId) where.userId = filters.userId;
+        // AND, not OR: the free-text search below claims `where.OR` for itself,
+        // and the two conditions must both hold rather than either one.
+        if (filters.user) {
+          where.AND = [{ OR: [{ userId: filters.user }, { userName: filters.user }] }];
+        }
         if (filters.module && filters.module !== "all") where.module = filters.module;
+        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
         if (filters.action && filters.action !== "all") where.action = filters.action;
-        if (filters.severity && filters.severity !== "all") where.severity = filters.severity;
+        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
         if (filters.entityId) where.entityId = filters.entityId;
         if (filters.correlationId) where.correlationId = filters.correlationId;
+        // The date range used to be dropped here, so searching by text inside a
+        // date range quietly widened the range to "everything".
+        if (filters.startDate || filters.endDate) {
+          where.timestamp = {};
+          if (filters.startDate) where.timestamp.gte = filters.startDate;
+          if (filters.endDate) where.timestamp.lte = filters.endDate;
+        }
       }
 
       if (query && query.trim()) {

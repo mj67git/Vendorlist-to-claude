@@ -85,9 +85,12 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   
   // استخراج سال، ماه و روز از مقدار فعلی
+  // An empty picker used to open on Farvardin 1403 — a fixed date in the past,
+  // so every "pick a date" started with two years of paging. Open on today.
+  const today = jalaali.toJalaali(new Date());
   const parts = value.split('/');
-  const initialYear = parts.length === 3 ? parseInt(parts[0], 10) : 1403;
-  const initialMonth = parts.length === 3 ? parseInt(parts[1], 10) : 1;
+  const initialYear = parts.length === 3 ? parseInt(parts[0], 10) : today.jy;
+  const initialMonth = parts.length === 3 ? parseInt(parts[1], 10) : today.jm;
   
   const [currentYear, setCurrentYear] = useState<number>(initialYear);
   const [currentMonth, setCurrentMonth] = useState<number>(initialMonth); // ۱ تا ۱۲

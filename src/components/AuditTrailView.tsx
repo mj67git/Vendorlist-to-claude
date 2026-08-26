@@ -6,8 +6,13 @@ import {
   RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
   Calculator, Award, TrendingUp, Cpu
 } from 'lucide-react';
+import jalaali from 'jalaali-js';
 import { FormModal } from './FormModal';
 import { Pagination } from './Pagination';
+import { ShamsiDatePicker } from './ShamsiDatePicker';
+import {
+  AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
+} from '../utils/auditTaxonomy';
 import { isLocalMode } from '../services/authFetch';
 import { readLocalAudit } from '../services/localAudit';
 import { exportAuditToExcel } from '../utils/excelExport';
@@ -166,6 +171,27 @@ const fieldKeyLabels: Record<string, string> = {
   initialSampleStatus: 'وضعیت اولیهٔ نمونه', rejectionReasons: 'دلایل رد', totalScore: 'امتیاز کل',
 };
 
+/**
+ * Jalali `YYYY/MM/DD` → an ISO instant the API can compare against.
+ * The date boxes used to be free text whose Persian value went straight into
+ * `new Date()` on the server, producing `Invalid Date`; the range filter has
+ * therefore never worked. `end` takes the last millisecond of the day so that
+ * "تا ۱۴۰۵/۰۵/۱۵" includes everything logged on the 15th.
+ */
+function jalaliToIso(jalaliStr: string, edge: 'start' | 'end'): string {
+  const [jy, jm, jd] = jalaliStr.split('/').map(n => parseInt(n, 10));
+  if (!jy || !jm || !jd) return '';
+  try {
+    const { gy, gm, gd } = jalaali.toGregorian(jy, jm, jd);
+    const d = edge === 'start'
+      ? new Date(gy, gm - 1, gd, 0, 0, 0, 0)
+      : new Date(gy, gm - 1, gd, 23, 59, 59, 999);
+    return d.toISOString();
+  } catch {
+    return '';
+  }
+}
+
 const fmtVal = (v: any): string => {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'object') return JSON.stringify(v);
@@ -198,13 +224,15 @@ export const AuditTrailView: React.FC = () => {
   // Filter States
   const [filterUser, setFilterUser] = useState('all');
   const [filterModule, setFilterModule] = useState('all');
-  const [filterEventType, setFilterEventType] = useState('all');
+  const [filterGroup, setFilterGroup] = useState('all');
   const [filterAction, setFilterAction] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
+  // Kept as Jalali `YYYY/MM/DD` — what the user reads — and converted to a real
+  // instant only on the way to the API.
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const advancedFilterCount = [filterUser, filterModule, filterEventType, filterAction, filterSeverity].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
+  const advancedFilterCount = [filterUser, filterModule, filterGroup, filterAction, filterSeverity].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
 
   // Sorting States
   const [sortField, setSortField] = useState<'date' | 'time' | 'user' | 'severity'>('date');
@@ -233,25 +261,21 @@ export const AuditTrailView: React.FC = () => {
     lastUpdated: "-"
   });
 
-  // Dynamic filter lists for select options
-  const uniqueUsers = useMemo(() => {
-    const mockUsers = Array.from(new Set(MOCK_AUDIT_LOGS.map(log => log.user)));
-    return Array.from(new Set([...mockUsers, ...apiUsers]));
-  }, [apiUsers]);
+  // Dynamic filter lists for select options.
+  // Only users that really appear in the log: offering demo names guaranteed an
+  // empty result, since no such record exists in the database.
+  const uniqueUsers = useMemo(() => Array.from(new Set(apiUsers)), [apiUsers]);
 
-  const STANDARD_MODULES = [
-    'ارزیابی تامین‌کنندگان',
-    'مدیریت سورس‌ها',
-    'شناسنامه کالا / مواد',
-    'آزمایشگاه کنترل کیفیت',
-    'ارزیابی ریسک',
-    'امنیتی و احراز هویت',
-    'مدیریت کاربران'
-  ];
-
-  const uniqueModules = useMemo(() => {
-    const mockModules = Array.from(new Set(MOCK_AUDIT_LOGS.map(log => log.module)));
-    return Array.from(new Set([...STANDARD_MODULES, ...mockModules, ...apiModules]));
+  /**
+   * The module options are the values `server.ts` actually writes (see
+   * auditTaxonomy.ts), plus anything the live log contains that the map does
+   * not know about yet — so a new call site shows up as its raw value rather
+   * than disappearing from the filter.
+   */
+  const moduleOptions = useMemo(() => {
+    const known = Object.keys(AUDIT_MODULE_LABELS);
+    const extras = apiModules.filter(m => !AUDIT_MODULE_LABELS[m]);
+    return [...known, ...extras].map(value => ({ value, label: AUDIT_MODULE_LABELS[value] || value }));
   }, [apiModules]);
 
   // Fetch real logs from backend
@@ -286,11 +310,13 @@ export const AuditTrailView: React.FC = () => {
           };
         };
         const q = searchQuery.trim().toLowerCase();
+        const groupModules = AUDIT_EVENT_GROUPS[filterGroup]?.modules;
         const all = readLocalAudit().map(mapLocal).filter((l: any) => {
           if (filterUser !== 'all' && l.user !== filterUser) return false;
           if (filterModule !== 'all' && l.module !== filterModule) return false;
+          if (groupModules && !groupModules.includes(l.module)) return false;
           if (filterAction !== 'all' && l.action !== filterAction) return false;
-          if (activeSev !== 'all' && l.severity !== activeSev) return false;
+          if (activeSev !== 'all' && !severityMatches(activeSev).includes(l.severity)) return false;
           if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
           return true;
         });
@@ -315,12 +341,12 @@ export const AuditTrailView: React.FC = () => {
         limit: itemsPerPage.toString(),
         userId: filterUser !== 'all' ? filterUser : '',
         module: filterModule !== 'all' ? filterModule : '',
-        eventType: filterEventType !== 'all' ? filterEventType : '',
+        group: filterGroup !== 'all' ? filterGroup : '',
         action: filterAction !== 'all' ? filterAction : '',
         severity: activeSeverity !== 'all' ? activeSeverity : '',
         quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
-        startDate,
-        endDate,
+        startDate: startDate ? jalaliToIso(startDate, 'start') : '',
+        endDate: endDate ? jalaliToIso(endDate, 'end') : '',
         query: searchQuery,
       });
 
@@ -374,7 +400,7 @@ export const AuditTrailView: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filterUser, filterModule, filterEventType, filterAction, filterSeverity, quickSeverityFilter, quickCategoryFilter, startDate, endDate, searchQuery, itemsPerPage]);
+  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, quickSeverityFilter, quickCategoryFilter, startDate, endDate, searchQuery, itemsPerPage]);
 
   // Fetch metrics and filters
   const fetchStatsAndFilters = useCallback(async () => {
@@ -493,6 +519,7 @@ export const AuditTrailView: React.FC = () => {
     setSearchQuery('');
     setFilterUser('all');
     setFilterModule('all');
+    setFilterGroup('all');
     setFilterAction('all');
     setFilterSeverity('all');
     setStartDate('');
@@ -528,11 +555,13 @@ export const AuditTrailView: React.FC = () => {
       };
       let rows: any[] = [];
       if (isLocalMode()) {
+        const groupModules = AUDIT_EVENT_GROUPS[filterGroup]?.modules;
         rows = readLocalAudit().map(mapRow).filter((l: any) => {
           if (filterUser !== 'all' && l.user !== filterUser) return false;
           if (filterModule !== 'all' && l.module !== filterModule) return false;
+          if (groupModules && !groupModules.includes(l.module)) return false;
           if (filterAction !== 'all' && l.action !== filterAction) return false;
-          if (activeSev !== 'all' && l.severity !== activeSev) return false;
+          if (activeSev !== 'all' && !severityMatches(activeSev).includes(l.severity)) return false;
           if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
           return true;
         });
@@ -543,11 +572,13 @@ export const AuditTrailView: React.FC = () => {
           page: '1', limit: '10000',
           userId: filterUser !== 'all' ? filterUser : '',
           module: filterModule !== 'all' ? filterModule : '',
-          eventType: filterEventType !== 'all' ? filterEventType : '',
+          group: filterGroup !== 'all' ? filterGroup : '',
           action: filterAction !== 'all' ? filterAction : '',
           severity: activeSev !== 'all' ? activeSev : '',
           quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
-          startDate, endDate, query: searchQuery,
+          startDate: startDate ? jalaliToIso(startDate, 'start') : '',
+          endDate: endDate ? jalaliToIso(endDate, 'end') : '',
+          query: searchQuery,
         });
         const res = await fetch(`/api/audit-logs?${params.toString()}`, { headers });
         if (res.ok) { const j = await res.json(); rows = (j.data || []).map(mapRow); }
@@ -710,25 +741,26 @@ export const AuditTrailView: React.FC = () => {
               className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-[#0071E3]"
             >
               <option value="all">همه ماژول‌ها</option>
-              {uniqueModules.map(m => (
-                <option key={m} value={m}>{m}</option>
+              {moduleOptions.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
           </div>
 
-          {/* Event Type Filter (PHASE 7 SECURITY) */}
+          {/* Event group — a coarser grain above the module filter. */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">گروه رویداد (Event Category)</label>
+            <label className="text-muted-foreground text-[10px] font-bold">گروه رویداد</label>
             <select
-              value={filterEventType}
-              onChange={e => { setFilterEventType(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-[#0071E3]"
+              value={filterGroup}
+              onChange={e => { setFilterGroup(e.target.value); setCurrentPage(1); }}
+              disabled={filterModule !== 'all'}
+              title={filterModule !== 'all' ? 'وقتی یک ماژول مشخص انتخاب شده، گروه رویداد اثری ندارد.' : undefined}
+              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-[#0071E3] disabled:opacity-50"
             >
               <option value="all">همه گروه‌ها</option>
-              <option value="User Activity">فعالیت کاربران (User Activity)</option>
-              <option value="Authentication">احراز هویت (Authentication)</option>
-              <option value="Authorization">سطوح دسترسی (Authorization)</option>
-              <option value="Security">امنیتی و حفاظتی (Security)</option>
+              {Object.entries(AUDIT_EVENT_GROUPS).map(([key, g]) => (
+                <option key={key} value={key}>{g.label}</option>
+              ))}
             </select>
           </div>
 
@@ -741,19 +773,9 @@ export const AuditTrailView: React.FC = () => {
               className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-[#0071E3]"
             >
               <option value="all">همه عملیات</option>
-              <option value="LOGIN">ورود موفق (LOGIN)</option>
-              <option value="LOGOUT">خروج (LOGOUT)</option>
-              <option value="FAILED_LOGIN">ورود ناموفق (FAILED_LOGIN)</option>
-              <option value="CREATE_USER">ایجاد کاربر (CREATE_USER)</option>
-              <option value="UPDATE_USER">ویرایش کاربر (UPDATE_USER)</option>
-              <option value="DELETE_USER">حذف کاربر (DELETE_USER)</option>
-              <option value="ROLE_CHANGE">تغییر سمت (ROLE_CHANGE)</option>
-              <option value="PERMISSION_CHANGE">تغییر دسترسی (PERMISSION_CHANGE)</option>
-              <option value="Create">ایجاد رکورد (Create)</option>
-              <option value="Update">ویرایش رکورد (Update)</option>
-              <option value="Delete">حذف رکورد (Delete)</option>
-              <option value="System Update">بروزرسانی سیستم (System Update)</option>
-              <option value="Reject">مردودی (Reject)</option>
+              {Object.entries(AUDIT_ACTION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label} ({value})</option>
+              ))}
             </select>
           </div>
 
@@ -766,33 +788,28 @@ export const AuditTrailView: React.FC = () => {
               className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-[#0071E3]"
             >
               <option value="all">همه سطوح</option>
-              <option value="Info">عادی (Information)</option>
+              <option value="Information">عادی (Information)</option>
               <option value="Warning">هشدار (Warning)</option>
               <option value="Critical">بحرانی (Critical)</option>
             </select>
           </div>
 
-          {/* Start Date */}
+          {/* Date range — a real Jalali picker instead of free text. */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">از تاریخ (روز)</label>
-            <input
-              type="text"
-              placeholder="مثال: 1405/05/12"
+            <label className="text-muted-foreground text-[10px] font-bold">از تاریخ</label>
+            <ShamsiDatePicker
               value={startDate}
-              onChange={e => { setStartDate(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-[#0071E3] text-left"
+              onChange={v => { setStartDate(v); setCurrentPage(1); }}
+              placeholder="انتخاب تاریخ شروع"
             />
           </div>
 
-          {/* End Date */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">تا تاریخ (روز)</label>
-            <input
-              type="text"
-              placeholder="مثال: 1405/05/15"
+            <label className="text-muted-foreground text-[10px] font-bold">تا تاریخ</label>
+            <ShamsiDatePicker
               value={endDate}
-              onChange={e => { setEndDate(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-[#0071E3] text-left"
+              onChange={v => { setEndDate(v); setCurrentPage(1); }}
+              placeholder="انتخاب تاریخ پایان"
             />
           </div>
         </div>
@@ -856,9 +873,12 @@ export const AuditTrailView: React.FC = () => {
                       onClick={() => handleOpenDrawer(log)}
                       className="hover:bg-accent/60 transition-all duration-150 cursor-pointer group"
                     >
-                      <td className="py-3.5 px-4 font-mono text-[11px]">
-                        <span className="text-muted-foreground font-bold">{log.date}</span>
-                        <span className="text-muted-foreground mr-1.5">{log.time}</span>
+                      {/* Date and time used to sit shoulder to shoulder in one
+                          run of digits, which read as a single number. They are
+                          two facts, so they get two lines. */}
+                      <td className="py-3.5 px-4 font-mono text-[11px] whitespace-nowrap">
+                        <span className="block text-foreground font-bold">{log.date}</span>
+                        <span className="block text-muted-foreground text-[10px] mt-0.5">{log.time}</span>
                       </td>
                       <td className="py-3.5 px-4 font-bold text-foreground">
                         <div className="flex items-center gap-1.5">
@@ -871,7 +891,8 @@ export const AuditTrailView: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-muted-foreground font-semibold">{log.module}</td>
+                      {/* Same label the module filter shows, so the two read alike. */}
+                      <td className="py-3.5 px-4 text-muted-foreground font-semibold">{AUDIT_MODULE_LABELS[log.module] || log.module}</td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${actMeta.bg}`}>
                           {actMeta.label}
@@ -989,7 +1010,7 @@ export const AuditTrailView: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-muted-foreground font-bold">ماژول مربوطه:</span>
-                  <span className="font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{selectedLog.module}</span>
+                  <span className="font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{AUDIT_MODULE_LABELS[selectedLog.module] || selectedLog.module}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-muted-foreground font-bold">عنوان هدف:</span>

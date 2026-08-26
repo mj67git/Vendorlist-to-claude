@@ -81,6 +81,12 @@
    - `TooltipContent` باید در `TooltipPrimitive.Portal` باشد — به همان دلیلِ `FormModal` (قاعدهٔ ۸): انیمیشن `filter` در صفحه‌گردانی هم containing block و هم stacking context می‌سازد. `TooltipProvider` در `src/main.tsx` نصب شده (نه `App.tsx`، چون App برای صفحهٔ ورود early-return دارد و Radix بدون Provider خطا می‌دهد).
    - **`useIsOverflowing` عمداً callback ref دارد، نه `useRef`.** وصل‌شدن tooltip عنصر را جابه‌جا می‌کند، پس React گرهٔ اندازه‌گیری‌شده را unmount و گرهٔ تازه mount می‌کند؛ با ref معمولی، `ResizeObserver` روی گرهٔ جدا‌شده می‌ماند، آن گره `0x0` گزارش می‌دهد و tooltip بی‌صدا خاموش می‌شود. اندازه‌گیریِ گرهٔ جداشده یا صفر‌اندازه دور ریخته می‌شود.
 
+16. **واژگان Audit یک‌جا تعریف می‌شود (`src/utils/auditTaxonomy.ts`).** ستون‌های `module`/`action`/`severity` در `audit_log` متن آزادند، پس فیلتر فقط وقتی کار می‌کند که مقدارِ ارسالی **دقیقاً** همان چیزی باشد که `server.ts` نوشته است. فهرست دستی در فرم فیلتر ننویس — از `AUDIT_MODULE_LABELS` / `AUDIT_ACTION_LABELS` / `AUDIT_EVENT_GROUPS` استفاده کن (همان الگوی `permissions.ts`: هم سرور هم کلاینت از یک فایل می‌خوانند).
+   - وقتی `AuditService.log({ module: … })` جدیدی اضافه کردی، ماژول را همان‌جا هم ثبت کن وگرنه در فیلتر نامرئی می‌شود.
+   - `Info` و `Information` یک سطح‌اند (سرور `Information` می‌نویسد، store لوکال `Info`)؛ با `severityMatches()` تطبیق بده، نه مقایسهٔ مستقیم.
+   - **`eventType` ستون نیست** — کلیدی داخل JSON `after_data` است و روی اغلب رکوردها وجود ندارد؛ فیلتر روی آن نساز. گروه‌بندی رویداد = مجموعه‌ای از `module`ها (`AUDIT_EVENT_GROUPS`) که سرور با `module IN (…)` اعمال می‌کند.
+   - بازهٔ تاریخ در UI **شمسی** است و باید قبل از ارسال به ISO تبدیل شود (`jalaliToIso`)؛ `new Date('1405/05/12')` در سرور `Invalid Date` می‌شد.
+
 ## ساختار داده (۱۲ جدول نرمال — `prisma/schema.prisma`)
 - **Auth:** `users` (نقش enum، رمز hash+salt)
 - **Materials:** `materials` (فیلدهای غنی: role, pharmacopoeia, iupac, ...)

@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
+import { AUDIT_EVENT_GROUPS } from "./src/utils/auditTaxonomy.js";
 import {
   can,
   effectivePermissions,
@@ -2617,15 +2618,31 @@ async function startServer() {
       const limit = parseInt(req.query.limit as string) || 20;
 
       const filters: any = {};
-      if (req.query.userId) filters.userId = req.query.userId as string;
+      // The filter form offers user *names* (that is what /filters returns),
+      // so matching only on userId silently returned nothing.
+      if (req.query.userId) filters.user = req.query.userId as string;
       if (req.query.module && req.query.module !== "all") filters.module = req.query.module as string;
-      if (req.query.eventType && req.query.eventType !== "all") filters.eventType = req.query.eventType as string;
+      // Coarse group = a fixed set of modules, enforced here rather than being
+      // dropped on the floor like the old `eventType` parameter was.
+      const group = req.query.group as string;
+      if (group && group !== "all" && AUDIT_EVENT_GROUPS[group]) {
+        filters.modules = AUDIT_EVENT_GROUPS[group].modules;
+      }
       if (req.query.action && req.query.action !== "all") filters.action = req.query.action as string;
       if (req.query.severity && req.query.severity !== "all") filters.severity = req.query.severity as string;
       if (req.query.entityId) filters.entityId = req.query.entityId as string;
       if (req.query.correlationId) filters.correlationId = req.query.correlationId as string;
-      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
-      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+      // An unparseable date used to become `Invalid Date` and blow up the query
+      // with a 500 — which is exactly what the Jalali text the form sent did.
+      const parseDate = (raw: unknown) => {
+        if (!raw) return undefined;
+        const d = new Date(raw as string);
+        return isNaN(d.getTime()) ? undefined : d;
+      };
+      const startDate = parseDate(req.query.startDate);
+      const endDate = parseDate(req.query.endDate);
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
       if (req.query.quickFilter && req.query.quickFilter !== "all") filters.quickFilter = req.query.quickFilter as string;
 
       const query = (req.query.query as string || "").trim();
