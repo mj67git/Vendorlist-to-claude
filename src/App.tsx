@@ -54,6 +54,21 @@ function formatSystemDate(d: Date): string {
   return `${day} ${month} ${year} · ${weekday}`;
 }
 
+/**
+ * Everything the header clock shows, built in one place.
+ *
+ * The Gregorian date rides along because the people using this correspond with
+ * suppliers abroad, where a Persian date means nothing. ISO order rather than a
+ * localized form so it cannot be misread as day-first or month-first.
+ */
+function buildSystemTime(d: Date) {
+  return {
+    faDate: formatSystemDate(d),
+    time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+    isoDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+  };
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -64,23 +79,23 @@ export default function App() {
     }
   });
 
-  const [systemTime, setSystemTime] = useState(() => {
-    const d = new Date();
-    return {
-      faDate: formatSystemDate(d),
-      time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    };
-  });
+  const [systemTime, setSystemTime] = useState(() => buildSystemTime(new Date()));
 
+  // The clock used to tick every second, and since it lives on App every tick
+  // re-rendered the whole tree — sixty times a minute to move a digit nobody
+  // reads in a supplier-evaluation system. It now updates once a minute, and
+  // each tick is scheduled to land on the next minute boundary rather than a
+  // flat 60s later, so the displayed minute never lags behind the real one.
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer: number;
+    const tick = () => {
       const d = new Date();
-      setSystemTime({
-        faDate: formatSystemDate(d),
-        time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-    }, 1000);
-    return () => clearInterval(timer);
+      setSystemTime(buildSystemTime(d));
+      const msToNextMinute = 60_000 - (d.getSeconds() * 1000 + d.getMilliseconds());
+      timer = window.setTimeout(tick, msToNextMinute);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
   }, []);
 
   const normalizeAndCleanVendor = (v: any): Vendor => {
@@ -1649,6 +1664,10 @@ export default function App() {
                 <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
+                <span className="text-border">|</span>
+                <span className="font-mono text-[10px] text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
+                  {systemTime.isoDate}
+                </span>
               </div>
 
               <div className="hidden lg:flex bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full items-center gap-1.5">
