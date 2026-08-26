@@ -22,8 +22,10 @@
 export type Role = 'admin' | 'lab' | 'commercial' | 'qa' | 'planning' | 'finance';
 
 export type Permission =
-  /** Register a new source, or edit an existing one's profile/contact details. */
-  | 'vendor.write'
+  /** Register a new source. */
+  | 'vendor.create'
+  /** Edit an existing source's profile, contact details or activity log. */
+  | 'vendor.edit'
   /** Remove a source entirely. */
   | 'vendor.delete'
   /** Record or edit laboratory analysis results. */
@@ -36,14 +38,20 @@ export type Permission =
   | 'score.qa'
   | 'score.planning'
   | 'score.finance'
-  /** Create, edit or delete a material in the master repository. */
-  | 'material.write'
-  /** Create, edit, blacklist or delete a business partner. */
-  | 'partner.write'
+  /** Add a material to the master repository. */
+  | 'material.create'
+  /** Edit a material, including its active/inactive status. */
+  | 'material.edit'
+  /** Remove a material from the repository. */
+  | 'material.delete'
+  /** Add a business partner. */
+  | 'partner.create'
+  /** Edit a partner, including its SOP evaluation and blacklist status. */
+  | 'partner.edit'
+  /** Remove a business partner. */
+  | 'partner.delete'
   /** Read the audit trail. */
   | 'audit.read'
-  /** Read the full data archive. */
-  | 'archive.read'
   /** Administer user accounts, including their permissions. */
   | 'users.manage';
 
@@ -53,36 +61,129 @@ export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 
 /** Every permission there is, in the order the admin screen groups them. */
 export const ALL_PERMISSIONS: Permission[] = [
-  'vendor.write', 'vendor.delete',
-  'score.commercial', 'score.qa', 'score.planning', 'score.finance',
+  'vendor.create', 'vendor.edit', 'vendor.delete',
+  'material.create', 'material.edit', 'material.delete',
+  'partner.create', 'partner.edit', 'partner.delete',
   'vendor.analysis', 'vendor.risk',
-  'material.write', 'partner.write',
-  'archive.read', 'audit.read', 'users.manage',
+  'score.commercial', 'score.qa', 'score.planning', 'score.finance',
+  'audit.read', 'users.manage',
 ];
 
-/** Persian labels, used by the permissions dialog. */
+/**
+ * Permissions that no longer exist, and what they now mean.
+ *
+ * `material.write` used to cover create, edit and delete together because the
+ * endpoints shared one guard. Splitting the guard would silently strip access
+ * from every account whose stored override still names the old permission, so
+ * the old name is expanded on read instead. Nothing in the database has to
+ * change — the same approach that let per-user overrides ship without a
+ * migration.
+ *
+ * `archive.read` is gone rather than renamed. It gated nothing: the archive is
+ * a view over vendor data every signed-in user can already read, so no server
+ * check could have made it real.
+ */
+const LEGACY_PERMISSIONS: Record<string, Permission[]> = {
+  'vendor.write': ['vendor.create', 'vendor.edit'],
+  'material.write': ['material.create', 'material.edit', 'material.delete'],
+  'partner.write': ['partner.create', 'partner.edit', 'partner.delete'],
+  'archive.read': [],
+};
+
+/** Persian labels, used where a single permission is named on its own. */
 export const PERMISSION_LABELS: Record<Permission, string> = {
-  'vendor.write': 'ثبت و ویرایش سورس',
+  'vendor.create': 'ثبت سورس جدید',
+  'vendor.edit': 'ویرایش سورس',
   'vendor.delete': 'حذف سورس',
+  'material.create': 'ثبت مادهٔ جدید',
+  'material.edit': 'ویرایش ماده',
+  'material.delete': 'حذف ماده',
+  'partner.create': 'ثبت شریک جدید',
+  'partner.edit': 'ویرایش شریک',
+  'partner.delete': 'حذف شریک',
+  'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
+  'vendor.risk': 'ارزیابی ریسک (FMEA)',
   'score.commercial': 'امتیازدهی بازرگانی و خرید',
   'score.qa': 'امتیازدهی تضمین کیفیت (QA)',
   'score.planning': 'امتیازدهی برنامه‌ریزی و انبار',
   'score.finance': 'امتیازدهی مالی و حسابداری',
-  'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
-  'vendor.risk': 'ارزیابی ریسک (FMEA)',
-  'material.write': 'مدیریت مخزن مواد اولیه',
-  'partner.write': 'مدیریت شرکای تجاری',
-  'archive.read': 'آرشیو کامل داده‌ها',
-  'audit.read': 'ردیابی تغییرات (Audit)',
+  'audit.read': 'مشاهدهٔ ردیابی تغییرات',
   'users.manage': 'مدیریت کاربران',
 };
 
-export const PERMISSION_GROUPS: Array<{ title: string; permissions: Permission[] }> = [
-  { title: 'سورس‌ها', permissions: ['vendor.write', 'vendor.delete'] },
-  { title: 'ارزیابی', permissions: ['score.commercial', 'score.qa', 'score.planning', 'score.finance', 'vendor.analysis', 'vendor.risk'] },
-  { title: 'مخازن', permissions: ['material.write', 'partner.write'] },
-  { title: 'مدیریتی', permissions: ['archive.read', 'audit.read', 'users.manage'] },
+/**
+ * How the admin screen lays the permissions out: one row per module, with a
+ * cell per action.
+ *
+ * `null` means the server cannot tell that action apart from the others in the
+ * same row, so offering a separate checkbox would promise a control that does
+ * not exist. `'open'` means every signed-in user can do it and no setting
+ * changes that. Both are rendered as locked cells with the reason shown, rather
+ * than as ticks that quietly do nothing.
+ */
+export type ModuleAction = 'view' | 'create' | 'edit' | 'delete';
+
+export interface PermissionModule {
+  key: string;
+  title: string;
+  /** Set when the whole row is one permission; the row renders a single tick. */
+  single?: Permission;
+  actions: Record<ModuleAction, Permission | 'open' | null>;
+  /** Shown under the module name to explain a locked or merged row. */
+  note?: string;
+}
+
+export const PERMISSION_MODULES: PermissionModule[] = [
+  {
+    key: 'vendors',
+    title: 'سورس‌ها (تأمین‌کنندگان)',
+    actions: { view: 'open', create: 'vendor.create', edit: 'vendor.edit', delete: 'vendor.delete' },
+  },
+  {
+    key: 'materials',
+    title: 'مخزن مواد اولیه',
+    actions: { view: 'open', create: 'material.create', edit: 'material.edit', delete: 'material.delete' },
+  },
+  {
+    key: 'partners',
+    title: 'شرکای تجاری',
+    actions: { view: 'open', create: 'partner.create', edit: 'partner.edit', delete: 'partner.delete' },
+  },
+  {
+    key: 'analysis',
+    title: 'نتایج آزمایشگاهی',
+    single: 'vendor.analysis',
+    actions: { view: 'open', create: 'vendor.analysis', edit: 'vendor.analysis', delete: 'vendor.analysis' },
+    note: 'کل فهرست نتایج یکجا ذخیره می‌شود، پس ثبت و ویرایش و حذف از هم تفکیک‌پذیر نیستند.',
+  },
+  {
+    key: 'risk',
+    title: 'ارزیابی ریسک (FMEA)',
+    single: 'vendor.risk',
+    actions: { view: 'open', create: 'vendor.risk', edit: 'vendor.risk', delete: 'vendor.risk' },
+    note: 'ارزیابی ریسک یک رکورد واحد است که جایگزین می‌شود.',
+  },
+  {
+    key: 'audit',
+    title: 'ردیابی تغییرات (Audit)',
+    single: 'audit.read',
+    actions: { view: 'audit.read', create: null, edit: null, delete: null },
+    note: 'سابقهٔ ممیزی فقط خواندنی است؛ هیچ‌کس نمی‌تواند آن را تغییر دهد.',
+  },
+  {
+    key: 'users',
+    title: 'مدیریت کاربران',
+    single: 'users.manage',
+    actions: { view: 'users.manage', create: 'users.manage', edit: 'users.manage', delete: 'users.manage' },
+    note: 'همهٔ مسیرهای این ماژول یک گارد مشترک دارند و عمداً تفکیک نشده‌اند.',
+  },
 ];
+
+/** Why a cell is locked, shown to the admin instead of a dead checkbox. */
+export const LOCKED_REASONS = {
+  open: 'هر کاربر واردشده این بخش را می‌بیند؛ خواندن در برنامه محدود نمی‌شود.',
+  none: 'این عملیات در این ماژول وجود ندارد.',
+} as const;
 
 /**
  * The default set each role starts from. Reading is not restricted anywhere:
@@ -95,8 +196,16 @@ export const PERMISSION_GROUPS: Array<{ title: string; permissions: Permission[]
  */
 const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
-  commercial: ['vendor.write', 'partner.write', 'score.commercial'],
-  qa: ['vendor.analysis', 'material.write', 'score.qa'],
+  commercial: [
+    'vendor.create', 'vendor.edit',
+    'partner.create', 'partner.edit', 'partner.delete',
+    'score.commercial',
+  ],
+  qa: [
+    'vendor.analysis',
+    'material.create', 'material.edit', 'material.delete',
+    'score.qa',
+  ],
   planning: ['score.planning'],
   finance: ['score.finance'],
   lab: [],
@@ -114,13 +223,29 @@ export interface PermissionSubject {
   permissions?: unknown;
 }
 
+/**
+ * Expand one stored entry into the permissions it means today.
+ *
+ * A name that was retired keeps working through LEGACY_PERMISSIONS, so an
+ * account whose override still says `material.write` keeps exactly the access
+ * it had before the permission was split.
+ */
+function expandStored(entry: unknown): Permission[] {
+  if (typeof entry !== 'string') return [];
+  if ((ALL_PERMISSIONS as string[]).includes(entry)) return [entry as Permission];
+  return LEGACY_PERMISSIONS[entry] ?? [];
+}
+
 function parseOverrides(raw: unknown): Permission[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const known = raw.filter((p): p is Permission =>
-    typeof p === 'string' && (ALL_PERMISSIONS as string[]).includes(p));
+  const known = [...new Set(raw.flatMap(expandStored))];
   // An override list of only unrecognised entries is treated as no override
   // rather than as "nothing allowed", so a stale name cannot silently lock a
   // user out of everything.
+  //
+  // A list naming only retired permissions that expand to nothing — an override
+  // of just `archive.read` — lands here too and falls back to the role, which is
+  // the safe reading: that account was never actually restricted by it.
   return known.length > 0 ? known : null;
 }
 
@@ -175,10 +300,15 @@ export function canScoreAny(subject: PermissionSubject | string | undefined | nu
   return scorableDepartments(subject).length > 0;
 }
 
-/** Keep only the recognised permissions from arbitrary input, without duplicates. */
+/**
+ * Keep only the recognised permissions from arbitrary input, without duplicates
+ * and in a stable order. Retired names are expanded rather than dropped, so an
+ * admin saving a form built from older data does not quietly revoke access.
+ */
 export function sanitizePermissions(raw: unknown): Permission[] {
   if (!Array.isArray(raw)) return [];
-  return ALL_PERMISSIONS.filter(p => raw.includes(p));
+  const expanded = new Set(raw.flatMap(expandStored));
+  return ALL_PERMISSIONS.filter(p => expanded.has(p));
 }
 
 /**

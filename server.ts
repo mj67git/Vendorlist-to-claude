@@ -1468,7 +1468,7 @@ async function startServer() {
    * decision anyone made, and "why this supplier" is exactly what an auditor
    * asks. Requires vendor.write — the same permission as registering a source.
    */
-  app.put("/api/source-selections", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
+  app.put("/api/source-selections", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { materialKey, category, vendorId, reason } = req.body || {};
       if (!materialKey || !category || !vendorId) {
@@ -1614,7 +1614,7 @@ async function startServer() {
   });
 
   // Create or Update single vendor (Unified Database)
-  app.post("/api/vendors", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
+  app.post("/api/vendors", requireAuth, requirePermission("vendor.create"), async (req: any, res) => {
     try {
       const validationResult = vendorSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -1768,7 +1768,7 @@ async function startServer() {
   });
 
   // Update vendor profile (Unified Database)
-  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1843,7 +1843,7 @@ async function startServer() {
   });
 
   // Update vendor contact details (Unified Database)
-  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2086,7 +2086,7 @@ async function startServer() {
   });
 
   // Update vendor activity logs (Unified Database)
-  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.write"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2604,11 +2604,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -2646,11 +2643,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/stats", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/stats", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const result = await AuditService.getAuditLogs({}, 1, 10000);
       const total = result.total;
@@ -2680,11 +2674,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/filters", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/filters", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const result = await AuditService.getAuditLogs({}, 1, 10000);
       const uniqueUsers = Array.from(new Set(result.data.map((l: any) => l.userName || l.userId).filter(Boolean)));
@@ -2699,11 +2690,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/:id", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/:id", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const log = await AuditService.getAuditById(req.params.id);
       if (!log) {
@@ -3115,7 +3103,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/materials", requireAuth, requirePermission("material.write"), async (req: any, res) => {
+  app.post("/api/materials", requireAuth, requirePermission("material.create"), async (req: any, res) => {
     try {
       const b = req.body;
       const reasonForChange = b.reasonForChange;
@@ -3165,7 +3153,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/materials/:id", requireAuth, requirePermission("material.write"), async (req: any, res) => {
+  app.patch("/api/materials/:id", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const b = req.body;
@@ -3224,7 +3212,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/materials/:id", requireAuth, requirePermission("material.write"), async (req: any, res) => {
+  app.delete("/api/materials/:id", requireAuth, requirePermission("material.delete"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
@@ -3295,7 +3283,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/materials/:id/status", requireAuth, requirePermission("material.write"), async (req: any, res) => {
+  app.put("/api/materials/:id/status", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
@@ -3403,7 +3391,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/business-partners", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
+  app.post("/api/business-partners", requireAuth, requirePermission("partner.create"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const partner = req.body;
@@ -3445,7 +3433,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/business-partners/:id", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
+  app.put("/api/business-partners/:id", requireAuth, requirePermission("partner.edit"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
@@ -3484,7 +3472,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.write"), async (req: any, res) => {
+  app.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.delete"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;

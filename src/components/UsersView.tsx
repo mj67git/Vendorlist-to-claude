@@ -7,9 +7,28 @@ import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { Role, User } from '../types';
 import {
-  ALL_PERMISSIONS, PERMISSION_GROUPS, PERMISSION_LABELS,
-  roleTemplate, type Permission,
+  ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
+  roleTemplate, type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
+
+/** The four columns of the module grid, right to left as the page reads. */
+const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string }> = [
+  { key: 'view', label: 'مشاهده' },
+  { key: 'create', label: 'ثبت' },
+  { key: 'edit', label: 'ویرایش' },
+  { key: 'delete', label: 'حذف' },
+];
+
+/** Scoring is listed separately: it is per department, not per action. */
+const SCORE_PERMISSIONS: Permission[] = ['score.commercial', 'score.qa', 'score.planning', 'score.finance'];
+
+/** The distinct permissions a module row can actually toggle. */
+function modulePermissions(module: PermissionModule): Permission[] {
+  const found = ACTION_COLUMNS
+    .map(col => module.actions[col.key])
+    .filter((p): p is Permission => p !== null && p !== 'open');
+  return [...new Set(found)];
+}
 
 /**
  * Administration of the user accounts.
@@ -239,6 +258,19 @@ export function UsersView({ currentUser }: UsersViewProps) {
     setPermDraft(prev => prev.includes(permission)
       ? prev.filter(p => p !== permission)
       : ALL_PERMISSIONS.filter(p => p === permission || prev.includes(p)));
+  };
+
+  /** The row's master tick: all of this module's actions on, or all off. */
+  const toggleModule = (module: PermissionModule) => {
+    const owned = modulePermissions(module);
+    if (owned.length === 0) return;
+    setPermDraft(prev => {
+      const allOn = owned.every(p => prev.includes(p));
+      const next = allOn
+        ? prev.filter(p => !owned.includes(p))
+        : [...prev, ...owned.filter(p => !prev.includes(p))];
+      return ALL_PERMISSIONS.filter(p => next.includes(p));
+    });
   };
 
   const savePermissions = () => {
@@ -611,38 +643,187 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 </div>
               )}
 
-              {PERMISSION_GROUPS.map(group => (
-                <div key={group.title} className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-muted-foreground block border-b border-border/60 pb-1.5">{group.title}</span>
-                  {group.permissions.map(permission => {
-                    const inTemplate = roleTemplate(permTarget.role).includes(permission);
-                    const checked = permDraft.includes(permission);
-                    return (
-                      <label key={permission}
-                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors cursor-pointer">
-                        <span className="flex items-center gap-2.5">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => togglePermission(permission)}
-                            className="w-4 h-4 accent-primary cursor-pointer"
-                          />
-                          <span className="text-xs font-semibold text-foreground">{PERMISSION_LABELS[permission]}</span>
+              {/* One row per module, one cell per action. A cell is a real
+                  checkbox only where the server can tell that action apart;
+                  everywhere else it is locked and says why, so no tick in this
+                  dialog promises a control that does not exist. */}
+              <div className="overflow-x-auto -mx-2 px-2">
+                <table className="w-full min-w-[520px] border-separate border-spacing-0">
+                  <thead>
+                    <tr>
+                      <th className="text-right text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
+                      {ACTION_COLUMNS.map(col => (
+                        <th key={col.key} className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
+                          {col.label}
+                        </th>
+                      ))}
+                      <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {PERMISSION_MODULES.map(module => {
+                      const owned = modulePermissions(module);
+                      const granted = owned.filter(p => permDraft.includes(p));
+                      const allOn = owned.length > 0 && granted.length === owned.length;
+                      const someOn = granted.length > 0 && !allOn;
+                      const template = roleTemplate(permTarget.role);
+                      return (
+                        <tr key={module.key} className="align-top">
+                          <td className="py-2.5 pr-1 border-t border-border/70">
+                            <span className="text-xs font-bold text-foreground block">{module.title}</span>
+                            {module.note && (
+                              <span className="text-[10px] text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
+                                {module.note}
+                              </span>
+                            )}
+                          </td>
+
+                          {ACTION_COLUMNS.map(col => {
+                            const cell = module.actions[col.key];
+                            // A module whose every action is the same permission
+                            // gets one checkbox across the whole row, rather
+                            // than the same tick repeated in four columns.
+                            const wholeRow = !!module.single
+                              && ACTION_COLUMNS.every(c => module.actions[c.key] === module.single);
+                            if (wholeRow) {
+                              if (col.key !== 'view') return null;
+                              const perm = module.single!;
+                              const checked = permDraft.includes(perm);
+                              const inTemplate = template.includes(perm);
+                              return (
+                                <td key={col.key} colSpan={4} className="py-2.5 px-1 text-center border-t border-border/70">
+                                  <span className="inline-flex flex-col items-center gap-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => togglePermission(perm)}
+                                      aria-label={`${module.title} — ${PERMISSION_LABELS[perm]}`}
+                                      className="w-4 h-4 accent-primary cursor-pointer"
+                                    />
+                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                    {inTemplate !== checked && (
+                                      <span className={`text-[8px] font-bold ${checked ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
+                                        {checked ? '+' : '−'}
+                                      </span>
+                                    )}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            if (cell === 'open' || cell === null) {
+                              return (
+                                <td key={col.key} className="py-2.5 px-1 text-center border-t border-border/70">
+                                  <span
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-[11px] cursor-help"
+                                    title={cell === 'open' ? LOCKED_REASONS.open : LOCKED_REASONS.none}
+                                  >
+                                    {cell === 'open' ? '✓' : '—'}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            // A merged row repeats the same permission across
+                            // create/edit/delete; render it once, centred.
+                            if (module.single && col.key !== 'view' && cell === module.single && col.key !== 'create') {
+                              return <td key={col.key} className="py-2.5 px-1 border-t border-border/70" />;
+                            }
+
+                            const checked = permDraft.includes(cell);
+                            const inTemplate = template.includes(cell);
+                            const merged = !!module.single && col.key === 'create';
+                            return (
+                              <td key={col.key}
+                                colSpan={merged ? 3 : 1}
+                                className="py-2.5 px-1 text-center border-t border-border/70">
+                                <span className="inline-flex flex-col items-center gap-0.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => togglePermission(cell)}
+                                    aria-label={`${module.title} — ${PERMISSION_LABELS[cell]}`}
+                                    className="w-4 h-4 accent-primary cursor-pointer"
+                                  />
+                                  {merged && (
+                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                  )}
+                                  {inTemplate !== checked && (
+                                    <span className={`text-[8px] font-bold px-1 rounded ${
+                                      checked
+                                        ? 'text-emerald-700 dark:text-emerald-400'
+                                        : 'text-rose-700 dark:text-rose-400'
+                                    }`}>
+                                      {checked ? '+' : '−'}
+                                    </span>
+                                  )}
+                                </span>
+                              </td>
+                            );
+                          })}
+
+                          <td className="py-2.5 px-1 text-center border-t border-border/70">
+                            <input
+                              type="checkbox"
+                              checked={allOn}
+                              ref={el => { if (el) el.indeterminate = someOn; }}
+                              onChange={() => toggleModule(module)}
+                              disabled={owned.length === 0}
+                              aria-label={`دسترسی کامل به ${module.title}`}
+                              title={owned.length === 0 ? LOCKED_REASONS.none : `دسترسی کامل به ${module.title}`}
+                              className="w-4 h-4 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Scoring does not fit the create/edit/delete shape: each
+                  department is its own permission, and a person can hold more
+                  than one. */}
+              <div className="space-y-1.5 pt-2">
+                <span className="text-[11px] font-bold text-muted-foreground block border-b border-border/60 pb-1.5">
+                  امتیازدهی دپارتمان‌ها
+                </span>
+                {SCORE_PERMISSIONS.map(permission => {
+                  const inTemplate = roleTemplate(permTarget.role).includes(permission);
+                  const checked = permDraft.includes(permission);
+                  return (
+                    <label key={permission}
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors cursor-pointer">
+                      <span className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePermission(permission)}
+                          className="w-4 h-4 accent-primary cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-foreground">{PERMISSION_LABELS[permission]}</span>
+                      </span>
+                      {inTemplate !== checked && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                          checked
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
+                        }`}>
+                          {checked ? 'افزوده به سمت' : 'سلب‌شده از سمت'}
                         </span>
-                        {inTemplate !== checked && (
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
-                            checked
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
-                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
-                          }`}>
-                            {checked ? 'افزوده به سمت' : 'سلب‌شده از سمت'}
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              ))}
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <p className="text-[10px] text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
+                خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
+                واردشده آن بخش را می‌بینند و <span className="font-bold">—</span> یعنی آن عملیات در آن ماژول وجود ندارد.
+                نشانهٔ <span className="text-emerald-700 dark:text-emerald-400 font-bold">+</span> و
+                <span className="text-rose-700 dark:text-rose-400 font-bold"> −</span> یعنی این مورد نسبت به الگوی سمت
+                افزوده یا سلب شده است.
+              </p>
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-between gap-2 shrink-0">

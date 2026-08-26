@@ -32,7 +32,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // Only the stages the current user is allowed to perform are shown.
   const canRisk = can(currentUser, 'vendor.risk');
   const canAnalysis = can(currentUser, 'vendor.analysis');
-  const canEditVendor = can(currentUser, 'vendor.write');
+  const canEditVendor = can(currentUser, 'vendor.edit');
   const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
     ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
@@ -330,7 +330,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // rather than the weighted total. With per-user permissions a person can now
   // hold more than one, and then the overall figure is the meaningful one.
   const myDepartments = scorableDepartments(currentUser);
-  if (currentUser && myDepartments.length === 1 && !can(currentUser, 'archive.read')) {
+  if (currentUser && myDepartments.length === 1) {
     displayedScore = (vendor.scores as any)?.[myDepartments[0]] ?? null;
   }
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);

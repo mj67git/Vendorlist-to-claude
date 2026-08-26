@@ -47,7 +47,7 @@ export function CategoryView({
   // ---- recorded source selections -----------------------------------------
   // Which source is actually bought for each material. The comparison panel
   // only ever recommended; this is the decision someone made and signed for.
-  const canChoose = can(currentUser, 'vendor.write');
+  const canChoose = can(currentUser, 'vendor.edit');
   const [selections, setSelections] = useState<SourceSelectionRecord[]>([]);
   const [selectDialog, setSelectDialog] = useState<{ materialKey: string; materialFa: string; vendors: Vendor[]; vendorId: string } | null>(null);
   const [selectReason, setSelectReason] = useState('');

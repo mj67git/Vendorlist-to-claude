@@ -375,7 +375,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             </select>
           </div>
 
-          {can(currentUser, 'material.write') && (
+          {can(currentUser, 'material.create') && (
             <button
               onClick={handleOpenAdd}
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
@@ -460,14 +460,16 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
-                        <button 
-                          onClick={() => handleOpenEdit(material)} 
-                          className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-100" 
-                          title="ویرایش"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        {can(currentUser, 'material.write') && (
+                        {can(currentUser, 'material.edit') && (
+                          <button
+                            onClick={() => handleOpenEdit(material)}
+                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-100"
+                            title="ویرایش"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {can(currentUser, 'material.delete') && (
                           <button 
                             onClick={() => handleDelete(material)} 
                             className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-100" 

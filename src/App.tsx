@@ -1160,13 +1160,12 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      if (can(currentUser, 'archive.read')) {
-        keyName = 'archive';
-        content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
-      } else {
-        keyName = 'home-fallback';
-        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
-      }
+      // No permission gate: the archive is a view over vendor data every
+      // signed-in user can already read, so hiding the page protected nothing.
+      // The `archive.read` permission it used to check was never enforced on any
+      // endpoint — see the note on LEGACY_PERMISSIONS.
+      keyName = 'archive';
+      content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
       content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} />;

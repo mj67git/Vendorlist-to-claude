@@ -713,7 +713,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <Download className="w-4 h-4" />
               <span>خروجی اکسل شرکا (XLSX)</span>
             </button>
-            {can(currentUser, 'partner.write') && (
+            {can(currentUser, 'partner.create') && (
               <button
                 onClick={handleOpenAdd}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
@@ -1071,7 +1071,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          {can(currentUser, 'partner.write') && (
+                          {can(currentUser, 'partner.delete') && (
                             <button
                               onClick={() => handleDeletePartnerClick(partner)}
                               className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
@@ -1605,7 +1605,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {editingPartner && can(currentUser, 'partner.write') && (
+                    {editingPartner && can(currentUser, 'partner.edit') && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1672,7 +1672,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {can(currentUser, 'partner.write') && selectedPartner.status !== 'Blacklisted' && (
+                {can(currentUser, 'partner.edit') && selectedPartner.status !== 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => { setBlacklistTarget(selectedPartner); setBlacklistReason(''); }}
@@ -1683,7 +1683,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>لیست سیاه</span>
                   </button>
                 )}
-                {can(currentUser, 'partner.write') && selectedPartner.status === 'Blacklisted' && (
+                {can(currentUser, 'partner.edit') && selectedPartner.status === 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => handleRestoreFromBlacklist(selectedPartner)}
@@ -1694,7 +1694,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>خروج از لیست سیاه</span>
                   </button>
                 )}
-                {can(currentUser, 'partner.write') && (
+                {can(currentUser, 'partner.delete') && (
                   <button
                     type="button"
                     onClick={() => handleDeletePartnerClick(selectedPartner)}

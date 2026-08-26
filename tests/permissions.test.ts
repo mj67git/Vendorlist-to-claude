@@ -14,8 +14,8 @@ import {
  */
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
-  commercial: ['vendor.write', 'partner.write', 'score.commercial'],
-  qa: ['vendor.analysis', 'material.write', 'score.qa'],
+  commercial: ['vendor.create', 'vendor.edit', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
+  qa: ['vendor.analysis', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
   planning: ['score.planning'],
   finance: ['score.finance'],
   lab: [],
@@ -106,21 +106,21 @@ test('an empty override list means "follow the role"', () => {
     assert.deepEqual(effectivePermissions(user), roleTemplate('finance'));
     assert.equal(hasCustomPermissions(user), false);
     assert.equal(can(user, 'score.finance'), true);
-    assert.equal(can(user, 'material.write'), false);
+    assert.equal(can(user, 'material.edit'), false);
   }
 });
 
 test('an override list can grant beyond the role', () => {
-  const user = { role: 'finance', permissions: ['score.finance', 'material.write'] };
-  assert.equal(can(user, 'material.write'), true, 'granted beyond the finance template');
+  const user = { role: 'finance', permissions: ['score.finance', 'material.edit'] };
+  assert.equal(can(user, 'material.edit'), true, 'granted beyond the finance template');
   assert.equal(can(user, 'score.finance'), true);
   assert.equal(hasCustomPermissions(user), true);
 });
 
 test('an override list can take away what the role would have given', () => {
   const user = { role: 'commercial', permissions: ['score.commercial'] };
-  assert.equal(can(user, 'vendor.write'), false, 'revoked despite the commercial template');
-  assert.equal(can(user, 'partner.write'), false);
+  assert.equal(can(user, 'vendor.edit'), false, 'revoked despite the commercial template');
+  assert.equal(can(user, 'partner.create'), false);
   assert.equal(can(user, 'score.commercial'), true);
 });
 
@@ -143,14 +143,44 @@ test('unrecognised override entries do not lock a user out', () => {
   assert.deepEqual(effectivePermissions(user), roleTemplate('qa'));
   assert.equal(can(user, 'vendor.analysis'), true);
 
-  // mixed input keeps only what is real
+  // mixed input keeps only what is real, expanding retired names
   const mixed = { role: 'qa', permissions: ['material.write', 'bogus'] };
-  assert.deepEqual(effectivePermissions(mixed), ['material.write']);
+  assert.deepEqual(effectivePermissions(mixed),
+    ['material.create', 'material.edit', 'material.delete']);
+});
+
+test('a retired permission keeps exactly the access it used to grant', () => {
+  // material.write covered create, edit and delete before the guard was split.
+  // An account whose stored override still names it must not quietly lose any
+  // of the three, because nothing migrated the database.
+  const stored = { role: 'finance', permissions: ['material.write'] };
+  assert.equal(can(stored, 'material.create'), true);
+  assert.equal(can(stored, 'material.edit'), true);
+  assert.equal(can(stored, 'material.delete'), true);
+  assert.equal(can(stored, 'score.finance'), false, 'an override still replaces the template');
+
+  // vendor.write never covered deletion, and must not start to.
+  const vendor = { role: 'finance', permissions: ['vendor.write'] };
+  assert.equal(can(vendor, 'vendor.create'), true);
+  assert.equal(can(vendor, 'vendor.edit'), true);
+  assert.equal(can(vendor, 'vendor.delete'), false);
+
+  const partner = { role: 'finance', permissions: ['partner.write'] };
+  assert.deepEqual(effectivePermissions(partner),
+    ['partner.create', 'partner.edit', 'partner.delete']);
+});
+
+test('an override naming only a dropped permission falls back to the role', () => {
+  // archive.read enforced nothing and was removed. Expanding it to an empty set
+  // must read as "no override" rather than as "allowed nothing".
+  const user = { role: 'qa', permissions: ['archive.read'] };
+  assert.deepEqual(effectivePermissions(user), roleTemplate('qa'));
+  assert.equal(can(user, 'vendor.analysis'), true);
 });
 
 test('sanitizePermissions keeps only known names, deduplicated and ordered', () => {
   assert.deepEqual(sanitizePermissions(['bogus', 'audit.read', 'vendor.write', 'audit.read']),
-    ['vendor.write', 'audit.read']);
+    ['vendor.create', 'vendor.edit', 'audit.read']);
   assert.deepEqual(sanitizePermissions('nonsense' as any), []);
   assert.deepEqual(sanitizePermissions(null), []);
 });
