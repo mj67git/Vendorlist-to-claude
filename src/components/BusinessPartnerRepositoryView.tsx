@@ -4,6 +4,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Resp
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
 import { exportBusinessPartnersToExcel } from '../utils/excelExport';
+import { categoryLabels } from '../constants/categories';
+import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
   CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
@@ -115,14 +117,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const getConnectedSources = (partner: BusinessPartner) =>
     (db || []).filter(v => v.manufacturerId === partner.id || v.supplierId === partner.id || v.id === partner.id);
 
-  const gradeBadgeCls = (g?: string | null) => {
-    if (g === 'A') return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300';
-    if (g === 'B') return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300';
-    if (g === 'C') return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300';
-    if (g === 'rejected' || g === 'black list') return 'bg-rose-600 text-white border-rose-700';
-    return 'bg-muted text-muted-foreground border-border';
-  };
-
   const renderConnectedSources = (partner: BusinessPartner) => {
     const sources = getConnectedSources(partner);
     const roleLabel = partner.type === 'Manufacturer' ? 'به‌عنوان تولیدکننده' : 'به‌عنوان فروشنده';
@@ -156,15 +150,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {v.materialEn && <span className="font-mono text-[10px] text-muted-foreground block">{v.materialEn}</span>}
                     </td>
                     <td className="py-2 px-3 text-foreground">{v.name}</td>
-                    <td className="py-2 px-3 text-muted-foreground">{v.category}</td>
+                    {/* The stored key (`foreign`, `packaging`, …) is a database
+                        value, not something to show a user — everywhere else in
+                        the app it goes through the same label map. */}
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category || '—'}
+                    </td>
                     <td className="py-2 px-3 text-center">
-                      {v.grade ? (
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${gradeBadgeCls(v.grade)}`}>
-                          {v.grade === 'rejected' || v.grade === 'black list' ? 'لیست سیاه' : `Grade ${v.grade}`}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">{v.status === 'rejected' ? 'مردود' : v.status || '—'}</span>
-                      )}
+                      {/* Was a local copy of the grade badge that fell back to
+                          the raw English status ('new', 'approved') when a
+                          source had no grade yet. GradeBadge is the shared one
+                          and always speaks Persian. */}
+                      <GradeBadge grade={v.grade as any} status={v.status as any} scores={v.scores} />
                     </td>
                   </tr>
                 ))}
