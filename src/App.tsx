@@ -1168,7 +1168,7 @@ export default function App() {
       content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} />;
+      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = (

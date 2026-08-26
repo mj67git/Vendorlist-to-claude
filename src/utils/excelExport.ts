@@ -801,3 +801,169 @@ export function exportAuditToExcel(rows: AuditExportRow[]) {
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   XLSX.writeFile(wb, `گزارش_Audit_${dateStr}.xlsx`);
 }
+
+/**
+ * A single supplier's dossier: everything the company-level view knows, in the
+ * shape an auditor asks for it.
+ *
+ * The archive export answers "show me every source"; this answers "show me this
+ * company". Regulatory audits are conducted one supplier at a time, and until
+ * now producing that meant exporting the whole archive and filtering by hand.
+ *
+ * Sheet 1 is the summary an auditor reads first. Sheet 2 reuses the archive's
+ * own material worksheet so the columns match what the rest of the app exports.
+ * Sheet 3 lists the laboratory record, which no other export carries per
+ * company.
+ */
+export interface SupplierDossierInput {
+  supplierName: string;
+  vendors: Vendor[];
+  partners?: BusinessPartner[];
+  materials?: Material[];
+  /** Materials this company is the recorded source for. */
+  chosenMaterials?: string[];
+  /** Materials with no alternative supplier. */
+  soleSourceMaterials?: string[];
+}
+
+function titleCell(text: string): XLSX.CellObject {
+  return {
+    v: text, t: 's',
+    s: {
+      fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
+      font: { name: 'Segoe UI', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+      alignment: { horizontal: 'right', vertical: 'center', readingOrder: 2 },
+    },
+  };
+}
+
+function labelValueRows(pairs: Array<[string, string | number]>): XLSX.CellObject[][] {
+  return pairs.map(([label, value]) => [
+    {
+      v: label, t: 's',
+      s: {
+        font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '1E293B' } },
+        fill: { patternType: 'solid', fgColor: { rgb: 'F1F5F9' } },
+        alignment: { horizontal: 'right', readingOrder: 2 },
+      },
+    } as XLSX.CellObject,
+    {
+      v: value, t: typeof value === 'number' ? 'n' : 's',
+      s: {
+        font: { name: 'Segoe UI', sz: 9, color: { rgb: '1E293B' } },
+        alignment: { horizontal: 'right', readingOrder: 2 },
+      },
+    } as XLSX.CellObject,
+  ]);
+}
+
+export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
+  const { supplierName, vendors, partners = [], materials = [], chosenMaterials = [], soleSourceMaterials = [] } = input;
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+
+  // --- Sheet 1: the summary --------------------------------------------------
+  let pass = 0, conditional = 0, reject = 0;
+  vendors.forEach(v => (v.analysisRecords || []).forEach(r => {
+    if (r.decision === 'Pass') pass++;
+    else if (r.decision === 'Approved Conditional') conditional++;
+    else if (r.decision === 'Reject') reject++;
+  }));
+  const labTotal = pass + conditional + reject;
+
+  const riskCounts = { High: 0, Medium: 0, Low: 0, none: 0 };
+  vendors.forEach(v => {
+    const level = v.riskAssessment?.riskLevel;
+    if (level === 'High' || level === 'Medium' || level === 'Low') riskCounts[level]++;
+    else riskCounts.none++;
+  });
+
+  const scored = vendors
+    .map(v => calculateOverallScore(v.scores, true))
+    .filter((n): n is number => n !== null && n > 0);
+  const avgScore = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null;
+
+  // The SOP evaluation lives on the partner record, not on the source.
+  const linkedPartner = partners.find(p =>
+    vendors.some(v => v.supplierId === p.id || v.manufacturerId === p.id));
+  const sop = linkedPartner?.evaluation;
+
+  const summary: XLSX.CellObject[][] = [
+    [titleCell(`پروندهٔ تأمین‌کننده — ${supplierName}`)],
+    [],
+    ...labelValueRows([
+      ['نام تأمین‌کننده', supplierName],
+      ['تاریخ تهیهٔ گزارش', new Date().toLocaleDateString('fa-IR')],
+      ['تعداد اقلام تأمین‌شده', vendors.length],
+      ['میانگین امتیاز ارزیابی', avgScore === null ? 'ارزیابی‌نشده' : avgScore],
+    ]),
+    [],
+    [titleCell('سابقهٔ آزمایشگاه')],
+    ...labelValueRows([
+      ['کل تست‌ها', labTotal],
+      ['قبول', pass],
+      ['قبول مشروط', conditional],
+      ['مردود', reject],
+      ['نرخ قبولی', labTotal ? `${Math.round(((pass + conditional) / labTotal) * 100)}٪` : 'تستی ثبت نشده'],
+    ]),
+    [],
+    [titleCell('ارزیابی ریسک')],
+    ...labelValueRows([
+      ['ریسک بالا', riskCounts.High],
+      ['ریسک متوسط', riskCounts.Medium],
+      ['ریسک پایین', riskCounts.Low],
+      ['بدون ارزیابی ریسک', riskCounts.none],
+    ]),
+    [],
+    [titleCell('ارزیابی مدارک SOP (فروشنده)')],
+    ...labelValueRows(
+      sop
+        ? [
+            ['شریک تجاری مرتبط', linkedPartner?.name || '-'],
+            ['امتیاز کل SOP', sop.totalScore],
+            ['گرید SOP', sop.grade],
+            ['آخرین به‌روزرسانی', sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('fa-IR') : '-'],
+            ['ثبت‌کننده', sop.updatedBy || '-'],
+          ]
+        : [['ارزیابی SOP', 'این تأمین‌کننده به رکورد شریک تجاری متصل نیست یا ارزیابی نشده است.']]),
+    [],
+    [titleCell('تداوم تأمین')],
+    ...labelValueRows([
+      ['موادی که سورس منتخب است', chosenMaterials.length],
+      ['موادی که تک‌منبع است', soleSourceMaterials.length],
+      ['فهرست مواد تک‌منبع', soleSourceMaterials.join('، ') || '-'],
+    ]),
+  ];
+
+  const summaryWs = XLSX.utils.aoa_to_sheet(summary as any);
+  summaryWs['!cols'] = [{ wch: 34 }, { wch: 52 }];
+  summaryWs['!merges'] = [];
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'خلاصهٔ پرونده');
+
+  // --- Sheet 2: the materials, in the archive's own format -------------------
+  const { ws: materialsWs } = buildCategoryWorksheet(vendors, 'all', partners, materials);
+  XLSX.utils.book_append_sheet(wb, materialsWs, 'اقلام تأمین‌شده');
+
+  // --- Sheet 3: the laboratory record ---------------------------------------
+  const labHeaders = ['ردیف', 'ماده', 'تاریخ', 'کد QC', 'نتیجه', 'دلیل انحراف', 'ثبت‌کننده', 'توضیحات'];
+  const labRows: any[][] = [];
+  vendors.forEach(v => (v.analysisRecords || []).forEach(r => {
+    labRows.push([
+      labRows.length + 1,
+      v.material || '-',
+      (r as any).date || (r as any).recordDate || '-',
+      (r as any).qcCode || '-',
+      r.decision || '-',
+      (r as any).deviationReason || '-',
+      (r as any).recordedBy || '-',
+      (r as any).comments || '-',
+    ]);
+  }));
+  const labWs = XLSX.utils.aoa_to_sheet([labHeaders, ...(labRows.length ? labRows : [['—', 'هیچ رکورد آزمایشگاهی ثبت نشده است.', '', '', '', '', '', '']])]);
+  labWs['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 40 }];
+  XLSX.utils.book_append_sheet(wb, labWs, 'سوابق آزمایشگاه');
+
+  const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
+  const safeName = supplierName.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40);
+  XLSX.writeFile(wb, `پرونده_تامین‌کننده_${safeName}_${dateStr}.xlsx`);
+}

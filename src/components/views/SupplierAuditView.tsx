@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Award, Briefcase, Building, Building2, CheckCircle, ChevronLeft, Coins, Factory, Globe, Handshake, Microscope, Pencil, Search, ShieldAlert, Warehouse, X } from 'lucide-react';
-import { BusinessPartner, Scores, User, Vendor } from '../../types';
+import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
@@ -9,6 +9,9 @@ import { isVendorRejected } from '../../utils/vendorState';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
 import { canScoreDepartment, scorableDepartments } from '../../utils/permissions';
+import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
+import { exportSupplierDossierToExcel } from '../../utils/excelExport';
+import { authFetch, isLocalMode } from '../../services/authFetch';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 
@@ -53,9 +56,22 @@ export function supplierKey(name: string): string {
     onSelectVendor: (vendor: Vendor) => void;
     currentUser: User | null;
     partners?: BusinessPartner[];
+    materials?: Material[];
+    /** Jump to another module — used to open the linked partner record. */
+    onNavigate?: (view: string) => void;
   }
 
-  export function SupplierAuditView({ db, onSelectVendor, currentUser, partners = [] }: SupplierAuditViewProps) {
+/** The recorded "this is the source we buy from" decision, per material. */
+interface SourceSelection {
+  materialKey: string;
+  category: string;
+  vendorId: string;
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+}
+
+  export function SupplierAuditView({ db, onSelectVendor, currentUser, partners = [], materials = [], onNavigate }: SupplierAuditViewProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null);
 
@@ -63,6 +79,17 @@ export function supplierKey(name: string): string {
 
     /** Departments this person may score; drives which figure they are shown. */
     const myDepartments = useMemo(() => scorableDepartments(currentUser), [currentUser]);
+
+    // The recorded purchasing decisions, so this page can say how many of the
+    // company's materials it is actually the chosen source for.
+    const [selections, setSelections] = useState<SourceSelection[]>([]);
+    useEffect(() => {
+      if (isLocalMode()) return;
+      authFetch('/api/source-selections')
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => { if (Array.isArray(data)) setSelections(data); })
+        .catch(() => { /* the card simply reports none on record */ });
+    }, []);
 
     useEffect(() => {
       setCurrentPage(1);
@@ -284,7 +311,12 @@ export function supplierKey(name: string): string {
        return alternatives.length === 0;
      });
 
+     // How many of this company's materials it is the recorded source for.
+     const chosenFor = list.filter(v =>
+       selections.some(sel => sel.vendorId === v.id));
+
      return {
+       chosenFor,
        totalItems,
        avgPerformance,
        deptAverages,
@@ -298,7 +330,7 @@ export function supplierKey(name: string): string {
        licences,
        soleSource,
      };
-   }, [activeSupplier, currentUser, db]);
+   }, [activeSupplier, currentUser, db, selections]);
  
    return (
      <div className="space-y-6 fade-in text-right">
@@ -490,6 +522,107 @@ export function supplierKey(name: string): string {
                    ? 'مادهٔ بدون سورس جایگزین — قطع تأمین از این شرکت مستقیماً تولید را متوقف می‌کند.'
                    : 'برای همهٔ مواد این شرکت سورس جایگزین وجود دارد.'}
                </p>
+             </div>
+           </div>
+
+           {/* SOP documents live on the partner record; this page only ever
+               showed the resulting grade, which says nothing about which
+               paperwork is missing or how old the assessment is. */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+             <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-4">
+               <div className="flex items-center justify-between gap-2 mb-3">
+                 <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-2">
+                   <Award className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                   ارزیابی مدارک SOP
+                 </span>
+                 {activePartnerDetails?.supPartner && onNavigate && (
+                   <button type="button" onClick={() => onNavigate('business-partners')}
+                     className="text-[10px] font-bold text-primary hover:underline cursor-pointer shrink-0">
+                     مشاهده در مخزن شرکای تجاری ←
+                   </button>
+                 )}
+               </div>
+
+               {activePartnerDetails?.supPartner?.evaluation ? (
+                 <>
+                   <div className="flex flex-wrap items-center gap-3 mb-3">
+                     <GradeBadge
+                       grade={activePartnerDetails.supPartner.evaluation.grade as any}
+                       status={activePartnerDetails.supPartner.evaluation.status as any}
+                     />
+                     <span className="font-mono font-bold text-foreground text-sm">
+                       {activePartnerDetails.supPartner.evaluation.totalScore} <span className="text-[10px] text-muted-foreground">از ۱۰۰</span>
+                     </span>
+                     <span className="text-[10px] text-muted-foreground">
+                       آخرین ارزیابی: {activePartnerDetails.supPartner.evaluation.updatedAt
+                         ? new Date(activePartnerDetails.supPartner.evaluation.updatedAt).toLocaleDateString('fa-IR')
+                         : 'نامشخص'}
+                       {activePartnerDetails.supPartner.evaluation.updatedBy && ` · ${activePartnerDetails.supPartner.evaluation.updatedBy}`}
+                     </span>
+                   </div>
+                   <div className="space-y-1">
+                     {SOP_DOCUMENTS_DEF.map(def => {
+                       const doc = activePartnerDetails.supPartner!.evaluation!.documents?.[def.key];
+                       const status = doc?.status || 'Not Submitted';
+                       const tone =
+                         status === 'Approved' ? 'text-emerald-700 dark:text-emerald-400'
+                         : status === 'Permit Approval' ? 'text-blue-700 dark:text-blue-400'
+                         : status === 'Expired' ? 'text-amber-700 dark:text-amber-400'
+                         : 'text-rose-700 dark:text-rose-400';
+                       const label =
+                         status === 'Approved' ? 'تأییدشده'
+                         : status === 'Permit Approval' ? 'تأیید موقت'
+                         : status === 'Expired' ? 'منقضی' : 'ارائه نشده';
+                       return (
+                         <div key={def.key} className="flex items-center justify-between gap-3 text-[11px] border-b border-border/50 last:border-0 py-1">
+                           <EntityName name={def.nameFa} lines={1} className="text-foreground" />
+                           <span className={`font-bold shrink-0 ${tone}`}>{label}</span>
+                         </div>
+                       );
+                     })}
+                   </div>
+                 </>
+               ) : (
+                 <p className="text-[11px] text-muted-foreground leading-relaxed">
+                   {activePartnerDetails?.supPartner
+                     ? 'این فروشنده هنوز ارزیابی SOP ندارد.'
+                     : 'هیچ‌کدام از اقلام این تأمین‌کننده به یک رکورد فروشنده در مخزن شرکای تجاری متصل نیست، پس ارزیابی SOP در دسترس نیست.'}
+                 </p>
+               )}
+             </div>
+
+             {/* Recorded purchasing decisions + the dossier export */}
+             <div className="bg-card border border-border rounded-2xl p-4 flex flex-col justify-between gap-4">
+               <div>
+                 <div className="flex items-center gap-2 mb-2">
+                   <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                   <span className="text-[11px] font-bold text-muted-foreground">سورس منتخب</span>
+                 </div>
+                 <div className="text-2xl font-black font-mono leading-none text-foreground">
+                   {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.totalItems}</span>
+                 </div>
+                 <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                   {stats.chosenFor.length > 0
+                     ? 'ماده‌ای که این شرکت به‌عنوان سورس منتخب برایش ثبت شده است.'
+                     : 'برای هیچ‌کدام از اقلام این شرکت تصمیم رسمی سورس ثبت نشده است.'}
+                 </p>
+               </div>
+
+               <button
+                 type="button"
+                 onClick={() => exportSupplierDossierToExcel({
+                   supplierName: activeSupplier.name,
+                   vendors: activeSupplier.vendors,
+                   partners,
+                   materials,
+                   chosenMaterials: stats.chosenFor.map(v => v.material),
+                   soleSourceMaterials: stats.soleSource.map(v => v.material),
+                 })}
+                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer"
+               >
+                 <Briefcase className="w-3.5 h-3.5" />
+                 خروجی پروندهٔ این تأمین‌کننده
+               </button>
              </div>
            </div>
 
