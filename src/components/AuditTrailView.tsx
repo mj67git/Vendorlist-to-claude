@@ -78,89 +78,6 @@ function InfoIcon(props: any) {
   return <CheckCircle className="w-3.5 h-3.5" {...props} />;
 }
 
-const MOCK_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: "AUD-1405-001",
-    date: "1405/05/15",
-    time: "14:32:18",
-    user: "علی علوی (مدیر QA)",
-    role: "qa",
-    module: "مدیریت سورس‌ها",
-    action: "Update",
-    recordName: "سورس نمونه آسپیرین پارس دارو",
-    severity: "Warning",
-    description: "تغییر وضعیت نمونه به تایید مشروط بر اساس نتایج دوره‌ای آزمایشگاهی شماره QC-9833",
-    before: { status: "approved", grade: "A", validationNotes: "نتایج کامل پاس شده است" },
-    after: { status: "conditional", grade: "B", validationNotes: "تایید مشروط به دلیل نوسان جزئی خلوص بچ شماره 9021" },
-    reason: "نتایج آنالیز دوره ای خلوص پایداری مواد اولیه کمکی نوسان داشت.",
-    correlationId: "COR-QA-2026-99321"
-  },
-  {
-    id: "AUD-1405-002",
-    date: "1405/05/15",
-    time: "13:10:45",
-    user: "مهندس محمدی (واحد آزمایشگاه)",
-    role: "lab",
-    module: "آزمایشگاه کنترل کیفیت",
-    action: "Reject",
-    recordName: "بچ شماره 9042 - پاراستامول هندی",
-    severity: "Critical",
-    description: "ثبت انحراف کیفی OOS و رد صلاحیت بچ دریافتی به علت عدم مطابقت با فارماکوپه",
-    before: { testStatus: "Under Testing", purity: "99.1%", conformity: "Pending" },
-    after: { testStatus: "Rejected", purity: "94.2%", conformity: "OOS - Non Compliant" },
-    reason: "کاهش درصد پلوتونیوم ناخالصی فراتر از حد مجاز ICH Q3A",
-    correlationId: "COR-LAB-2026-11029"
-  },
-  {
-    id: "AUD-1405-003",
-    date: "1405/05/15",
-    time: "11:05:12",
-    user: "علیرضا رضایی (ادمین)",
-    role: "admin",
-    module: "مدیریت کاربران",
-    action: "Create",
-    recordName: "کاربر جدید: سارا احمدی (Finance)",
-    severity: "Info",
-    description: "تعریف کاربر جدید در سیستم با دسترسی واحد مالی و مالیاتی خرید سورس‌ها",
-    before: null,
-    after: { username: "s.ahmadi", role: "finance", permissions: ["Read", "UpdateScores"] },
-    reason: "جایگزینی موقت پرسنل واحد مالی و ایجاد دسترسی نظارت بر خرید خارجی سورس کالا",
-    correlationId: "COR-ADM-2026-00411"
-  },
-  {
-    id: "AUD-1405-004",
-    date: "1405/05/14",
-    time: "17:40:00",
-    user: "مهندس علوی (واحد بازرگانی)",
-    role: "commercial",
-    module: "ارزیابی تامین‌کنندگان",
-    action: "Update",
-    recordName: "تامین‌کننده پیشرو طب آریا",
-    severity: "Info",
-    description: "بروزرسانی امتیازات تجاری و اسناد نمایندگی رسمی بر اساس ممیزی مستندات مالی",
-    before: { complianceScore: 78, isLicensed: false },
-    after: { complianceScore: 92, isLicensed: true },
-    reason: "دریافت نسخه تایید شده پروفرما و تاییدیه رسمی واردات سازمان غذا و دارو",
-    correlationId: "COR-COM-2026-22104"
-  },
-  {
-    id: "AUD-1405-005",
-    date: "1405/05/12",
-    time: "09:15:33",
-    user: "سهراب سپهری (انبار دارویی)",
-    role: "planning",
-    module: "برنامه‌ریزی و انبار",
-    action: "Create",
-    recordName: "رسید انبار شماره REC-1044",
-    severity: "Info",
-    description: "ثبت تست کیفیت و آنالیز فیزیکوشیمیایی نشاسته دارویی دریافتی",
-    before: null,
-    after: { batchNo: "C-991", status: "Pass", purity: "99.8%", microbiologicalTest: "Compliant" },
-    reason: "آزمایش روتین آزادسازی مواد خام ورودی سالن تولید",
-    correlationId: "COR-LAB-2026-10221"
-  }
-];
-
 // Persian labels for common audit field keys (fallback: raw key).
 const fieldKeyLabels: Record<string, string> = {
   status: 'وضعیت', grade: 'گرید', name: 'نام', nameEn: 'نام لاتین', country: 'کشور',
@@ -384,16 +301,8 @@ export const AuditTrailView: React.FC = () => {
           };
         });
 
-        // Use mock data as fallback if no real database/JSON logs are present
-        if (formattedData.length === 0 && !searchQuery && filterUser === 'all' && filterModule === 'all' && filterAction === 'all' && activeSeverity === 'all' && !startDate && !endDate) {
-          // Client-side paging on mock data
-          let filteredMock = [...MOCK_AUDIT_LOGS];
-          setLogs(filteredMock.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage));
-          setTotalItems(MOCK_AUDIT_LOGS.length);
-        } else {
-          setLogs(formattedData);
-          setTotalItems(result.total || 0);
-        }
+        setLogs(formattedData);
+        setTotalItems(result.total || 0);
       }
     } catch (err) {
       console.error('Failed to fetch real audit logs:', err);
@@ -437,17 +346,11 @@ export const AuditTrailView: React.FC = () => {
             lastUpdated: statsData.lastUpdated,
           });
         } else {
-          // Mock stats fallback
-          const mockTotal = MOCK_AUDIT_LOGS.length;
-          const mockCritical = MOCK_AUDIT_LOGS.filter(l => l.severity === 'Critical').length;
-          const mockWarning = MOCK_AUDIT_LOGS.filter(l => l.severity === 'Warning').length;
-          setStats({
-            total: mockTotal,
-            critical: mockCritical,
-            warning: mockWarning,
-            activeUsers: 5,
-            lastUpdated: "14:32:18"
-          });
+          // An empty log is a fact worth showing, not something to paper over:
+          // this module is the GMP audit trail, and inventing records here — as
+          // the old demo fallback did, complete with a fabricated OOS batch
+          // rejection — makes them indistinguishable from real ones.
+          setStats({ total: 0, critical: 0, warning: 0, activeUsers: 0, lastUpdated: '—' });
         }
       }
 
@@ -913,15 +816,29 @@ export const AuditTrailView: React.FC = () => {
               ) : (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground font-medium">
+                    {/* "No records at all" and "no records matching your
+                        filters" are different situations; offering to clear
+                        filters that are not set only confuses. */}
                     <div className="flex flex-col items-center gap-2">
                       <AlertCircle className="w-8 h-8 text-slate-300" />
-                      <span>هیچ رکورد لاگی با مشخصات انتخابی یافت نشد.</span>
-                      <button 
-                        onClick={handleResetFilters}
-                        className="text-[#0071E3] font-bold text-xs hover:underline mt-1 cursor-pointer"
-                      >
-                        پاک کردن فیلترها
-                      </button>
+                      {advancedFilterCount > 0 || searchQuery || quickSeverityFilter ? (
+                        <>
+                          <span>هیچ رکورد لاگی با مشخصات انتخابی یافت نشد.</span>
+                          <button
+                            onClick={handleResetFilters}
+                            className="text-[#0071E3] font-bold text-xs hover:underline mt-1 cursor-pointer"
+                          >
+                            پاک کردن فیلترها
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span>هنوز هیچ رویدادی در سامانه ثبت نشده است.</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            هر تغییری در سورس‌ها، مواد، شرکا و کاربران به‌صورت خودکار همین‌جا ثبت می‌شود.
+                          </span>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
