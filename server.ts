@@ -622,6 +622,12 @@ async function getVendorsList(vendorId?: string): Promise<any[]> {
         materialEn: materialObj ? materialObj.nameEn : "Unknown",
         cas: materialObj ? materialObj.cas : "N/A",
         irc: materialObj ? materialObj.irc : "N/A",
+        // The source's own licence expiry, which is written by PATCH /contact
+        // and audited on change but was never read back out. Everything that
+        // reads it — the dashboard's expiring-licence card, the detail page,
+        // the supplier overview — therefore saw nothing, so the feature looked
+        // implemented and always reported zero.
+        ircExpiryDate: v.ircExpiryDate ?? null,
         isSample: link ? link.isSample : false,
         category: link ? link.category : "foreign",
         scores: scoreObj,

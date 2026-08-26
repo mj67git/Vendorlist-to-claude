@@ -8,9 +8,35 @@ import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtil
 import { isVendorRejected } from '../../utils/vendorState';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
-import { canScoreDepartment } from '../../utils/permissions';
+import { canScoreDepartment, scorableDepartments } from '../../utils/permissions';
+import { resolveVendorPartner } from '../../utils/vendorPartner';
+import { checkLicenseExpiry } from '../../utils/vendorUtils';
 
 // --- View: Supplier Unified Audit & Analysis Module ---
+
+/**
+ * The key that decides "these sources are the same company".
+ *
+ * Grouping stays on the name rather than on the linked business partner: only
+ * 2 of 76 sources currently carry a partner link, so keying on the partner
+ * would split the other 74 apart instead of consolidating anything.
+ *
+ * The normalisation is insurance for real data. Persian text routinely arrives
+ * with the Arabic ي and ك in place of ی and ک, and with a zero-width non-joiner
+ * where a space is meant. Those look identical on screen but are different
+ * strings, so one company would silently become two rows with half its
+ * materials each.
+ */
+export function supplierKey(name: string): string {
+  return (name || '')
+    .replace(/[يﻱﻲ]/g, 'ی')
+    .replace(/[كﻙﻚ]/g, 'ک')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/\u200c/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
  interface SupplierGroup {
    key: string;
@@ -35,6 +61,9 @@ import { canScoreDepartment } from '../../utils/permissions';
 
     const [currentPage, setCurrentPage] = useState(1);
 
+    /** Departments this person may score; drives which figure they are shown. */
+    const myDepartments = useMemo(() => scorableDepartments(currentUser), [currentUser]);
+
     useEffect(() => {
       setCurrentPage(1);
     }, [searchQuery]);
@@ -44,7 +73,7 @@ import { canScoreDepartment } from '../../utils/permissions';
       const groups: Record<string, SupplierGroup> = {};
 
       db.forEach(v => {
-        const key = v.name.trim().toLowerCase();
+        const key = supplierKey(v.name);
         if (!key) return;
 
         if (!groups[key]) {
@@ -96,41 +125,42 @@ import { canScoreDepartment } from '../../utils/permissions';
      return supplierGroups.find(s => s.key === selectedSupplierKey) || null;
    }, [supplierGroups, selectedSupplierKey]);
 
-       // Business Partner Resolution for Active Supplier Header
+    /**
+     * Who this company is, resolved across every source in the group.
+     *
+     * It used to read only `vendors[0]`, so a company whose materials were
+     * linked to different partner records showed just the first one. It also
+     * followed `partner.manufacturerId`, a field the database does not have —
+     * the schema notes that suppliers no longer reference a manufacturer — so
+     * that branch could never run.
+     */
     const activePartnerDetails = useMemo(() => {
       if (!activeSupplier) return null;
 
-      const firstVendor = activeSupplier.vendors[0];
-      const matchedPartner = partners.find(p => p.name.trim().toLowerCase() === activeSupplier.name.trim().toLowerCase());
+      const resolved = activeSupplier.vendors
+        .map(v => resolveVendorPartner(v, partners))
+        .filter(info => info.partner);
 
-      let mfgPartner = partners.find(p => p.id === firstVendor?.manufacturerId);
-      let supPartner = partners.find(p => p.id === firstVendor?.supplierId);
+      const manufacturers = [...new Map(
+        resolved.filter(r => r.role === 'manufacturer').map(r => [r.partner!.id, r])).values()];
+      const suppliers = [...new Map(
+        resolved.filter(r => r.role === 'supplier').map(r => [r.partner!.id, r])).values()];
 
-      if (matchedPartner) {
-        if (matchedPartner.type === 'Supplier') {
-          supPartner = matchedPartner;
-          if (!mfgPartner && matchedPartner.manufacturerId) {
-            mfgPartner = partners.find(p => p.id === matchedPartner.manufacturerId);
-          }
-        } else if (matchedPartner.type === 'Manufacturer') {
-          mfgPartner = matchedPartner;
-        }
-      }
-
-      const mfgName = mfgPartner ? mfgPartner.name : (firstVendor?.name || activeSupplier.name);
-      const mfgCountry = mfgPartner ? (mfgPartner.country || 'نامشخص') : (activeSupplier.country || 'نامشخص');
-
-      const supName = supPartner ? supPartner.name : null;
-      const supCountry = supPartner ? (supPartner.country || 'نامشخص') : null;
-      const supGrade = supPartner?.evaluation?.grade || 'نامشخص';
+      // Falling back to the group's own name keeps the header populated for the
+      // majority of sources, which carry no partner link at all.
+      const primaryMfg = manufacturers[0] ?? null;
+      const primarySup = suppliers[0] ?? null;
 
       return {
-        mfgName,
-        mfgCountry,
-        supName,
-        supCountry,
-        supGrade,
-        supPartner
+        mfgName: primaryMfg?.name ?? activeSupplier.name,
+        mfgCountry: primaryMfg?.country ?? activeSupplier.country ?? 'نامشخص',
+        supName: primarySup?.name ?? null,
+        supCountry: primarySup?.country ?? null,
+        supGrade: primarySup?.grade ?? 'نامشخص',
+        supPartner: primarySup?.partner ?? null,
+        /** More than one distinct partner behind one company name. */
+        extraPartners: Math.max(0, manufacturers.length - 1) + Math.max(0, suppliers.length - 1),
+        linkedCount: resolved.length,
       };
     }, [activeSupplier, partners]);
 
@@ -146,13 +176,18 @@ import { canScoreDepartment } from '../../utils/permissions';
      const deptTotals = { commercial: 0, qa: 0, planning: 0, finance: 0 };
      const deptCounts = { commercial: 0, qa: 0, planning: 0, finance: 0 };
 
+     // Which figure this person should see follows their permissions, not
+     // their job title. Someone responsible for exactly one department sees
+     // that department's average; anyone broader sees the weighted total. Read
+     // off the role, this showed a `commercial` account the commercial score
+     // even after an admin had moved their permission to QA.
+     const myDepartments = scorableDepartments(currentUser);
+     const showsOwnDepartment = myDepartments.length === 1;
+
      list.forEach(v => {
-       let overall = null;
-       if (currentUser?.role === 'admin') {
-         overall = calculateOverallScore(v.scores, true);
-       } else if (currentUser?.role) {
-         overall = v.scores?.[currentUser.role as keyof Scores] || 0;
-       }
+       const overall = showsOwnDepartment
+         ? ((v.scores as any)?.[myDepartments[0]] || 0)
+         : calculateOverallScore(v.scores, true);
        if (overall !== null && overall > 0) {
          scoresSum += overall;
          scoredCount++;
@@ -198,14 +233,72 @@ import { canScoreDepartment } from '../../utils/permissions';
        }
      });
  
+     // --- Company-level quality signals -------------------------------------
+     // Each of these existed per material and nowhere per company, which is the
+     // question this page is actually asked.
+
+     // Laboratory record across everything this company supplies.
+     let pass = 0, conditional = 0, reject = 0;
+     list.forEach(v => (v.analysisRecords || []).forEach(r => {
+       if (r.decision === 'Pass') pass++;
+       else if (r.decision === 'Approved Conditional') conditional++;
+       else if (r.decision === 'Reject') reject++;
+     }));
+     const labTotal = pass + conditional + reject;
+     const lab = {
+       pass, conditional, reject, total: labTotal,
+       rate: labTotal > 0 ? Math.round(((pass + conditional) / labTotal) * 100) : null,
+       materialsTested: list.filter(v => (v.analysisRecords || []).length > 0).length,
+     };
+
+     // Risk: the worst case matters more than the average. One High-risk
+     // material is a different conversation from an all-Low portfolio.
+     const riskCounts = { High: 0, Medium: 0, Low: 0, none: 0 };
+     list.forEach(v => {
+       const level = v.riskAssessment?.riskLevel;
+       if (level === 'High' || level === 'Medium' || level === 'Low') riskCounts[level]++;
+       else riskCounts.none++;
+     });
+     const highestRisk = riskCounts.High > 0 ? 'High' : riskCounts.Medium > 0 ? 'Medium' : riskCounts.Low > 0 ? 'Low' : null;
+
+     // Licences about to lapse, or already lapsed.
+     const licences = { expired: 0, expiring: 0 };
+     list.forEach(v => {
+       const check = checkLicenseExpiry(v.ircExpiryDate);
+       if (check.status === 'expired') licences.expired++;
+       else if (check.status === 'expiring_soon') licences.expiring++;
+     });
+
+     // Supply continuity: materials for which this company is the only source
+     // we hold. Nothing else in the app answers this.
+     const soleSource = list.filter(v => {
+       if (v.isSample || isVendorRejected(v)) return false;
+       const key = (v.material || '').trim().toLowerCase();
+       if (!key) return false;
+       const alternatives = db.filter(other =>
+         other.id !== v.id &&
+         !other.isSample &&
+         !isVendorRejected(other) &&
+         (other.material || '').trim().toLowerCase() === key &&
+         supplierKey(other.name) !== activeSupplier.key);
+       return alternatives.length === 0;
+     });
+
      return {
        totalItems,
        avgPerformance,
        deptAverages,
        statusDistribution,
-       dominantGrade
+       dominantGrade,
+       showsOwnDepartment,
+       myDepartmentLabel: showsOwnDepartment ? myDepartments[0] : null,
+       lab,
+       riskCounts,
+       highestRisk,
+       licences,
+       soleSource,
      };
-   }, [activeSupplier]);
+   }, [activeSupplier, currentUser, db]);
  
    return (
      <div className="space-y-6 fade-in text-right">
@@ -293,8 +386,8 @@ import { canScoreDepartment } from '../../utils/permissions';
              {stats.avgPerformance !== null && (
                <div className="bg-muted border border-border rounded-2xl p-4 flex items-center gap-4 self-stretch md:self-auto justify-between">
                  <div className="text-left">
-                   <div className="text-[10px] uppercase font-bold text-muted-foreground">{currentUser?.role === 'admin' ? 'Integrated SPS Rating' : 'Departmental Average Rating'}</div>
-                   <div className="text-xs text-muted-foreground font-medium font-sans mt-0.5" dir="rtl">{currentUser?.role === 'admin' ? 'شاخص کل عملکرد تامین‌کننده' : 'شاخص میانگین عملکرد واحد شما'}</div>
+                   <div className="text-[10px] uppercase font-bold text-muted-foreground">{stats.showsOwnDepartment ? 'Departmental Average Rating' : 'Integrated SPS Rating'}</div>
+                   <div className="text-xs text-muted-foreground font-medium font-sans mt-0.5" dir="rtl">{stats.showsOwnDepartment ? 'شاخص میانگین عملکرد واحد شما' : 'شاخص کل عملکرد تامین‌کننده'}</div>
                  </div>
                  <div className={`text-3xl font-black font-mono leading-none ${getScoreColorClass(stats.avgPerformance)} bg-card px-4 py-3 rounded-xl border border-border shadow-sm`}>
                    {Math.round(stats.avgPerformance || 0).toLocaleString('en-US')}
@@ -302,6 +395,117 @@ import { canScoreDepartment } from '../../utils/permissions';
                </div>
              )}
            </div>
+
+           {/* Company-level signals. Each of these was only ever visible per
+               material, which is not the question this page is asked. */}
+           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+             {/* Laboratory record */}
+             <div className="bg-card border border-border rounded-2xl p-4">
+               <div className="flex items-center gap-2 mb-2">
+                 <Microscope className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                 <span className="text-[11px] font-bold text-muted-foreground">سابقهٔ آزمایشگاه</span>
+               </div>
+               {stats.lab.total > 0 ? (
+                 <>
+                   <div className={`text-2xl font-black font-mono leading-none ${stats.lab.reject > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                     {stats.lab.rate}<span className="text-sm">٪</span>
+                   </div>
+                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                     {stats.lab.total} تست روی {stats.lab.materialsTested} ماده ·{' '}
+                     <span className="text-emerald-700 dark:text-emerald-400 font-bold">{stats.lab.pass + stats.lab.conditional} قبول</span>
+                     {stats.lab.reject > 0 && (
+                       <> · <span className="text-rose-700 dark:text-rose-400 font-bold">{stats.lab.reject} مردود</span></>
+                     )}
+                   </p>
+                 </>
+               ) : (
+                 <p className="text-[11px] text-muted-foreground mt-1">هنوز تستی ثبت نشده است.</p>
+               )}
+             </div>
+
+             {/* Risk — the worst case, not the average */}
+             <div className="bg-card border border-border rounded-2xl p-4">
+               <div className="flex items-center gap-2 mb-2">
+                 <ShieldAlert className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+                 <span className="text-[11px] font-bold text-muted-foreground">بالاترین ریسک</span>
+               </div>
+               {stats.highestRisk ? (
+                 <>
+                   <div className={`text-2xl font-black leading-none ${
+                     stats.highestRisk === 'High' ? 'text-rose-600'
+                     : stats.highestRisk === 'Medium' ? 'text-amber-600' : 'text-emerald-600'
+                   }`}>
+                     {stats.highestRisk === 'High' ? 'بالا' : stats.highestRisk === 'Medium' ? 'متوسط' : 'پایین'}
+                   </div>
+                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                     بالا {stats.riskCounts.High} · متوسط {stats.riskCounts.Medium} · پایین {stats.riskCounts.Low}
+                     {stats.riskCounts.none > 0 && (
+                       <> · <span className="text-amber-700 dark:text-amber-400 font-bold">{stats.riskCounts.none} بدون ارزیابی</span></>
+                     )}
+                   </p>
+                 </>
+               ) : (
+                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                   هیچ‌کدام از {stats.totalItems} ماده ارزیابی ریسک ندارد.
+                 </p>
+               )}
+             </div>
+
+             {/* Licences */}
+             <div className="bg-card border border-border rounded-2xl p-4">
+               <div className="flex items-center gap-2 mb-2">
+                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                 <span className="text-[11px] font-bold text-muted-foreground">وضعیت IRC</span>
+               </div>
+               {stats.licences.expired + stats.licences.expiring > 0 ? (
+                 <>
+                   <div className="text-2xl font-black font-mono leading-none text-rose-600">
+                     {stats.licences.expired + stats.licences.expiring}
+                   </div>
+                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                     {stats.licences.expired > 0 && <span className="text-rose-700 dark:text-rose-400 font-bold">{stats.licences.expired} منقضی</span>}
+                     {stats.licences.expired > 0 && stats.licences.expiring > 0 && ' · '}
+                     {stats.licences.expiring > 0 && <span className="text-amber-700 dark:text-amber-400 font-bold">{stats.licences.expiring} نزدیک انقضا</span>}
+                   </p>
+                 </>
+               ) : (
+                 <>
+                   <div className="text-2xl font-black font-mono leading-none text-emerald-600">۰</div>
+                   <p className="text-[10px] text-muted-foreground mt-1.5">هیچ مجوزی منقضی یا نزدیک انقضا نیست.</p>
+                 </>
+               )}
+             </div>
+
+             {/* Supply continuity */}
+             <div className="bg-card border border-border rounded-2xl p-4">
+               <div className="flex items-center gap-2 mb-2">
+                 <Warehouse className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                 <span className="text-[11px] font-bold text-muted-foreground">تک‌منبع</span>
+               </div>
+               <div className={`text-2xl font-black font-mono leading-none ${stats.soleSource.length > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                 {stats.soleSource.length}
+               </div>
+               <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                 {stats.soleSource.length > 0
+                   ? 'مادهٔ بدون سورس جایگزین — قطع تأمین از این شرکت مستقیماً تولید را متوقف می‌کند.'
+                   : 'برای همهٔ مواد این شرکت سورس جایگزین وجود دارد.'}
+               </p>
+             </div>
+           </div>
+
+           {stats.soleSource.length > 0 && (
+             <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
+               <p className="text-[11px] font-bold text-amber-900 dark:text-amber-300 mb-2">
+                 موادی که فقط از این شرکت تأمین می‌شوند:
+               </p>
+               <div className="flex flex-wrap gap-1.5">
+                 {stats.soleSource.map(v => (
+                   <EntityName key={v.id} name={v.material} lines={1}
+                     className="text-[10px] bg-card text-foreground px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 font-medium max-w-[200px]" />
+                 ))}
+               </div>
+             </div>
+           )}
 
            {/* Elegant summary callout instead of the 4 boxes */}
             <div className="bg-muted border border-border/50 rounded-2xl p-4 flex items-center justify-between gap-4 text-right mb-4">
@@ -398,7 +602,7 @@ import { canScoreDepartment } from '../../utils/permissions';
                <div className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-ping" />
              </h3>
  
-             <div className={`grid grid-cols-1 ${currentUser?.role === 'admin' ? 'md:grid-cols-4' : 'max-w-md mx-auto'} gap-6`}>
+             <div className={`grid grid-cols-1 ${myDepartments.length > 1 ? 'md:grid-cols-4' : 'max-w-md mx-auto'} gap-6`}>
                {[
                  { id: 'commercial', name: 'بازرگانی', avg: stats.deptAverages.commercial, icon: Briefcase, color: 'bg-[#0071E3]' },
                  { id: 'qa', name: 'کیفیت', avg: stats.deptAverages.qa, icon: Microscope, color: 'bg-emerald-600' },
@@ -465,12 +669,9 @@ import { canScoreDepartment } from '../../utils/permissions';
                  let scoresSum = 0;
                  let scoredCount = 0;
                  supplier.vendors.forEach(v => {
-                    let s = null;
-                    if (currentUser?.role === 'admin') {
-                      s = calculateOverallScore(v.scores, true);
-                    } else if (currentUser?.role) {
-                      s = v.scores?.[currentUser.role as keyof Scores] || 0;
-                    }
+                    const s = myDepartments.length === 1
+                      ? ((v.scores as any)?.[myDepartments[0]] || 0)
+                      : calculateOverallScore(v.scores, true);
                    if (s !== null && s > 0) {
                      scoresSum += s;
                      scoredCount++;
@@ -531,7 +732,7 @@ import { canScoreDepartment } from '../../utils/permissions';
  
                      <div className="mt-6 pt-3 border-t border-border flex items-center justify-between">
                        <div className="flex items-center gap-3">
-                         <span className="text-[11px] text-muted-foreground font-sans">{currentUser?.role === 'admin' ? 'میانگین امتیاز ممیزی:' : 'میانگین امتیاز واحد شما:'}</span>
+                         <span className="text-[11px] text-muted-foreground font-sans">{myDepartments.length === 1 ? 'میانگین امتیاز واحد شما:' : 'میانگین امتیاز ممیزی:'}</span>
                          <span className={`text-xs font-bold ${getScoreColorClass(avgScore)} font-mono`}>
                            {avgScore !== null ? `${avgScore}%` : 'N/A'}
                          </span>
