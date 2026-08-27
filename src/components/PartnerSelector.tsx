@@ -145,7 +145,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
           className={`font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer ${
             disabled
               ? 'text-muted-foreground cursor-not-allowed opacity-50'
-              : 'text-[#0071E3] hover:text-[#0025D2]'
+              : 'text-primary hover:text-primary-hover'
           }`}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -168,7 +168,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             disabled
               ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
-              ? 'border-[#0071E3] ring-2 ring-[#0071E3]/20 shadow-xs'
+              ? 'border-ring ring-2 ring-ring/20 shadow-xs'
               : 'border-border hover:border-slate-400'
           }`}
         >
@@ -270,7 +270,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                 <X className="w-3.5 h-3.5" />
               </span>
             )}
-            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-[#0071E3]' : ''}`} />
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-primary' : ''}`} />
           </div>
         </button>
 
@@ -287,7 +287,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={`جستجو بر اساس نام فارسی، انگلیسی یا کشور ${isManufacturer ? 'تولیدکننده' : 'فروشنده'}...`}
-                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#0071E3] focus:ring-1 focus:ring-[#0071E3]"
+                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 />
                 {searchTerm && (
                   <button
@@ -346,7 +346,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       setIsOpen(false);
                       triggerOpenCreate();
                     }}
-                    className="mt-3 inline-flex items-center gap-1 text-[#0071E3] hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
+                    className="mt-3 inline-flex items-center gap-1 text-primary hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>+ ثبت شریک تجاری جدید در مخزن</span>
@@ -432,7 +432,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                             </span>
                           )
                         )}
-                        {isSelected && <Check className="w-4 h-4 text-[#0071E3]" />}
+                        {isSelected && <Check className="w-4 h-4 text-primary" />}
                       </div>
                     </div>
                   );
@@ -451,7 +451,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   setIsOpen(false);
                   triggerOpenCreate();
                 }}
-                className="text-[#0071E3] hover:text-[#0025D2] font-bold text-xs flex items-center gap-1"
+                className="text-primary hover:text-primary-hover font-bold text-xs flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ ثبت {anyType ? 'تأمین‌کننده جدید' : isManufacturer ? 'تولیدکننده جدید' : 'فروشنده جدید'}</span>

@@ -129,7 +129,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center justify-between w-full bg-card border rounded-lg px-3 py-2 cursor-pointer transition-colors text-right text-sm ${
-            isOpen ? 'border-[#0071E3] ring-1 ring-[#0071E3]' : 'border-border hover:border-[var(--border-hover-color)]'
+            isOpen ? 'border-ring ring-1 ring-ring' : 'border-border hover:border-[var(--border-hover-color)]'
           } ${!selectedMaterial && !isOpen && !oldMaterialName ? 'text-muted-foreground' : 'text-foreground'}`}
         >
           <div className="flex-1 truncate pr-1">
