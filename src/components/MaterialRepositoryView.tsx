@@ -8,6 +8,7 @@ import {
 import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { EntityName } from './EntityName';
+import { findDuplicateMaterial } from '../utils/materialDuplicates';
 import { can } from '../utils/permissions';
 import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
@@ -217,20 +218,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       return;
     }
 
-    const isCasDuplicate = materials.some(m => m.cas?.trim() === formData.cas?.trim() && m.id !== editingMaterial?.id);
-    if (isCasDuplicate && formData.cas.trim() !== '' && formData.cas.trim().toLowerCase() !== 'n/a') {
-      setFormError("این شماره CAS قبلاً برای ماده دیگری در مخزن ثبت شده است.");
-      return;
-    }
-
-    const isComboDuplicate = materials.some(m => 
-      m.role === formData.role && 
-      m.nameEn.toLowerCase().trim() === formData.nameEn?.toLowerCase().trim() && 
-      m.finalProductEn?.toLowerCase().trim() === formData.finalProductEn?.toLowerCase().trim() &&
-      m.id !== editingMaterial?.id
+    // The same rule the server enforces (409), so the form cannot promise
+    // something the endpoint will refuse — or refuse what it would allow.
+    const duplicate = findDuplicateMaterial(
+      { id: editingMaterial?.id, nameFa: formData.nameFa, nameEn: formData.nameEn, cas: formData.cas, role: formData.role, finalProductEn: formData.finalProductEn },
+      materials,
+      editingMaterial,
     );
-    if (isComboDuplicate) {
-      setFormError("این ترکیب (Role + نام لاتین + محصول نهایی) قبلاً در سامانه ثبت شده است.");
+    if (duplicate) {
+      setFormError(duplicate.reason);
       return;
     }
 

@@ -8,6 +8,7 @@ import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { AUDIT_EVENT_GROUPS } from "./src/utils/auditTaxonomy.js";
 import { canSupplySources, calculateGradeAndStatus } from "./src/utils/sopEvaluation.js";
+import { findDuplicateMaterial, type MaterialKeyFields } from "./src/utils/materialDuplicates.js";
 import {
   can,
   effectivePermissions,
@@ -132,6 +133,56 @@ function materialDataFromBody(b: any) {
     standardNameEn: b.standardNameEn || null,
     specificationFile: b.specificationFile || null,
   };
+}
+
+/**
+ * Reject a material that duplicates one already in the repository.
+ *
+ * The repository form has checked this since it was written, but only in the
+ * browser — so it was advice, not a rule (project rule 14). The decision itself
+ * lives in `src/utils/materialDuplicates.ts` and is read by both sides, so the
+ * two cannot drift apart.
+ *
+ * Returns the response body when the write must be refused, or null to proceed.
+ * The rejection is audited like any other refused change, the way a blocked
+ * delete already is.
+ */
+async function rejectDuplicateMaterial(
+  prisma: PrismaClient,
+  req: any,
+  candidate: MaterialKeyFields,
+  current: MaterialKeyFields | null,
+): Promise<{ error: string; duplicateOf?: string } | null> {
+  const rows = await prisma.material.findMany({
+    select: { id: true, name: true, nameEn: true, cas: true, role: true, finalProductEn: true },
+  });
+  const existing: MaterialKeyFields[] = rows.map(m => ({
+    id: m.id, nameFa: m.name, nameEn: m.nameEn, cas: m.cas, role: m.role, finalProductEn: m.finalProductEn,
+  }));
+
+  const hit = findDuplicateMaterial(candidate, existing, current);
+  if (!hit) return null;
+
+  const now = new Date();
+  await AuditService.createAuditRecord({
+    auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    correlationId: crypto.randomUUID(),
+    userId: req.user.username,
+    userName: req.user.name,
+    role: req.user.role,
+    module: "مدیریت مواد",
+    action: current ? "Update" : "Create",
+    severity: "Warning",
+    description: `ثبت مادهٔ تکراری رد شد: ${hit.reason}`,
+    entityType: "Material",
+    entityId: hit.material.id || "",
+    entityName: hit.material.nameFa || hit.material.nameEn || "",
+    reasonForChange: "Rejected duplicate material",
+    beforeData: null,
+    afterData: { attempted: candidate, duplicateOf: hit.material.id, rule: hit.field },
+  });
+
+  return { error: hit.reason, duplicateOf: hit.material.id };
 }
 
 function isValidPostgresUrl(url?: string | null): boolean {
@@ -3282,6 +3333,13 @@ async function startServer() {
         return res.status(400).json({ error: "ماده‌ای با این شناسه قبلاً در سیستم ثبت شده است" });
       }
 
+      const duplicate = await rejectDuplicateMaterial(
+        prisma, req,
+        { id: materialId, nameFa: data.name, nameEn: data.nameEn, cas: data.cas, role: data.role, finalProductEn: data.finalProductEn },
+        null,
+      );
+      if (duplicate) return res.status(409).json(duplicate);
+
       const created = await prisma.material.create({ data: { id: materialId, ...data } });
       const newMaterial = mapMaterialToClient(created);
       const name = data.name;
@@ -3343,6 +3401,13 @@ async function startServer() {
         standardNameEn: b.standardNameEn ?? current.standardNameEn,
         specificationFile: b.specificationFile ?? current.specificationFile,
       });
+
+      const duplicate = await rejectDuplicateMaterial(
+        prisma, req,
+        { id, nameFa: incoming.name, nameEn: incoming.nameEn, cas: incoming.cas, role: incoming.role, finalProductEn: incoming.finalProductEn },
+        { id, nameFa: current.name, nameEn: current.nameEn, cas: current.cas, role: current.role, finalProductEn: current.finalProductEn },
+      );
+      if (duplicate) return res.status(409).json(duplicate);
 
       const updated = await prisma.material.update({ where: { id }, data: incoming });
       const updatedMaterial = mapMaterialToClient(updated);
