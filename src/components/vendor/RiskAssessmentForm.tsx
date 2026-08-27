@@ -18,8 +18,8 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
     return 'bg-emerald-500/20 border-emerald-500/40';
   };
   return (
-    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4" dir="ltr">
-      <div className="text-slate-200 font-bold text-sm mb-3 text-center" dir="rtl">
+    <div className="bg-muted border border-border rounded-xl p-4" dir="ltr">
+      <div className="text-foreground font-bold text-sm mb-3 text-center" dir="rtl">
         ماتریس ریسک (اهمیت × احتمال)
       </div>
       <div className="flex items-stretch gap-2">
@@ -38,13 +38,13 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
                   <div
                     key={`${c}-${p}`}
                     className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-all ${cellColor(c, p)} ${
-                      active ? 'ring-2 ring-white scale-105 z-10 shadow-lg' : 'opacity-90'
+                      active ? 'ring-2 ring-ring scale-105 z-10 shadow-lg' : 'opacity-90'
                     }`}
                     title={`Criticality ${c} × Probability ${p} = RPN(2D) ${c * p}`}
                   >
-                    <span className={active ? 'text-white' : 'text-slate-100'}>{c * p}</span>
+                    <span className="text-foreground">{c * p}</span>
                     {active && (
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-card border border-slate-900" />
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary border border-card" />
                     )}
                   </div>
                 );
@@ -62,13 +62,13 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
       </div>
       {/* Detectability factor → full 3D RPN */}
       <div className="flex items-center justify-center gap-2 mt-3 text-xs" dir="rtl">
-        <span className="text-slate-300 font-mono" dir="ltr">
-          {criticality} × {probability} = <span className="text-amber-300 font-bold">{criticality * probability}</span>
+        <span className="text-muted-foreground font-mono" dir="ltr">
+          {criticality} × {probability} = <span className="text-amber-600 dark:text-amber-400 font-bold">{criticality * probability}</span>
         </span>
         <span className="text-muted-foreground">×</span>
-        <span className="text-slate-300">تشخیص <span className="font-mono text-white font-bold">{detectability}</span></span>
+        <span className="text-muted-foreground">تشخیص <span className="font-mono text-foreground font-bold">{detectability}</span></span>
         <span className="text-muted-foreground">=</span>
-        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-200 font-mono font-black">
+        <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-mono font-black">
           RPN {criticality * probability * detectability}
         </span>
       </div>
@@ -136,24 +136,24 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
 
   if (isSuccess) {
     return (
-      <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-[0_0_20px_rgba(16,185,129,0.1)] fade-in" dir="rtl">
+      <div className="bg-card border border-emerald-500/20 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-sm fade-in" dir="rtl">
         <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
-          <CheckCircle className="w-16 h-16 text-emerald-400 bounce-in" />
+          <CheckCircle className="w-16 h-16 text-emerald-500 bounce-in" />
         </div>
-        <h3 className="text-2xl font-bold text-white mb-2">ارزیابی ریسک با موفقیت ثبت شد</h3>
+        <h3 className="text-2xl font-bold text-foreground mb-2">ارزیابی ریسک با موفقیت ثبت شد</h3>
         <p className="text-muted-foreground font-medium">نتایج ارزیابی ریسک و محاسبات شاخص SRI با موفقیت ثبت گردید. در حال بازگشت...</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 mb-8 shadow-[0_0_20px_rgba(245,158,11,0.1)] fade-in">
-      <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
-        <h3 className="text-xl font-bold text-amber-500 flex items-center gap-2">
-          <ShieldAlert className="w-6 h-6" />
+    <div className="bg-card border border-border rounded-2xl p-6 md:p-8 mb-8 shadow-sm fade-in">
+      <div className="flex items-center justify-between mb-6 border-b border-border pb-4">
+        <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+          <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400" />
           ارزیابی ریسک تامین کنندگان (Supplier Risk Assessment)
         </h3>
-        <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-muted-foreground hover:text-white">
+        <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground hover:text-foreground cursor-pointer">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -161,9 +161,9 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Material Criticality */}
-          <div className="space-y-3 p-4 bg-slate-800/40 rounded-xl border border-slate-700/50">
-            <label className="block text-sm font-medium text-slate-300">۱. اهمیت ماده (Material Criticality)</label>
-            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-amber-500">
+          <div className="space-y-3 p-4 bg-muted rounded-xl border border-border">
+            <label className="block text-sm font-semibold text-foreground">۱. اهمیت ماده (Material Criticality)</label>
+            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
               <option value={5}>ماده موثره - امتیاز ۵</option>
               <option value={4}>اکسپیانت - امتیاز ۴</option>
               <option value={3}>حدواسط شیمیایی، حلال ها و واکنشگرها - امتیاز ۳</option>
@@ -173,12 +173,12 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           </div>
 
           {/* Probability of Failure */}
-          <div className="space-y-3 p-4 bg-slate-800/40 rounded-xl border border-slate-700/50">
-            <label className="block text-sm font-medium text-slate-300">۲. احتمال خرابی (Probability of failure)</label>
+          <div className="space-y-3 p-4 bg-muted rounded-xl border border-border">
+            <label className="block text-sm font-semibold text-foreground">۲. احتمال خرابی (Probability of failure)</label>
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-              <span>SPS فعلی: <strong className="text-amber-400 text-sm">{spsScore > 0 ? spsScore : 'تعیین نشده'}</strong></span>
+              <span>SPS فعلی: <strong className="text-amber-600 dark:text-amber-400 text-sm">{spsScore > 0 ? spsScore : 'تعیین نشده'}</strong></span>
             </div>
-            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-amber-500">
+            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
               <option value={1}>عدم خرابی (SPS: 80-100) - امتیاز ۱</option>
               <option value={2}>احتمال کم (SPS: 60-79) - امتیاز ۲</option>
               <option value={3}>احتمال متوسط (SPS: 40-59) - امتیاز ۳</option>
@@ -188,9 +188,9 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           </div>
 
           {/* Detectability */}
-          <div className="space-y-3 p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 md:col-span-2">
-            <label className="block text-sm font-medium text-slate-300">۳. تشخیص (Detectability)</label>
-            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-amber-500">
+          <div className="space-y-3 p-4 bg-muted rounded-xl border border-border md:col-span-2">
+            <label className="block text-sm font-semibold text-foreground">۳. تشخیص (Detectability)</label>
+            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
               <option value={1}>تمام مشکلات توسط QC قابل تشخیص - امتیاز ۱</option>
               <option value={2}>اکثر مشکلات قابل تشخیص - امتیاز ۲</option>
               <option value={3}>بخشی قابل تشخیص - امتیاز ۳</option>
@@ -204,42 +204,42 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
         <RiskHeatmap criticality={criticality} probability={probability} detectability={detectability} />
 
         {/* Info / Formulas */}
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 text-sm text-slate-300">
-          <div className="font-bold text-slate-200 mb-2 border-b border-slate-700/50 pb-2">نحوه محاسبه شاخص‌ها:</div>
+        <div className="bg-muted border border-border rounded-xl p-4 text-sm text-muted-foreground">
+          <div className="font-bold text-foreground mb-2 border-b border-border pb-2">نحوه محاسبه شاخص‌ها:</div>
           <div className="space-y-2 font-mono text-xs md:text-sm" dir="ltr">
             <div className="flex gap-2">
-               <span className="text-amber-400 font-bold shrink-0">RPN (Risk Score) =</span>
+               <span className="text-amber-600 dark:text-amber-400 font-bold shrink-0">RPN (Risk Score) =</span>
                <span className="text-muted-foreground break-all">Material Criticality × Probability of failure × Detectability</span>
             </div>
             <div className="flex gap-2">
-               <span className="text-amber-400 font-bold shrink-0">SRI (Supplier Risk Index) =</span>
+               <span className="text-amber-600 dark:text-amber-400 font-bold shrink-0">SRI (Supplier Risk Index) =</span>
                <span className="text-muted-foreground break-all">(0.6 × RPN) + (0.4 × (100 - SPS Score))</span>
             </div>
           </div>
         </div>
 
         {/* Results */}
-        <div className="bg-slate-900 p-5 rounded-xl border border-amber-500/20 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="bg-muted p-5 rounded-xl border border-border flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-6">
             <div className="text-center">
               <div className="text-xs text-muted-foreground mb-1">Risk Score</div>
-              <div className="text-xl font-bold tabular-nums text-white">{riskScore}</div>
+              <div className="text-xl font-bold tabular-nums text-foreground">{riskScore}</div>
             </div>
-            <div className="h-8 w-px bg-slate-700"></div>
+            <div className="h-8 w-px bg-border"></div>
             <div className="text-center">
               <div className="text-xs text-muted-foreground mb-1">Supplier Risk Index (SRI)</div>
-              <div className="text-xl font-bold tabular-nums text-white">{sri.toFixed(1)}</div>
+              <div className="text-xl font-bold tabular-nums text-foreground">{sri.toFixed(1)}</div>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="text-xs text-muted-foreground mb-1">سطح ریسک (Risk Level)</div>
-              <div className={`text-xl font-bold ${riskLevel === 'Low' ? 'text-emerald-400' : riskLevel === 'Medium' ? 'text-amber-400' : 'text-red-500'}`}>
+              <div className={`text-xl font-bold ${riskLevel === 'Low' ? 'text-emerald-600 dark:text-emerald-400' : riskLevel === 'Medium' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                 {riskLevel === 'Low' ? 'پایین (Low)' : riskLevel === 'Medium' ? 'متوسط (Medium)' : 'بالا (High)'}
               </div>
             </div>
-            <button type="button" onClick={handleSubmit} className="bg-amber-600 hover:bg-amber-500 text-white font-medium px-6 py-2.5 rounded-lg transition-colors shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+            <button type="button" onClick={handleSubmit} className="bg-primary text-primary-foreground font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm">
               ثبت نتیجه ارزیابی ریسک
             </button>
           </div>
