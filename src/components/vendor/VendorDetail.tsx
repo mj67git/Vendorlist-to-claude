@@ -436,7 +436,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   nothing about whether a middleman exists. */}
               {sourcePartner.grade ? (
                 <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
-                  <span>گرید SOP فروشنده: {sourcePartner.grade}</span>
+                  <span>گرید ارزیابی فروشنده: {sourcePartner.grade}</span>
                 </div>
               ) : null}
             </div>

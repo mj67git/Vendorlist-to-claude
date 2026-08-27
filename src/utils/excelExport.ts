@@ -522,7 +522,7 @@ export function buildPartnersWorksheet(
     'وبسایت',
     'وضعیت سیستم',
     'امتیاز SOP (فروشنده)',
-    'گرید SOP',
+    'گرید ارزیابی',
     'نتیجهٔ ارزیابی SOP',
     'تعداد سورس متصل',
     'تاریخ ثبت',
@@ -921,7 +921,7 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
         ? [
             ['شریک تجاری مرتبط', linkedPartner?.name || '-'],
             ['امتیاز کل SOP', sop.totalScore],
-            ['گرید SOP', sop.grade],
+            ['گرید ارزیابی', sop.grade],
             ['آخرین به‌روزرسانی', sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('fa-IR') : '-'],
             ['ثبت‌کننده', sop.updatedBy || '-'],
           ]

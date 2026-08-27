@@ -197,7 +197,7 @@ export function canSupplySources(
     return { allowed: false, reason: 'ارزیابی SOP این فروشنده انجام نشده است.' };
   }
   if (grade !== 'A') {
-    return { allowed: false, reason: `گرید SOP این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };
+    return { allowed: false, reason: `گرید ارزیابی این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };
   }
   return { allowed: true, reason: '' };
 }
