@@ -793,7 +793,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <Building2 className="w-4 h-4" />
               <span>Business Partner & Supplier Quality Evaluation</span>
             </div>
-            <h1 className="text-xl font-black text-foreground tracking-tight">مخزن شرکای تجاری و ارزیابی Supplier</h1>
+            <h1 className="text-xl font-black text-foreground tracking-tight">مخزن شرکای تجاری و ارزیابی فروشنده</h1>
             <p className="text-xs text-muted-foreground">ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP</p>
           </div>
 
