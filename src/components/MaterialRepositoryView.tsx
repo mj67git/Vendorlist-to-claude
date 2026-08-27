@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FormModal } from './FormModal';
 import {
   Search, Plus, Edit2, Trash2, Eye, X, Upload, ArrowUpDown, ArrowUp, ArrowDown,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
+import { EntityName } from './EntityName';
 import { can } from '../utils/permissions';
 import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
@@ -18,6 +19,9 @@ interface Props {
   onDeleteMaterial: (id: string) => void;
   currentUser: User | null;
   db?: Vendor[];
+  /** True while the first fetch is still in flight — the table shows skeletons
+      instead of claiming the repository is empty. */
+  isLoading?: boolean;
 }
 
 const pharmacopoeiaOptions: Pharmacopoeia[] = ['USP', 'EP', 'BP', 'JP', 'IP', 'Ph. Eur.', 'ChP', 'In-house', 'Other'];
@@ -60,14 +64,21 @@ const SortHeader: React.FC<{
   const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
   return (
     <th
-      className={`py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors ${active ? 'text-foreground' : ''}`}
+      scope="col"
+      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
       aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-      onClick={() => onSort(field)}
     >
-      <div className={`flex items-center gap-1.5 ${center ? 'justify-center' : ''}`}>
+      {/* A button, not a clickable <th>: the column has to be sortable from the
+          keyboard and announce itself as a control. */}
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={`مرتب‌سازی بر اساس ${label}`}
+        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
+      >
         <span>{label}</span>
         <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </div>
+      </button>
     </th>
   );
 };
@@ -78,7 +89,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   onEditMaterial,
   onDeleteMaterial,
   currentUser,
-  db = []
+  db = [],
+  isLoading = false
 }) => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<MaterialRole | 'All'>('All');
@@ -87,7 +99,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -301,8 +313,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     return result;
   }, [materials, search, roleFilter, pharmFilter, sortField, sortOrder, vendorsByMaterial]);
 
-  const totalPages = Math.ceil(filteredMaterials.length / itemsPerPage);
-  const currentData = filteredMaterials.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredMaterials.length / itemsPerPage));
+  // Deleting the last row of the last page used to leave the user on an empty
+  // page with no way back except paging manually.
+  const page = Math.min(currentPage, totalPages);
+  useEffect(() => { if (currentPage !== page) setCurrentPage(page); }, [currentPage, page]);
+  const currentData = filteredMaterials.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
+  const hasFilters = !!search.trim() || roleFilter !== 'All' || pharmFilter !== 'All';
+  const clearFilters = () => { setSearch(''); setRoleFilter('All'); setPharmFilter('All'); setCurrentPage(1); };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -392,7 +411,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               placeholder="جستجو (نام فارسی، لاتین، CAS، محصول)..."
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
+              className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors"
             />
           </div>
           
@@ -400,7 +419,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={roleFilter} 
               onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card w-full sm:w-32 transition-colors"
+              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-40 transition-colors"
             >
               <option value="All">همه نقش‌ها</option>
               {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
@@ -409,7 +428,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={pharmFilter} 
               onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:border-blue-500 focus:bg-card w-full sm:w-36 transition-colors"
+              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-36 transition-colors"
             >
               <option value="All">همه فارماکوپه‌ها</option>
               {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -431,7 +450,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       {/* TABLE */}
       <div className="bg-card rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col">
         <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse text-xs whitespace-nowrap">
+          <table className="w-full text-right border-collapse text-xs" aria-busy={isLoading}>
+            <caption className="sr-only">فهرست مواد اولیهٔ ثبت‌شده در مخزن مرجع</caption>
             <thead>
               <tr className="bg-muted text-muted-foreground border-b border-border">
                 <SortHeader field="nameFa" label="نام فارسی ماده" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
@@ -451,14 +471,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   const sourceCount = vendorsByMaterial.get(material.id)?.length || 0;
                   return (
                   <tr key={material.id} className="hover:bg-accent/70 transition-colors">
-                    <td className="py-3 px-4 font-bold text-foreground">{material.nameFa}</td>
-                    <td className="py-3 px-4 font-mono text-xs text-muted-foreground" dir="ltr">{material.nameEn}</td>
+                    <td className="py-3 px-4 font-bold text-foreground max-w-[16rem]">
+                      <EntityName name={material.nameFa} lines={2} className="whitespace-normal" />
+                    </td>
+                    <td className="py-3 px-4 font-mono text-xs text-muted-foreground max-w-[16rem]" dir="ltr">
+                      <EntityName name={material.nameEn} lines={2} className="whitespace-normal" />
+                    </td>
                     <td className="py-3 px-4 text-center">
                       <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${role.tone}`}>
                         {role.labelEn} <span className="font-normal">· {role.labelFa}</span>
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-foreground">{material.finalProduct}</td>
+                    <td className="py-3 px-4 text-foreground max-w-[14rem]">
+                      <EntityName name={material.finalProduct} lines={2} className="whitespace-normal" />
+                    </td>
                     <td className="py-3 px-4 text-center font-mono text-xs text-muted-foreground" dir="ltr">{material.cas}</td>
                     <td className="py-3 px-4 text-center font-mono font-bold text-xs text-foreground">{material.pharmacopoeia}</td>
                     <td className="py-3 px-4 text-center">
@@ -479,7 +505,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <div className="flex items-center justify-center gap-1.5">
                         <button 
                           onClick={() => handleOpenView(material)} 
-                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900 rounded-lg transition-colors border" 
+                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
                           title="مشاهده شناسنامه"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -487,7 +513,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         {can(currentUser, 'material.edit') && (
                           <button
                             onClick={() => handleOpenEdit(material)}
-                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900 rounded-lg transition-colors border"
+                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                             title="ویرایش"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -496,7 +522,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         {can(currentUser, 'material.delete') && (
                           <button 
                             onClick={() => handleDelete(material)} 
-                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900 rounded-lg transition-colors border" 
+                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
                             title="حذف"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -507,11 +533,51 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </tr>
                   );
                 })
+              ) : isLoading ? (
+                /* Until the first fetch lands there is nothing to show, and the
+                   empty state below would claim the repository is empty. */
+                [0, 1, 2, 3, 4].map(i => (
+                  <tr key={`skeleton-${i}`} aria-hidden="true">
+                    {Array.from({ length: 8 }).map((_, c) => (
+                      <td key={c} className="py-3.5 px-4">
+                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '80%' : c > 5 ? '2.5rem' : '60%' }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                    <Archive className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                    <span>هیچ ماده‌ای با مشخصات مورد نظر در مخزن یافت نشد.</span>
+                  <td colSpan={8} className="py-14 text-center">
+                    <Archive className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+                    {hasFilters ? (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد.</p>
+                        <button
+                          type="button"
+                          onClick={clearFilters}
+                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          پاک‌کردن جستجو و فیلترها
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">مخزن مرجع هنوز خالی است.</p>
+                        {can(currentUser, 'material.create') ? (
+                          <button
+                            type="button"
+                            onClick={handleOpenAdd}
+                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                          >
+                            <Plus className="w-4 h-4" />
+                            ثبت اولین ماده
+                          </button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">ثبت ماده در دسترس نقش شما نیست.</p>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -520,15 +586,27 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         </div>
         
         {/* PAGINATION */}
-        <div className="px-6 py-3 border-t border-border bg-muted/50">
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredMaterials.length}
-            startIndex={(currentPage - 1) * itemsPerPage}
-            endIndex={currentPage * itemsPerPage}
-            onPageChange={setCurrentPage}
-          />
+        <div className="px-6 py-3 border-t border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+            <span>تعداد در هر صفحه</span>
+            <select
+              value={itemsPerPage}
+              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            >
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <div className="flex-1 min-w-0">
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={filteredMaterials.length}
+              startIndex={(page - 1) * itemsPerPage}
+              endIndex={page * itemsPerPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </div>
       </div>
 

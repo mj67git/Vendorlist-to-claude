@@ -1232,6 +1232,7 @@ export default function App() {
           onDeleteMaterial={handleDeleteMaterial}
           currentUser={currentUser}
           db={db}
+          isLoading={isSyncing && materials.length === 0}
         />
       );
     } else if (view === 'business-partners') {
