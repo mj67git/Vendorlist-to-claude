@@ -18,6 +18,16 @@
  * this exits non-zero and takes the build down with it. Shipping an app whose
  * schema does not match its code is worse than not shipping.
  *
+ * Why it retries: serverless Postgres scales to zero. Neon suspends the compute
+ * after a few minutes idle and wakes it on the next connection, which takes
+ * longer than the client is willing to wait, so the first attempt comes back
+ * P1001 "Can't reach database server" and the build dies on a database that is
+ * merely asleep. That is exactly how the deployment of 433ef22 failed. A
+ * connection failure is therefore retried with a widening gap, which wakes the
+ * compute and succeeds on the next try. Anything that is not a connectivity
+ * error — a failed or conflicting migration — still fails immediately, because
+ * no amount of waiting fixes it.
+ *
  * The URL check mirrors isValidPostgresUrl() in server.ts. It is duplicated
  * rather than imported because this runs before the server bundle is built.
  */
@@ -70,11 +80,45 @@ const MIGRATE_TIMEOUT_MS = 120_000;
 
 console.log('[migrate] DATABASE_URL found — applying pending migrations…');
 
-const result = spawnSync('prisma', ['migrate', 'deploy'], {
-  stdio: 'inherit',
-  shell: process.platform === 'win32',
-  timeout: MIGRATE_TIMEOUT_MS,
-});
+// Waits without pulling in an async runtime, so the script stays a straight
+// line of spawnSync calls.
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// A sleeping Neon compute answers within a few seconds of being poked, so these
+// gaps are generous; a database that is genuinely down still fails the build,
+// about a minute later than before.
+const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
+
+const isConnectivityFailure = (text) =>
+  /P1001|Can't reach database server|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|Timed out fetching a new connection/i.test(text);
+
+let result;
+for (let attempt = 0; ; attempt++) {
+  result = spawnSync('prisma', ['migrate', 'deploy'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    timeout: MIGRATE_TIMEOUT_MS,
+  });
+
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  if (output) process.stdout.write(output);
+
+  if (!result.error && result.status === 0) break;
+
+  const timedOut = result.error && result.error.code === 'ETIMEDOUT';
+  const retryable = timedOut || isConnectivityFailure(output);
+  const delay = RETRY_DELAYS_MS[attempt];
+
+  if (!retryable || delay === undefined) break;
+
+  console.log(
+    `[migrate] Database did not answer (attempt ${attempt + 1} of ${RETRY_DELAYS_MS.length + 1}). ` +
+      `Serverless Postgres may be waking up; retrying in ${delay / 1000}s…`,
+  );
+  sleep(delay);
+}
 
 if (result.error && result.error.code === 'ETIMEDOUT') {
   console.error(
