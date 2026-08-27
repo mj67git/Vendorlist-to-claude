@@ -7,6 +7,7 @@ import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { AUDIT_EVENT_GROUPS } from "./src/utils/auditTaxonomy.js";
+import { canSupplySources, calculateGradeAndStatus } from "./src/utils/sopEvaluation.js";
 import {
   can,
   effectivePermissions,
@@ -466,6 +467,46 @@ async function getBusinessPartnersList(): Promise<any[]> {
     include: { evaluation: { include: { documents: true } } },
   });
   return rows.map(mapPartnerRow);
+}
+
+/**
+ * Refuse a source whose supplier does not meet the SOP.
+ *
+ * The client greys these out, but that gate is cosmetic (project rule 14): the
+ * record is only actually protected if the API refuses it too. Returns an error
+ * message when the write must be rejected, or null when it may proceed.
+ *
+ * A supplier that is already attached to the record is left alone, so a source
+ * saved before this rule existed stays editable rather than becoming
+ * unsaveable.
+ */
+async function sopSupplierViolation(
+  supplierId: string | null | undefined,
+  previousSupplierId?: string | null,
+): Promise<string | null> {
+  if (!supplierId || supplierId === previousSupplierId) return null;
+  const prisma = requirePrisma();
+  const row = await prisma.businessPartner.findUnique({
+    where: { id: supplierId },
+    include: { evaluation: true },
+  });
+  if (!row) return "فروشندهٔ انتخاب‌شده در مخزن شرکای تجاری یافت نشد.";
+
+  // Derive the grade from the score rather than trusting the stored grade
+  // column, which is what the client does on load (reconcileSupplierEvaluation).
+  // They disagree in the seeded data: bp_sup_2 is stored as grade B on a score
+  // of 80, which the rubric grades A. Reading the column here would have
+  // refused a supplier the form shows as selectable.
+  const derivedGrade = row.evaluation
+    ? calculateGradeAndStatus(row.evaluation.totalScore ?? 0, row.evaluation.grade !== "Not Evaluated").grade
+    : undefined;
+
+  const verdict = canSupplySources({
+    type: row.type as string,
+    status: row.status as string,
+    evaluation: derivedGrade ? { grade: derivedGrade } : null,
+  });
+  return verdict.allowed ? null : `${row.name}: ${verdict.reason}`;
 }
 
 async function seedDefaultBusinessPartners() {
@@ -1639,6 +1680,31 @@ async function startServer() {
       }
       
       const existing = await getVendorById(v.id);
+
+      const sopError = await sopSupplierViolation((v as any).supplierId, (existing as any)?.supplierId);
+      if (sopError) {
+        AuditService.createAuditRecord({
+          auditId: `AUD-SOP-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Source Management",
+          eventType: "Data Change",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "Source",
+          entityId: v.id,
+          entityName: (v as any).material || v.name || "سورس",
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
+          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          beforeData: null,
+          afterData: { supplierId: (v as any).supplierId, refusal: sopError },
+        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        return res.status(422).json({ error: sopError });
+      }
+
       await saveVendorToDb(v);
       const updated = await getVendorById(v.id);
 
@@ -1791,6 +1857,31 @@ async function startServer() {
         ...current,
         ...p
       };
+
+      const sopError = await sopSupplierViolation((updatedVendor as any).supplierId, (current as any).supplierId);
+      if (sopError) {
+        AuditService.createAuditRecord({
+          auditId: `AUD-SOP-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Source Management",
+          eventType: "Data Change",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "Source",
+          entityId: id,
+          entityName: current.material || current.name || "سورس",
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
+          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          beforeData: null,
+          afterData: { supplierId: (updatedVendor as any).supplierId, refusal: sopError },
+        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        return res.status(422).json({ error: sopError });
+      }
+
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 

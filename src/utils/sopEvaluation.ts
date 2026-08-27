@@ -164,3 +164,40 @@ export function reconcileSupplierEvaluation<T extends { type?: string; evaluatio
   }
   return { ...partner, evaluation: { ...fresh, updatedBy: ev.updatedBy, updatedAt: ev.updatedAt } };
 }
+
+/**
+ * Whether a business partner may be attached to a source.
+ *
+ * The SOP admits only grade A suppliers ("Approved Supplier", 80 points and
+ * above). Anything below that, and anything not assessed at all, is refused.
+ *
+ * Two things this deliberately does not do:
+ *  - It does not judge manufacturers. Only suppliers are SOP-evaluated
+ *    (project rule 4), so a manufacturer has no grade to test and applying the
+ *    rule to one would make every manufacturer unselectable.
+ *  - It offers no override. The rule is a hard gate, by decision.
+ *
+ * `server.ts` and `PartnerSelector` both read this, so the field the user sees
+ * greyed out is exactly the one the API refuses.
+ */
+export function canSupplySources(
+  partner: { type: string; status?: string; evaluation?: { grade?: string } | null } | null | undefined,
+): { allowed: boolean; reason: string } {
+  if (!partner) return { allowed: false, reason: 'شریک تجاری یافت نشد.' };
+
+  if (partner.status === 'Blacklisted') {
+    return { allowed: false, reason: 'در لیست سیاه است و قابل انتخاب نیست.' };
+  }
+
+  // Manufacturers carry no SOP evaluation; the grade rule does not apply.
+  if (partner.type !== 'Supplier') return { allowed: true, reason: '' };
+
+  const grade = partner.evaluation?.grade;
+  if (!grade || grade === 'Not Evaluated') {
+    return { allowed: false, reason: 'ارزیابی SOP این فروشنده انجام نشده است.' };
+  }
+  if (grade !== 'A') {
+    return { allowed: false, reason: `گرید SOP این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };
+  }
+  return { allowed: true, reason: '' };
+}

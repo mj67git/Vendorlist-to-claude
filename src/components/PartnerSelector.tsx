@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
 import { BusinessPartner, BusinessPartnerType } from '../types';
+import { canSupplySources } from '../utils/sopEvaluation';
 import { EntityName } from './EntityName';
 
 interface PartnerSelectorProps {
@@ -84,11 +85,26 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   // Filter partners. In anyType mode, every partner (manufacturer or supplier)
   // is selectable — they are independent now.
   const availablePartners = partners.filter(p => {
-    // Blacklisted partners cannot be selected for new/edited sources.
-    if (p.status === 'Blacklisted' && p.id !== selectedId) return false;
+    // A blacklisted partner is hidden outright, unless it is the one already
+    // attached to the record being edited.
+    if (p.status === 'Blacklisted' && p.id !== currentValue) return false;
     if (anyType) return true;
     return p.type === type;
   });
+
+  /**
+   * The SOP admits only grade A suppliers. Blocked ones are listed but not
+   * selectable rather than hidden: a supplier missing from the list reads as
+   * "not registered yet" and the user goes off and creates a duplicate.
+   *
+   * The partner already attached to an existing source stays selectable, so a
+   * record saved before this rule can still be edited instead of silently
+   * losing its supplier on the next save.
+   */
+  const eligibility = (p: BusinessPartner) =>
+    p.id === currentValue ? { allowed: true, reason: '' } : canSupplySources(p);
+
+  const blockedCount = availablePartners.filter(p => !eligibility(p).allowed).length;
 
   // Filter based on search term
   const filteredPartners = availablePartners.filter(p => {
@@ -296,17 +312,25 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               ) : (
                 filteredPartners.map(p => {
                   const isSelected = p.id === currentValue;
+                  const { allowed, reason } = eligibility(p);
                   return (
                     <div
                       key={p.id}
+                      role="option"
+                      aria-selected={isSelected}
+                      aria-disabled={!allowed}
+                      title={allowed ? undefined : reason}
                       onClick={() => {
+                        if (!allowed) return;
                         triggerChange(p.id, p);
                         setIsOpen(false);
                       }}
-                      className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-blue-50 border border-blue-200 text-blue-950 font-bold'
-                          : 'hover:bg-accent text-foreground'
+                      className={`p-2.5 rounded-xl transition-all flex items-center justify-between ${
+                        !allowed
+                          ? 'opacity-55 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-blue-50 border border-blue-200 text-blue-950 font-bold cursor-pointer'
+                          : 'hover:bg-accent text-foreground cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -356,6 +380,11 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                               </>
                             )}
                           </div>
+                          {!allowed && (
+                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
+                              {reason}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -385,6 +414,11 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <div className="p-2 border-t border-border bg-muted/50 flex items-center justify-between text-xs">
               <span className="text-[11px] text-muted-foreground">
                 {filteredPartners.length} مورد یافت شد
+                {blockedCount > 0 && (
+                  <span className="text-amber-700 dark:text-amber-400 font-bold">
+                    {' '}· {blockedCount} مورد طبق SOP قابل انتخاب نیست
+                  </span>
+                )}
               </span>
               <button
                 type="button"
