@@ -164,7 +164,8 @@ export interface BusinessPartner {
   contactPerson?: string;
   phone?: string;
   website?: string;
-  manufacturerId?: string; // Required when type === 'Supplier'
+  // manufacturerId was removed with the flat partner model: a supplier is not
+  // owned by a manufacturer, and `business_partners` has no such column.
   status: 'Active' | 'Inactive' | 'Blacklisted';
   evaluation?: SupplierEvaluation;
   createdAt: string;

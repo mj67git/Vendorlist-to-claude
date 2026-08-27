@@ -72,7 +72,6 @@ export const INITIAL_BUSINESS_PARTNERS_DB: BusinessPartner[] = [
     contactPerson: 'Hans Mueller',
     phone: '+49 40 32008-0',
     website: 'https://www.biesterfeld.com',
-    manufacturerId: 'bp_mfg_1',
     status: 'Active',
     evaluation: {
       totalScore: 95,
@@ -146,7 +145,6 @@ export const INITIAL_BUSINESS_PARTNERS_DB: BusinessPartner[] = [
     contactPerson: 'Chen Lin',
     phone: '+86 592 5055 888',
     website: 'http://www.sinowaychem.com',
-    manufacturerId: 'bp_mfg_3',
     status: 'Active',
     evaluation: {
       totalScore: 80,
@@ -220,7 +218,6 @@ export const INITIAL_BUSINESS_PARTNERS_DB: BusinessPartner[] = [
     contactPerson: 'دکتر حسینی',
     phone: '021-88776655',
     website: 'http://www.kimya-pharma.ir',
-    manufacturerId: 'bp_mfg_4',
     status: 'Active',
     evaluation: {
       totalScore: 70,

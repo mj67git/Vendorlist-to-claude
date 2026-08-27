@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe, ShieldCheck, Sparkles } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
 import { BusinessPartner, BusinessPartnerType } from '../types';
 import { EntityName } from './EntityName';
 
@@ -11,11 +11,8 @@ interface PartnerSelectorProps {
   onChange?: (id: string, partner?: BusinessPartner) => void;
   onSelect?: (id: string, partner?: BusinessPartner) => void;
   partners: BusinessPartner[];
-  selectedManufacturerId?: string;
-  manufacturerId?: string;
   onOpenCreateModal?: () => void;
   onAddNew?: () => void;
-  optional?: boolean;
   disabled?: boolean;
   existingVendorSupplierId?: string;
 }
@@ -28,11 +25,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   onChange,
   onSelect,
   partners,
-  selectedManufacturerId,
-  manufacturerId,
   onOpenCreateModal,
   onAddNew,
-  optional = false,
   disabled = false,
   existingVendorSupplierId
 }) => {
@@ -45,8 +39,6 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     if (onOpenCreateModal) onOpenCreateModal();
     if (onAddNew) onAddNew();
   };
-  const effectiveMfgId = selectedManufacturerId ?? manufacturerId;
-
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -115,8 +107,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   const labelTitle = anyType
     ? 'تأمین‌کننده (تولیدکننده یا فروشنده)'
     : isManufacturer
-    ? 'کارخانه تولیدی مرجع (Manufacturer)'
-    : 'فروشنده / بازرگانی واسطه (Supplier)';
+    ? 'تولیدکننده'
+    : 'فروشنده';
 
   return (
     <div className="space-y-1 relative font-sans" dir="rtl" ref={dropdownRef}>
@@ -129,13 +121,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <Handshake className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           )}
           <span>{labelTitle}</span>
-          {!optional ? (
-            <span className="text-rose-500 font-bold">*</span>
-          ) : (
-            <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.2 rounded mr-1">
-              اختیاری (در صورت خرید مستقیم خالی بگذارید)
-            </span>
-          )}
+          <span className="text-rose-500 font-bold">*</span>
         </label>
 
         <button
@@ -226,31 +212,19 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               </div>
             ) : (
               <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
-                {optional && !isManufacturer ? (
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shadow-2xs">
-                      <Sparkles className="w-3 h-3 text-emerald-600" />
-                      خرید بی‌واسطه از تولیدکننده (مستقیم)
-                    </span>
-                    <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                      — کلیک جهت انتخاب فروشنده واسطه
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    {disabled && !isManufacturer
-                      ? 'ابتدا تولیدکننده مرجع را انتخاب کنید'
-                      : isManufacturer
-                      ? '-- جستجو و انتخاب تولیدکننده مرجع --'
-                      : '-- جستجو و انتخاب فروشنده واسطه --'}
-                  </span>
-                )}
+                <span className="text-muted-foreground text-xs">
+                  {anyType
+                    ? 'جستجو و انتخاب تولیدکننده یا فروشنده'
+                    : isManufacturer
+                    ? 'جستجو و انتخاب تولیدکننده'
+                    : 'جستجو و انتخاب فروشنده'}
+                </span>
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-1 text-muted-foreground mr-2 shrink-0">
-            {selectedPartner && optional && (
+            {selectedPartner && (
               <span
                 role="button"
                 tabIndex={0}
@@ -264,7 +238,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     triggerChange('', undefined);
                   }
                 }}
-                title="حذف و تغییر به خرید بی‌واسطه"
+                title="حذف انتخاب"
                 className="p-1 hover:bg-accent hover:text-foreground rounded-md transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
@@ -286,7 +260,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={`جستجو بر اساس نام فارسی، انگلیسی یا کشور ${isManufacturer ? 'تولیدکننده' : 'فروشنده'}...`}
+                  placeholder="جستجو بر اساس نام، کشور یا شهر..." 
                   className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 />
                 {searchTerm && (
@@ -303,43 +277,10 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
             {/* List Body */}
             <div className="max-h-60 overflow-y-auto divide-y divide-border p-1.5">
-              {/* Special Option for Supplier: Direct Purchase (خرید بی‌واسطه) */}
-              {!isManufacturer && optional && (
-                <div
-                  onClick={() => {
-                    triggerChange('', undefined);
-                    setIsOpen(false);
-                  }}
-                  className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between mb-1 ${
-                    !currentValue
-                      ? 'bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-bold'
-                      : 'hover:bg-emerald-50/40 text-foreground'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold flex items-center gap-1.5">
-                        <span>خرید بی‌واسطه از تولیدکننده (Direct Purchase)</span>
-                        <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded">
-                          بدون واسطه
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        خرید به صورت مستقیم از کارخانه سازنده صورت گرفته و فروشنده واسطه‌ای وجود ندارد.
-                      </div>
-                    </div>
-                  </div>
-                  {!currentValue && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
-                </div>
-              )}
-
               {/* Partner Items */}
               {filteredPartners.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground text-xs">
-                  <div>هیچ {isManufacturer ? 'تولیدکننده‌ای' : 'فروشنده‌ای'} با این مشخصات یافت نشد.</div>
+                  <div>شریکی با این مشخصات یافت نشد.</div>
                   <button
                     type="button"
                     onClick={() => {
@@ -349,7 +290,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     className="mt-3 inline-flex items-center gap-1 text-primary hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ ثبت شریک تجاری جدید در مخزن</span>
+                    <span>ثبت شریک تجاری جدید</span>
                   </button>
                 </div>
               ) : (

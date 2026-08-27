@@ -4,6 +4,7 @@ import { AnimatePresence } from 'motion/react';
 import { FormModal } from '../../components/FormModal';
 import { MaterialSelector } from '../../components/MaterialSelector';
 import { PartnerSelector } from '../../components/PartnerSelector';
+import { EntityName } from '../../components/EntityName';
 import { ShamsiDatePicker } from '../../components/ShamsiDatePicker';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -63,8 +64,9 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string>(() => {
     if (existingVendor?.manufacturerId) return existingVendor.manufacturerId;
     if (existingVendor?.name) {
-      const match = partners.find(p => p.type === 'Supplier' && p.name.trim().toLowerCase() === existingVendor.name.trim().toLowerCase());
-      if (match?.manufacturerId) return match.manufacturerId;
+      // A supplier no longer points at a manufacturer, so the old lookup that
+      // read `match.manufacturerId` off a Supplier record has gone: the field
+      // does not exist on the table and always came back undefined.
       const mfgMatch = partners.find(p => p.type === 'Manufacturer' && p.name.trim().toLowerCase() === existingVendor.name.trim().toLowerCase());
       if (mfgMatch) return mfgMatch.id;
     }
@@ -133,6 +135,9 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
   const selectedManufacturer = partners.find(p => p.type === 'Manufacturer' && p.id === selectedManufacturerId);
   const selectedSupplier = partners.find(p => p.type === 'Supplier' && p.id === selectedSupplierId);
+  // "Not Evaluated" is a real stored grade, so an evaluation object alone does
+  // not mean anyone has assessed the documents.
+  const sopEvaluated = !!selectedSupplier?.evaluation && selectedSupplier.evaluation.grade !== 'Not Evaluated';
 
   // Helper Audit
   const logSourceSelectionAudit = (action: string, details: string, beforeValue: any, afterValue: any) => {
@@ -293,7 +298,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     setFieldError(null);
 
     const newId = existingVendor?.id || ('v' + Math.random().toString(36).substring(2, 6));
-    const isDirectPurchase = !selectedSupplierId;
     const finalPartnerDisplayName = selectedSupplier?.name || selectedManufacturer?.name || formData.name;
     
     // Process rejections
@@ -832,52 +836,67 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               )}
             </div>
 
-            {/* Supplier or Manufacturer Direct Summary Card */}
-            {selectedSupplier ? (
-              <div className="bg-emerald-50/60 border border-emerald-500/20 rounded-xl p-4 fade-in">
-                <h4 className="text-emerald-800 font-bold text-xs mb-3 flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                  جزئیات تاییدیه و صلاحیت فنی شریک تجاری
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-xs">
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">نام فروشنده:</span>
-                    <span className="font-bold text-foreground">{selectedSupplier.name}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی کیفی:</span>
-                    <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation?.totalScore || 0} / ۱۰۰</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">رتبه کیفی (Grade):</span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800">
-                      Grade {selectedSupplier.evaluation?.grade || 'A'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">وضعیت صلاحیت:</span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/10 text-emerald-700">
-                      {selectedSupplier.evaluation?.status || 'تایید شده'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : selectedManufacturer ? (
-              <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-4 fade-in">
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <h4 className="text-emerald-900 font-bold text-xs flex items-center gap-1.5">
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    تأمین مستقیم و بی‌واسطه از کارخانه سازنده (Direct Manufacturer Sourcing)
-                  </h4>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
-                    خرید بی‌واسطه
+            {/* The selected partner, shown the same way whichever kind it is.
+                Manufacturers and suppliers are independent records now, so
+                picking a manufacturer is an ordinary choice rather than the
+                "direct purchase" shortcut it used to be. This block used to
+                announce that in three places at once (a green panel, a badge
+                above it, and a second badge on the contact card) and to tell
+                the user no supplier evaluation was needed, which only makes
+                sense if a supplier were otherwise expected. */}
+            {(selectedSupplier || selectedManufacturer) && (
+              <div className="bg-muted/60 border border-border rounded-xl p-4 fade-in">
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${
+                    selectedSupplier
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800'
+                  }`}>
+                    {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}
                   </span>
+                  <EntityName
+                    name={(selectedSupplier || selectedManufacturer)!.name}
+                    lines={1}
+                    className="text-xs font-bold text-foreground"
+                  />
                 </div>
-                <p className="text-xs text-emerald-800 leading-relaxed">
-                  این سورس به صورت <strong className="font-bold">خرید بی‌واسطه</strong> مستقیماً از کارخانه سازنده مرجع (<strong className="text-emerald-950 font-bold">{selectedManufacturer.name}</strong>) تأمین می‌گردد و نیازی به ارزیابی فروشنده واسطه ندارد.
-                </p>
+
+                {/* Only suppliers carry an SOP evaluation (project rule 4). */}
+                {selectedSupplier && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی SOP:</span>
+                      {sopEvaluated ? (
+                        <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation!.totalScore} / ۱۰۰</span>
+                      ) : (
+                        <span className="font-bold text-muted-foreground">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">گرید:</span>
+                      {/* Was `grade || 'A'` and `status || 'تایید شده'`: an
+                          unevaluated supplier appeared here as an approved
+                          Grade A while nobody had assessed a single document. */}
+                      {sopEvaluated ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                          گرید {selectedSupplier.evaluation!.grade}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-muted text-muted-foreground border border-border">
+                          ارزیابی نشده
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">وضعیت صلاحیت:</span>
+                      <span className={`font-bold ${sopEvaluated ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {sopEvaluated ? selectedSupplier.evaluation!.status : 'هنوز ارزیابی نشده است'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            )}
 
             {/* Auto-filled read-only fields for selected partner */}
             {(selectedSupplier || selectedManufacturer) && (
@@ -885,13 +904,9 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 <div className="text-foreground font-bold text-xs border-b border-border pb-2 mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <Building className="w-4 h-4 text-primary" />
-                    <span>اطلاعات تماس و نشانی {selectedSupplier ? 'فروشنده واسطه' : 'تولیدکننده مرجع'} (تکمیل خودکار - Read-Only)</span>
+                    <span>اطلاعات تماس {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}</span>
                   </div>
-                  {!selectedSupplier && (
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                      خرید بی‌واسطه از تولیدکننده
-                    </span>
-                  )}
+                  <span className="text-[10px] font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs leading-relaxed">
                   <div>
