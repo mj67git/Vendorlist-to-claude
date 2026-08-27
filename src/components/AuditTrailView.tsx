@@ -434,6 +434,13 @@ export const AuditTrailView: React.FC = () => {
 
   // Export ALL records matching the current filters (not just the current page).
   const [isExporting, setIsExporting] = useState(false);
+  /**
+   * The export used to report itself with native alert()s, which blocked the
+   * page and could not be styled or laid out right-to-left. The outcome now
+   * appears under the button that started it; a "nothing matched" result is a
+   * finding, not a failure, so the two are told apart.
+   */
+  const [exportNotice, setExportNotice] = useState<{ kind: 'empty' | 'error'; text: string } | null>(null);
   const handleExport = async () => {
     setIsExporting(true);
     try {
@@ -486,11 +493,15 @@ export const AuditTrailView: React.FC = () => {
         const res = await fetch(`/api/audit-logs?${params.toString()}`, { headers });
         if (res.ok) { const j = await res.json(); rows = (j.data || []).map(mapRow); }
       }
-      if (rows.length === 0) { alert('رکوردی برای خروجی یافت نشد.'); return; }
+      if (rows.length === 0) {
+        setExportNotice({ kind: 'empty', text: 'با فیلترهای فعلی رکوردی برای خروجی پیدا نشد.' });
+        return;
+      }
       exportAuditToExcel(rows);
+      setExportNotice(null);
     } catch (err) {
       console.error('Audit export failed:', err);
-      alert('خطا در تهیهٔ خروجی Excel.');
+      setExportNotice({ kind: 'error', text: 'تهیهٔ خروجی Excel ناموفق بود. دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.' });
     } finally {
       setIsExporting(false);
     }
@@ -538,6 +549,20 @@ export const AuditTrailView: React.FC = () => {
             <span className="text-[11px] text-rose-500 font-medium">خطای بحرانی:</span>
             <span className="text-xs font-bold font-mono text-rose-700">{stats.critical}</span>
           </div>
+
+          {exportNotice && (
+            <div
+              role={exportNotice.kind === 'error' ? 'alert' : 'status'}
+              className={`w-full md:w-auto flex items-start gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
+                exportNotice.kind === 'error'
+                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>{exportNotice.text}</span>
+            </div>
+          )}
         </div>
       </div>
 

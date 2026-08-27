@@ -99,13 +99,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       e.stopPropagation();
     }
     if (!newAnalysis.date.trim()) {
-      alert('لطفاً تاریخ آزمایش را انتخاب کنید.');
+      setAddAnalysisError('تاریخ آزمایش را انتخاب کنید.');
       return;
     }
     if (!newAnalysis.qcCode.trim()) {
-      alert('لطفاً کد آزمایشگاهی (QC Code) را وارد کنید.');
+      setAddAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
       return;
     }
+    setAddAnalysisError(null);
 
     const record = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
@@ -164,6 +165,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const [confirmDeleteAnalysisId, setConfirmDeleteAnalysisId] = useState<string | null>(null);
 
    const handleEditAnalysisStart = (record: AnalysisRecord) => {
+    setEditAnalysisError(null);
     setEditingAnalysisId(record.id);
     setEditingAnalysis({
       date: record.date || '',
@@ -178,17 +180,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const handleEditAnalysisCancel = () => {
     setEditingAnalysisId(null);
     setEditingAnalysis(null);
+    setEditAnalysisError(null);
   };
 
   const handleEditAnalysisSave = (recordId: string) => {
     if (!editingAnalysis || !editingAnalysis.date.trim()) {
-      alert('لطفاً تاریخ آزمایش را انتخاب کنید.');
+      setEditAnalysisError('تاریخ آزمایش را انتخاب کنید.');
       return;
     }
     if (!editingAnalysis.qcCode.trim()) {
-      alert('لطفاً کد آزمایشگاهی (QC Code) را وارد کنید.');
+      setEditAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
       return;
     }
+    setEditAnalysisError(null);
 
     const updatedRecords = (vendor.analysisRecords || []).map(r => {
       if (r.id === recordId) {
@@ -250,14 +254,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   };
 
   // Admin manual decision for sources/suppliers (not samples): reject → Black List, or restore.
+  /**
+   * Validation messages for the laboratory records, shown next to the control
+   * that is missing. These were native alert()s: they blocked the interface,
+   * ignored the page's direction and theme, and once dismissed left no sign of
+   * which field was at fault.
+   */
+  const [addAnalysisError, setAddAnalysisError] = useState<string | null>(null);
+  const [editAnalysisError, setEditAnalysisError] = useState<string | null>(null);
+
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectDecisionReason, setRejectDecisionReason] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const handleAdminRejectSource = () => {
     if (!rejectDecisionReason.trim()) {
-      alert('لطفاً دلیل رد این سورس را وارد کنید (الزامی).');
+      setRejectError('دلیل رد این سورس الزامی است.');
       return;
     }
+    setRejectError(null);
     const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
     const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
     const newLog = {
@@ -279,9 +294,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   const handleAdminRestoreSource = () => {
     if (!rejectDecisionReason.trim()) {
-      alert('لطفاً دلیل بازگردانی این سورس را وارد کنید (الزامی).');
+      setRejectError('دلیل بازگردانی این سورس الزامی است.');
       return;
     }
+    setRejectError(null);
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
       action: `بازگردانی سورس "${vendor.material}" (${vendor.name}) از لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
@@ -1379,12 +1395,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     />
                   </div>
 
+                  {addAnalysisError && (
+                    <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{addAnalysisError}</span>
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       id="cancel-analysis-btn"
                       type="button"
                       onClick={() => {
+                        setAddAnalysisError(null);
                         setShowAddAnalysisForm(false);
                         setNewAnalysis({ date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]), qcCode: '', decision: 'Pass', deviationReason: 'None', comments: '' });
                       }}
@@ -1493,8 +1517,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
                         />
+                        {rejectError && (
+                          <div role="alert" className="flex items-start gap-2 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                            <span>{rejectError}</span>
+                          </div>
+                        )}
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent rounded-lg">انصراف</button>
+                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent rounded-lg">انصراف</button>
                           {vendor.status === 'rejected' ? (
                             <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
                           ) : (
@@ -1645,6 +1675,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                           {/* Actions */}
                           <td className="py-3 px-3 text-center">
+                            {isEditingThis && editAnalysisError && (
+                              <div role="alert" className="mb-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
+                                {editAnalysisError}
+                              </div>
+                            )}
                             {isEditingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
                                 <button
