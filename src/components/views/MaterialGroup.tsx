@@ -85,22 +85,22 @@ export const MaterialGroup: React.FC<{
             toggleGroup();
           }
         }}
-        className="bg-muted/30 hover:bg-muted/60 cursor-pointer px-5 py-4 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-border/70 transition-colors"
+        className="bg-muted/30 hover:bg-muted/60 cursor-pointer px-5 py-2.5 flex flex-col md:flex-row justify-between items-start md:items-center gap-1.5 md:gap-4 border-b border-border/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <div className="flex items-center gap-3.5">
-          <ChevronLeft className={`w-5 h-5 text-primary transition-transform duration-300 ${isOpen ? '-rotate-90' : 'rotate-0'}`} />
-          <div className="text-right">
-            <h3 className="font-bold text-base text-foreground mb-1">
-              {group.fa} <span className="text-muted-foreground text-sm font-normal ml-2">/ {group.en}</span>
+        {/* Name and CAS share one line: the card carried a ~104px pitch for three
+            short facts, so a screenful held six materials. */}
+        <div className="flex items-center gap-3 min-w-0">
+          <ChevronLeft className={`w-5 h-5 text-primary shrink-0 transition-transform duration-300 ${isOpen ? '-rotate-90' : 'rotate-0'}`} />
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-right min-w-0">
+            <h3 className="font-bold text-base text-foreground">
+              {group.fa} <span className="text-muted-foreground text-sm font-normal">/ {group.en}</span>
             </h3>
-            <div className="flex items-center gap-2 text-xs mt-1">
-              <Badge variant="outline" className="font-mono text-[11px] px-2 py-0">
-                CAS: {group.cas}
-              </Badge>
-            </div>
+            <Badge variant="outline" className="font-mono text-[11px] px-2 py-0 shrink-0 self-center">
+              CAS: {group.cas}
+            </Badge>
           </div>
         </div>
-        <div className="mt-3 md:mt-0 text-xs text-muted-foreground mr-8 md:mr-0 font-medium">
+        <div className="text-xs text-muted-foreground mr-8 md:mr-0 font-medium shrink-0">
           <span className="text-foreground font-bold font-mono text-sm ml-1">{group.vendors.length}</span> سورس ثبتی
         </div>
       </div>
@@ -127,10 +127,10 @@ export const MaterialGroup: React.FC<{
                       onSelectVendor(vendor);
                     }
                   }}
-                  className="px-5 py-4 flex items-center justify-between hover:bg-muted/40 cursor-pointer transition-colors group"
+                  className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-muted/40 cursor-pointer transition-colors group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
                   {/* Right side: Name & Status */}
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
                       isVendorRejected(vendor) ? 'bg-red-500' :
                       vendor.isSample ? (
@@ -143,21 +143,17 @@ export const MaterialGroup: React.FC<{
                         vendor.status === 'conditional' ? 'bg-amber-500' : 'bg-cyan-500'
                       )
                     }`} />
-                    <div className="text-right space-y-1">
-                      {/* 1. Name of Material */}
-                      <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                        <Badge variant="secondary" className="text-[11px] px-1.5 py-0 font-bold">نام ماده اولیه</Badge>
-                        <span className="font-bold text-foreground">{vendor.material}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground">({vendor.materialEn})</span>
-                      </div>
-                      
-                      {/* 2. Supplier / Manufacturer (single partner) */}
-                      <div className="font-bold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <div className="text-right space-y-1 min-w-0">
+                      {/* The material used to be repeated on every row, even though
+                          the whole group is that one material and its header says
+                          so. The supplier is what actually varies here, so it
+                          takes the first line. */}
+                      <div className="font-bold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap">
                         <span className="text-[11px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{partnerLabel}</span>
                         <span>{partnerName}</span>
                       </div>
 
-                      {/* 3. Metadata line (English name, country, licence expiry) */}
+                      {/* Metadata line (English name, country, licence expiry) */}
                       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
                         {vendor.nameEn && vendor.nameEn.trim() && vendor.nameEn.toLowerCase() !== 'n/a' && vendor.nameEn.toLowerCase() !== 'unknown' && (
                           <span className="font-mono text-[11px] text-muted-foreground">{vendor.nameEn}</span>
@@ -199,13 +195,63 @@ export const MaterialGroup: React.FC<{
                           return null;
                         })()}
                       </div>
+
+                      {/* Phone layout: the three metric columns below are desktop-only,
+                          which left a phone showing only the name and country. The
+                          same values, inline, rather than nothing. */}
+                      <div className="sm:hidden flex items-center gap-2 flex-wrap pt-0.5">
+                        {categoryId !== 'blacklist' && (
+                          vendor.isSample ? (
+                            <Badge
+                              variant={
+                                vendor.status === 'approved' ? 'gradeA' :
+                                vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
+                              }
+                              className="text-[11px] font-bold px-2 py-0"
+                            >
+                              {vendor.status === 'approved' ? 'Approved' :
+                               vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
+                            </Badge>
+                          ) : (
+                            <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                          )
+                        )}
+                        {(() => {
+                          const shown = currentUser?.role === 'admin'
+                            ? calculateOverallScore(vendor.scores)
+                            : (vendor.scores?.[currentUser?.role as keyof Scores] || null);
+                          if (!shown) return <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">بدون امتیاز</span>;
+                          return (
+                            <span className={`font-bold font-mono text-[11px] ${getScoreColorClass(shown)}`}>
+                              {currentUser?.role === 'admin' ? 'امتیاز کل' : 'امتیاز بخش شما'}: {shown}
+                            </span>
+                          );
+                        })()}
+                        {categoryId !== 'blacklist' && vendor.riskAssessment && (
+                          <Badge
+                            variant={
+                              vendor.riskAssessment.riskLevel === 'Low' ? 'gradeA' :
+                              vendor.riskAssessment.riskLevel === 'Medium' ? 'gradeC' : 'gradeReject'
+                            }
+                            className="text-[11px] font-bold px-2 py-0"
+                          >
+                            {vendor.riskAssessment.riskLevel === 'Low' ? 'Low Risk' :
+                             vendor.riskAssessment.riskLevel === 'Medium' ? 'Medium Risk' : 'High Risk'}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Left side: Score & Grade */}
-                  <div className="flex items-center gap-6">
+                  {/* Left side: Score & Grade.
+                      One shared grid template rather than three independent fixed
+                      widths, so the columns line up from row to row. */}
+                  <div className="flex items-center gap-4 shrink-0">
+                    <div className={`hidden sm:grid items-center gap-4 ${
+                      categoryId === 'blacklist' ? 'grid-cols-[8rem]' : 'grid-cols-[8rem_7rem_7rem]'
+                    }`}>
                     {/* Column 1: Score */}
-                    <div className="hidden sm:flex w-28 sm:w-32 shrink-0 flex-col items-center justify-center text-center">
+                    <div className="flex flex-col items-center justify-center text-center">
                       {currentUser?.role === 'admin' ? (
                         vendor.scores && calculateOverallScore(vendor.scores) !== null ? (
                           <div className="text-center">
@@ -233,7 +279,7 @@ export const MaterialGroup: React.FC<{
 
                     {/* Column 2: Risk Level */}
                     {categoryId !== 'blacklist' && (
-                      <div className="hidden sm:flex w-24 sm:w-28 shrink-0 flex-col items-center justify-center text-center">
+                      <div className="flex flex-col items-center justify-center text-center">
                         <div className="text-[11px] text-muted-foreground mb-0.5">سطح ریسک</div>
                         {vendor.riskAssessment ? (
                           <Badge 
@@ -254,7 +300,7 @@ export const MaterialGroup: React.FC<{
 
                     {/* Column 3: Grade / Status */}
                     {categoryId !== 'blacklist' && (
-                      <div className="hidden sm:flex w-24 sm:w-28 shrink-0 flex-col items-center justify-center text-center">
+                      <div className="flex flex-col items-center justify-center text-center">
                         {vendor.isSample ? (
                           <>
                             <div className="text-[11px] text-muted-foreground mb-0.5">وضعیت نمونه</div>
@@ -277,7 +323,8 @@ export const MaterialGroup: React.FC<{
                         )}
                       </div>
                     )}
-                    
+                    </div>
+
                     <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transform group-hover:-translate-x-0.5 transition-all shrink-0" />
                   </div>
                 </div>

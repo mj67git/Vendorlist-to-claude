@@ -3,7 +3,6 @@ import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
@@ -20,6 +19,7 @@ import { can } from '../../utils/permissions';
 
 export function CategoryView({ 
   db, 
+  isLoading = false,
   categoryId, 
   onSelectVendor, 
   currentUser,
@@ -30,6 +30,7 @@ export function CategoryView({
   partners = []
 }: { 
   db: Vendor[], 
+  isLoading?: boolean,
   categoryId: Category, 
   onSelectVendor: any, 
   currentUser: User,
@@ -218,16 +219,17 @@ export function CategoryView({
   return (
     <div className="space-y-6 fade-in">
       {/* Sticky Category Top Header & Toolbar */}
-      <div className="sticky top-0 z-20 bg-muted/95 backdrop-blur-md -mt-4 sm:-mt-8 -mx-4 sm:-mx-8 px-4 sm:px-8 pt-4 sm:pt-6 pb-4 border-b border-border shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
-              <meta.icon className="w-6 h-6 text-primary" />
-              {meta.fa}
-            </h2>
-          </div>
+      {/* The title and the toolbar were two stacked sticky rows, so a fifth of a
+          short viewport was permanently spent on controls set once. One row on
+          desktop; the filter chips keep their own line because they wrap. */}
+      <div className="sticky top-0 z-20 bg-muted/95 backdrop-blur-md -mt-4 sm:-mt-8 -mx-4 sm:-mx-8 px-4 sm:px-8 pt-3 sm:pt-4 pb-3 border-b border-border shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
+          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2 shrink-0">
+            <meta.icon className="w-6 h-6 text-primary" />
+            {meta.fa}
+          </h2>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 lg:mr-auto shrink-0 order-last lg:order-none">
             <Button 
               type="button" 
               onClick={() => exportCategoryToExcel(db, categoryId, meta.fa, partners, materials)}
@@ -238,11 +240,8 @@ export function CategoryView({
               <span>خروجی اکسل</span>
             </Button>
           </div>
-        </div>
 
-        {/* Category Toolbar (Search & Stats) */}
-        <Card className="p-3.5 sm:p-4 flex flex-col md:flex-row gap-3 sm:gap-4 items-center justify-between bg-card border-border shadow-xs">
-          <div className="relative w-full md:w-80">
+          <div className="relative w-full lg:w-80 shrink-0">
             <Input 
               type="text" 
               placeholder="جستجو کلمه کلیدی، نام، ماده، CAS، کشور..."
@@ -265,7 +264,7 @@ export function CategoryView({
           </div>
 
           {/* Sort control */}
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
             <label htmlFor="category-sort" className="text-[11px] text-muted-foreground whitespace-nowrap">
               مرتب‌سازی
             </label>
@@ -284,8 +283,10 @@ export function CategoryView({
             </select>
           </div>
 
-          {/* Stats double as quick filters (click to toggle) */}
-          {(() => {
+        </div>
+
+        {/* Stats double as quick filters (click to toggle) */}
+        {(() => {
             /**
              * A chip whose count is zero stays visible (the reader still wants to
              * know the answer is none) but stops looking clickable: as a live
@@ -306,7 +307,7 @@ export function CategoryView({
               return c.status === 'expired' || c.status === 'expiring_soon';
             }).length;
             return (
-              <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end items-center">
+              <div className="flex flex-wrap gap-2 w-full items-center">
                 <Badge variant="outline" onClick={() => setActiveFilter(null)}
                   className={`px-3 py-1 text-xs cursor-pointer select-none ${activeFilter === null ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}`}
                   title="نمایش همه">
@@ -347,12 +348,29 @@ export function CategoryView({
                 )}
               </div>
             );
-          })()}
-        </Card>
+        })()}
       </div>
 
       <div className="space-y-6 mt-8">
-        {paginatedGroups.map(group => (
+        {/* Until the data arrives there is nothing to group, and the empty state
+            below would tell the user there is nothing here at all. Skeletons
+            shaped like the collapsed group card instead. */}
+        {isLoading && (
+          <div aria-busy="true" aria-label="در حال بارگذاری سورس‌ها" className="space-y-6">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="bg-card border border-border rounded-2xl px-5 py-3.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 w-full">
+                  <div className="w-5 h-5 rounded bg-muted animate-pulse shrink-0" />
+                  <div className="h-4 rounded bg-muted animate-pulse" style={{ width: `${38 - i * 6}%` }} />
+                  <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                </div>
+                <div className="h-4 w-20 rounded bg-muted animate-pulse shrink-0" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isLoading && paginatedGroups.map(group => (
           <MaterialGroup 
             key={group.en} 
             group={group} 
@@ -366,7 +384,7 @@ export function CategoryView({
             onSelectSource={canChoose ? (vendorId) => openSelectionDialog(group, vendorId) : undefined}
           />
         ))}
-        {groupsList.length === 0 && (
+        {!isLoading && groupsList.length === 0 && (
           <div className="text-center py-16 px-4 bg-card rounded-2xl border border-border">
             <Archive className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h4 className="text-foreground font-semibold text-lg">نتیجه‌ای یافت نشد</h4>
