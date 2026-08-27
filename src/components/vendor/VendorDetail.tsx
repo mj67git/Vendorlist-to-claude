@@ -330,9 +330,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // rather than the weighted total. With per-user permissions a person can now
   // hold more than one, and then the overall figure is the meaningful one.
   const myDepartments = scorableDepartments(currentUser);
-  if (currentUser && myDepartments.length === 1) {
+  const isDepartmentScore = !!currentUser && myDepartments.length === 1;
+  if (isDepartmentScore) {
     displayedScore = (vendor.scores as any)?.[myDepartments[0]] ?? null;
   }
+  const departmentLabel = isDepartmentScore
+    ? ({ commercial: 'بازرگانی', qa: 'کیفیت', planning: 'برنامه‌ریزی', finance: 'مالی' } as Record<string, string>)[myDepartments[0]] || 'بخش شما'
+    : '';
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
   // Who this source buys from, and in what role. A source links to exactly one
@@ -353,7 +357,6 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const displayStandardNameFa = matchedMaterial?.standardNameFa || matchedMaterial?.nameFa || vendor.material;
   const displayStandardNameEn = matchedMaterial?.standardNameEn || matchedMaterial?.nameEn || vendor.materialEn;
 
-  const isScored = vendor.scores && Object.values(vendor.scores).some(v => v > 0);
 
   return (
     <div className="space-y-6 fade-in relative pb-10 max-w-6xl mx-auto text-right" dir="rtl">
@@ -393,21 +396,34 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       <div className={`bg-card border border-border/60 rounded-2xl p-6 mb-6 shadow-sm ${scoreConfig.heroBorder}`}>
         <div className="flex flex-col xl:flex-row items-start justify-between gap-5 pb-1">
           <div className="flex items-center gap-5">
-            {/* Score Ring */}
-            <div className={`w-20 h-20 shrink-0 rounded-full border-4 flex items-center justify-center bg-muted ${scoreConfig.border}`}>
-              <span className="font-mono text-2xl font-black">
-                {displayedScore !== null ? displayedScore : '-'}
+            {/* Score ring.
+                The figure is the weighted total for most viewers but a single
+                department's own score for someone who only scores that one, so
+                it is captioned; unlabelled, two people read the same ring as
+                the same thing. */}
+            <div className="shrink-0 flex flex-col items-center gap-1.5">
+              <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center bg-muted ${scoreConfig.border}`}>
+                <span className="font-mono text-2xl font-black">
+                  {displayedScore !== null ? displayedScore : '-'}
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">
+                {displayedScore === null
+                  ? 'بدون امتیاز'
+                  : isDepartmentScore
+                    ? `امتیاز ${departmentLabel}`
+                    : 'امتیاز کل'}
               </span>
             </div>
             
             <div className="text-right">
               {/* The partner, labelled by the role it actually has. */}
               <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
-                <span>{sourcePartner.roleLabel} : {sourcePartner.name}</span>
+                <span>{sourcePartner.roleLabel}: {sourcePartner.name}</span>
                 {sourcePartner.country && (
                   <>
                     <span className="mx-3 sm:mx-4 text-border font-normal">|</span>
-                    <span>کشور : {sourcePartner.country}</span>
+                    <span>کشور: {sourcePartner.country}</span>
                   </>
                 )}
               </div>
@@ -421,7 +437,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
               ) : sourcePartner.grade ? (
                 <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
-                  <span>Grade : {sourcePartner.grade}</span>
+                  <span>گرید SOP فروشنده: {sourcePartner.grade}</span>
                 </div>
               ) : null}
             </div>
@@ -464,7 +480,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                    vendor.status === 'conditional' ? 'نمونه: تایید مشروط (Conditional)' : 'نمونه: مردود (Rejected)'}
                 </div>
               ) : (
-                !isScored && <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
               )}
             </div>
           </div>
