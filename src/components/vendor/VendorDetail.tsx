@@ -13,6 +13,7 @@ import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUti
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
+import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
@@ -353,17 +354,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const sourcePartner = resolveVendorPartner(vendor, partners);
   const partnerIsManufacturer = sourcePartner.role === 'manufacturer';
 
-  // Material Repository resolution for standard names
-  const matchedMaterial = materials.find(m => 
-    (vendor.materialId && m.id === vendor.materialId) ||
-    (m.standardNameFa && vendor.material && m.standardNameFa.trim().toLowerCase() === vendor.material.trim().toLowerCase()) ||
-    (m.nameFa && vendor.material && m.nameFa.trim().toLowerCase() === vendor.material.trim().toLowerCase()) ||
-    (m.standardNameEn && vendor.materialEn && m.standardNameEn.trim().toLowerCase() === vendor.materialEn.trim().toLowerCase()) ||
-    (m.nameEn && vendor.materialEn && m.nameEn.trim().toLowerCase() === vendor.materialEn.trim().toLowerCase())
-  );
-
-  const displayStandardNameFa = matchedMaterial?.standardNameFa || matchedMaterial?.nameFa || vendor.material;
-  const displayStandardNameEn = matchedMaterial?.standardNameEn || matchedMaterial?.nameEn || vendor.materialEn;
+  // Which catalogue entry actually carries the standard name for this source's
+  // material — see utils/materialNames for why the linked record is not always it.
+  const { material: matchedMaterial, standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
+    resolveMaterialNames(vendor, materials);
 
 
   return (
