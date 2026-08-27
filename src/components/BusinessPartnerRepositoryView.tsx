@@ -29,7 +29,9 @@ import {
   calculateDocScore, 
   getDefaultSupplierEvaluation, 
   computeSupplierEvaluation, 
-  validateSupplierEvaluation 
+  validateSupplierEvaluation,
+  describeGrade,
+  canSupplySources
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
 import { openDocumentPreview } from '../utils/documentPreview';
@@ -258,13 +260,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     const active = partners.filter(p => p.status === 'Active').length;
     const inactive = partners.filter(p => p.status === 'Inactive').length;
 
-    const approvedSuppliers = suppliers.filter(s => 
-      s.evaluation?.grade === 'A' || s.evaluation?.grade === 'B'
-    ).length;
-
-    const rejectedOrConditionalSuppliers = suppliers.filter(s => 
-      s.evaluation?.grade === 'C' || s.evaluation?.grade === 'Pending Review' || s.evaluation?.grade === 'Blacklist'
-    ).length;
+    // "Approved" used to mean grade A **or B**, but only grade A may be
+    // attached to a source and the server rejects the rest with 422 — so the
+    // card counted suppliers the system refuses. It now asks the same function
+    // the gate asks, and the two cards partition the suppliers exactly.
+    const eligibleSuppliers = suppliers.filter(s => canSupplySources(s).allowed).length;
+    const blockedSuppliers = suppliers.length - eligibleSuppliers;
 
     return { 
       total, 
@@ -272,8 +273,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       suppliers: suppliers.length, 
       active, 
       inactive,
-      approvedSuppliers,
-      rejectedOrConditionalSuppliers
+      eligibleSuppliers,
+      blockedSuppliers
     };
   }, [partners]);
 
@@ -672,37 +673,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // Find linked Suppliers for a Manufacturer
-  const getGradeBadgeClass = (grade?: string) => {
-    switch (grade) {
-      case 'A': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      case 'B': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'C': return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      default: return 'bg-muted text-foreground border-border';
-    }
-  };
-
-  // نتیجهٔ ارزیابی SOP بر اساس گرید (فقط گرید نمایش داده می‌شود، بدون وضعیت مانیتورینگ)
-  const gradeApprovalLabel = (grade?: string): { label: string; cls: string } => {
-    switch (grade) {
-      case 'A': return { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
-      case 'B': return { label: 'Permit Approval', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
-      case 'C': return { label: 'Expired', cls: 'bg-amber-100 text-amber-800 border-amber-300' };
-      case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
-      case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
-      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-border' };
-    }
-  };
+  /** Both grade colour tables lived here; they now come from the shared one. */
+  const getGradeBadgeClass = (grade?: string) => describeGrade(grade).tone;
 
   const getDocStatusInfo = (status: SOPDocumentStatus | null) => {
     switch (status) {
@@ -801,25 +773,25 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         {/* Approved Suppliers */}
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">تامین‌کنندگان تاییدشده</span>
+            <span className="text-xs font-bold text-muted-foreground">مجاز برای اتصال به سورس</span>
             <div className="p-2 bg-teal-50 rounded-lg text-teal-600 border border-teal-100">
               <ShieldCheck className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-teal-600 font-mono">{stats.approvedSuppliers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Grade A/B Approved</div>
+          <div className="text-2xl font-black text-teal-600 font-mono">{stats.eligibleSuppliers}</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Grade A · Approved Supplier</div>
         </div>
 
         {/* Conditional / Rejected Suppliers */}
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">مشروط یا مردود</span>
+            <span className="text-xs font-bold text-muted-foreground">غیرمجاز برای اتصال</span>
             <div className="p-2 bg-amber-50 rounded-lg text-amber-600 border border-amber-100">
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-amber-600 font-mono">{stats.rejectedOrConditionalSuppliers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Conditional / Rejected</div>
+          <div className="text-2xl font-black text-amber-600 font-mono">{stats.blockedSuppliers}</div>
+          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Below Grade A / Not Evaluated</div>
         </div>
       </div>
 
@@ -833,7 +805,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               type="text"
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              placeholder="جستجوی هوشمند (نام شرکت، تولیدکننده، کشور، ایمیل، رابط...)"
+              placeholder="جستجو در نام شرکت، کشور، شهر، شخص رابط، ایمیل و تلفن"
               className="w-full bg-muted border border-border rounded-lg pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
             />
           </div>
@@ -1033,13 +1005,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
                             <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${describeGrade(partner.evaluation.grade).tone}`}>
                                 <Award className="w-3 h-3" />
-                                {gradeApprovalLabel(partner.evaluation.grade).label}
+                                {partner.evaluation.grade} · {describeGrade(partner.evaluation.grade).fa}
                               </span>
                               <span className="text-[10px] font-mono text-muted-foreground font-bold">
                                 ({partner.evaluation.totalScore}/100)
                               </span>
+                              {/* The grade alone does not answer the question the
+                                  buyer actually has. Only grade A may be attached
+                                  to a source, and the server refuses the rest with
+                                  422 — so the row says so instead of letting the
+                                  refusal come as a surprise later. */}
+                              {!canSupplySources(partner).allowed && (
+                                <span
+                                  title={canSupplySources(partner).reason}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border"
+                                >
+                                  <XCircle className="w-3 h-3 shrink-0" />
+                                  قابل اتصال به سورس نیست
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
@@ -1614,8 +1600,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               در انتظار ارزیابی
                             </span>
                           ) : (
-                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(computedEval.grade).cls}`}>
-                              {gradeApprovalLabel(computedEval.grade).label}
+                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(computedEval.grade).tone}`}>
+                              {describeGrade(computedEval.grade).en} ({describeGrade(computedEval.grade).fa})
                             </span>
                           )}
                         </div>
@@ -1951,8 +1937,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
                         <span className="text-[10px] text-muted-foreground font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
-                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(selectedPartner.evaluation.grade).cls}`}>
-                            {gradeApprovalLabel(selectedPartner.evaluation.grade).label}
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(selectedPartner.evaluation.grade).tone}`}>
+                            {describeGrade(selectedPartner.evaluation.grade).en} ({describeGrade(selectedPartner.evaluation.grade).fa})
                           </span>
                         </div>
                       </div>
