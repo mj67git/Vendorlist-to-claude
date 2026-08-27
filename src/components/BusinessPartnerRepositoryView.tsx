@@ -45,7 +45,7 @@ interface Props {
 }
 
 /**
- * Saving a partner sends the whole record, so all eight SOP documents travel in
+ * Saving a partner sends the whole record, so all five SOP documents travel in
  * one body — and `express.json` on the server caps that at 10mb while a data
  * URL is ~33% larger than the file it encodes. Without a guard here, a couple
  * of large PDFs produced a 413 that the UI never showed.
