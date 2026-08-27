@@ -1,13 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { FormModal } from './FormModal';
-import { 
-  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, 
-  FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker, 
-  Archive, CheckCircle, AlertCircle, Sparkles, Shield, Tag
+import {
+  Search, Plus, Edit2, Trash2, Eye, X, Upload, ArrowUpDown, ArrowUp, ArrowDown,
+  FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
+  Archive, CheckCircle, AlertCircle, Sparkles, Package, Tag, Factory
 } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { can } from '../utils/permissions';
+import { categoryLabels } from '../constants/categories';
+import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
 
 interface Props {
   materials: Material[];
@@ -18,20 +20,57 @@ interface Props {
   db?: Vendor[];
 }
 
-const roleOptions: { value: MaterialRole; label: string; code: string; fullLabel: string }[] = [
-  { value: 'API', label: 'ماده موثره', code: 'API', fullLabel: 'ماده موثره دارویی (API)' },
-  { value: 'Intermediate', label: 'حدواسط', code: 'INT', fullLabel: 'حدواسط (Intermediate)' },
-  { value: 'Solvent', label: 'حلال', code: 'SOL', fullLabel: 'حلال (Solvent)' },
-  { value: 'Reagent / Reactant', label: 'واکنشگر', code: 'REA', fullLabel: 'واکنش‌گر (Reagent)' },
-  { value: 'Excipient', label: 'اکسپیانت', code: 'EXP', fullLabel: 'اکسپیانت (Excipient)' },
-  { value: 'Packaging Item', label: 'ملزومات بسته‌بندی', code: 'PKG', fullLabel: 'ملزومات بسته‌بندی (Packaging)' },
-  { value: 'Other', label: 'سایر موارد', code: 'OTH', fullLabel: 'سایر موارد (Other)' },
-];
-
 const pharmacopoeiaOptions: Pharmacopoeia[] = ['USP', 'EP', 'BP', 'JP', 'IP', 'Ph. Eur.', 'ChP', 'In-house', 'Other'];
 
-type SortField = 'nameFa' | 'nameEn' | 'role' | 'finalProduct' | 'cas' | 'pharmacopoeia';
+type SortField = 'nameFa' | 'nameEn' | 'role' | 'finalProduct' | 'cas' | 'pharmacopoeia' | 'sources';
 type SortOrder = 'asc' | 'desc';
+
+/** Icon per role, in the order of the role table. */
+const ROLE_ICONS: Record<MaterialRole, React.ComponentType<{ className?: string }>> = {
+  'API': Pill,
+  'Intermediate': FlaskConical,
+  'Solvent': Droplet,
+  'Reagent / Reactant': Beaker,
+  'Excipient': Layers,
+  'Packaging Item': Package,
+  'Other': Tag,
+};
+
+/**
+ * Persian sorts by its own alphabet, not by code point: a plain `<` puts «آ»
+ * after «ی». `Intl` knows the order; the numeric option also keeps CAS numbers
+ * in human order.
+ */
+const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
+
+/**
+ * A sortable column header that says which column is sorted and in which
+ * direction — the old headers showed the same neutral glyph on all six, so the
+ * table could be sorted without the user being able to tell by what.
+ */
+const SortHeader: React.FC<{
+  field: SortField;
+  label: string;
+  center?: boolean;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  onSort: (f: SortField) => void;
+}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
+  const active = sortField === field;
+  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      className={`py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors ${active ? 'text-foreground' : ''}`}
+      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+      onClick={() => onSort(field)}
+    >
+      <div className={`flex items-center gap-1.5 ${center ? 'justify-center' : ''}`}>
+        <span>{label}</span>
+        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </div>
+    </th>
+  );
+};
 
 export const MaterialRepositoryView: React.FC<Props> = ({
   materials,
@@ -62,11 +101,34 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
   const [specToDelete, setSpecToDelete] = useState<boolean>(false);
 
-  // Computed connected vendors for data integrity validation
-  const connectedVendors = useMemo(() => {
-    if (!materialToDelete) return [];
-    return db.filter(v => v.materialId === materialToDelete.id);
-  }, [materialToDelete, db]);
+  /**
+   * Sources per material id.
+   *
+   * The server blocks a delete on `vendorMaterial` rows (server.ts, DELETE
+   * /api/materials/:id) and is the authority. This mirrors that count from the
+   * data the client already holds so the number can be shown in the table and
+   * the confirmation can be honest — a source with no `materialId` of its own
+   * is matched on its substance, the same way `resolveMaterialNames` does,
+   * because those are exactly the legacy rows whose link the client cannot see.
+   */
+  const vendorsByMaterial = useMemo(() => {
+    const eq = (a?: string | null, b?: string | null) =>
+      !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+    const isRealCas = (c?: string | null) => !!c && !['n/a', 'na', '-', ''].includes(c.trim().toLowerCase());
+
+    const map = new Map<string, Vendor[]>();
+    for (const v of db) {
+      const material = v.materialId
+        ? materials.find(m => m.id === v.materialId)
+        : materials.find(m =>
+            eq(m.nameFa, v.material) || eq(m.nameEn, v.materialEn) || (eq(m.cas, v.cas) && isRealCas(m.cas)));
+      if (!material) continue;
+      map.set(material.id, [...(map.get(material.id) || []), v]);
+    }
+    return map;
+  }, [db, materials]);
+
+  const connectedVendors = materialToDelete ? vendorsByMaterial.get(materialToDelete.id) || [] : [];
 
   // Form State
   const [formData, setFormData] = useState<Partial<Material>>({
@@ -81,19 +143,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     specificationFile: undefined,
   });
 
-  const getRoleInfo = (role?: MaterialRole) => {
-    return roleOptions.find(r => r.value === role) || roleOptions[0];
-  };
-
   const generateStandardNameFa = (data: Partial<Material>) => {
-    const roleInfo = getRoleInfo(data.role as MaterialRole);
+    const roleInfo = getMaterialRole(data.role);
     const nameFaStr = data.nameFa?.trim() || '---';
     const finalProductStr = data.finalProduct?.trim() || '---';
-    return `${roleInfo.label} - ${nameFaStr} (برای ${finalProductStr})`;
+    return `${roleInfo.labelFa} - ${nameFaStr} (برای ${finalProductStr})`;
   };
 
   const generateStandardNameEn = (data: Partial<Material>) => {
-    const roleInfo = getRoleInfo(data.role as MaterialRole);
+    const roleInfo = getMaterialRole(data.role);
     const nameEnStr = data.nameEn?.trim() || '---';
     const finalProductEnStr = data.finalProductEn?.trim() || data.finalProduct?.trim() || '---';
     return `${roleInfo.code}-${nameEnStr} (For ${finalProductEnStr})`;
@@ -213,12 +271,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
     if (search.trim()) {
       const lowerSearch = search.toLowerCase();
-      result = result.filter(m => 
-        m.nameFa.toLowerCase().includes(lowerSearch) ||
-        m.nameEn.toLowerCase().includes(lowerSearch) ||
-        m.cas.toLowerCase().includes(lowerSearch) ||
-        m.finalProduct.toLowerCase().includes(lowerSearch)
-      );
+      // The standard names are what the rest of the app shows, so searching for
+      // «حلال - استون …» has to find the row it names.
+      const haystack = (m: Material) =>
+        [m.nameFa, m.nameEn, m.cas, m.finalProduct, m.finalProductEn, m.standardNameFa, m.standardNameEn, m.iupac]
+          .filter(Boolean).join(' ').toLowerCase();
+      result = result.filter(m => haystack(m).includes(lowerSearch));
     }
 
     if (roleFilter !== 'All') {
@@ -229,16 +287,19 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       result = result.filter(m => m.pharmacopoeia === pharmFilter);
     }
 
+    const dir = sortOrder === 'asc' ? 1 : -1;
     result.sort((a, b) => {
-      let aVal = String(a[sortField]).toLowerCase();
-      let bVal = String(b[sortField]).toLowerCase();
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
+      if (sortField === 'sources') {
+        return dir * ((vendorsByMaterial.get(a.id)?.length || 0) - (vendorsByMaterial.get(b.id)?.length || 0));
+      }
+      // The role sorts by its label, which is what the column actually shows.
+      const value = (m: Material) =>
+        sortField === 'role' ? getMaterialRole(m.role).labelEn : String(m[sortField] ?? '');
+      return dir * collator.compare(value(a), value(b));
     });
 
     return result;
-  }, [materials, search, roleFilter, pharmFilter, sortField, sortOrder]);
+  }, [materials, search, roleFilter, pharmFilter, sortField, sortOrder, vendorsByMaterial]);
 
   const totalPages = Math.ceil(filteredMaterials.length / itemsPerPage);
   const currentData = filteredMaterials.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -265,71 +326,51 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const statTotal = materials.length;
-  const statAPI = materials.filter(m => m.role === 'API').length;
-  const statInt = materials.filter(m => m.role === 'Intermediate').length;
-  const statExc = materials.filter(m => m.role === 'Excipient').length;
-  const statSol = materials.filter(m => m.role === 'Solvent').length;
-  const statRea = materials.filter(m => m.role === 'Reagent / Reactant').length;
+  /**
+   * One card per role, counted through `getMaterialRole` so a legacy spelling
+   * lands in its own bucket. Every material falls into exactly one card, so the
+   * seven add up to the total — the old five-card row silently dropped
+   * `Packaging Item` and `Other`, and labelled the Reagent card "Reagent /
+   * Other" while counting only Reagent.
+   */
+  const roleCounts = useMemo(() => {
+    const counts = new Map<MaterialRole, number>(MATERIAL_ROLES.map(r => [r.value, 0]));
+    for (const m of materials) {
+      const role = getMaterialRole(m.role).value;
+      counts.set(role, (counts.get(role) || 0) + 1);
+    }
+    return counts;
+  }, [materials]);
 
   return (
     <div className="w-full flex flex-col gap-6 fade-in pb-10" dir="rtl">
       {/* STATS CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
           <div className="w-10 h-10 rounded-lg bg-muted text-foreground flex items-center justify-center shrink-0 border border-border">
             <Archive className="w-5 h-5" />
           </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Total Materials</div>
-            <div className="text-xl font-black text-foreground font-mono mt-0.5">{statTotal}</div>
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
+            <div className="text-xl font-black text-foreground font-mono mt-0.5">{materials.length}</div>
           </div>
         </div>
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-            <Pill className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">API (ماده موثره)</div>
-            <div className="text-xl font-black text-blue-600 font-mono mt-0.5">{statAPI}</div>
-          </div>
-        </div>
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
-            <FlaskConical className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Intermediate</div>
-            <div className="text-xl font-black text-amber-600 font-mono mt-0.5">{statInt}</div>
-          </div>
-        </div>
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Excipient</div>
-            <div className="text-xl font-black text-emerald-600 font-mono mt-0.5">{statExc}</div>
-          </div>
-        </div>
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
-            <Droplet className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Solvent</div>
-            <div className="text-xl font-black text-indigo-600 font-mono mt-0.5">{statSol}</div>
-          </div>
-        </div>
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
-            <Beaker className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Reagent / Other</div>
-            <div className="text-xl font-black text-rose-600 font-mono mt-0.5">{statRea}</div>
-          </div>
-        </div>
+        {MATERIAL_ROLES.map(role => {
+          const Icon = ROLE_ICONS[role.value];
+          return (
+            <div key={role.value} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${role.tone}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold text-muted-foreground tracking-wider truncate">
+                  {role.labelEn} <span className="font-normal">({role.labelFa})</span>
+                </div>
+                <div className="text-xl font-black text-foreground font-mono mt-0.5">{roleCounts.get(role.value) || 0}</div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* HEADER & FILTER BAR */}
@@ -361,8 +402,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
               className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card w-full sm:w-32 transition-colors"
             >
-              <option value="All">همه Roleها</option>
-              {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value}</option>)}
+              <option value="All">همه نقش‌ها</option>
+              {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
             </select>
             
             <select 
@@ -393,64 +434,47 @@ export const MaterialRepositoryView: React.FC<Props> = ({
           <table className="w-full text-right border-collapse text-xs whitespace-nowrap">
             <thead>
               <tr className="bg-muted text-muted-foreground border-b border-border">
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('nameFa')}>
-                  <div className="flex items-center gap-1.5">
-                    <span>نام فارسی ماده</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('nameEn')}>
-                  <div className="flex items-center gap-1.5">
-                    <span>نام لاتین / ژنریک</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('role')}>
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>Role</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3.5 px-4 font-bold cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('finalProduct')}>
-                  <div className="flex items-center gap-1.5">
-                    <span>محصول نهایی</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('cas')}>
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>CAS Number</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3.5 px-4 font-bold text-center cursor-pointer hover:bg-accent transition-colors group" onClick={() => handleSort('pharmacopoeia')}>
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>Pharmacopoeia</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground group-hover:text-muted-foreground" />
-                  </div>
-                </th>
+                <SortHeader field="nameFa" label="نام فارسی ماده" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="nameEn" label="نام لاتین / ژنریک" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="role" label="نقش ماده" center sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="finalProduct" label="محصول نهایی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="cas" label="CAS Number" center sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="pharmacopoeia" label="Pharmacopoeia" center sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="sources" label="سورس‌های مرتبط" center sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <th className="py-3.5 px-4 font-bold text-center w-28">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {currentData.length > 0 ? (
-                currentData.map(material => (
+                currentData.map(material => {
+                  const role = getMaterialRole(material.role);
+                  const sourceCount = vendorsByMaterial.get(material.id)?.length || 0;
+                  return (
                   <tr key={material.id} className="hover:bg-accent/70 transition-colors">
                     <td className="py-3 px-4 font-bold text-foreground">{material.nameFa}</td>
                     <td className="py-3 px-4 font-mono text-xs text-muted-foreground" dir="ltr">{material.nameEn}</td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
-                        material.role === 'API' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        material.role === 'Intermediate' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        material.role === 'Excipient' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        'bg-muted text-foreground border-border'
-                      }`}>
-                        {material.role}
+                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${role.tone}`}>
+                        {role.labelEn} <span className="font-normal">· {role.labelFa}</span>
                       </span>
                     </td>
                     <td className="py-3 px-4 text-foreground">{material.finalProduct}</td>
                     <td className="py-3 px-4 text-center font-mono text-xs text-muted-foreground" dir="ltr">{material.cas}</td>
                     <td className="py-3 px-4 text-center font-mono font-bold text-xs text-foreground">{material.pharmacopoeia}</td>
+                    <td className="py-3 px-4 text-center">
+                      {/* The number that decides whether this row can be deleted. */}
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+                          sourceCount > 0
+                            ? 'bg-muted text-foreground border-border'
+                            : 'text-muted-foreground border-transparent'
+                        }`}
+                        title={sourceCount > 0 ? 'تا وقتی سورسی به این ماده وصل است، حذف ممکن نیست.' : 'هیچ سورسی به این ماده وصل نیست.'}
+                      >
+                        <Factory className="w-3 h-3 shrink-0" />
+                        <span className="font-mono">{sourceCount}</span>
+                      </span>
+                    </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button 
@@ -481,11 +505,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <Archive className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                    <Archive className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
                     <span>هیچ ماده‌ای با مشخصات مورد نظر در مخزن یافت نشد.</span>
                   </td>
                 </tr>
@@ -645,7 +670,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           onChange={e => setFormData({ ...formData, role: e.target.value as MaterialRole })} 
                           className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         >
-                          {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value} - {opt.fullLabel}</option>)}
+                          {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                         </select>
                       </div>
 
@@ -843,8 +868,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
                     <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
-                    <span className="inline-block px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-xs font-mono font-bold">
-                      {selectedMaterial.role}
+                    <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold border ${getMaterialRole(selectedMaterial.role).tone}`}>
+                      {getMaterialRole(selectedMaterial.role).labelEn} <span className="font-normal">· {getMaterialRole(selectedMaterial.role).labelFa}</span>
                     </span>
                   </div>
                   <div>
@@ -951,7 +976,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <div key={vendor.id} className="py-2 px-2 text-xs text-foreground flex justify-between items-center">
                         <span className="font-bold">{vendor.name}</span>
                         <span className="font-mono bg-slate-200/70 px-2 py-0.5 rounded text-[10px] text-foreground">
-                          {vendor.category === 'sample' ? 'نمونه' : vendor.category}
+                          {categoryLabels[vendor.category as keyof typeof categoryLabels]?.fa || vendor.category}
                         </span>
                       </div>
                     ))}
