@@ -1024,7 +1024,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-slate-250">
+              <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
                 هیچ امتیازی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
               </div>
             )}
@@ -1696,7 +1696,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </table>
               </div>
             ) : (
-              <div className="text-center py-10 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-slate-250">
+              <div className="text-center py-10 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
                 هیچ سابقه خرید یا نتیجه آنالیز آزمایشگاهی برای این سورس ثبت نشده است.
               </div>
             )}
