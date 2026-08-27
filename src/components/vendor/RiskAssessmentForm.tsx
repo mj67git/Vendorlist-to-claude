@@ -92,6 +92,16 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
   const [detectability, setDetectability] = useState<number>(vendor.riskAssessment?.detectability || 1);
   const [probability, setProbability] = useState<number>(vendor.riskAssessment?.probability || recommendedProb);
   const [isSuccess, setIsSuccess] = useState(false);
+  /**
+   * A native alert() used to carry the permission refusal: it blocked the
+   * interface, ignored the page's direction and theme, and left nothing behind
+   * once dismissed. The message now sits with the button it belongs to.
+   *
+   * VendorDetail only renders this form for someone who holds `vendor.risk`,
+   * so this is a safety net rather than a path users normally take — and the
+   * API is what actually refuses the write either way (CLAUDE.md rule 14).
+   */
+  const [error, setError] = useState<string | null>(null);
 
   // Call the isolated FmeaService to run the full FMEA mathematical assessment
   const { riskScore, sri, riskLevel } = FmeaService.performAssessment(criticality, detectability, probability, spsScore);
@@ -99,9 +109,10 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!can(currentUser, 'vendor.risk')) {
-      alert('شما دسترسی ثبت ارزیابی ریسک را ندارید.');
+      setError('ثبت ارزیابی ریسک در سطح دسترسی شما نیست. برای انجام آن با مدیر سیستم تماس بگیرید.');
       return;
     }
+    setError(null);
 
     const assessment: RiskAssessmentData = {
       materialCriticality: criticality,
@@ -218,6 +229,13 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           </div>
         </div>
 
+        {error && (
+          <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Results */}
         <div className="bg-muted p-5 rounded-xl border border-border flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-6">
@@ -239,7 +257,11 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
                 {riskLevel === 'Low' ? 'پایین (Low)' : riskLevel === 'Medium' ? 'متوسط (Medium)' : 'بالا (High)'}
               </div>
             </div>
-            <button type="button" onClick={handleSubmit} className="bg-primary text-primary-foreground font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="bg-primary text-primary-foreground font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+            >
               ثبت نتیجه ارزیابی ریسک
             </button>
           </div>
