@@ -116,7 +116,14 @@ model Material {
   pharmacopoeia     String?  @map("pharmacopoeia")
   standardNameFa    String?  @map("standard_name_fa")
   standardNameEn    String?  @map("standard_name_en")
-  specificationFile String?  @map("specification_file")
+  // The Specification attachment. `specificationFile` is the file name and has
+  // been there all along; the blob and its metadata were added when the upload
+  // became real. The blob is never part of a list payload — it is fetched from
+  // GET /api/materials/:id/specification/file on demand (project rule 5).
+  specificationFile       String?   @map("specification_file")
+  specificationFileSize   Int?      @map("specification_file_size")
+  specificationFileData   String?   @map("specification_file_data") @db.Text
+  specificationUploadedAt DateTime? @map("specification_uploaded_at")
   ircReceiveDate    String?  @map("irc_receive_date")
   ircExpiryDate     String?  @map("irc_expiry_date")
   createdAt         DateTime @default(now()) @map("created_at")

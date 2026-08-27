@@ -112,7 +112,14 @@ function mapMaterialToClient(m: any) {
     pharmacopoeia: m.pharmacopoeia || 'USP',
     standardNameFa: m.standardNameFa || '',
     standardNameEn: m.standardNameEn || '',
+    // The blob itself is deliberately absent: it is fetched from
+    // GET /api/materials/:id/specification/file (project rule 5).
     specificationFile: m.specificationFile || undefined,
+    specificationFileSize: m.specificationFileSize ?? undefined,
+    hasSpecificationFile: !!m.specificationFileData,
+    specificationUploadedAt: m.specificationUploadedAt
+      ? (m.specificationUploadedAt.toISOString?.() || m.specificationUploadedAt)
+      : undefined,
     createdAt: m.createdAt ? (m.createdAt.toISOString?.() || m.createdAt) : new Date().toISOString(),
   };
 }
@@ -3399,8 +3406,25 @@ async function startServer() {
         pharmacopoeia: b.pharmacopoeia ?? current.pharmacopoeia,
         standardNameFa: b.standardNameFa ?? current.standardNameFa,
         standardNameEn: b.standardNameEn ?? current.standardNameEn,
-        specificationFile: b.specificationFile ?? current.specificationFile,
+        // `??` everywhere else means "a field that is not supplied keeps its
+        // value". For the attachment that read the wrong way: sending an
+        // explicit null to detach the file kept the old name, so removing a
+        // Specification never actually persisted. An explicit null clears here;
+        // an absent key still keeps the current value.
+        specificationFile: "specificationFile" in b ? b.specificationFile : current.specificationFile,
       });
+
+      // Clearing the file name through a plain PATCH must not leave the blob
+      // behind — the record would then claim no attachment while still storing
+      // one.
+      const clearedSpecification = !!current.specificationFile && !incoming.specificationFile;
+      if (clearedSpecification) {
+        Object.assign(incoming, {
+          specificationFileSize: null,
+          specificationFileData: null,
+          specificationUploadedAt: null,
+        });
+      }
 
       const duplicate = await rejectDuplicateMaterial(
         prisma, req,
@@ -3505,6 +3529,135 @@ async function startServer() {
       });
 
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Specification attachment
+  //
+  // The form used to record only the file name: the user picked a document,
+  // saw its name on the record, and nothing was ever stored. In a GxP system
+  // that is a documentation claim with nothing behind it. The three endpoints
+  // below store, serve and remove the actual file.
+  //
+  // The blob lives in a column and is fetched on demand, the same shape the SOP
+  // documents use (project rule 5), so listing the repository never carries
+  // base64.
+  // ---------------------------------------------------------------------------
+
+  /** Roughly the payload ceiling: express.json caps the body at 10mb, and a
+   *  data URL is ~33% larger than the file it encodes. */
+  const MAX_SPECIFICATION_BYTES = 7 * 1024 * 1024;
+
+  app.put("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { fileName, fileSize, fileDataUrl, reasonForChange } = req.body || {};
+      const prisma = requirePrisma();
+
+      if (!fileName || typeof fileDataUrl !== "string" || !fileDataUrl.startsWith("data:")) {
+        return res.status(400).json({ error: "فایل ارسالی نامعتبر است." });
+      }
+      if (typeof fileSize === "number" && fileSize > MAX_SPECIFICATION_BYTES) {
+        return res.status(413).json({ error: "حجم فایل بیش از حد مجاز (۷ مگابایت) است." });
+      }
+
+      const current = await prisma.material.findUnique({ where: { id } });
+      if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+
+      const isReplacement = !!current.specificationFileData;
+      const updated = await prisma.material.update({
+        where: { id },
+        data: {
+          specificationFile: fileName,
+          specificationFileSize: typeof fileSize === "number" ? fileSize : null,
+          specificationFileData: fileDataUrl,
+          specificationUploadedAt: new Date(),
+        },
+      });
+
+      const now = new Date();
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت مواد",
+        action: "Update",
+        severity: "Information",
+        description: `${isReplacement ? "جایگزینی" : "بارگذاری"} فایل Specification برای ماده ${current.name} (${fileName}).`,
+        entityType: "Material",
+        entityId: id,
+        entityName: current.name,
+        reasonForChange: reasonForChange || (isReplacement ? "جایگزینی مدرک مشخصات فنی" : "بارگذاری مدرک مشخصات فنی"),
+        // The blob is never written into the audit row; only what changed about it.
+        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
+        afterData: { specificationFile: fileName, specificationFileSize: fileSize ?? null },
+      });
+
+      res.json({ success: true, material: mapMaterialToClient(updated) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/materials/:id/specification/file", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const material = await prisma.material.findUnique({ where: { id: req.params.id } });
+      if (!material || !material.specificationFileData) {
+        return res.status(404).json({ error: "فایلی برای این ماده یافت نشد" });
+      }
+      res.json({
+        fileName: material.specificationFile,
+        fileSize: material.specificationFileSize,
+        fileDataUrl: material.specificationFileData,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const prisma = requirePrisma();
+      const current = await prisma.material.findUnique({ where: { id } });
+      if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+
+      const updated = await prisma.material.update({
+        where: { id },
+        data: {
+          specificationFile: null,
+          specificationFileSize: null,
+          specificationFileData: null,
+          specificationUploadedAt: null,
+        },
+      });
+
+      const now = new Date();
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت مواد",
+        action: "Delete",
+        severity: "Warning",
+        description: `فایل Specification ماده ${current.name} حذف شد (${current.specificationFile || "بدون نام"}).`,
+        entityType: "Material",
+        entityId: id,
+        entityName: current.name,
+        reasonForChange: (req.query.reasonForChange as string) || "حذف مدرک مشخصات فنی",
+        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
+        afterData: null,
+      });
+
+      res.json({ success: true, material: mapMaterialToClient(updated) });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

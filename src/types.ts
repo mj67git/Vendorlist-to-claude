@@ -101,7 +101,14 @@ export interface Material {
   finalProduct: string;
   finalProductEn: string;
   pharmacopoeia: Pharmacopoeia;
+  /** File name of the Specification attachment. */
   specificationFile?: string;
+  specificationFileSize?: number;
+  /** Whether the server actually holds the file. The blob itself is fetched
+      from `GET /api/materials/:id/specification/file` on demand, so it is never
+      carried in a list payload (project rule 5). */
+  hasSpecificationFile?: boolean;
+  specificationUploadedAt?: string;
   standardNameFa: string;
   standardNameEn: string;
   irc?: string;

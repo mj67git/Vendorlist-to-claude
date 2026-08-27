@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FormModal } from './FormModal';
 import {
-  Search, Plus, Edit2, Trash2, Eye, X, Upload, ArrowUpDown, ArrowUp, ArrowDown,
+  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, ArrowUp, ArrowDown,
   FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
   Archive, CheckCircle, AlertCircle, Sparkles, Package, Tag, Factory
 } from 'lucide-react';
@@ -9,6 +9,8 @@ import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { EntityName } from './EntityName';
 import { findDuplicateMaterial } from '../utils/materialDuplicates';
+import { authFetch, isLocalMode } from '../services/authFetch';
+import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
 import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
@@ -47,6 +49,17 @@ const ROLE_ICONS: Record<MaterialRole, React.ComponentType<{ className?: string 
  * in human order.
  */
 const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
+
+/** Mirrors MAX_SPECIFICATION_BYTES on the server (express.json caps at 10mb and
+ *  a data URL is ~33% larger than the file). */
+const MAX_SPEC_BYTES = 7 * 1024 * 1024;
+
+const formatFileSize = (bytes?: number) => {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} بایت`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} کیلوبایت`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
+};
 
 /**
  * A sortable column header that says which column is sorted and in which
@@ -113,6 +126,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   // Custom Deletion States (prevents iframe blocking from window.confirm)
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
   const [specToDelete, setSpecToDelete] = useState<boolean>(false);
+  const [specBusy, setSpecBusy] = useState(false);
+  const [specError, setSpecError] = useState<string | null>(null);
+  /** A file chosen while creating a material, uploaded once the record exists. */
+  const [pendingSpecFile, setPendingSpecFile] = useState<File | null>(null);
 
   /**
    * Sources per material id.
@@ -182,6 +199,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       pharmacopoeia: 'USP',
       specificationFile: undefined,
     });
+    setPendingSpecFile(null);
     setFormError(null);
     setEditingMaterial(null);
     setIsModalOpen(true);
@@ -200,12 +218,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       pharmacopoeia: material.pharmacopoeia || 'USP',
       specificationFile: material.specificationFile || undefined,
     });
+    setPendingSpecFile(null);
     setFormError(null);
     setEditingMaterial(material);
     setIsModalOpen(true);
   };
 
   const handleOpenView = (material: Material) => {
+    setSpecError(null);
     setSelectedMaterial(material);
     setIsViewModalOpen(true);
   };
@@ -251,11 +271,37 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     } else {
       onAddMaterial(newMaterial);
     }
+
+    // The record has to exist before its file can be attached to it, so a file
+    // picked in the form is uploaded here rather than in the create payload.
+    if (pendingSpecFile && !isLocalMode()) {
+      uploadSpecFile(newMaterial, pendingSpecFile);
+    }
+    setPendingSpecFile(null);
+
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
       setIsModalOpen(false);
     }, 900);
+  };
+
+  /** Attach a file to a material that already exists on the server. */
+  const uploadSpecFile = async (material: Material, file: File) => {
+    try {
+      const fileDataUrl = await readAsDataUrl(file);
+      const res = await authFetch(`/api/materials/${material.id}/specification`, {
+        method: 'PUT',
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size, fileDataUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'بارگذاری فایل ناموفق بود.');
+      onEditMaterial({ ...material, ...data.material }, 'Upload Specification');
+    } catch (err: any) {
+      // The material itself saved; only the attachment failed, and saying so is
+      // the whole point — a name with no file behind it is what we just fixed.
+      setSpecError(err.message || 'ماده ذخیره شد ولی بارگذاری فایل ناموفق بود.');
+    }
   };
 
   const handleDeleteSpec = () => {
@@ -264,13 +310,88 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const handleReplaceSpec = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (selectedMaterial && e.target.files && e.target.files[0]) {
-      const isReplacement = !!selectedMaterial.specificationFile;
-      const updated = { ...selectedMaterial, specificationFile: e.target.files[0].name };
-      onEditMaterial(updated, isReplacement ? 'Replace Specification' : 'Upload Specification');
-      setSelectedMaterial(updated);
+  /**
+   * The Specification attachment.
+   *
+   * Until now the form recorded the file *name* and nothing else — the document
+   * itself was never stored, so a record could claim an attachment that did not
+   * exist. These handlers talk to the dedicated endpoints, which keep the blob
+   * out of the list payload and audit each change server-side.
+   */
+  const readAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target?.result as string);
+      reader.onerror = () => reject(new Error('خواندن فایل ناموفق بود.'));
+      reader.readAsDataURL(file);
+    });
+
+  const handleReplaceSpec = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // so picking the same file again still fires onChange
+    if (!selectedMaterial || !file) return;
+
+    if (file.size > MAX_SPEC_BYTES) {
+      setSpecError(`حجم فایل (${formatFileSize(file.size)}) بیش از حد مجاز ${formatFileSize(MAX_SPEC_BYTES)} است.`);
+      return;
     }
+
+    setSpecError(null);
+    setSpecBusy(true);
+    try {
+      const fileDataUrl = await readAsDataUrl(file);
+      if (isLocalMode()) {
+        // No backend in demo mode: keep the name so the UI is coherent, and say
+        // plainly that the file itself is not kept.
+        const updated = { ...selectedMaterial, specificationFile: file.name, specificationFileSize: file.size, hasSpecificationFile: false };
+        onEditMaterial(updated, 'Upload Specification');
+        setSelectedMaterial(updated);
+        setSpecError('در حالت آزمایشی، فایل ذخیره نمی‌شود و فقط نام آن ثبت می‌گردد.');
+        return;
+      }
+      const res = await authFetch(`/api/materials/${selectedMaterial.id}/specification`, {
+        method: 'PUT',
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size, fileDataUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'بارگذاری فایل ناموفق بود.');
+      const updated: Material = { ...selectedMaterial, ...data.material };
+      setSelectedMaterial(updated);
+      onEditMaterial(updated, 'Upload Specification');
+    } catch (err: any) {
+      setSpecError(err.message || 'بارگذاری فایل ناموفق بود.');
+    } finally {
+      setSpecBusy(false);
+    }
+  };
+
+  /** The blob is not in the list payload; fetch it when it is actually needed. */
+  const fetchSpecFile = async (): Promise<{ fileName?: string; fileDataUrl?: string } | null> => {
+    if (!selectedMaterial) return null;
+    try {
+      const res = await authFetch(`/api/materials/${selectedMaterial.id}/specification/file`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch { return null; }
+  };
+
+  const handleDownloadSpec = async () => {
+    setSpecError(null);
+    const file = await fetchSpecFile();
+    if (!file?.fileDataUrl) { setSpecError('فایل این ماده روی سرور یافت نشد.'); return; }
+    const a = document.createElement('a');
+    a.href = file.fileDataUrl;
+    a.download = file.fileName || selectedMaterial?.specificationFile || 'specification';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleViewSpec = async () => {
+    setSpecError(null);
+    const file = await fetchSpecFile();
+    if (!file?.fileDataUrl) { setSpecError('فایل این ماده روی سرور یافت نشد.'); return; }
+    openDocumentPreview({ fileName: file.fileName, fileDataUrl: file.fileDataUrl }, handleDownloadSpec);
   };
 
   const filteredMaterials = useMemo(() => {
@@ -332,12 +453,33 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     setMaterialToDelete(material);
   };
 
-  const handleConfirmDeleteSpec = () => {
-    if (selectedMaterial) {
-      const updated = { ...selectedMaterial, specificationFile: undefined };
+  const handleConfirmDeleteSpec = async () => {
+    if (!selectedMaterial) return;
+    setSpecBusy(true);
+    setSpecError(null);
+    try {
+      if (!isLocalMode()) {
+        const res = await authFetch(`/api/materials/${selectedMaterial.id}/specification`, { method: 'DELETE' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'حذف فایل ناموفق بود.');
+        }
+      }
+      const updated: Material = {
+        ...selectedMaterial,
+        specificationFile: undefined,
+        specificationFileSize: undefined,
+        hasSpecificationFile: false,
+        specificationUploadedAt: undefined,
+      };
       onEditMaterial(updated, 'Delete Specification');
       setSelectedMaterial(updated);
       setSpecToDelete(false);
+    } catch (err: any) {
+      setSpecError(err.message || 'حذف فایل ناموفق بود.');
+      setSpecToDelete(false);
+    } finally {
+      setSpecBusy(false);
     }
   };
 
@@ -806,13 +948,22 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           <label className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border border-dashed rounded-xl text-xs cursor-pointer hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-300 transition-colors text-muted-foreground font-medium">
                             <Upload className="w-4 h-4 text-muted-foreground" />
                             <span>انتخاب فایل مشخصات فنی</span>
-                            <input 
-                              type="file" 
-                              className="hidden" 
+                            <input
+                              type="file"
+                              className="hidden"
                               onChange={e => {
-                                if (e.target.files && e.target.files[0]) {
-                                  setFormData({ ...formData, specificationFile: e.target.files[0].name });
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                if (file.size > MAX_SPEC_BYTES) {
+                                  setFormError(`حجم فایل (${formatFileSize(file.size)}) بیش از حد مجاز ${formatFileSize(MAX_SPEC_BYTES)} است.`);
+                                  return;
                                 }
+                                setFormError(null);
+                                // Held until the record is saved: a file cannot be
+                                // attached to a material that does not exist yet.
+                                setPendingSpecFile(file);
+                                setFormData({ ...formData, specificationFile: file.name });
                               }}
                             />
                           </label>
@@ -822,9 +973,9 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                               <span className="text-[11px] font-mono font-bold truncate max-w-[240px]" dir="ltr">
                                 {formData.specificationFile}
                               </span>
-                              <button 
-                                type="button" 
-                                onClick={() => setFormData({...formData, specificationFile: undefined})} 
+                              <button
+                                type="button"
+                                onClick={() => { setPendingSpecFile(null); setFormData({ ...formData, specificationFile: undefined }); }}
                                 className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 p-0.5"
                                 title="حذف فایل"
                               >
@@ -833,6 +984,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             </div>
                           )}
                         </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {pendingSpecFile
+                            ? `فایل «${pendingSpecFile.name}» (${formatFileSize(pendingSpecFile.size)}) پس از ذخیرهٔ ماده بارگذاری می‌شود.`
+                            : `فایل روی سرور ذخیره و در شناسنامهٔ ماده قابل دانلود است. حداکثر ${formatFileSize(MAX_SPEC_BYTES)}.`}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -986,34 +1142,85 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                   <div>
                     <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
+
+                    {specError && (
+                      <div role="alert" className="mb-2 p-2.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-[11px] leading-relaxed fade-in">
+                        {specError}
+                      </div>
+                    )}
+
                     {selectedMaterial.specificationFile ? (
-                      <div className="flex items-center justify-between bg-card border border-border p-3 rounded-xl shadow-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 flex items-center justify-center border">
+                      <div className="flex flex-wrap items-center justify-between gap-3 bg-card border border-border p-3 rounded-xl shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 flex items-center justify-center border shrink-0">
                             <FileText className="w-5 h-5" />
                           </div>
-                          <div className="font-mono text-xs font-bold text-foreground truncate max-w-[220px] sm:max-w-[320px]" dir="ltr">
-                            {selectedMaterial.specificationFile}
+                          <div className="min-w-0">
+                            <div className="font-mono text-xs font-bold text-foreground truncate max-w-[220px] sm:max-w-[320px]" dir="ltr">
+                              {selectedMaterial.specificationFile}
+                            </div>
+                            {/* A name with no file behind it is exactly what this
+                                module used to record, so the record says which
+                                one this is. */}
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              {selectedMaterial.hasSpecificationFile
+                                ? [formatFileSize(selectedMaterial.specificationFileSize), 'ذخیره‌شده روی سرور'].filter(Boolean).join(' · ')
+                                : 'فقط نام فایل ثبت شده است — فایلی روی سرور نیست.'}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <label className="p-2 text-amber-600 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer" title="جایگزینی">
-                            <Upload className="w-4 h-4" />
-                            <input type="file" className="hidden" onChange={handleReplaceSpec} />
-                          </label>
-                          <button onClick={handleDeleteSpec} className="p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors" title="حذف">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {selectedMaterial.hasSpecificationFile && (
+                            <>
+                              <button
+                                onClick={handleViewSpec}
+                                className={`p-2 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                title="مشاهده"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={handleDownloadSpec}
+                                className={`p-2 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                title="دانلود"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                          {can(currentUser, 'material.edit') && (
+                            <>
+                              <label className={`p-2 text-amber-600 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer ${specBusy ? 'opacity-50 pointer-events-none' : ''}`} title="جایگزینی">
+                                <Upload className="w-4 h-4" />
+                                <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
+                              </label>
+                              <button
+                                onClick={handleDeleteSpec}
+                                disabled={specBusy}
+                                className={`p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                title="حذف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center p-6 bg-card border border-border border-dashed rounded-xl">
-                        <div className="text-xs font-bold text-muted-foreground font-mono mb-2">No Specification Uploaded</div>
-                        <label className="flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-lg text-xs font-bold text-muted-foreground cursor-pointer hover:bg-accent transition-colors shadow-xs">
-                          <Upload className="w-4 h-4" />
-                          <span>آپلود فایل جدید</span>
-                          <input type="file" className="hidden" onChange={handleReplaceSpec} />
-                        </label>
+                      <div className="flex flex-col items-center justify-center p-6 bg-card border border-border border-dashed rounded-xl gap-2">
+                        <div className="text-xs font-bold text-muted-foreground">فایل مشخصات فنی بارگذاری نشده است</div>
+                        {can(currentUser, 'material.edit') ? (
+                          <>
+                            <label className={`flex items-center gap-2 px-4 py-2 bg-muted border border-border rounded-lg text-xs font-bold text-foreground cursor-pointer hover:bg-accent transition-colors shadow-xs ${specBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                              <Upload className="w-4 h-4" />
+                              <span>{specBusy ? 'در حال بارگذاری…' : 'بارگذاری فایل'}</span>
+                              <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
+                            </label>
+                            <span className="text-[10px] text-muted-foreground">حداکثر {formatFileSize(MAX_SPEC_BYTES)}</span>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">بارگذاری فایل در دسترس نقش شما نیست.</span>
+                        )}
                       </div>
                     )}
                   </div>
