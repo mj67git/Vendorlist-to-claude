@@ -295,11 +295,28 @@ export default function App() {
   }, [currentUser]);
 
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
+    /**
+     * The bundled partner list is demo data, so it only stands in for the
+     * database in local demo mode.
+     *
+     * With a real backend it used to be the fallback whenever the browser cache
+     * was empty, which meant a fresh browser showed invented partners — with
+     * grades and SOP results — as if they came from the server, and the list was
+     * never empty so the loading skeleton could not appear either. PostgreSQL is
+     * the single source of truth (project rule 1); an empty list until the fetch
+     * answers is the honest state. (The server still seeds these same partners
+     * into an empty database on first startup — that path writes real rows.)
+     */
     try {
       const saved = localStorage.getItem('app_business_partners');
-      return (saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB).map(reconcileSupplierEvaluation);
+      const cached = saved ? JSON.parse(saved) : null;
+      // An empty cached array is not a cache: it is what normal mode writes
+      // before its first fetch answers, and honouring it would leave local demo
+      // mode — which has no backend to fill it — permanently empty.
+      if (Array.isArray(cached) && cached.length > 0) return cached.map(reconcileSupplierEvaluation);
+      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB.map(reconcileSupplierEvaluation) : [];
     } catch {
-      return INITIAL_BUSINESS_PARTNERS_DB;
+      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB : [];
     }
   });
 
