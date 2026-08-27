@@ -579,6 +579,22 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  /**
+   * Whether the toast is reporting a failure.
+   *
+   * The toast used to infer this from a keyword regex over the message, which
+   * is a guess: "عدم دسترسی: … اجازهٔ انجام این عملیات را نمی‌دهد" matched none
+   * of the words, so a refused save was announced with a green check. Callers
+   * that know say so; the regex stays as the fallback for the rest.
+   */
+  const [toastKind, setToastKind] = useState<'success' | 'error' | null>(null);
+
+  /** Show a toast and, when the caller knows, say which kind it is. */
+  const notify = (message: string, kind: 'success' | 'error' = 'success', ms = kind === 'error' ? 6000 : 3000) => {
+    setToastKind(kind);
+    setToastMsg(message);
+    setTimeout(() => { setToastMsg(null); setToastKind(null); }, ms);
+  };
   const [isSyncing, setIsSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
@@ -1085,27 +1101,71 @@ export default function App() {
   // Business Partner Repository module), so the client no longer posts its own
   // audit records — that would double-log every change.
 
+  /**
+   * Why a rejected save must be surfaced, not logged.
+   *
+   * Both handlers used to end in `.catch(err => console.error(...))` and never
+   * looked at `res.ok`. A 403 (no permission), a 400 (validation) or a 413 (an
+   * evaluation whose attached documents exceed the body limit) therefore left
+   * the user with a green "saved successfully" toast, the change alive in
+   * memory, and nothing on the server — until the next reload silently took it
+   * away. For a supplier evaluation in a GxP system that is the worst possible
+   * failure mode, so a rejected write now rolls the optimistic update back and
+   * says what happened.
+   */
+  const describePartnerFailure = async (res: Response, fallback: string) => {
+    const body = await res.json().catch(() => ({} as any));
+    if (body?.error) return body.error as string;
+    if (res.status === 413) return 'حجم مدارک پیوست بیش از حد مجاز سرور است. فایل‌های کوچک‌تری بارگذاری کنید.';
+    if (res.status === 403) return 'دسترسی لازم برای این تغییر را ندارید.';
+    return fallback;
+  };
+
   const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
+    const snapshot = businessPartners;
     setBusinessPartners([newPartner, ...businessPartners]);
-    setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-    setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
+    if (isLocalMode()) {
+      setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     authFetch('/api/business-partners', {
       method: 'POST',
       body: JSON.stringify(newPartner)
-    }).catch(err => console.error("Failed to persist new business partner:", err));
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ثبت شریک تجاری در سرور ناموفق بود.'));
+        notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
+      })
+      .catch(err => {
+        setBusinessPartners(snapshot);
+        notify(err.message || 'ثبت شریک تجاری در سرور ناموفق بود.', 'error');
+      });
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
+    const snapshot = businessPartners;
     const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
     setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
-    setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-    setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
+    if (isLocalMode()) {
+      setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
       body: JSON.stringify(updatedPartner)
-    }).catch(err => console.error("Failed to persist business partner update:", err));
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
+      })
+      .catch(err => {
+        setBusinessPartners(snapshot);
+        notify(err.message || 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.', 'error');
+      });
   };
 
   const handleDeleteBusinessPartner = (id: string) => {
@@ -1133,8 +1193,7 @@ export default function App() {
       })
       .catch(err => {
         setBusinessPartners(snapshot);
-        setToastMsg(err.message || 'حذف شریک تجاری در سرور ناموفق بود.');
-        setTimeout(() => setToastMsg(null), 5000);
+        notify(err.message || 'حذف شریک تجاری در سرور ناموفق بود.', 'error');
       });
   };
 
@@ -1885,7 +1944,7 @@ export default function App() {
 
         {/* Global Toast (theme-aware; error vs. success styling) */}
         {toastMsg && (() => {
-          const isError = /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف/.test(toastMsg);
+          const isError = toastKind ? toastKind === 'error' : /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف|عدم دسترسی/.test(toastMsg);
           return (
             <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
               {isError

@@ -44,6 +44,22 @@ interface Props {
   db?: Vendor[];
 }
 
+/**
+ * Saving a partner sends the whole record, so all eight SOP documents travel in
+ * one body — and `express.json` on the server caps that at 10mb while a data
+ * URL is ~33% larger than the file it encodes. Without a guard here, a couple
+ * of large PDFs produced a 413 that the UI never showed.
+ */
+const MAX_DOC_BYTES = 3 * 1024 * 1024;
+const MAX_DOCS_TOTAL_BYTES = 6 * 1024 * 1024;
+
+const formatFileSize = (bytes?: number) => {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} بایت`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} کیلوبایت`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
+};
+
 type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt';
 type SortOrder = 'asc' | 'desc';
 
@@ -221,6 +237,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const computedEval = useMemo<SupplierEvaluation>(() => {
     return computeSupplierEvaluation(evalDocs);
   }, [evalDocs]);
+
+  /** Bytes currently attached across all SOP documents — see MAX_DOCS_TOTAL_BYTES. */
+  const docsTotalBytes = useMemo(
+    () => Object.values(evalDocs).reduce((sum, doc) => sum + (doc.fileSize || 0), 0),
+    [evalDocs],
+  );
 
   // Unique countries list for country filter
   const availableCountries = useMemo(() => {
@@ -455,6 +477,21 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   };
 
   const handleDocFileUpload = (key: SOPDocumentKey, file: File) => {
+    // Refuse here, with a reason, rather than letting the server reject the
+    // whole evaluation later for a size the user was never told about.
+    if (file.size > MAX_DOC_BYTES) {
+      setFormError(`حجم فایل «${file.name}» (${formatFileSize(file.size)}) بیش از حد مجاز هر مدرک (${formatFileSize(MAX_DOC_BYTES)}) است.`);
+      return;
+    }
+    const othersTotal = Object.entries(evalDocs)
+      .filter(([k]) => k !== key)
+      .reduce((sum, [, doc]) => sum + (doc.fileSize || 0), 0);
+    if (othersTotal + file.size > MAX_DOCS_TOTAL_BYTES) {
+      setFormError(`مجموع حجم مدارک پیوست از ${formatFileSize(MAX_DOCS_TOTAL_BYTES)} بیشتر می‌شود. ابتدا یکی از فایل‌های موجود را حذف کنید.`);
+      return;
+    }
+    setFormError(null);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
@@ -1385,7 +1422,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* 5 SOP Documents Checklist */}
+                  {/* How much of the attachment budget is spent — the save sends
+                      every document in one body, so this is the number that
+                      decides whether the server will accept it. */}
+                  {docsTotalBytes > 0 && (
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground px-1">
+                      <span>مجموع حجم مدارک پیوست: <span className="font-mono font-bold text-foreground">{formatFileSize(docsTotalBytes)}</span> از {formatFileSize(MAX_DOCS_TOTAL_BYTES)}</span>
+                      {docsTotalBytes > MAX_DOCS_TOTAL_BYTES * 0.8 && (
+                        <span className="text-amber-600 dark:text-amber-400 font-bold">نزدیک به سقف مجاز</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SOP Documents Checklist */}
                   <div className="space-y-3">
                     {SOP_DOCUMENTS_DEF.map((def, idx) => {
                       const doc = evalDocs[def.key] || {
@@ -1492,7 +1541,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               ) : (
                                 <label className="flex items-center justify-center gap-2 p-2 bg-card border border-dashed border-border rounded-lg text-muted-foreground hover:border-blue-500 hover:text-blue-600 cursor-pointer text-xs transition-colors">
                                   <Upload className="w-3.5 h-3.5" />
-                                  <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک</span>
+                                  <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک (حداکثر {formatFileSize(MAX_DOC_BYTES)})</span>
                                   <input
                                     type="file"
                                     className="hidden"
