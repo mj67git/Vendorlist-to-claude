@@ -1138,7 +1138,7 @@ async function startServer() {
         afterData: { attemptedUsername: username || null, ip: ipAddress, device: userAgent }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(400).json({ error: "Username and password are required credentials" });
+      return res.status(400).json({ error: "نام کاربری و کلمهٔ عبور را وارد کنید." });
     }
 
     const matchedUser = await getUserByUsername(username);
@@ -1163,7 +1163,7 @@ async function startServer() {
         afterData: { attemptedUsername: username, ip: ipAddress, device: userAgent }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(401).json({ error: "Incorrect username or password. Please try again." });
+      return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
     }
 
     const isPasswordCorrect = verifyPassword(password, matchedUser.password);
@@ -1189,7 +1189,7 @@ async function startServer() {
         afterData: { attemptedUsername: matchedUser.username, ip: ipAddress, device: userAgent }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(401).json({ error: "Incorrect username or password. Please try again." });
+      return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
     }
 
     // A deactivated account is refused here, after the password check, so the
