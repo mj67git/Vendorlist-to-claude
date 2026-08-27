@@ -209,6 +209,11 @@ model Vendor {
   status              String  @default("new") @map("status")
   grade               String? @map("grade")
   initialSampleStatus String? @map("initial_sample_status")
+  // The IRC licence belongs to the source, not to the material catalogue
+  // entry. It used to be stored on `materials` *and* folded into the generated
+  // material id, so registering a source with an IRC forked a duplicate
+  // material row for the same substance.
+  irc                 String? @map("irc")
   ircExpiryDate       String? @map("irc_expiry_date")
 
   // Optional links to normalized business partners

@@ -470,6 +470,23 @@ async function getBusinessPartnersList(): Promise<any[]> {
 }
 
 /**
+ * Refuse a source whose IRC is not the 16-digit IFDA code.
+ *
+ * The form enforces this too, but that gate is cosmetic (project rule 14).
+ * Empty is allowed — not every source has a licence on file yet — and a value
+ * that is unchanged from what is already stored is left alone, so records
+ * predating the rule (they carry placeholders like "N/A") stay editable.
+ */
+function ircViolation(irc: unknown, previousIrc?: unknown): string | null {
+  const value = typeof irc === "string" ? irc.trim() : "";
+  const previous = typeof previousIrc === "string" ? previousIrc.trim() : "";
+  if (value === previous) return null;
+  if (value === "" || value === "N/A" || value === "NA" || value === "-") return null;
+  if (/^\d{16}$/.test(value)) return null;
+  return "کد IRC باید دقیقاً ۱۶ رقم عددی باشد.";
+}
+
+/**
  * Refuse a source whose supplier does not meet the SOP.
  *
  * The client greys these out, but that gate is cosmetic (project rule 14): the
@@ -663,7 +680,10 @@ async function getVendorsList(vendorId?: string): Promise<any[]> {
         material: materialObj ? materialObj.name : "نامشخص",
         materialEn: materialObj ? materialObj.nameEn : "Unknown",
         cas: materialObj ? materialObj.cas : "N/A",
-        irc: materialObj ? materialObj.irc : "N/A",
+        // IRC lives on the source. Rows written before that column existed only
+        // have it on their material, so fall back there rather than blanking a
+        // licence number that is really on file.
+        irc: (v as any).irc ?? (materialObj ? materialObj.irc : "N/A"),
         // The source's own licence expiry, which is written by PATCH /contact
         // and audited on change but was never read back out. Everything that
         // reads it — the dashboard's expiring-licence card, the detail page,
@@ -768,6 +788,7 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        irc: irc || null,
         riskAssessment: null,
         analysisRecords: null,
       },
@@ -781,28 +802,37 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        irc: irc || null,
         riskAssessment: null,
         analysisRecords: null,
       },
     });
 
-    const materialId = generateMaterialId(cas, irc, material, materialEn);
-    await prisma.material.upsert({
-      where: { id: materialId },
-      update: {
-        name: material || "نامشخص",
-        nameEn: materialEn || "Unknown",
-        cas: cas || "N/A",
-        irc: irc || "N/A",
-      },
-      create: {
-        id: materialId,
-        name: material || "نامشخص",
-        nameEn: materialEn || "Unknown",
-        cas: cas || "N/A",
-        irc: irc || "N/A",
-      },
-    });
+    /**
+     * Link to the material the form actually picked from the catalogue.
+     *
+     * The id used to be derived with `generateMaterialId(cas, irc, …)`, so the
+     * source's IRC became part of the material's identity: registering a source
+     * with an IRC minted a second material row for a substance already in the
+     * catalogue (`mat_<cas>_<irc>` beside the real `M-…`) and linked the source
+     * to that duplicate. Deriving is now only the fallback for legacy payloads
+     * that carry no materialId, and the IRC is no longer part of it.
+     */
+    const materialId = v.materialId || generateMaterialId(cas, undefined, material, materialEn);
+    const existingMaterial = await prisma.material.findUnique({ where: { id: materialId } });
+    if (!existingMaterial) {
+      // Only ever create the catalogue entry from a vendor payload; never
+      // overwrite one, or saving a source would rewrite the master record.
+      await prisma.material.create({
+        data: {
+          id: materialId,
+          name: material || "نامشخص",
+          nameEn: materialEn || "Unknown",
+          cas: cas || "N/A",
+          irc: "N/A",
+        },
+      });
+    }
 
     // Delete any old links for this vendor that point to a different material
     await prisma.vendorMaterial.deleteMany({
@@ -812,15 +842,23 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       }
     });
 
-    const linkId = `link_${id}_${materialId}`;
+    /**
+     * Upsert on (vendorId, materialId), not on the synthetic `link_<v>_<m>` id.
+     *
+     * Links created outside this function (seeds, imports) carry their own ids,
+     * so keying the upsert on the synthetic one tried to *insert* a second row
+     * for a pair that already exists and hit the unique constraint. It stayed
+     * hidden only because the material id used to be derived from the payload,
+     * which made the deleteMany above drop the existing link first.
+     */
     await prisma.vendorMaterial.upsert({
-      where: { id: linkId },
+      where: { vendorId_materialId: { vendorId: id, materialId } },
       update: {
         isSample: isSample ?? false,
         category: category || "foreign",
       },
       create: {
-        id: linkId,
+        id: `link_${id}_${materialId}`,
         vendorId: id,
         materialId: materialId,
         isSample: isSample ?? false,
@@ -1681,6 +1719,11 @@ async function startServer() {
       
       const existing = await getVendorById(v.id);
 
+      const ircError = ircViolation((v as any).irc, (existing as any)?.irc);
+      if (ircError) {
+        return res.status(422).json({ error: ircError });
+      }
+
       const sopError = await sopSupplierViolation((v as any).supplierId, (existing as any)?.supplierId);
       if (sopError) {
         AuditService.createAuditRecord({
@@ -1857,6 +1900,11 @@ async function startServer() {
         ...current,
         ...p
       };
+
+      const ircError = ircViolation((p as any).irc, (current as any).irc);
+      if (ircError) {
+        return res.status(422).json({ error: ircError });
+      }
 
       const sopError = await sopSupplierViolation((updatedVendor as any).supplierId, (current as any).supplierId);
       if (sopError) {
