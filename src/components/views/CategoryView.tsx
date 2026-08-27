@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, ChevronDown, Download, Search, X } from 'lucide-react';
+import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -225,7 +225,6 @@ export function CategoryView({
               <meta.icon className="w-6 h-6 text-primary" />
               {meta.fa}
             </h2>
-            <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">{meta.en}</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -236,7 +235,7 @@ export function CategoryView({
               title={`دانلود خروجی اکسل دسته‌بندی ${meta.fa}`}
             >
               <Download className="w-4 h-4" />
-              <span>خروجی اکسل {meta.fa} (XLSX)</span>
+              <span>خروجی اکسل</span>
             </Button>
           </div>
         </div>
@@ -247,7 +246,7 @@ export function CategoryView({
             <Input 
               type="text" 
               placeholder="جستجو کلمه کلیدی، نام، ماده، CAS، کشور..."
-              className="pl-9 pr-4 text-sm bg-background"
+              className="pl-9 pr-9 text-sm bg-background"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               dir="rtl"
@@ -257,7 +256,7 @@ export function CategoryView({
               <button
                 type="button"
                 onClick={() => setQuery('')}
-                className="absolute left-8 top-2.5 text-muted-foreground hover:text-muted-foreground transition-colors p-0.5 rounded cursor-pointer"
+                className="absolute right-2.5 top-2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-accent cursor-pointer"
                 title="پاک کردن جستجو"
               >
                 <X className="w-4 h-4" />
@@ -267,10 +266,11 @@ export function CategoryView({
 
           {/* Sort control */}
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <label className="text-[11px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
-              <ChevronDown className="w-3.5 h-3.5" /> مرتب‌سازی
+            <label htmlFor="category-sort" className="text-[11px] text-muted-foreground whitespace-nowrap">
+              مرتب‌سازی
             </label>
             <select
+              id="category-sort"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               dir="rtl"
@@ -286,9 +286,18 @@ export function CategoryView({
 
           {/* Stats double as quick filters (click to toggle) */}
           {(() => {
-            const chipCls = (key: string | null) =>
-              `px-2.5 py-1 text-xs cursor-pointer select-none transition-shadow ${
-                activeFilter === key ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : 'opacity-95 hover:opacity-100'
+            /**
+             * A chip whose count is zero stays visible (the reader still wants to
+             * know the answer is none) but stops looking clickable: as a live
+             * filter it could only ever produce an empty list.
+             */
+            const chipCls = (key: string | null, count?: number) =>
+              `px-2.5 py-1 text-xs select-none transition-shadow ${
+                count === 0
+                  ? 'opacity-45 cursor-default pointer-events-none'
+                  : activeFilter === key
+                    ? 'cursor-pointer ring-2 ring-primary ring-offset-1 ring-offset-background'
+                    : 'cursor-pointer opacity-95 hover:opacity-100'
               }`;
             const toggle = (key: string) => setActiveFilter(activeFilter === key ? null : key);
             const expiringCount = categoryVendors.filter(v => {
@@ -305,35 +314,35 @@ export function CategoryView({
                 </Badge>
                 {categoryId === 'sample' ? (
                   <>
-                    <Badge variant="gradeA" onClick={() => toggle('approved')} className={chipCls('approved')}>
-                      Approved: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'approved').length}</span>
+                    <Badge variant="gradeA" onClick={() => toggle('approved')} className={chipCls('approved', categoryVendors.filter(v => v.status === 'approved').length)}>
+                      تأیید شده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'approved').length}</span>
                     </Badge>
-                    <Badge variant="gradeC" onClick={() => toggle('conditional')} className={chipCls('conditional')}>
-                      Approved conditional: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
+                    <Badge variant="gradeC" onClick={() => toggle('conditional')} className={chipCls('conditional', categoryVendors.filter(v => v.status === 'conditional').length)}>
+                      تأیید مشروط: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
                     </Badge>
-                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
-                      Reject: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
+                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', categoryVendors.filter(isVendorRejected).length)}>
+                      مردود: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? null : (
                   <>
-                    <Badge variant="gradeA" onClick={() => toggle('A')} className={chipCls('A')}>
+                    <Badge variant="gradeA" onClick={() => toggle('A')} className={chipCls('A', categoryVendors.filter(v => v.grade === 'A').length)}>
                       Grade A: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'A').length}</span>
                     </Badge>
-                    <Badge variant="gradeB" onClick={() => toggle('B')} className={chipCls('B')}>
+                    <Badge variant="gradeB" onClick={() => toggle('B')} className={chipCls('B', categoryVendors.filter(v => v.grade === 'B').length)}>
                       Grade B: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'B').length}</span>
                     </Badge>
-                    <Badge variant="gradeC" onClick={() => toggle('C')} className={chipCls('C')}>
+                    <Badge variant="gradeC" onClick={() => toggle('C')} className={chipCls('C', categoryVendors.filter(v => v.grade === 'C').length)}>
                       Grade C: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'C').length}</span>
                     </Badge>
-                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected')}>
+                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', categoryVendors.filter(isVendorRejected).length)}>
                       لیست سیاه: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
                   </>
                 )}
                 {categoryId !== 'blacklist' && expiringCount > 0 && (
                   <Badge variant="warning" onClick={() => toggle('expiring')} className={chipCls('expiring')} title="فیلتر سورس‌های با مجوز رو به انقضا یا منقضی">
-                    ⚠ نزدیک انقضا: <span className="font-bold font-mono mr-1">{expiringCount}</span>
+                    <AlertTriangle className="w-3.5 h-3.5 ml-1 shrink-0" /> نزدیک انقضا: <span className="font-bold font-mono mr-1">{expiringCount}</span>
                   </Badge>
                 )}
               </div>

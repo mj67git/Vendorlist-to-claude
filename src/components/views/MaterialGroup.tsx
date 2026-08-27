@@ -138,7 +138,7 @@ export const MaterialGroup: React.FC<{
                         vendor.status === 'conditional' ? 'bg-amber-500' : 'bg-cyan-500'
                       ) : (
                         vendor.grade === 'A' ? 'bg-emerald-500' :
-                        vendor.grade === 'B' ? 'bg-[#0071E3]' :
+                        vendor.grade === 'B' ? 'bg-primary' :
                         vendor.grade === 'C' ? 'bg-amber-500' :
                         vendor.status === 'conditional' ? 'bg-amber-500' : 'bg-cyan-500'
                       )
@@ -146,21 +146,21 @@ export const MaterialGroup: React.FC<{
                     <div className="text-right space-y-1">
                       {/* 1. Name of Material */}
                       <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-bold">نام ماده اولیه</Badge>
+                        <Badge variant="secondary" className="text-[11px] px-1.5 py-0 font-bold">نام ماده اولیه</Badge>
                         <span className="font-bold text-foreground">{vendor.material}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">({vendor.materialEn})</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">({vendor.materialEn})</span>
                       </div>
                       
                       {/* 2. Supplier / Manufacturer (single partner) */}
                       <div className="font-bold text-base text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{partnerLabel}</span>
+                        <span className="text-[11px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{partnerLabel}</span>
                         <span>{partnerName}</span>
                       </div>
 
                       {/* 3. Metadata line (English name, country, licence expiry) */}
                       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
                         {vendor.nameEn && vendor.nameEn.trim() && vendor.nameEn.toLowerCase() !== 'n/a' && vendor.nameEn.toLowerCase() !== 'unknown' && (
-                          <span className="font-mono text-[10px] text-muted-foreground">{vendor.nameEn}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">{vendor.nameEn}</span>
                         )}
                         {(() => {
                           const displayCountry = getDisplayCountry(vendor);
@@ -180,7 +180,7 @@ export const MaterialGroup: React.FC<{
                             return (
                               <>
                                 <span className="text-border">|</span>
-                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-bold">
+                                <Badge variant="destructive" className="text-[11px] px-1.5 py-0 font-bold">
                                   مجوز منقضی
                                 </Badge>
                               </>
@@ -190,7 +190,7 @@ export const MaterialGroup: React.FC<{
                             return (
                               <>
                                 <span className="text-border">|</span>
-                                <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-bold">
+                                <Badge variant="warning" className="text-[11px] px-1.5 py-0 font-bold">
                                   انقضای مجوز: {check.daysLeft} روز
                                 </Badge>
                               </>
@@ -209,24 +209,24 @@ export const MaterialGroup: React.FC<{
                       {currentUser?.role === 'admin' ? (
                         vendor.scores && calculateOverallScore(vendor.scores) !== null ? (
                           <div className="text-center">
-                            <div className="text-[10px] text-muted-foreground mb-0.5">امتیاز کل</div>
+                            <div className="text-[11px] text-muted-foreground mb-0.5">امتیاز کل</div>
                             <div className={`font-bold font-mono text-sm ${getScoreColorClass(calculateOverallScore(vendor.scores))}`}>
                               {calculateOverallScore(vendor.scores)}
                             </div>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-muted-foreground">- بدون امتیاز -</div>
+                          <div className="text-[11px] text-muted-foreground">- بدون امتیاز -</div>
                         )
                       ) : (
                         vendor.scores && vendor.scores[currentUser?.role as keyof Scores] > 0 ? (
                           <div className="text-center">
-                            <div className="text-[10px] text-muted-foreground mb-0.5">امتیاز بخش شما</div>
+                            <div className="text-[11px] text-muted-foreground mb-0.5">امتیاز بخش شما</div>
                             <div className={`font-bold font-mono text-sm ${getScoreColorClass(vendor.scores[currentUser?.role as keyof Scores])}`}>
                               {vendor.scores[currentUser?.role as keyof Scores]}
                             </div>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">عدم ثبت امتیاز</div>
+                          <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">عدم ثبت امتیاز</div>
                         )
                       )}
                     </div>
@@ -234,20 +234,20 @@ export const MaterialGroup: React.FC<{
                     {/* Column 2: Risk Level */}
                     {categoryId !== 'blacklist' && (
                       <div className="hidden sm:flex w-24 sm:w-28 shrink-0 flex-col items-center justify-center text-center">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">سطح ریسک</div>
+                        <div className="text-[11px] text-muted-foreground mb-0.5">سطح ریسک</div>
                         {vendor.riskAssessment ? (
                           <Badge 
                             variant={
                               vendor.riskAssessment.riskLevel === 'Low' ? 'gradeA' :
                               vendor.riskAssessment.riskLevel === 'Medium' ? 'gradeC' : 'gradeReject'
                             }
-                            className="text-[10px] font-bold px-2 py-0"
+                            className="text-[11px] font-bold px-2 py-0"
                           >
                             {vendor.riskAssessment.riskLevel === 'Low' ? 'Low Risk' :
                              vendor.riskAssessment.riskLevel === 'Medium' ? 'Medium Risk' : 'High Risk'}
                           </Badge>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground">-</span>
+                          <span className="text-[11px] text-muted-foreground">-</span>
                         )}
                       </div>
                     )}
@@ -257,13 +257,13 @@ export const MaterialGroup: React.FC<{
                       <div className="hidden sm:flex w-24 sm:w-28 shrink-0 flex-col items-center justify-center text-center">
                         {vendor.isSample ? (
                           <>
-                            <div className="text-[10px] text-muted-foreground mb-0.5">وضعیت نمونه</div>
+                            <div className="text-[11px] text-muted-foreground mb-0.5">وضعیت نمونه</div>
                             <Badge 
                               variant={
                                 vendor.status === 'approved' ? 'gradeA' :
                                 vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
                               }
-                              className="text-[10px] font-bold px-2 py-0"
+                              className="text-[11px] font-bold px-2 py-0"
                             >
                               {vendor.status === 'approved' ? 'Approved' :
                                vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
@@ -271,7 +271,7 @@ export const MaterialGroup: React.FC<{
                           </>
                         ) : (
                           <>
-                            <div className="text-[10px] text-muted-foreground mb-0.5">رتبه نهایی</div>
+                            <div className="text-[11px] text-muted-foreground mb-0.5">رتبه نهایی</div>
                             <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
                           </>
                         )}

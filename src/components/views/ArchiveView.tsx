@@ -100,7 +100,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               type="button" 
               className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border/90 text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
             >
-              <FileText className="w-3.5 h-3.5 text-[#0071E3]" />
+              <FileText className="w-3.5 h-3.5 text-primary" />
               <span>خروجی تک‌دسته‌ای</span>
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
@@ -114,7 +114,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                 <button
                   type="button"
                   onClick={() => handleExportCategory('all', 'کل_آرشیو')}
-                  className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-[#0071E3] font-medium transition-colors flex items-center justify-between"
+                  className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                 >
                   <span className="font-mono text-[9px] text-muted-foreground">All</span>
                   <span>گزارش تجمیعی کل آرشیو</span>
@@ -124,7 +124,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                     key={key}
                     type="button"
                     onClick={() => handleExportCategory(key, labelData.fa)}
-                    className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-[#0071E3] font-medium transition-colors flex items-center justify-between"
+                    className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                   >
                     <span className="font-mono text-[9px] text-muted-foreground">{key}</span>
                     <span>گزارش {labelData.fa}</span>

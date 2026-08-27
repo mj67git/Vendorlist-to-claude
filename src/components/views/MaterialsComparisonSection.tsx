@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle, ChevronDown, Microscope } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, ChevronDown, Microscope, Star } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
@@ -127,7 +127,7 @@ export const MaterialsComparisonSection: React.FC<{
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#0071E3]" />
+            <Activity className="w-4 h-4 text-primary" />
             نمودار مقایسه و تحلیل ارزیابی تامین‌کنندگان این ماده
           </h4>
           <p className="text-xs text-muted-foreground mt-1">مقایسه امتیاز کل مکتسبه و تحلیل جهت بهترین انتخاب تأمین کالا</p>
@@ -144,7 +144,7 @@ export const MaterialsComparisonSection: React.FC<{
                 هم‌تراز — تصمیم انسانی لازم است
               </div>
             ) : (
-              <div className="flex items-center gap-2 bg-[#0071E3]/10 border border-[#0071E3]/20 px-3 py-1.5 rounded-full text-xs text-[#0071E3] font-bold">
+              <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full text-xs text-primary font-bold">
                 <CheckCircle className="w-3.5 h-3.5" />
                 گزینه پیشنهادی سیستم: {bestVendor.name}
               </div>
@@ -160,10 +160,10 @@ export const MaterialsComparisonSection: React.FC<{
                 based on. Plotting the base score against an engine-score
                 ordering meant a shorter bar could sit above a longer one and
                 still be labelled the better option. */}
-            <div className="mb-4 flex justify-between items-center text-xs text-[#6E6E73] font-semibold">
+            <div className="mb-4 flex justify-between items-center text-xs text-muted-foreground font-semibold">
               <span>مقایسه امتیاز نهایی موتور (از ۱۰۰)</span>
               <div className="flex items-center gap-2 font-normal">
-                <span className="inline-block w-3 h-3 bg-[#0071E3] rounded-sm"></span>
+                <span className="inline-block w-3 h-3 bg-primary rounded-lg"></span>
                 <span>امتیاز موتور</span>
               </div>
             </div>
@@ -184,33 +184,33 @@ export const MaterialsComparisonSection: React.FC<{
                     <div className="flex justify-between items-start text-xs gap-3">
                       <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
                         <EntityName name={item.name} lines={2} className="font-bold text-foreground" />
-                        {isChosen && <span className="text-[10px] text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-md font-bold shrink-0">منتخب</span>}
-                        {isBest && !isLevel && !isChosen && <span className="text-[10px] text-[#0071E3] bg-[#0071E3]/10 px-1.5 py-0.5 rounded-md font-normal shrink-0">برتر</span>}
+                        {isChosen && <span className="text-[11px] text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-1.5 py-0.5 rounded-lg font-bold shrink-0">منتخب</span>}
+                        {isBest && !isLevel && !isChosen && <span className="text-[11px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-lg font-normal shrink-0">برتر</span>}
                         {/* Completeness, so a partly evaluated source is not read as an equal peer. */}
                         <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono shrink-0 border ${
+                          className={`text-[11px] px-1.5 py-0.5 rounded-lg font-mono shrink-0 border ${
                             item.scoredDepartments === 4 && item.hasRisk
                               ? 'bg-muted text-muted-foreground border-border'
                               : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800'
                           }`}
                           title={`امتیاز ${item.scoredDepartments} دپارتمان از ۴ · ارزیابی ریسک: ${item.hasRisk ? 'دارد' : 'ندارد'} · تست آزمایشگاه: ${item.hasLabAssessment ? 'دارد' : 'ندارد'}`}
                         >
-                          {item.scoredDepartments}/۴{item.hasRisk ? '' : ' ⚠'}
+                          {item.scoredDepartments}/۴{item.hasRisk ? '' : <AlertTriangle className="w-3 h-3 inline-block mr-1 -mt-px" />}
                         </span>
                       </div>
                       <span className="font-mono font-bold text-foreground shrink-0">
                         {item.engineScore.toFixed(1)}
-                        <span className="text-gray-400 font-normal text-[10px]"> (پایه {item.score})</span>
+                        <span className="text-gray-400 font-normal text-[11px]"> (پایه {item.score})</span>
                       </span>
                     </div>
                     <div className="h-5 w-full bg-muted rounded-full overflow-hidden flex items-center relative">
                       <div 
                         className={`h-full rounded-full transition-all duration-1000 ${
-                          isBest ? 'bg-gradient-to-l from-[#0071E3] to-[#4096FF]' : 'bg-gradient-to-l from-slate-500 to-slate-400'
+                          isBest ? 'bg-gradient-to-l from-primary to-primary/60' : 'bg-gradient-to-l from-slate-500 to-slate-400'
                         }`}
                         style={{ width: `${scorePercent}%` }}
                       />
-                      <div className="absolute left-3 text-[10px] text-gray-500 font-sans pointer-events-none">
+                      <div className="absolute left-3 text-[11px] text-gray-500 font-sans pointer-events-none">
                         {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'}
                       </div>
                     </div>
@@ -228,7 +228,7 @@ export const MaterialsComparisonSection: React.FC<{
                </h5>
                <button 
                  onClick={() => setShowLabModGuide(!showLabModGuide)}
-                 className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                 className="text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                >
                  <span>فرمول محاسبه</span>
                  <motion.span
@@ -250,7 +250,7 @@ export const MaterialsComparisonSection: React.FC<{
                    transition={{ duration: 0.2, ease: "easeOut" }}
                    className="overflow-hidden"
                  >
-                   <p className="text-[10px] text-muted-foreground mb-3 bg-muted p-3 rounded-lg border border-border leading-relaxed shadow-sm block">
+                   <p className="text-[11px] text-muted-foreground mb-3 bg-muted p-3 rounded-lg border border-border leading-relaxed shadow-sm block">
                       <strong className="text-foreground">نحوه محاسبه ضریب نتایج آزمایشگاه (Lab Mod):</strong><br/>
                       تأثیر این بخش در بازه <span className="font-mono text-indigo-600 font-bold" dir="ltr">0.90x ~ 1.10x</span> (قبل از احتساب جریمه‌های ردی) محاسبه می‌شود:<br/>
                       <span className="block mt-1.5"><span className="inline-block w-1 h-1 bg-emerald-500 rounded-full ml-1.5 align-middle"></span> <strong>پایه و پاداش تست مثبت:</strong> ضریب پایه سیستم <strong><span className="font-mono">0.90x</span></strong> است. تا سقف <strong><span className="font-mono">+0.20x</span></strong> (به نسبت درصد تست‌های تایید شده دستگاه) به این پایه اضافه می‌شود. (مثلا اگر ۱۰۰٪ تست‌ها پاس شوند ضریب کامل ۱.۱۰ لحاظ می‌گردد).</span>
@@ -259,8 +259,11 @@ export const MaterialsComparisonSection: React.FC<{
                  </motion.div>
                )}
              </AnimatePresence>
+             {/* `w-full` alone let the table squeeze instead of scroll, so on a
+                 phone the headers wrapped to two lines. A min-width hands the
+                 overflow to the scroll container that is already here. */}
              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
+                <table className="w-full min-w-[420px] text-right text-xs">
                    <thead>
                      <tr className="border-b border-border text-muted-foreground font-semibold">
                        <th className="pb-2">سورس</th>
@@ -272,8 +275,8 @@ export const MaterialsComparisonSection: React.FC<{
                    </thead>
                    <tbody>
                      {chartData.map(item => (
-                        <tr key={item.vendor.id} className="border-b border-slate-50/50 last:border-0 text-foreground">
-                           <td className="py-2.5 font-medium">{item.name} {item.vendor.id === bestVendor.vendor.id && <span className="text-[#0071E3] px-1 text-[10px]">★</span>}</td>
+                        <tr key={item.vendor.id} className="border-b border-border/60 last:border-0 text-foreground">
+                           <td className="py-2.5 font-medium">{item.name} {item.vendor.id === bestVendor.vendor.id && <Star className="w-3 h-3 inline-block text-primary fill-primary mx-1 -mt-px" />}</td>
                            <td className="py-2.5 text-center font-mono">{item.analysisMeta.total || '-'}</td>
                            <td className="py-2.5 text-center font-mono text-emerald-600">{item.hasLabAssessment ? (item.analysisMeta.pass + item.analysisMeta.app) : '-'}</td>
                            <td className="py-2.5 text-center font-mono text-rose-600">{item.hasLabAssessment ? item.analysisMeta.reject : '-'}</td>
@@ -286,7 +289,7 @@ export const MaterialsComparisonSection: React.FC<{
           </div>
         </div>
 
-        <div className="lg:col-span-5 bg-[#0071E3]/2 p-5 rounded-xl border border-[#0071E3]/5 flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-primary/2 p-5 rounded-xl border border-primary/5 flex flex-col justify-between">
           {/* Result first, explanation on demand.
               The three bullets that used to sit here restated, in prose, the
               same three numbers as the formula line below them — and this panel
@@ -296,11 +299,11 @@ export const MaterialsComparisonSection: React.FC<{
               declared for but never wired to. */}
           <div>
             <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="text-[10px] text-[#0071E3] font-bold tracking-wider uppercase border border-[#0071E3]/20 bg-[#0071E3]/10 px-2 py-0.5 rounded">موتور تحلیل سیستم (Local Engine)</div>
+              <div className="text-[11px] text-primary font-bold tracking-wider uppercase border border-primary/20 bg-primary/10 px-2 py-0.5 rounded-lg">موتور تحلیل سیستم (Local Engine)</div>
               <button
                 type="button"
                 onClick={() => setShowEngineGuide(!showEngineGuide)}
-                className="text-[10px] font-bold text-[#0071E3] bg-[#0071E3]/10 hover:bg-[#0071E3]/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                className="text-[11px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
               >
                 <span>چطور محاسبه می‌شود؟</span>
                 <motion.span
@@ -314,7 +317,7 @@ export const MaterialsComparisonSection: React.FC<{
             </div>
             <h5 className="font-bold text-foreground text-sm mb-3">چرا {bestVendor.name} پیشنهاد می‌شود؟</h5>
 
-            <div className="text-xs text-[#424245] leading-relaxed">
+            <div className="text-xs text-foreground leading-relaxed">
               {/* The whole reasoning in one row of chips. */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-[11px] bg-card border border-border px-2 py-1 rounded-lg">
@@ -345,10 +348,10 @@ export const MaterialsComparisonSection: React.FC<{
                     transition={{ duration: 0.2, ease: 'easeOut' }}
                     className="overflow-hidden"
                   >
-                    <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-[10px] text-muted-foreground leading-relaxed">
+                    <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-[11px] text-muted-foreground leading-relaxed">
                       <p>
                         <strong className="text-foreground">موتور آفلاین سیستم</strong> از یک مکانیسم امتیازدهی ترکیبی شفاف استفاده می‌کند:
-                        <span className="block mt-1.5 font-mono text-[#0071E3] bg-[#0071E3]/5 px-2 py-1 rounded border border-[#0071E3]/20 font-bold w-fit" dir="ltr">
+                        <span className="block mt-1.5 font-mono text-primary bg-primary/5 px-2 py-1 rounded-lg border border-primary/20 font-bold w-fit" dir="ltr">
                           Engine Score = BaseScore × RiskMod × LabMod
                         </span>
                       </p>
@@ -361,16 +364,16 @@ export const MaterialsComparisonSection: React.FC<{
                 )}
               </AnimatePresence>
 
-              <div className="mt-3 pt-3 border-t border-[#0071E3]/20 flex items-center justify-between gap-2">
+              <div className="mt-3 pt-3 border-t border-primary/20 flex items-center justify-between gap-2">
                  <span className="font-bold text-foreground">امتیاز نهایی سیستم:</span>
                  <span className="font-mono text-sm" dir="ltr">
-                   {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} = <strong className="text-[16px] text-[#0071E3] bg-card px-2 rounded-md shadow-sm border border-border">{bestVendor.engineScore.toFixed(1)}</strong>
+                   {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} = <strong className="text-[16px] text-primary bg-card px-2 rounded-lg shadow-sm border border-border">{bestVendor.engineScore.toFixed(1)}</strong>
                  </span>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-[#0071E3]/10 space-y-3">
+          <div className="mt-6 pt-4 border-t border-primary/10 space-y-3">
             {isLevel && (
               <p className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 leading-relaxed">
                 اختلاف امتیاز نفر اول و دوم کمتر از {DECISIVE_MARGIN} است؛ موتور نمی‌تواند بینشان تفکیک معناداری قائل شود.
@@ -388,15 +391,15 @@ export const MaterialsComparisonSection: React.FC<{
                   </span>
                   {onSelectSource && (
                     <button type="button" onClick={() => onSelectSource(selection.vendorId)}
-                      className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer shrink-0">
+                      className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer shrink-0">
                       تغییر انتخاب
                     </button>
                   )}
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
                   <strong className="text-foreground">دلیل:</strong> {selection.reason}
                 </p>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   ثبت‌کننده: {selection.decidedBy}
                   {selection.vendorId !== bestVendor.vendor.id && (
                     <span className="text-amber-700 dark:text-amber-400 font-bold"> · متفاوت با پیشنهاد سیستم</span>
@@ -405,7 +408,7 @@ export const MaterialsComparisonSection: React.FC<{
               </div>
             ) : onSelectSource ? (
               <button type="button" onClick={() => onSelectSource(bestVendor.vendor.id)}
-                className="w-full flex items-center justify-center gap-2 bg-[#0071E3] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer">
+                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer">
                 <CheckCircle className="w-4 h-4" />
                 ثبت انتخاب سورس برای این ماده
               </button>
@@ -415,7 +418,7 @@ export const MaterialsComparisonSection: React.FC<{
               </p>
             )}
 
-            <div className="flex justify-between items-center text-[11px] text-[#6E6E73]">
+            <div className="flex justify-between items-center text-[11px] text-muted-foreground">
               <span>آخرین ارزیابی ثبت‌شده:</span>
               <span className="font-mono font-bold text-foreground">
                 {groupUpdateDate || <span className="font-sans font-normal text-muted-foreground">ارزیابی ثبت نشده</span>}

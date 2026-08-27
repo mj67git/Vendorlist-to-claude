@@ -737,7 +737,7 @@ interface SourceSelection {
  
              <div className={`grid grid-cols-1 ${myDepartments.length > 1 ? 'md:grid-cols-4' : 'max-w-md mx-auto'} gap-6`}>
                {[
-                 { id: 'commercial', name: 'بازرگانی', avg: stats.deptAverages.commercial, icon: Briefcase, color: 'bg-[#0071E3]' },
+                 { id: 'commercial', name: 'بازرگانی', avg: stats.deptAverages.commercial, icon: Briefcase, color: 'bg-primary' },
                  { id: 'qa', name: 'کیفیت', avg: stats.deptAverages.qa, icon: Microscope, color: 'bg-emerald-600' },
                  { id: 'planning', name: 'برنامه‌ریزی و انبار', avg: stats.deptAverages.planning, icon: Warehouse, color: 'bg-violet-600' },
                  { id: 'finance', name: 'مالی', avg: stats.deptAverages.finance, icon: Coins, color: 'bg-amber-600' }
