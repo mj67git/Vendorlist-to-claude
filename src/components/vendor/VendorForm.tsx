@@ -92,7 +92,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [newSupplierTab, setNewSupplierTab] = useState<'general' | 'evaluation'>('general');
   const [newSupplierData, setNewSupplierData] = useState({
     name: '',
-    nameEn: '',
     country: 'ایران',
     city: '',
     address: '',
@@ -100,21 +99,24 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     contactPerson: '',
     phone: '',
     website: '',
-    status: 'Active' as 'Active' | 'Inactive' | 'Blacklisted'
+    status: 'Active' as 'Active' | 'Inactive'
   });
 
+  // Unset, exactly as the partner module's form opens. These used to default
+  // to Approved, so a supplier created from here was born with a full 100 and
+  // a Grade A that nobody had actually assessed.
   const [newSupplierSopDocs, setNewSupplierSopDocs] = useState<{
-    manufacturerLetter: SOPDocumentStatus;
-    authorizedSignatory: SOPDocumentStatus;
-    businessLicense: SOPDocumentStatus;
-    officialEnglishTranslation: SOPDocumentStatus;
-    legalization: SOPDocumentStatus;
+    manufacturerLetter: SOPDocumentStatus | null;
+    authorizedSignatory: SOPDocumentStatus | null;
+    businessLicense: SOPDocumentStatus | null;
+    officialEnglishTranslation: SOPDocumentStatus | null;
+    legalization: SOPDocumentStatus | null;
   }>({
-    manufacturerLetter: 'Approved',
-    authorizedSignatory: 'Approved',
-    businessLicense: 'Approved',
-    officialEnglishTranslation: 'Approved',
-    legalization: 'Approved'
+    manufacturerLetter: null,
+    authorizedSignatory: null,
+    businessLicense: null,
+    officialEnglishTranslation: null,
+    legalization: null
   });
 
   const selectedManufacturer = partners.find(p => p.type === 'Manufacturer' && p.id === selectedManufacturerId);
@@ -185,7 +187,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       id: (isSupplier ? 'bp_sup_' : 'bp_mfg_') + Math.random().toString(36).substring(2, 9),
       type: newPartnerType,
       name: newSupplierData.name.trim(),
-      nameEn: newSupplierData.nameEn.trim() || undefined,
       country: newSupplierData.country.trim(),
       city: newSupplierData.city.trim() || undefined,
       address: newSupplierData.address.trim() || undefined,
@@ -222,7 +223,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
     setNewSupplierData({
       name: '',
-      nameEn: '',
       country: 'ایران',
       city: '',
       address: '',
@@ -233,11 +233,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       status: 'Active'
     });
     setNewSupplierSopDocs({
-      manufacturerLetter: 'Approved',
-      authorizedSignatory: 'Approved',
-      businessLicense: 'Approved',
-      officialEnglishTranslation: 'Approved',
-      legalization: 'Approved'
+      manufacturerLetter: null,
+      authorizedSignatory: null,
+      businessLicense: null,
+      officialEnglishTranslation: null,
+      legalization: null
     });
     setNewSupplierTab('general');
     setShowNewSupplierModal(false);
@@ -441,27 +441,24 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
               {/* Partner kind — manufacturers and suppliers are independent records */}
               <div className="shrink-0 mb-3">
-                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">نوع شریک تجاری:</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs font-bold text-foreground block mb-1.5">نوع موجودیت <span className="text-rose-500">*</span></label>
+                <div className="grid grid-cols-2 gap-3">
                   {([
-                    { key: 'Manufacturer', label: 'تولیدکننده', sub: 'Manufacturer', icon: Building2 },
-                    { key: 'Supplier', label: 'فروشنده', sub: 'Supplier', icon: Handshake },
+                    { key: 'Manufacturer', label: 'تولیدکننده (Manufacturer)', icon: Building2,
+                      on: 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500' },
+                    { key: 'Supplier', label: 'فروشنده / Supplier', icon: Handshake,
+                      on: 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm ring-1 ring-emerald-500' },
                   ] as const).map(opt => (
                     <button
                       key={opt.key}
                       type="button"
                       onClick={() => { setNewPartnerType(opt.key); setNewSupplierTab('general'); setNewPartnerError(null); }}
-                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-right transition-all ${
-                        newPartnerType === opt.key
-                          ? 'bg-[#0071E3]/10 border-[#0071E3] text-[#0071E3]'
-                          : 'bg-card border-border text-muted-foreground hover:bg-accent'
+                      className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        newPartnerType === opt.key ? opt.on : 'bg-muted border-border text-muted-foreground hover:bg-accent'
                       }`}
                     >
-                      <opt.icon className="w-4 h-4 shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-bold">{opt.label}</span>
-                        <span className="block text-[10px] opacity-70 font-mono">{opt.sub}</span>
-                      </span>
+                      <opt.icon className="w-4 h-4" />
+                      <span>{opt.label}</span>
                     </button>
                   ))}
                 </div>
@@ -507,51 +504,92 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   </div>
                 )}
 
+                {/* Same fields, in the same order, as the partner form in the
+                    business-partner module — this dialog writes the same record,
+                    so asking for a different set of details (it used to open on
+                    a Persian *and* an English name, which that form does not
+                    collect at all) produced partners that looked different
+                    depending on where they were created. */}
                 {(newSupplierTab === 'general' || newPartnerType !== 'Supplier') ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام شرکت {newPartnerType === 'Supplier' ? 'فروشنده' : 'تولیدکننده'} (فارسی): *</label>
-                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">{newPartnerType === 'Supplier' ? 'Supplier' : 'Manufacturer'} Name (English):</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">کشور: *</label>
-                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.country} onChange={e => setNewSupplierData({...newSupplierData, country: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">شهر:</label>
-                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.city} onChange={e => setNewSupplierData({...newSupplierData, city: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام رابط بازرگانی:</label>
-                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.contactPerson} onChange={e => setNewSupplierData({...newSupplierData, contactPerson: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">شماره تلفن رابط:</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.phone} onChange={e => setNewSupplierData({...newSupplierData, phone: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">پست الکترونیکی (Email):</label>
-                      <input type="email" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.email} onChange={e => setNewSupplierData({...newSupplierData, email: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                      <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.website} onChange={e => setNewSupplierData({...newSupplierData, website: e.target.value})} placeholder="https://..." />
-                    </div>
                     <div className="space-y-1 md:col-span-2">
-                      <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                      <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.status} onChange={e => setNewSupplierData({...newSupplierData, status: e.target.value as any})}>
-                        <option value="Active">فعال (Active)</option>
-                        <option value="Inactive">غیرفعال (Inactive)</option>
-                        <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
-                      </select>
+                      <label className="font-semibold text-foreground block">
+                        {newPartnerType === 'Manufacturer' ? 'نام تولیدکننده' : 'نام فروشنده / Supplier'} <span className="text-rose-500">*</span>
+                      </label>
+                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.name}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })}
+                        placeholder={newPartnerType === 'Manufacturer' ? 'مثلاً: BASF SE' : 'مثلاً: Biesterfeld Spezialchemie GmbH'} />
                     </div>
-                    <div className="md:col-span-2 space-y-1">
-                      <label className="text-foreground font-semibold block">نشانی دقیق {newPartnerType === 'Supplier' ? 'دفتر فروشنده' : 'کارخانه'}:</label>
-                      <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">کشور <span className="text-rose-500">*</span></label>
+                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.country}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, country: e.target.value })}
+                        placeholder="مثلاً: آلمان، چین، هند..." />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">شهر</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.city}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, city: e.target.value })}
+                        placeholder="مثلاً: لودویگزهافن" />
+                    </div>
+
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="font-semibold text-foreground block">آدرس کامل</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.address}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })}
+                        placeholder="آدرس دقیق..." />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">نام رابط / مسئول تماس</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.contactPerson}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, contactPerson: e.target.value })}
+                        placeholder="مثلاً: Dr. Klaus Weber" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">شماره تماس</label>
+                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.phone}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })}
+                        placeholder="+49 621 60-0" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">ایمیل رسمی</label>
+                      <input type="email" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.email}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })}
+                        placeholder="contact@company.com" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">وبسایت</label>
+                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.website}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, website: e.target.value })}
+                        placeholder="https://www.company.com" />
+                    </div>
+
+                    {/* Active/Inactive only, as in the partner module: blacklisting
+                        is a separate action there and requires a written reason. */}
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="font-semibold text-foreground block">وضعیت فعالیت در سیستم</label>
+                      <div className="flex items-center gap-4 pt-1">
+                        <label className="flex items-center gap-2 text-foreground cursor-pointer font-bold">
+                          <input type="radio" name="new-partner-status"
+                            checked={newSupplierData.status === 'Active'}
+                            onChange={() => setNewSupplierData({ ...newSupplierData, status: 'Active' })}
+                            className="text-blue-600 focus:ring-blue-500" />
+                          <span>فعال (Active)</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-foreground cursor-pointer font-bold">
+                          <input type="radio" name="new-partner-status"
+                            checked={newSupplierData.status === 'Inactive'}
+                            onChange={() => setNewSupplierData({ ...newSupplierData, status: 'Inactive' })}
+                            className="text-rose-600 focus:ring-rose-500" />
+                          <span>غیرفعال (Inactive)</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -584,10 +622,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                         <div key={doc.key} className="flex items-center justify-between p-2.5 bg-card border border-border rounded-xl">
                           <span className="font-semibold text-foreground">{doc.label}</span>
                           <select
-                            value={(newSupplierSopDocs as any)[doc.key]}
-                            onChange={(e) => setNewSupplierSopDocs({ ...newSupplierSopDocs, [doc.key]: e.target.value as SOPDocumentStatus })}
+                            value={(newSupplierSopDocs as any)[doc.key] ?? ''}
+                            onChange={(e) => setNewSupplierSopDocs({ ...newSupplierSopDocs, [doc.key]: (e.target.value || null) as SOPDocumentStatus | null })}
                             className="bg-muted border border-border rounded-lg px-2 py-1 text-xs font-bold text-foreground focus:outline-none focus:border-[#0071E3]"
                           >
+                            <option value="">ارزیابی نشده</option>
                             <option value="Approved">تایید شده (۲۰ امتیاز)</option>
                             <option value="Permit Approval">تایید با مجوز (۱۰ امتیاز)</option>
                             <option value="Expired">منقضی شده (۵ امتیاز)</option>
