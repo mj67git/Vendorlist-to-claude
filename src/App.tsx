@@ -1351,17 +1351,20 @@ export default function App() {
           ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
           flex flex-col shadow-xs
         `}>
-          {/* BRAND BLOCK */}
-          <div className={`py-4.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center shrink-0">
-                <img src={temadLogo} alt="Logo" className="h-12 w-auto object-contain" />
-              </div>
-              <div className={`flex-col justify-center text-right ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-xs sm:text-sm leading-tight tracking-tight">Vendor List & Supplier Evaluation System (VLSE)</span>
-                <span className="text-primary font-mono text-[10px] sm:text-[11px] mt-0.5 tracking-tight font-bold">
-                  سیستم ارزیابی تامین‌کنندگان
-                </span>
+          {/* BRAND BLOCK — the Persian name is the name of the system; the
+              English one is a subtitle. It used to be the other way round: a
+              three-line English headline at 14px above a 10px Persian line in
+              a mono face, in an application whose entire interface is Persian. */}
+          <div className={`py-3.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Dark navy mark on a dark card is all but invisible, so it gets
+                  a light plate in dark mode — same fix as the login screen. */}
+              <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
+                <img src={temadLogo} alt="تماد" className="h-10 w-auto object-contain" />
+              </span>
+              <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
+                <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
+                <span className="text-muted-foreground text-[10px] mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
               </div>
             </div>
             <button
@@ -1405,7 +1408,7 @@ export default function App() {
             </div>
           )}
 
-          <nav className="flex-1 px-3 py-3.5 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
             <SidebarButton collapsed={sidebarCollapsed}
               icon={Home} label="صفحه اصلی" 
               variant="home"
@@ -1413,9 +1416,8 @@ export default function App() {
               onClick={() => navigate('home')} 
             />
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
-              <span className="text-[10px] font-bold text-muted-foreground">CATEGORIES</span>
             </div>
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
@@ -1428,54 +1430,52 @@ export default function App() {
                   key={id}
                   variant={id}
                   badge={count}
-                  icon={meta.icon} label={meta.fa} sub={meta.en}
+                  icon={meta.icon} label={meta.fa}
                   active={view === 'category' && categoryId === id} 
                   onClick={() => navigate('category', id)} 
                 />
               );
             })}
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
-              <span className="text-[10px] font-bold text-muted-foreground">REPOSITORY</span>
             </div>
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Building2} label="مخزن شرکای تجاری" sub="Business Partners"
+              icon={Building2} label="مخزن شرکای تجاری"
               badge={businessPartners?.length || 0}
               variant="business-partners"
               active={view === 'business-partners'} 
               onClick={() => navigate('business-partners')} 
             />
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Database} label="مخزن مواد اولیه" sub="Materials Master"
+              icon={Database} label="مخزن مواد اولیه"
               badge={materials?.length || 0}
               variant="materials"
               active={view === 'materials'} 
               onClick={() => navigate('materials')} 
             />
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
-              <span className="text-[10px] font-bold text-muted-foreground">GOVERNANCE</span>
             </div>
             {currentUser?.role === 'admin' && (
               <>
                 <SidebarButton collapsed={sidebarCollapsed}
-                  icon={Archive} label="آرشیو کامل داده‌ها" sub="Full Master Archive"
+                  icon={Archive} label="آرشیو کامل داده‌ها"
                   badge={db.length}
                   variant="archive"
                   active={view === 'archive'} 
                   onClick={() => navigate('archive')} 
                 />
                 <SidebarButton collapsed={sidebarCollapsed}
-                  icon={History} label="ردیابی تغییرات (Audit)" sub="Audit Trail Center"
+                  icon={History} label="ردیابی تغییرات"
                   alert={criticalAuditCount}
                   variant="audit-trail"
                   active={view === 'audit-trail'} 
                   onClick={() => navigate('audit-trail')} 
                 />
                 <SidebarButton collapsed={sidebarCollapsed}
-                  icon={UserCog} label="مدیریت کاربران" sub="User Management"
+                  icon={UserCog} label="مدیریت کاربران"
                   variant="audit-trail"
                   active={view === 'users'}
                   onClick={() => navigate('users')}
@@ -1483,7 +1483,7 @@ export default function App() {
               </>
             )}
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Handshake} label="بررسی یکپارچه تامین‌کننده" sub="Supplier 360 Audit"
+              icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
               variant="supplier-audit"
               active={view === 'supplier-audit'} 
               onClick={() => navigate('supplier-audit')} 
@@ -1575,7 +1575,7 @@ export default function App() {
                 >
                   <Bell className="w-4 h-4" />
                   {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
                       {expiringVendors.length}
                     </span>
                   )}
@@ -1655,7 +1655,7 @@ export default function App() {
                   title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
                 >
                   <Download className="w-3.5 h-3.5 text-primary" />
-                  <span className="hidden md:inline">پشتیبان‌گیری (JSON)</span>
+                  <span className="hidden md:inline">پشتیبان‌گیری</span>
                 </Button>
               )}
 
@@ -1670,10 +1670,17 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="hidden lg:flex bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">سیستم فعال</span>
-              </div>
+              {/* This used to be a permanently green, permanently pulsing
+                  "سیستم فعال" chip. A status that cannot change is not status,
+                  it is decoration. The one thing here that genuinely varies is
+                  whether the session is talking to the database at all, so the
+                  chip now appears only when it is not. */}
+              {isLocalMode() && (
+                <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
+                </div>
+              )}
 
               {/* User menu (moved from the sidebar) */}
               {currentUser && (
