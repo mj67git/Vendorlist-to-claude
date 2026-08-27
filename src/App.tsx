@@ -316,6 +316,10 @@ export default function App() {
   // an unauthenticated call would trigger authFetch's 401 session reload.
   useEffect(() => {
     if (!currentUser) return;
+    // Its own flag: `isSyncing` tracks the vendors fetch, so borrowing it would
+    // have the partner table stop showing skeletons while its own request is
+    // still in flight.
+    setPartnersLoading(true);
     authFetch('/api/business-partners')
       .then(res => {
         if (!res.ok) throw new Error('API response failed');
@@ -330,7 +334,8 @@ export default function App() {
       })
       .catch(err => {
         console.error("Failed to load business partners from backend. Using local cache.", err);
-      });
+      })
+      .finally(() => setPartnersLoading(false));
   }, [currentUser]);
 
   type ViewState = {
@@ -596,6 +601,8 @@ export default function App() {
     setTimeout(() => { setToastMsg(null); setToastKind(null); }, ms);
   };
   const [isSyncing, setIsSyncing] = useState(true);
+  /** True while the business-partner list is being fetched. */
+  const [partnersLoading, setPartnersLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
   // "connection failed" banner (the mount fetch runs before demo login is set).
@@ -1304,6 +1311,11 @@ export default function App() {
           onDeletePartner={handleDeleteBusinessPartner}
           currentUser={currentUser}
           db={db}
+          // Not `&& length === 0`: with no cache the list falls back to the
+          // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty and
+          // the skeleton could never appear — the seed was being shown as if it
+          // were the server's data while the real fetch was still in flight.
+          isLoading={partnersLoading}
         />
       );
     } else if (view === 'audit-trail') {

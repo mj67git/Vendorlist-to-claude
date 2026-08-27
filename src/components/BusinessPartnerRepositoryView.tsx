@@ -8,7 +8,7 @@ import { categoryLabels } from '../constants/categories';
 import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
-  CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
+  CheckCircle, CheckCircle2, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
   FileText, Upload, Download, FileCheck, Award, ShieldCheck, AlertCircle, Paperclip,
   RefreshCw, AlertTriangle, Package
 } from 'lucide-react';
@@ -34,6 +34,7 @@ import {
   canSupplySources
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
+import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
 
@@ -44,6 +45,9 @@ interface Props {
   onDeletePartner: (id: string) => void;
   currentUser: User | null;
   db?: Vendor[];
+  /** True while the first fetch is still in flight, so the table shows
+      skeletons instead of claiming there are no partners. */
+  isLoading?: boolean;
 }
 
 /**
@@ -62,7 +66,50 @@ const formatFileSize = (bytes?: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
 };
 
-type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt';
+type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt' | 'grade';
+
+/** Persian has its own alphabet order; a plain `<` sorts by code point. */
+const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
+
+/**
+ * A sortable column header that says which column is sorted and which way.
+ *
+ * These were clickable `<th>`s with the same neutral glyph on every column: not
+ * reachable by keyboard, not announced as controls, and no way to tell what the
+ * table was ordered by.
+ */
+const SortHeader: React.FC<{
+  field: SortField;
+  label: string;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  onSort: (f: SortField) => void;
+}> = ({ field, label, sortField, sortOrder, onSort }) => {
+  const active = sortField === field;
+  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      scope="col"
+      className={`p-0 ${active ? 'text-foreground' : ''}`}
+      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={`مرتب‌سازی بر اساس ${label}`}
+        className="w-full py-3 px-4 flex items-center gap-1 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <span>{label}</span>
+        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </th>
+  );
+};
+
+/** Worst first when descending: the order a quality reviewer reads in. */
+const GRADE_RANK: Record<string, number> = {
+  'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
+};
 type SortOrder = 'asc' | 'desc';
 
 export const BusinessPartnerRepositoryView: React.FC<Props> = ({
@@ -71,7 +118,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   onEditPartner,
   onDeletePartner,
   currentUser,
-  db = []
+  db = [],
+  isLoading = false
 }) => {
   // Search & Filters state
   const [search, setSearch] = useState('');
@@ -87,7 +135,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -349,21 +397,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       return true;
     }).sort((a, b) => {
-      let aVal = (a[sortField] || '').toString().toLowerCase();
-      let bVal = (b[sortField] || '').toString().toLowerCase();
-
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      if (sortField === 'grade') {
+        const rank = (p: BusinessPartner) =>
+          p.type === 'Supplier' ? (GRADE_RANK[p.evaluation?.grade || 'Not Evaluated'] ?? 0) : -1;
+        return dir * (rank(a) - rank(b));
+      }
+      // Dates are ISO strings, which the collator orders correctly as text.
+      return dir * collator.compare(String(a[sortField] ?? ''), String(b[sortField] ?? ''));
     });
   }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, countryFilter, sortField, sortOrder]);
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredPartners.length / itemsPerPage) || 1;
+  const totalPages = Math.max(1, Math.ceil(filteredPartners.length / itemsPerPage));
+  // Deleting the last row of the last page used to strand the user on an empty
+  // page with no way back but paging manually.
+  const page = Math.min(currentPage, totalPages);
+  useEffect(() => { if (currentPage !== page) setCurrentPage(page); }, [currentPage, page]);
   const paginatedPartners = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
+    const start = (page - 1) * itemsPerPage;
     return filteredPartners.slice(start, start + itemsPerPage);
-  }, [filteredPartners, currentPage]);
+  }, [filteredPartners, page, itemsPerPage]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -720,7 +774,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               {/* Wraps rather than truncating: «مجاز برای اتصال به سورس» is the
                   whole point of the card and lost its ending at this width. */}
               <div className="text-[11px] font-bold text-muted-foreground leading-tight">{card.label}</div>
-              <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>
+              {/* The counts come from the same list the table shows, so they
+                  cannot claim a number while that list is still loading. */}
+              {isLoading
+                ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
+                : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
               <div className="text-[10px] text-muted-foreground font-mono truncate">{card.en}</div>
             </div>
           </div>
@@ -869,49 +927,65 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       {/* Main Table */}
       <div className="bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
+          <table className="w-full text-right border-collapse" aria-busy={isLoading}>
+            <caption className="sr-only">فهرست شرکای تجاری ثبت‌شده</caption>
             <thead>
               <tr className="bg-muted/80 border-b border-border text-muted-foreground text-xs font-bold">
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('name')}>
-                  <div className="flex items-center gap-1">
-                    <span>نام شرکت</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('type')}>
-                  <div className="flex items-center gap-1">
-                    <span>نوع</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('country')}>
-                  <div className="flex items-center gap-1">
-                    <span>کشور / شهر</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4">نتیجهٔ ارزیابی SOP</th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('status')}>
-                  <div className="flex items-center gap-1">
-                    <span>وضعیت سیستم</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('createdAt')}>
-                  <div className="flex items-center gap-1">
-                    <span>تاریخ ثبت</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 text-center">عملیات</th>
+                <SortHeader field="name" label="نام شرکت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="type" label="نوع" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="country" label="کشور / شهر" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="grade" label="نتیجهٔ ارزیابی SOP" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="status" label="وضعیت سیستم" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="createdAt" label="تاریخ ثبت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <th scope="col" className="py-3 px-4 text-center">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-xs">
-              {paginatedPartners.length === 0 ? (
+              {isLoading ? (
+                /* Until the first fetch lands there is nothing to show, and the
+                   empty state below would claim the repository is empty. */
+                [0, 1, 2, 3, 4].map(i => (
+                  <tr key={`skeleton-${i}`} aria-hidden="true">
+                    {Array.from({ length: 7 }).map((_, c) => (
+                      <td key={c} className="py-3.5 px-4">
+                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '80%' : c > 4 ? '3rem' : '60%' }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : paginatedPartners.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <Building2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    هیچ شریک تجاری با مشخصات وارد شده یافت نشد.
+                  <td colSpan={7} className="py-14 text-center">
+                    <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+                    {hasActiveFilters ? (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">هیچ شریکی با این جستجو یا فیلترها پیدا نشد.</p>
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          پاک‌کردن جستجو و فیلترها
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">هنوز شریک تجاری‌ای ثبت نشده است.</p>
+                        {can(currentUser, 'partner.create') ? (
+                          <button
+                            type="button"
+                            onClick={handleOpenAdd}
+                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                          >
+                            <Plus className="w-4 h-4" />
+                            ثبت اولین شریک تجاری
+                          </button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">ثبت شریک تجاری در دسترس نقش شما نیست.</p>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -919,10 +993,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   return (
                     <tr key={partner.id} className="hover:bg-muted/70 transition-colors">
                       {/* Name */}
-                      <td className="py-3 px-4 font-bold text-foreground">
-                        <div className="flex flex-col">
-                          <span className="text-foreground font-black">{partner.name}</span>
-                        </div>
+                      <td className="py-3 px-4 font-bold text-foreground max-w-[18rem]">
+                        <EntityName name={partner.name} lines={2} className="font-black whitespace-normal" />
                       </td>
 
                       {/* Type */}
@@ -987,7 +1059,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   handleOpenEdit(partner);
                                   setActiveModalTab('evaluation');
                                 }}
-                                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                                disabled={!can(currentUser, 'partner.edit')}
+                                title={can(currentUser, 'partner.edit') ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
+                                className="text-[11px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                               >
                                 شروع ارزیابی
                               </button>
@@ -1028,22 +1102,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => handleOpenView(partner)}
-                            className="p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
+                            className={`p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
                             title="مشاهده جزئیات کامل"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => handleOpenEdit(partner)}
-                            className="p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
-                            title="ویرایش اطلاعات"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
+                          {/* Delete was gated but edit was not, so a user without
+                              `partner.edit` could fill in the whole form only for
+                              the server to refuse the save. */}
+                          {can(currentUser, 'partner.edit') && (
+                            <button
+                              onClick={() => handleOpenEdit(partner)}
+                              className={`p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                              title="ویرایش اطلاعات"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
                           {can(currentUser, 'partner.delete') && (
                             <button
                               onClick={() => handleDeletePartnerClick(partner)}
-                              className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                              className={`p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
                               title="حذف"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1060,15 +1139,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         </div>
 
         {/* Table Footer / Pagination */}
-        <div className="p-3 bg-muted border-t border-border">
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredPartners.length}
-            startIndex={(currentPage - 1) * itemsPerPage}
-            endIndex={currentPage * itemsPerPage}
-            onPageChange={setCurrentPage}
-          />
+        <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+            <span>تعداد در هر صفحه</span>
+            <select
+              value={itemsPerPage}
+              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              className={`bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+            >
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <div className="flex-1 min-w-0">
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={filteredPartners.length}
+              startIndex={(page - 1) * itemsPerPage}
+              endIndex={page * itemsPerPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </div>
       </div>
 
