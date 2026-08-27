@@ -39,7 +39,15 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
     ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
     ...(canAnalysis ? [{ id: 'analysis', title: 'ثبت نتایج آزمایشگاهی', icon: Microscope }] : []),
   ];
-  const [evalStageRaw, setEvalStage] = useState<string>(evalStages[0]?.id || 'score');
+  const [evalStageRaw, setEvalStageRaw] = useState<string>(evalStages[0]?.id || 'score');
+  const stepperRef = React.useRef<HTMLDivElement | null>(null);
+  /** Move to a step and bring it into view; the content swaps below the fold otherwise. */
+  const setEvalStage = (id: string) => {
+    setEvalStageRaw(id);
+    requestAnimationFrame(() => {
+      stepperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
   const evalStage = evalStages.some(s => s.id === evalStageRaw) ? evalStageRaw : (evalStages[0]?.id || 'score');
   const evalStageIdx = evalStages.findIndex(s => s.id === evalStage);
   const showEvalWizard = evalStages.length >= 2;
@@ -343,7 +351,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // partner — resolving a "manufacturer" and a "supplier" separately used to
   // land on the same record and render it twice. See utils/vendorPartner.
   const sourcePartner = resolveVendorPartner(vendor, partners);
-  const isDirectFromManufacturer = sourcePartner.role === 'manufacturer';
+  const partnerIsManufacturer = sourcePartner.role === 'manufacturer';
 
   // Material Repository resolution for standard names
   const matchedMaterial = materials.find(m => 
@@ -428,14 +436,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 )}
               </div>
 
-              {isDirectFromManufacturer ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    خرید بی‌واسطه از تولیدکننده
-                  </span>
-                </div>
-              ) : sourcePartner.grade ? (
+              {/* A source used to claim "bought straight from the maker" whenever
+                  its partner happened to be a manufacturer. Manufacturers and
+                  suppliers are independent records now, so that link says
+                  nothing about whether a middleman exists. */}
+              {sourcePartner.grade ? (
                 <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
                   <span>گرید SOP فروشنده: {sourcePartner.grade}</span>
                 </div>
@@ -567,7 +572,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5 font-mono">CAS Number</div>
+                  <div className="text-muted-foreground text-xs mb-1.5">شمارهٔ CAS</div>
                   <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
                     {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '-'}
                   </div>
@@ -576,8 +581,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5 font-mono">
-                    {vendor.category === 'veterinary' ? 'IVC Code' : 'IRC Code'}
+                  <div className="text-muted-foreground text-xs mb-1.5">
+                    {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
                   </div>
                   <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
                     {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '-'}
@@ -625,8 +630,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">کد سیستم / Unique ID</div>
-                  <div className="font-mono text-cyan-700 dark:text-cyan-300 font-bold bg-cyan-50/50 dark:bg-cyan-950/30 text-center py-1.5 px-3 rounded-lg border border-cyan-100 dark:border-cyan-800 text-sm" dir="ltr">
+                  <div className="text-muted-foreground text-xs mb-1.5">کد داخلی سامانه</div>
+                  <div className="font-mono text-muted-foreground text-center py-1.5 px-3 text-sm" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
                     {vendor.id.substring(0, 8).toUpperCase()}
                   </div>
                 </div>
@@ -641,10 +646,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <span>اطلاعات تماس و آدرس</span>
             </div>
 
-            <div className={`grid grid-cols-1 gap-4 ${isDirectFromManufacturer ? 'md:grid-cols-2' : ''}`}>
+            <div className="grid grid-cols-1 gap-4">
               <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${isDirectFromManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
-                  {isDirectFromManufacturer
+                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
+                  {partnerIsManufacturer
                     ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
                   {/* The role label is kept out of the clip so it cannot spend
@@ -690,6 +695,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     </div>
                   )}
 
+                  {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
+                    && !sourcePartner.email && !sourcePartner.website && (
+                    <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
+                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
+                        از همان‌جا قابل تکمیل است.
+                      </span>
+                    </div>
+                  )}
+
                   {sourcePartner.website && (
                     <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
                       <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-[11px]">
@@ -700,23 +716,6 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
               </div>
 
-              {/* Only meaningful when the partner IS the factory: there is no middleman. */}
-              {isDirectFromManufacturer && (
-                <div className="bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800 rounded-xl p-4 flex flex-col justify-center text-right text-emerald-900 dark:text-emerald-300 text-xs space-y-2 min-h-[120px]">
-                  <div className="flex items-center justify-between border-b border-emerald-100 dark:border-emerald-800 pb-2">
-                    <div className="flex items-center gap-1.5 font-bold text-emerald-800 dark:text-emerald-300">
-                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      <span>خرید بی‌واسطه از تولیدکننده</span>
-                    </div>
-                    <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
-                      مستقیم
-                    </span>
-                  </div>
-                  <p className="text-muted-foreground text-[11px] leading-relaxed">
-                    این سورس فاقد فروشنده واسطه بوده و کلیه فرآیندهای خرید و ارسال به صورت مستقیم و بدون واسطه از کارخانه سازنده مرجع صورت می‌پذیرد.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -883,7 +882,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
       {/* Guided evaluation wizard header (stepper) */}
       {showEvalWizard && (
-        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+        <div ref={stepperRef} className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm scroll-mt-4">
           <div className="flex items-center gap-2.5 mb-4">
             <ClipboardCheck className="w-4 h-4 text-primary" />
             <h3 className="font-bold text-foreground text-sm">فرآیند ارزیابی سورس <span className="text-muted-foreground text-xs font-normal font-mono">(Evaluation Workflow)</span></h3>
