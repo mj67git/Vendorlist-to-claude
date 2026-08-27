@@ -97,9 +97,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
    * of which field it was talking about. The error now lives next to the field
    * it belongs to, and submitting scrolls that field into view and focuses it.
    */
-  const [fieldError, setFieldError] = useState<null | 'material' | 'partner'>(null);
+  const [fieldError, setFieldError] = useState<null | 'material' | 'partner' | 'irc'>(null);
   const materialFieldRef = useRef<HTMLDivElement | null>(null);
   const partnerFieldRef = useRef<HTMLDivElement | null>(null);
+  const ircFieldRef = useRef<HTMLDivElement | null>(null);
 
   // Modals Data State
 
@@ -275,9 +276,35 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     return () => registerNavGuard(null);
   }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
 
-  const focusMissingField = (which: 'material' | 'partner') => {
+  /**
+   * IRC is the 16-digit IFDA code. It stays optional, but a half-typed one is
+   * worse than an empty one: it looks like a filed licence and is unsearchable.
+   * Persian/Arabic digits are normalised on the way in so a user typing on a
+   * Persian keyboard is not told their correct code is wrong.
+   */
+  const IRC_LENGTH = 16;
+  const toFaDigits = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+  const toLatinDigits = (input: string) =>
+    input
+      .replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 1776))
+      .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 1632));
+  const ircDigits = formData.irc.trim();
+  const isIrcValid = ircDigits === '' || /^\d{16}$/.test(ircDigits);
+  const ircTooShort = ircDigits !== '' && /^\d+$/.test(ircDigits) && ircDigits.length !== IRC_LENGTH;
+  /**
+   * Records predating this rule carry things like "N/A". Blocking on an
+   * untouched legacy value would make those sources uneditable, so the warning
+   * still shows but only a *changed* value blocks the save.
+   */
+  const isLegacyIrcUntouched = !!existingVendor && (existingVendor.irc || '') === formData.irc;
+  const blocksSubmitOnIrc = !isIrcValid && !isLegacyIrcUntouched;
+
+  const focusMissingField = (which: 'material' | 'partner' | 'irc') => {
     setFieldError(which);
-    const target = which === 'material' ? materialFieldRef.current : partnerFieldRef.current;
+    const target =
+      which === 'material' ? materialFieldRef.current
+      : which === 'partner' ? partnerFieldRef.current
+      : ircFieldRef.current;
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     target?.querySelector<HTMLElement>('button, input, select')?.focus();
   };
@@ -292,6 +319,12 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
     if (!selectedManufacturerId && !selectedSupplierId) {
       focusMissingField('partner');
+      return;
+    }
+
+    // IRC stays optional, but a filled one must be the real 16-digit code.
+    if (blocksSubmitOnIrc) {
+      focusMissingField('irc');
       return;
     }
 
@@ -946,17 +979,59 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs">کد IRC یا شناسهٔ اختصاصی (اختیاری)</label>
+              <div className="space-y-1" ref={ircFieldRef}>
+                <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
+                  <span>کد IRC (اختیاری)</span>
+                  {ircDigits !== '' && (
+                    <span className={`text-[10px] font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                      {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
+                    </span>
+                  )}
+                </label>
                 <input
                   id="vf-irc"
-                  type="text" 
-                  dir="ltr" 
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring font-mono text-sm" 
-                  value={formData.irc} 
-                  onChange={e => setFormData({...formData, irc: e.target.value})} 
-                  placeholder="مثال: 1234567890"
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  maxLength={IRC_LENGTH}
+                  aria-invalid={!isIrcValid}
+                  aria-describedby="vf-irc-hint"
+                  className={`w-full bg-background border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 font-mono text-sm tracking-wider ${
+                    !blocksSubmitOnIrc
+                      ? 'border-border focus:ring-ring focus:border-ring'
+                      : 'border-rose-500 focus:ring-rose-500 focus:border-rose-500'
+                  }`}
+                  value={formData.irc}
+                  onChange={e => {
+                    // Keep only digits so a pasted code with dashes/spaces still lands correctly.
+                    const cleaned = toLatinDigits(e.target.value).replace(/\D/g, '').slice(0, IRC_LENGTH);
+                    setFormData({ ...formData, irc: cleaned });
+                    if (fieldError === 'irc') setFieldError(null);
+                  }}
+                  // The input is dir="ltr", so a Persian placeholder renders with its
+                  // parts reordered; the ۱۶-digit rule lives in the hint line instead.
+                  placeholder="1228123456789012"
                 />
+                {isIrcValid ? (
+                  <p id="vf-irc-hint" className="text-[11px] text-muted-foreground">
+                    کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
+                  </p>
+                ) : (
+                  <p
+                    id="vf-irc-hint"
+                    role="alert"
+                    className={`flex items-start gap-1.5 text-[11px] font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      {!blocksSubmitOnIrc
+                        ? `کد IRC ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
+                        : ircTooShort
+                          ? `کد IRC باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
+                          : `کد IRC باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
