@@ -376,7 +376,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       {/* HEADER & FILTER BAR */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-blue-600 font-mono text-xs uppercase tracking-wider">
+          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-mono text-xs uppercase tracking-wider">
             <Database className="w-4 h-4" />
             <span>Material Master Registry</span>
           </div>
@@ -479,7 +479,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <div className="flex items-center justify-center gap-1.5">
                         <button 
                           onClick={() => handleOpenView(material)} 
-                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100" 
+                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900 rounded-lg transition-colors border" 
                           title="مشاهده شناسنامه"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -487,7 +487,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         {can(currentUser, 'material.edit') && (
                           <button
                             onClick={() => handleOpenEdit(material)}
-                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-100"
+                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900 rounded-lg transition-colors border"
                             title="ویرایش"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -496,7 +496,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         {can(currentUser, 'material.delete') && (
                           <button 
                             onClick={() => handleDelete(material)} 
-                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-100" 
+                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900 rounded-lg transition-colors border" 
                             title="حذف"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -549,7 +549,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 {/* Sticky Top Header */}
                 <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 border flex items-center justify-center font-bold">
                       <Database className="w-5 h-5" />
                     </div>
                     <div>
@@ -572,13 +572,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 {/* Scrollable Form Body */}
                 <div className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
                   {formError && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-700 text-xs leading-relaxed animate-shake">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                    <div className="p-3.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl flex items-start gap-2.5 text-xs leading-relaxed fade-in">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-300" />
                       <div className="flex-1 font-medium">{formError}</div>
                       <button 
                         type="button" 
                         onClick={() => setFormError(null)} 
-                        className="text-rose-400 hover:text-rose-600"
+                        className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-200"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -588,14 +588,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   {/* بخش اول: نام‌گذاری و مشخصات شیمیایی */}
                   <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                     <div className="flex items-center gap-2 pb-2 border-b border-border">
-                      <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                      <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
                       <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش اول: نام‌گذاری و هویت شیمیایی</h3>
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          نام فارسی ماده <span className="text-rose-500">*</span>
+                          نام فارسی ماده <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <input 
                           type="text" 
@@ -609,7 +609,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          نام لاتین / ژنریک <span className="text-rose-500">*</span>
+                          نام لاتین / ژنریک <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <input 
                           type="text" 
@@ -624,7 +624,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          شماره CAS <span className="text-rose-500">*</span>
+                          شماره CAS <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <input 
                           type="text" 
@@ -656,14 +656,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   {/* بخش دوم: طبقه‌بندی و استانداردهای فارماکوپه‌ای */}
                   <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                     <div className="flex items-center gap-2 pb-2 border-b border-border">
-                      <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400"></span>
                       <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و فارماکوپه</h3>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          نقش ماده (Material Role) <span className="text-rose-500">*</span>
+                          نقش ماده (Material Role) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <select 
                           value={formData.role || 'API'} 
@@ -676,7 +676,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          فارماکوپه مرجع (Pharmacopoeia) <span className="text-rose-500">*</span>
+                          فارماکوپه مرجع (Pharmacopoeia) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <select 
                           value={formData.pharmacopoeia || 'USP'} 
@@ -692,14 +692,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   {/* بخش سوم: محصول نهایی، اسناد فنی و نام‌های استاندارد */}
                   <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                     <div className="flex items-center gap-2 pb-2 border-b border-border">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400"></span>
                       <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش سوم: محصول نهایی دارویی و فایل مشخصات فنی</h3>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          محصول نهایی (فارسی) <span className="text-rose-500">*</span>
+                          محصول نهایی (فارسی) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <input 
                           type="text" 
@@ -713,7 +713,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          محصول نهایی (لاتین) <span className="text-rose-500">*</span>
+                          محصول نهایی (لاتین) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
                         <input 
                           type="text" 
@@ -729,7 +729,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <div className="sm:col-span-2 space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">فایل پیوست Specification (اختیاری)</label>
                         <div className="flex flex-wrap items-center gap-3">
-                          <label className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border border-dashed rounded-xl text-xs cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-colors text-muted-foreground font-medium">
+                          <label className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border border-dashed rounded-xl text-xs cursor-pointer hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-300 transition-colors text-muted-foreground font-medium">
                             <Upload className="w-4 h-4 text-muted-foreground" />
                             <span>انتخاب فایل مشخصات فنی</span>
                             <input 
@@ -743,7 +743,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             />
                           </label>
                           {formData.specificationFile && (
-                            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl border border-blue-200">
+                            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-900 px-3 py-1.5 rounded-xl border">
                               <FileText className="w-4 h-4" />
                               <span className="text-[11px] font-mono font-bold truncate max-w-[240px]" dir="ltr">
                                 {formData.specificationFile}
@@ -751,7 +751,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                               <button 
                                 type="button" 
                                 onClick={() => setFormData({...formData, specificationFile: undefined})} 
-                                className="text-rose-500 hover:text-rose-700 p-0.5"
+                                className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 p-0.5"
                                 title="حذف فایل"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -764,22 +764,26 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* پیش‌نمایش نام‌های استاندارد */}
-                  <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 sm:p-5 rounded-2xl border border-slate-700 shadow-md space-y-3">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-700">
-                      <Sparkles className="w-4 h-4 text-blue-400" />
-                      <span className="text-xs font-bold text-slate-200">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
+                  {/* Inverted on purpose: this is system output, not an input, and it has to
+                      read that way in both themes. `foreground`/`background` swap
+                      together, unlike the fixed slate gradient that used to be
+                      here — which vanished into a dark page. */}
+                  <div className="bg-foreground text-background p-4 sm:p-5 rounded-2xl border border-border shadow-md space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-background/20">
+                      <Sparkles className="w-4 h-4 shrink-0" />
+                      <span className="text-xs font-bold">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی</label>
-                        <div className="w-full px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-lg text-xs text-slate-100 font-bold select-all">
+                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-bold select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name</label>
-                        <div className="w-full px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-lg text-xs text-slate-100 font-mono font-bold select-all" dir="ltr">
+                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
+                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-mono font-bold select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
                       </div>
@@ -793,7 +797,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-slate-200/60 rounded-xl transition-colors border border-border cursor-pointer"
+                    className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
                   >
                     انصراف
                   </button>
@@ -814,7 +818,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         {selectedMaterial && (<>
             <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 border flex items-center justify-center font-bold">
                   <Eye className="w-5 h-5" />
                 </div>
                 <div>
@@ -836,7 +840,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               {/* بخش اول – اطلاعات پایه */}
               <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border">
-                  <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                  <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
                   <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش اول: اطلاعات هویت و نام‌گذاری</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
@@ -862,7 +866,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               {/* بخش دوم – اطلاعات طبقه‌بندی و محصول نهایی */}
               <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border">
-                  <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                  <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400"></span>
                   <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش دوم: طبقه‌بندی دارویی و محصول نهایی</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
@@ -890,7 +894,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               {/* بخش سوم – اطلاعات استاندارد و اسناد فنی */}
               <div className="bg-muted/60 border border-border/80 rounded-xl p-4 sm:p-5 space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400"></span>
                   <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش سوم: نام‌های استاندارد و اسناد فنی</h3>
                 </div>
 
@@ -911,7 +915,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     {selectedMaterial.specificationFile ? (
                       <div className="flex items-center justify-between bg-card border border-border p-3 rounded-xl shadow-xs">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                          <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 flex items-center justify-center border">
                             <FileText className="w-5 h-5" />
                           </div>
                           <div className="font-mono text-xs font-bold text-foreground truncate max-w-[220px] sm:max-w-[320px]" dir="ltr">
@@ -919,11 +923,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          <label className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer" title="جایگزینی">
+                          <label className="p-2 text-amber-600 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer" title="جایگزینی">
                             <Upload className="w-4 h-4" />
                             <input type="file" className="hidden" onChange={handleReplaceSpec} />
                           </label>
-                          <button onClick={handleDeleteSpec} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="حذف">
+                          <button onClick={handleDeleteSpec} className="p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors" title="حذف">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -947,7 +951,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end shrink-0 shadow-xs">
               <button
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-foreground font-bold text-xs transition-colors cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-bold text-xs transition-colors cursor-pointer"
               >
                 بستن
               </button>
@@ -958,8 +962,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       {/* CUSTOM MATERIAL DELETE MODAL with Portal */}
       <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm" className="p-6" ariaLabel="تأیید حذف ماده اولیه">
         {materialToDelete && (<>
-            <div className="flex items-center gap-3 text-rose-600 mb-4">
-              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
+              <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
                 <Trash2 className="w-5 h-5" />
               </div>
               <h3 className="text-base font-black text-foreground">حذف ماده اولیه</h3>
@@ -968,14 +972,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <div className="space-y-4">
               {connectedVendors.length > 0 ? (
                 <>
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs leading-relaxed">
+                  <div className="p-3 bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/50 dark:border-amber-900 dark:text-amber-200 border rounded-xl text-xs leading-relaxed">
                     <strong>خطای یکپارچگی داده‌ها (ALCOA+):</strong> امکان حذف این ماده به علت وجود وابستگی در سورس‌های فعال وجود ندارد. ابتدا باید وابستگی سورس‌های زیر را برطرف نمایید:
                   </div>
                   <div className="max-h-40 overflow-y-auto divide-y divide-border border border-border rounded-xl p-2 bg-muted">
                     {connectedVendors.map(vendor => (
                       <div key={vendor.id} className="py-2 px-2 text-xs text-foreground flex justify-between items-center">
                         <span className="font-bold">{vendor.name}</span>
-                        <span className="font-mono bg-slate-200/70 px-2 py-0.5 rounded text-[10px] text-foreground">
+                        <span className="font-mono bg-background border border-border px-2 py-0.5 rounded text-[10px] text-foreground">
                           {categoryLabels[vendor.category as keyof typeof categoryLabels]?.fa || vendor.category}
                         </span>
                       </div>
@@ -984,7 +988,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <div className="flex justify-end pt-2">
                     <button 
                       onClick={() => setMaterialToDelete(null)} 
-                      className="w-full sm:w-auto px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all"
+                      className="w-full sm:w-auto px-4 py-2 bg-muted hover:bg-accent border border-border text-foreground rounded-xl text-xs font-bold transition-all"
                     >
                       متوجه شدم
                     </button>
@@ -999,7 +1003,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <div className="flex items-center justify-end gap-2 pt-2">
                     <button 
                       onClick={() => setMaterialToDelete(null)} 
-                      className="px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                      className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
                     >
                       انصراف
                     </button>
@@ -1021,8 +1025,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* CUSTOM SPEC FILE DELETE MODAL with Portal */}
       <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm" className="p-6" ariaLabel="تأیید حذف فایل Specification">
-            <div className="flex items-center gap-3 text-rose-600 mb-4">
-              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0 border border-rose-100">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
+              <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
                 <FileText className="w-5 h-5" />
               </div>
               <h3 className="text-base font-black text-foreground">حذف فایل پیوست Specification</h3>
@@ -1035,7 +1039,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button 
                   onClick={() => setSpecToDelete(false)} 
-                  className="px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                  className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
                 >
                   انصراف
                 </button>
