@@ -1745,8 +1745,20 @@ export default function App() {
                 )}
               </div>
 
-              {currentUser?.role === 'admin' && (
-                <Button 
+              {/* `users.manage` is the policy table's name for "administers the
+                  system", so this is the same audience as the old
+                  `role === 'admin'` test — but read from the one table both the
+                  UI and the server use, and it follows a per-user exception
+                  instead of ignoring it (rule 14).
+
+                  Note this gate is a deliberate house rule, not a security
+                  boundary: the file is built in the browser from `db`, which
+                  `GET /api/vendors` already serves to every signed-in user. A
+                  server permission cannot be added for it without inventing one
+                  no endpoint enforces — the mistake `archive.read` was deleted
+                  for. */}
+              {can(currentUser, 'users.manage') && (
+                <Button
                   variant="outline"
                   size="sm"
                   onClick={handleDownloadBackup}
