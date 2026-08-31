@@ -1272,7 +1272,7 @@ async function startServer() {
         description: "تلاش ناموفق برای ورود به سیستم: عدم ارسال نام کاربری یا کلمه عبور",
         reasonForChange: "عدم ارسال مشخصات ورودی (Missing Credentials)",
         beforeData: null,
-        afterData: { attemptedUsername: username || null, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: username || null }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
       return res.status(400).json({ error: "نام کاربری و کلمهٔ عبور را وارد کنید." });
@@ -1297,7 +1297,7 @@ async function startServer() {
         description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${username}: کاربر یافت نشد`,
         reasonForChange: "نام کاربری نادرست یا تعریف نشده در پایگاه داده",
         beforeData: null,
-        afterData: { attemptedUsername: username, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
@@ -1323,7 +1323,7 @@ async function startServer() {
         description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${matchedUser.username}: کلمه عبور اشتباه است`,
         reasonForChange: "کلمه عبور وارد شده با هش ذخیره شده مطابقت ندارد",
         beforeData: null,
-        afterData: { attemptedUsername: matchedUser.username, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: matchedUser.username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
@@ -1349,7 +1349,7 @@ async function startServer() {
         description: `تلاش برای ورود با حساب کاربری غیرفعال ${matchedUser.username}`,
         reasonForChange: "حساب کاربری توسط مدیر سیستم غیرفعال شده است",
         beforeData: null,
-        afterData: { attemptedUsername: matchedUser.username, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: matchedUser.username }
       }).catch(err => console.error("Audit for inactive login failed:", err));
 
       return res.status(403).json({ error: "این حساب کاربری غیرفعال است. با مدیر سیستم تماس بگیرید." });
@@ -1392,7 +1392,7 @@ async function startServer() {
       description: `ورود موفقیت‌آمیز کاربر ${matchedUser.name} (${matchedUser.username}) به سامانه`,
       reasonForChange: "احراز هویت موفق با کلمه عبور و تولید کلید JWT",
       beforeData: null,
-      afterData: { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, ip: ipAddress, device: userAgent }
+      afterData: { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name }
     }).catch(err => console.error("Audit logging failed on login:", err));
 
     res.json({
@@ -1448,7 +1448,7 @@ async function startServer() {
         description: `خروج موفقیت‌آمیز کاربر ${req.user.name} (${req.user.username}) از سامانه`,
         reasonForChange: "ارسال درخواست خروج صریح از سوی کاربر",
         beforeData: { sessionStatus: "Active" },
-        afterData: { sessionStatus: "Logged Out", ip: ipAddress, device: userAgent }
+        afterData: { sessionStatus: "Logged Out" }
       });
 
       res.json({ success: true, message: "با موفقیت از سیستم خارج شدید" });
@@ -2980,7 +2980,35 @@ async function startServer() {
         return res.status(400).json({ error: "فیلدهای username، name و role الزامی هستند." });
       }
 
-      const key = username.toLowerCase();
+      // These rules used to live only in the React form, so the endpoint itself
+      // accepted a username with spaces, a one-character password, an unknown
+      // role (silently coerced to `commercial` while the response echoed back
+      // the invalid one) and permission names that exist nowhere. Rule 14: the
+      // server is where access rules are enforced, the form is only UX.
+      const cleanName = String(name).trim();
+      if (!cleanName) {
+        return res.status(400).json({ error: "نام و نام خانوادگی الزامی است." });
+      }
+      const key = String(username).trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,}$/.test(key)) {
+        return res.status(400).json({
+          error: "نام کاربری باید حداقل ۳ کاراکتر و فقط شامل حروف لاتین، عدد، نقطه، خط تیره یا زیرخط باشد.",
+        });
+      }
+      if (!ALLOWED_USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `سمت سازمانی نامعتبر است. مقادیر مجاز: ${ALLOWED_USER_ROLES.join("، ")}`,
+        });
+      }
+      // An omitted password falls back to the shared default, which the account
+      // must change on first sign-in; a supplied one has to be a real password.
+      if (password !== undefined && String(password).length < 6) {
+        return res.status(400).json({ error: "کلمه عبور اولیه باید حداقل ۶ کاراکتر باشد." });
+      }
+      if (permissions !== undefined && !Array.isArray(permissions)) {
+        return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
+      }
+
       if (await getUserByUsername(key)) {
         return res.status(400).json({ error: "کاربری با این نام کاربری قبلاً تعریف شده است." });
       }
@@ -2988,18 +3016,20 @@ async function startServer() {
       const uSalt = generateSalt();
       const uPassword = password || "123456";
       const newUser = {
-        username: username,
-        name: name,
-        role: role,
-        permissions: permissions || [],
+        username: key,
+        name: cleanName,
+        role: role as UserRoleValue,
+        // Unknown names are dropped rather than stored, exactly as in PATCH and
+        // PUT /permissions — this was the one write path that skipped it.
+        permissions: sanitizePermissions(permissions),
         mustChangePassword: true
       };
 
       await requirePrisma().user.create({
         data: {
           username: key,
-          name,
-          role: normalizeUserRole(role) as any,
+          name: cleanName,
+          role: newUser.role as any,
           passwordHash: hashPassword(uPassword, uSalt),
           passwordSalt: uSalt,
           permissions: newUser.permissions,
@@ -3019,19 +3049,31 @@ async function startServer() {
         module: "مدیریت کاربران",
         action: "CREATE_USER",
         severity: "Information",
-        description: `کاربر جدید با نام کاربری ${username} و سمت ${role} توسط ${req.user.name} ایجاد شد.`,
+        description: `کاربر جدید با نام کاربری ${key} و سمت ${newUser.role} توسط ${req.user.name} ایجاد شد.`,
         entityType: "User",
-        entityId: username,
-        entityName: name,
+        entityId: key,
+        entityName: cleanName,
         eventType: "Authorization",
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "تعریف دسترسی پرسنل جدید فرآیندی",
         beforeData: null,
-        afterData: { username, name, role, permissions: newUser.permissions, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { username: key, name: cleanName, role: newUser.role, permissions: newUser.permissions }
       });
 
-      res.json({ success: true, user: { username, name, role, permissions: newUser.permissions } });
+      // The stored record, not the submitted one: the response used to echo the
+      // request back, so an invalid role reached the client as if it had been
+      // accepted and the table showed it until the next reload.
+      res.json({
+        success: true,
+        user: {
+          username: key,
+          name: cleanName,
+          role: newUser.role,
+          permissions: newUser.permissions,
+          effectivePermissions: effectivePermissions({ role: newUser.role, permissions: newUser.permissions } as any),
+        },
+      });
     } catch (err: any) {
       console.error("Failed to create user:", err);
       res.status(500).json({ error: err.message });
@@ -3103,7 +3145,7 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "بروزرسانی سمت سازمانی / دسترسی‌های سیستمی",
         beforeData: originalData,
-        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false }
       });
 
       res.json({
@@ -3179,15 +3221,30 @@ async function startServer() {
       if (!role) {
         return res.status(400).json({ error: "فیلد role الزامی است" });
       }
+      if (!ALLOWED_USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `سمت سازمانی نامعتبر است. مقادیر مجاز: ${ALLOWED_USER_ROLES.join("، ")}`,
+        });
+      }
 
       const unsafeRole = await checkAdminSafety(req.user, targetUsername, { role });
       if (unsafeRole) return res.status(400).json({ error: unsafeRole });
 
       const oldRole = current.role;
+      const oldPermissions = sanitizePermissions(current.permissions);
+      const roleChanged = role !== oldRole;
       current.role = role;
+      // The same rule PATCH follows: a new role starts from its own template,
+      // so the previous job's exceptions do not follow the person. This route
+      // used to keep them, which meant the two ways of changing a role left the
+      // account in different states.
+      if (roleChanged) current.permissions = [];
       await requirePrisma().user.update({
         where: { username: targetUsername },
-        data: { role: normalizeUserRole(role) as any },
+        data: {
+          role: role as any,
+          ...(roleChanged ? { permissions: [] } : {}),
+        },
       });
 
       const now = new Date();
@@ -3209,11 +3266,11 @@ async function startServer() {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "ارتقای سطح دسترسی سازمانی",
-        beforeData: { role: oldRole },
-        afterData: { role, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        beforeData: { role: oldRole, permissions: oldPermissions },
+        afterData: { role, permissions: current.permissions ?? [] }
       });
 
-      res.json({ success: true, role });
+      res.json({ success: true, role, permissionsReset: roleChanged && oldPermissions.length > 0 });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -3269,7 +3326,7 @@ async function startServer() {
         reasonForChange: reasonForChange || "بازنشانی کلمه عبور به درخواست کاربر",
         // The password itself is never recorded — only the fact of the reset.
         beforeData: { mustChangePassword: current.mustChangePassword !== false },
-        afterData: { mustChangePassword: true, passwordReset: true, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { mustChangePassword: true, passwordReset: true }
       });
 
       res.json({ success: true });
@@ -3328,7 +3385,7 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "تغییر اختیارات فرآیندی در ماژول‌های سامانه",
         beforeData: { permissions: oldPermissions },
-        afterData: { permissions: cleaned, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { permissions: cleaned }
       });
 
       res.json({ success: true, permissions: cleaned });

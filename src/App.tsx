@@ -1550,29 +1550,36 @@ export default function App() {
             <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
             </div>
-            {currentUser?.role === 'admin' && (
-              <>
-                <SidebarButton collapsed={sidebarCollapsed}
-                  icon={Archive} label="آرشیو کامل داده‌ها"
-                  badge={db.length}
-                  variant="archive"
-                  active={view === 'archive'} 
-                  onClick={() => navigate('archive')} 
-                />
-                <SidebarButton collapsed={sidebarCollapsed}
-                  icon={History} label="ردیابی تغییرات"
-                  alert={criticalAuditCount}
-                  variant="audit-trail"
-                  active={view === 'audit-trail'} 
-                  onClick={() => navigate('audit-trail')} 
-                />
-                <SidebarButton collapsed={sidebarCollapsed}
-                  icon={UserCog} label="مدیریت کاربران"
-                  variant="audit-trail"
-                  active={view === 'users'}
-                  onClick={() => navigate('users')}
-                />
-              </>
+            {/* Each entry is gated by the permission its page and endpoints
+                actually check, not by `role === 'admin'`. A raw role test here
+                diverged from the pages themselves: someone holding the
+                `users.manage` exception was allowed by the page but never saw
+                the link, and the archive — which every signed-in user may read,
+                see the note on the `archive` branch — was hidden from everyone
+                but admins (rule 14: one policy table, both sides). */}
+            <SidebarButton collapsed={sidebarCollapsed}
+              icon={Archive} label="آرشیو کامل داده‌ها"
+              badge={db.length}
+              variant="archive"
+              active={view === 'archive'}
+              onClick={() => navigate('archive')}
+            />
+            {can(currentUser, 'audit.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={History} label="ردیابی تغییرات"
+                alert={criticalAuditCount}
+                variant="audit-trail"
+                active={view === 'audit-trail'}
+                onClick={() => navigate('audit-trail')}
+              />
+            )}
+            {can(currentUser, 'users.manage') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={UserCog} label="مدیریت کاربران"
+                variant="audit-trail"
+                active={view === 'users'}
+                onClick={() => navigate('users')}
+              />
             )}
             <SidebarButton collapsed={sidebarCollapsed}
               icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
@@ -1869,7 +1876,7 @@ export default function App() {
                             </span>
                             <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
                           </button>
-                          {currentUser.role === 'admin' && (
+                          {can(currentUser, 'users.manage') && (
                             <button
                               onClick={() => { setShowUserMenu(false); navigate('users'); }}
                               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"

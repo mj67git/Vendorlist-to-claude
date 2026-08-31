@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, CheckCircle, KeyRound, Loader2, Pencil, Plus, Search,
-  ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX, Users as UsersIcon,
+  AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle, KeyRound, Loader2,
+  Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
+  Users as UsersIcon,
 } from 'lucide-react';
+import { EntityName } from './EntityName';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { Role, User } from '../types';
@@ -21,6 +23,13 @@ const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string }> = [
 
 /** Scoring is listed separately: it is per department, not per action. */
 const SCORE_PERMISSIONS: Permission[] = ['score.commercial', 'score.qa', 'score.planning', 'score.finance'];
+
+/** Whether two permission lists grant the same thing, order aside. */
+function samePermissions(a: Permission[], b: Permission[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every(p => set.has(p));
+}
 
 /** The distinct permissions a module row can actually toggle. */
 function modulePermissions(module: PermissionModule): Permission[] {
@@ -74,6 +83,42 @@ function formatLastLogin(value: string | null): string {
   }).format(d);
 }
 
+type SortField = 'name' | 'username' | 'role' | 'status' | 'lastLogin';
+type SortOrder = 'asc' | 'desc';
+
+/** Same sortable header as the materials, partners and audit tables. */
+const SortHeader: React.FC<{
+  field: SortField;
+  label: string;
+  center?: boolean;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  onSort: (f: SortField) => void;
+}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
+  const active = sortField === field;
+  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      scope="col"
+      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
+      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={`مرتب‌سازی بر اساس ${label}`}
+        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
+      >
+        <span>{label}</span>
+        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </th>
+  );
+};
+
+/** Persian names sort by the Persian alphabet, not by code point. */
+const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
+
 type Draft = { username: string; name: string; role: Role; password: string };
 
 const EMPTY_DRAFT: Draft = { username: '', name: '', role: 'commercial', password: '' };
@@ -87,6 +132,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedUser | null>(null);
@@ -142,14 +191,56 @@ export function UsersView({ currentUser }: UsersViewProps) {
           u.name.toLowerCase().includes(q) ||
           (ROLE_LABELS[u.role] || '').includes(q))
       : users;
-    // Admins first, then deactivated accounts last, then alphabetical.
-    return [...rows].sort((a, b) =>
-      Number(b.isActive) - Number(a.isActive) ||
-      Number(b.role === 'admin') - Number(a.role === 'admin') ||
-      a.name.localeCompare(b.name, 'fa'));
-  }, [users, search]);
+
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    const value = (u: ManagedUser): string | number => {
+      switch (sortField) {
+        case 'username': return u.username;
+        case 'role': return ROLE_LABELS[u.role] || u.role;
+        // Deactivated accounts are the interesting end of this column, so
+        // "ascending" puts active first and pushes them to the bottom.
+        case 'status': return u.isActive ? 0 : 1;
+        // "Never signed in" sorts as the oldest possible moment rather than
+        // being dropped somewhere arbitrary.
+        case 'lastLogin': return u.lastLoginAt ? new Date(u.lastLoginAt).getTime() : 0;
+        default: return u.name;
+      }
+    };
+
+    return [...rows].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : collator.compare(String(av), String(bv));
+      // Ties fall back to the name so the order never shuffles between renders.
+      return (cmp || collator.compare(a.name, b.name)) * dir;
+    });
+  }, [users, search, sortField, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / perPage));
+  const pageRows = useMemo(
+    () => visible.slice((page - 1) * perPage, page * perPage),
+    [visible, page, perPage],
+  );
+
+  // A filter or a page-size change can leave the current page past the end.
+  useEffect(() => { setPage(p => Math.min(p, totalPages)); }, [totalPages]);
+
+  const handleSort = (field: SortField) => {
+    if (field === sortField) {
+      setSortOrder(o => (o === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+    setPage(1);
+  };
 
   const activeAdmins = users.filter(u => u.role === 'admin' && u.isActive).length;
+  const activeCount = users.filter(u => u.isActive).length;
+  const customCount = users.filter(u => u.permissions.length > 0).length;
+  const neverSignedIn = users.filter(u => !u.lastLoginAt).length;
 
   const openCreate = () => {
     setEditing(null);
@@ -277,9 +368,15 @@ export function UsersView({ currentUser }: UsersViewProps) {
     if (!permTarget) return;
     setPermError(null);
     setPermSaving(true);
+    // An empty list means "follow the role", so a draft that matches the role's
+    // template is sent as one. Sending the expanded list instead pinned the
+    // account to a snapshot of the template — the "سفارشی" badge appeared and a
+    // Critical audit record was written for opening the dialog and pressing
+    // save without touching anything.
+    const body = samePermissions(permDraft, roleTemplate(permTarget.role)) ? [] : permDraft;
     authFetch(`/api/users/${encodeURIComponent(permTarget.username)}/permissions`, {
       method: 'PUT',
-      body: JSON.stringify({ permissions: permDraft }),
+      body: JSON.stringify({ permissions: body }),
     })
       .then(async res => {
         const data = await res.json().catch(() => ({}));
@@ -332,7 +429,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="جستجوی کاربر..."
               className="bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-56"
             />
@@ -346,6 +443,26 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <span>کاربر جدید</span>
           </button>
         </div>
+      </div>
+
+      {/* KPI STRIP — the same four-card shape the other repositories use. The
+          numbers are counted from the loaded list, so they never claim more
+          than the table can show. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'کل کاربران', value: users.length, hint: 'حساب تعریف‌شده در سامانه' },
+          { label: 'حساب فعال', value: activeCount, hint: `${(users.length - activeCount).toLocaleString('fa-IR')} حساب غیرفعال` },
+          { label: 'مدیر فعال', value: activeAdmins, hint: 'دارندهٔ دسترسی کامل' },
+          { label: 'دسترسی سفارشی', value: customCount, hint: `${neverSignedIn.toLocaleString('fa-IR')} حساب هنوز وارد نشده` },
+        ].map(card => (
+          <div key={card.label} className="bg-card border border-border rounded-2xl p-4 shadow-xs">
+            <span className="text-[11px] font-bold text-muted-foreground block">{card.label}</span>
+            <span className="text-xl font-black text-foreground block mt-1">
+              {loading ? '—' : card.value.toLocaleString('fa-IR')}
+            </span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">{card.hint}</span>
+          </div>
+        ))}
       </div>
 
       {toast && (
@@ -365,25 +482,32 @@ export function UsersView({ currentUser }: UsersViewProps) {
       {/* TABLE */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-right">
+          <table className="w-full text-xs text-right" aria-busy={loading}>
+            <caption className="sr-only">فهرست کاربران سامانه با امکان مرتب‌سازی بر اساس هر ستون</caption>
             <thead>
               <tr className="bg-muted text-muted-foreground border-b border-border">
-                <th className="py-3.5 px-4 font-bold">نام و نام خانوادگی</th>
-                <th className="py-3.5 px-4 font-bold">نام کاربری</th>
-                <th className="py-3.5 px-4 font-bold">سمت سازمانی</th>
-                <th className="py-3.5 px-4 font-bold">وضعیت</th>
-                <th className="py-3.5 px-4 font-bold">آخرین ورود</th>
-                <th className="py-3.5 px-4 font-bold text-center">عملیات</th>
+                <SortHeader field="name" label="نام و نام خانوادگی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="username" label="نام کاربری" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="role" label="سمت سازمانی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="status" label="وضعیت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="lastLogin" label="آخرین ورود" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <th scope="col" className="py-3.5 px-4 font-bold text-center">عملیات</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                    <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
-                    <span>در حال دریافت فهرست کاربران...</span>
-                  </td>
-                </tr>
+                // Skeleton rows in the shape of the real table, rather than a
+                // spinner on an empty page — the layout does not jump when the
+                // data lands.
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-b border-border/60 last:border-0">
+                    {Array.from({ length: 6 }).map((__, c) => (
+                      <td key={c} className="py-3.5 px-4">
+                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 5 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
               ) : loadError ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground">
@@ -394,16 +518,19 @@ export function UsersView({ currentUser }: UsersViewProps) {
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                    <UsersIcon className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <span>کاربری با این مشخصات یافت نشد.</span>
+                    <UsersIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
+                    <span>{search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}</span>
                   </td>
                 </tr>
-              ) : visible.map(u => (
+              ) : pageRows.map(u => (
                 <tr key={u.username} className={`border-b border-border/60 last:border-0 hover:bg-accent/50 transition-colors ${u.isActive ? '' : 'opacity-60'}`}>
                   <td className="py-3 px-4 font-bold text-foreground">
-                    <div className="flex items-center gap-2">
-                      <span>{u.name}</span>
-                      {isSelf(u) && <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
+                    {/* The badge must not squeeze the name: it never shrinks,
+                        so without wrap all the pressure lands on the name
+                        (rule 15). */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <EntityName name={u.name} lines={2} className="max-w-[22ch]" />
+                      {isSelf(u) && <span className="shrink-0 text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground" dir="ltr">{u.username}</td>
@@ -475,10 +602,46 @@ export function UsersView({ currentUser }: UsersViewProps) {
         </div>
 
         {!loading && !loadError && (
-          <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span>مجموع {users.length} کاربر · {activeAdmins} مدیر فعال</span>
-            <span>حذف کاربر، سوابق او در Audit را پاک نمی‌کند؛ برای قطع دسترسی، غیرفعال‌سازی توصیه می‌شود.</span>
-          </div>
+          <>
+            {visible.length > 0 && (
+              <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
+                <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+                  <span>تعداد در هر صفحه</span>
+                  <select
+                    value={perPage}
+                    onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <span className="text-[11px] text-muted-foreground sm:mr-auto">
+                  نمایش {((page - 1) * perPage + 1).toLocaleString('fa-IR')}
+                  {' '}تا {Math.min(page * perPage, visible.length).toLocaleString('fa-IR')}
+                  {' '}از {visible.length.toLocaleString('fa-IR')} کاربر
+                </span>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      قبلی
+                    </button>
+                    <span className="text-[11px] font-mono text-muted-foreground px-1">
+                      {page.toLocaleString('fa-IR')} / {totalPages.toLocaleString('fa-IR')}
+                    </span>
+                    <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      بعدی
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span>مجموع {users.length} کاربر · {activeAdmins} مدیر فعال</span>
+              <span>حذف کاربر، سوابق او در Audit را پاک نمی‌کند؛ برای قطع دسترسی، غیرفعال‌سازی توصیه می‌شود.</span>
+            </div>
+          </>
         )}
       </div>
 
@@ -836,8 +999,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
                   انصراف
                 </button>
-                <button type="button" onClick={savePermissions} disabled={permSaving}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 flex items-center gap-2">
+                <button type="button" onClick={savePermissions}
+                  disabled={permSaving || samePermissions(permDraft, permTarget.effectivePermissions)}
+                  title={samePermissions(permDraft, permTarget.effectivePermissions) ? 'تغییری نسبت به وضعیت فعلی داده نشده است.' : undefined}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
                   {permSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   ذخیره سطح دسترسی
                 </button>
