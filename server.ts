@@ -2239,7 +2239,6 @@ async function startServer() {
           financeScore: prevScores.finance,
           commercialScore: prevScores.commercial,
           planningScore: prevScores.planning,
-          scores: prevScores,
           status: current.status
         },
         afterData: {
@@ -2249,7 +2248,6 @@ async function startServer() {
           financeScore: newScores.finance,
           commercialScore: newScores.commercial,
           planningScore: newScores.planning,
-          scores: newScores,
           status: result.status
         }
       }).catch(err => console.error("Audit logging failed on scores update:", err));
@@ -2308,7 +2306,35 @@ async function startServer() {
       };
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
-      console.log(`[UnifiedDB] Append/Saved audit log events for vendor: ${id}`);
+
+      // This was the only write endpoint in the API that left no audit record,
+      // so editing or deleting an entry in a source's activity log was the one
+      // change in the system with no trace behind it.
+      const prevLogs = current.activityLogs || [];
+      const nextLogs = updatedVendor.activityLogs || [];
+      if (JSON.stringify(prevLogs) !== JSON.stringify(nextLogs)) {
+        const userObj = req.user || {};
+        const now = new Date();
+        await AuditService.createAuditRecord({
+          auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          correlationId: crypto.randomUUID(),
+          userId: userObj.username || 'system',
+          userName: userObj.name || userObj.username || 'کاربر سیستم',
+          role: userObj.role || 'user',
+          module: "Source Management",
+          entityType: "ActivityLog",
+          entityId: id,
+          entityName: current.name || id,
+          action: nextLogs.length >= prevLogs.length ? "Create" : "Delete",
+          severity: nextLogs.length < prevLogs.length ? "Warning" : "Information",
+          description: nextLogs.length >= prevLogs.length
+            ? `ثبت سابقهٔ فعالیت برای سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`
+            : `حذف سابقهٔ فعالیت از سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`,
+          reasonForChange: (req.body?.reasonForChange as string) || "ویرایش سوابق فعالیت سورس",
+          beforeData: { activityLogCount: prevLogs.length, activityLogs: prevLogs },
+          afterData: { activityLogCount: nextLogs.length, activityLogs: nextLogs },
+        }).catch(err => console.error("Audit logging failed on activity logs update:", err));
+      }
       res.json({ success: true, part: "logs", vendor: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

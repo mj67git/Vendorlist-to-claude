@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Search, Filter, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, X, Eye, 
+  Search, Filter, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, X, Eye, 
   Clock, ShieldAlert, CheckCircle, AlertTriangle, FileText, 
   Activity, User as UserIcon, HelpCircle, Layers, ClipboardList,
   RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
@@ -123,6 +123,12 @@ const fieldKeyLabels: Record<string, string> = {
   riskScore: 'RPN', sri: 'SRI', decision: 'تصمیم', deviationReason: 'انحراف', qcCode: 'کد QC',
   evaluator: 'ارزیاب', role: 'نقش', username: 'نام کاربری', mustChangePassword: 'اجبار تغییر رمز',
   initialSampleStatus: 'وضعیت اولیهٔ نمونه', rejectionReasons: 'دلایل رد', totalScore: 'امتیاز کل',
+  // Source selection (PUT /api/source-selections) and risk assessment.
+  vendorId: 'سورس منتخب', materialKey: 'ماده', reason: 'دلیل انتخاب', decidedBy: 'تصمیم‌گیرنده',
+  rpn: 'RPN', SRI: 'SRI', materialCriticality: 'بحرانیت ماده', detectability: 'قابلیت تشخیص',
+  probability: 'احتمال وقوع', sps: 'امتیاز SPS', date: 'تاریخ',
+  commercialScore: 'امتیاز بازرگانی', qualityScore: 'امتیاز کیفی',
+  planningScore: 'امتیاز برنامه‌ریزی', financeScore: 'امتیاز مالی',
 };
 
 /**
@@ -148,24 +154,80 @@ function jalaliToIso(jalaliStr: string, edge: 'start' | 'end'): string {
 
 const fmtVal = (v: any): string => {
   if (v === null || v === undefined || v === '') return '—';
+  if (Array.isArray(v)) return `${v.length} مورد`;
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 };
 
-// Compute the changed fields between two audit snapshots.
-function computeFieldDiff(before: any, after: any): { key: string; label: string; from: string; to: string; kind: 'added' | 'removed' | 'changed' }[] {
-  const bef = before && typeof before === 'object' ? before : {};
-  const aft = after && typeof after === 'object' ? after : {};
+/**
+ * Metadata that describes the event rather than the change. It lives in its own
+ * columns now, but records written before that still carry it inside
+ * `after_data`, where it would otherwise read as a set of added fields.
+ */
+const META_KEYS = new Set(['ipAddress', 'userAgent', 'eventType', 'ip', 'device']);
+
+const isPlainObject = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Whether a record documents an action rather than a data change.
+ *
+ * A sign-in has no "before": its `afterData` describes who signed in, so the
+ * diff rendered the actor's name, role and username as three "added fields" —
+ * a change list for something that changed nothing. These records get a plain
+ * sentence instead, and their details stay in the technical section.
+ */
+const AUTH_ACTIONS = new Set(['LOGIN', 'Login', 'LOGOUT', 'Logout', 'FAILED_LOGIN']);
+const isNonDataEvent = (log: { action?: string; module?: string; before?: any }) =>
+  !log.before && (AUTH_ACTIONS.has(log.action || '') || log.module === 'احراز هویت');
+
+export interface FieldDiffRow {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+  kind: 'added' | 'removed' | 'changed';
+}
+
+/**
+ * The fields that differ between two audit snapshots.
+ *
+ * Nested objects are walked rather than stringified: a score record holds the
+ * four department scores in one object, and comparing them as JSON turned a
+ * single changed number into one unreadable line of `{"commercial":80,…}` →
+ * `{"commercial":90,…}`. Walking names the field that actually moved.
+ */
+export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDiffRow[] {
+  const bef = isPlainObject(before) ? before : {};
+  const aft = isPlainObject(after) ? after : {};
   const keys = Array.from(new Set([...Object.keys(bef), ...Object.keys(aft)]));
-  const rows: { key: string; label: string; from: string; to: string; kind: 'added' | 'removed' | 'changed' }[] = [];
+  const rows: FieldDiffRow[] = [];
+
   for (const k of keys) {
-    const from = fmtVal(bef[k]);
-    const to = fmtVal(aft[k]);
+    if (!prefix && META_KEYS.has(k)) continue;
+
+    const bv = bef[k];
+    const av = aft[k];
+    if (isPlainObject(bv) || isPlainObject(av)) {
+      rows.push(...computeFieldDiff(bv, av, prefix ? `${prefix}.${k}` : k));
+      continue;
+    }
+
+    const from = fmtVal(bv);
+    const to = fmtVal(av);
     if (from === to) continue;
-    const inBef = k in bef && bef[k] !== null && bef[k] !== undefined && bef[k] !== '';
-    const inAft = k in aft && aft[k] !== null && aft[k] !== undefined && aft[k] !== '';
-    const kind = !inBef ? 'added' : !inAft ? 'removed' : 'changed';
-    rows.push({ key: k, label: fieldKeyLabels[k] || k, from, to, kind });
+
+    const path = prefix ? `${prefix}.${k}` : k;
+    const inBef = k in bef && bv !== null && bv !== undefined && bv !== '';
+    const inAft = k in aft && av !== null && av !== undefined && av !== '';
+    rows.push({
+      key: path,
+      // A nested field is labelled by its own name, with the parent kept for
+      // context when there is no Persian label for it.
+      label: fieldKeyLabels[k] || (prefix ? `${fieldKeyLabels[prefix] || prefix} · ${k}` : k),
+      from,
+      to,
+      kind: !inBef ? 'added' : !inAft ? 'removed' : 'changed',
+    });
   }
   return rows;
 }
@@ -336,8 +398,10 @@ export const AuditTrailView: React.FC = () => {
             reason: l.reasonForChange || 'تایید فرآیندی',
             correlationId: l.correlationId || 'N/A',
             eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
-            ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '127.0.0.1',
-            userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || 'Unknown Browser/Device',
+            // Read from the record's own columns; the `afterData` lookups are
+            // the fallback for rows written before those columns existed.
+            ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '—',
+            userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || '—',
           };
         });
 
@@ -956,413 +1020,46 @@ export const AuditTrailView: React.FC = () => {
 
             {/* Drawer Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {/* Core Information Cards */}
-              <div className="grid grid-cols-2 gap-3.5 bg-muted p-4 rounded-xl border border-border">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground font-bold block">کاربر ثبت‌کننده:</span>
-                  <span className="text-xs font-bold text-foreground">{selectedLog.user}</span>
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground font-bold block">سمت سازمانی:</span>
-                  <span className="text-xs font-bold text-muted-foreground">{roleLabels[selectedLog.role] || selectedLog.role}</span>
-                </div>
-                <div className="space-y-0.5 pt-2 border-t border-border/50">
-                  <span className="text-[10px] text-muted-foreground font-bold block">تاریخ و ساعت:</span>
-                  <span className="text-xs font-bold text-foreground font-mono">{selectedLog.date} - {selectedLog.time}</span>
-                </div>
-                <div className="space-y-0.5 pt-2 border-t border-border/50">
-                  <span className="text-[10px] text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
-                  <span className="text-xs font-mono font-bold text-muted-foreground">{selectedLog.correlationId}</span>
-                </div>
-              </div>
-
-              {/* Scope cards */}
+              {/* What changed, first.
+              
+                  The panel used to open on ten rows of metadata — event category,
+                  module, target, action, IP, device, severity — and put the before/
+                  after comparison last, past three specialist cards. A reviewer opens
+                  an audit record to see what changed; everything else is context for
+                  that, so it now sits below, in a section that starts closed. */}
               <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">گروه رویداد (Event Category):</span>
-                  <span className="font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 dark:bg-cyan-950/50 dark:text-cyan-200 dark:border-cyan-900 px-2 py-0.5 rounded-md">
-                    {selectedLog.eventType || 'User Activity'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">ماژول مربوطه:</span>
-                  <span className="font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{AUDIT_MODULE_LABELS[selectedLog.module] || selectedLog.module}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">عنوان هدف:</span>
-                  <span className="font-bold text-foreground">{selectedLog.recordName}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">نوع اکشن:</span>
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${actionLabels[selectedLog.action]?.bg || 'bg-muted text-foreground'}`}>
-                    {actionLabels[selectedLog.action]?.label || selectedLog.action}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
-                  <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress || '127.0.0.1'}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">دستگاه / مرورگر:</span>
-                  <span className="font-mono text-[10px] font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
-                    {selectedLog.userAgent || 'Chrome / Windows'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground font-bold">سطح بحرانیت:</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${severityLabels[selectedLog.severity]?.bg || 'bg-muted text-foreground'}`}>
-                    <CheckCircle className="w-3 h-3" />
-                    {severityLabels[selectedLog.severity]?.label || selectedLog.severity}
-                  </span>
-                </div>
-              </div>
-
-              {/* Description box */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground block">شرح فعالیت انجام شده (GMP Note):</span>
-                <div className="bg-amber-50/40 border border-amber-200/50 dark:bg-amber-950/30 dark:border-amber-900 p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
-                  {selectedLog.description}
-                </div>
-              </div>
-
-              {/* Reason for Change (GMP Necessity) */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground block">دلیل رسمی تغییرات (Change Rationale):</span>
-                <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
-                  {selectedLog.reason}
-                </div>
-              </div>
-
-              {/* STRUCTURED LAB / SAMPLE SUMMARY CARD */}
-              {(() => {
-                const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
-                const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
-                
-                const sourceName = aft.sourceName || bef.sourceName || selectedLog.recordName;
-                const material = aft.material || bef.material;
-                const testName = aft.testName || bef.testName || (selectedLog.recordName?.includes('QC') ? selectedLog.recordName : null);
-                const beforeResult = bef.testResult || bef.comments;
-                const afterResult = aft.testResult || aft.comments;
-                const beforeStatus = bef.decision || bef.status || bef.effectiveSampleStatus || bef.previousStatus;
-                const afterStatus = aft.decision || aft.status || aft.effectiveSampleStatus || aft.newStatus;
-                const prevCounters = bef.previousCounters || { reject: bef.previousRejectCount, pass: bef.previousPassCount, conditional: bef.previousConditionalCount };
-                const newCounters = aft.newCounters || { reject: aft.newRejectCount, pass: aft.newPassCount, conditional: aft.newConditionalCount };
-
-                const hasLabSummary = testName || beforeResult || afterResult || beforeStatus || afterStatus || prevCounters.reject !== undefined || newCounters.reject !== undefined;
-
-                if (!hasLabSummary) return null;
-
-                return (
-                  <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
-                    <div className="flex items-center justify-between pb-2 border-b border-background/20">
-                      <div className="flex items-center gap-2">
-                        <FlaskConical className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold">جزئیات اختصاصی آزمایشگاه و وضعیت نمونه</span>
-                      </div>
-                      <span className="text-[10px] bg-background/10 text-background/80 px-2 py-0.5 rounded-full font-mono">
-                        {selectedLog.module} / {selectedLog.recordName}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-foreground">آنچه تغییر کرد</span>
+                  {!isLoadingDetail && (() => {
+                    const n = isNonDataEvent(selectedLog) ? 0 : computeFieldDiff(selectedLog.before, selectedLog.after).length;
+                    return (
+                      <span className="text-[10px] font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
+                        {n > 0 ? `${n} فیلد` : 'بدون تغییر داده'}
                       </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">نام سورس / شرکت:</span>
-                        <span className="font-bold text-white">{sourceName || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
-                        <span className="font-bold text-white">{material || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">کد آزمون / Test Name:</span>
-                        <span className="font-mono text-amber-300 font-bold">{testName || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">کاربر ثبت کننده:</span>
-                        <span className="font-medium">{selectedLog.user}</span>
-                      </div>
-                    </div>
-
-                    {(beforeResult || afterResult) && (
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
-                        <div>
-                          <span className="text-rose-300 text-[10px] block">نتیجه آزمایش (Before):</span>
-                          <span className="font-mono text-rose-200 bg-rose-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{beforeResult || 'نامشخص / تعریف اولیه'}</span>
-                        </div>
-                        <div>
-                          <span className="text-emerald-300 text-[10px] block">نتیجه آزمایش (After):</span>
-                          <span className="font-mono text-emerald-200 bg-emerald-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{afterResult || 'حذف شده یا بدون تغییر'}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {(beforeStatus || afterStatus) && (
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
-                        <div>
-                          <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (Before):</span>
-                          <span className="font-bold text-rose-300">{beforeStatus || 'N/A'}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (After):</span>
-                          <span className="font-bold text-emerald-300">{afterStatus || 'N/A'}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {(prevCounters.reject !== undefined || newCounters.reject !== undefined) && (
-                      <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
-                        <span className="text-muted-foreground text-[10px] block">شمارنده‌های نتایج آزمایشگاه (Laboratory Counters):</span>
-                        <div className="flex items-center justify-between bg-background/10 p-2 rounded-lg text-background/80 font-mono text-[10px]">
-                          <div>
-                            <span className="text-muted-foreground">قبلی: </span>
-                            <span className="text-emerald-400">Pass: {prevCounters.pass ?? 0}</span> | <span className="text-amber-400">Cond: {prevCounters.conditional ?? 0}</span> | <span className="text-rose-400">Reject: {prevCounters.reject ?? 0}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">جدید: </span>
-                            <span className="text-emerald-400 font-bold">Pass: {newCounters.pass ?? 0}</span> | <span className="text-amber-400 font-bold">Cond: {newCounters.conditional ?? 0}</span> | <span className="text-rose-400 font-bold">Reject: {newCounters.reject ?? 0}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* STRUCTURED RISK / FMEA SUMMARY CARD */}
-              {(() => {
-                const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
-                const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
-                
-                const isRiskOrFmea = 
-                  selectedLog.module === 'Risk Assessment' || 
-                  selectedLog.entityType === 'Risk Assessment' || 
-                  selectedLog.entityType === 'FMEA' ||
-                  (selectedLog.description && (selectedLog.description.includes('FMEA') || selectedLog.description.includes('ریسک') || selectedLog.description.includes('RPN')));
-
-                if (!isRiskOrFmea) return null;
-
-                const supplier = aft.supplier || bef.supplier || selectedLog.recordName;
-                const material = aft.material || bef.material;
-                const prevRPN = bef.rpn ?? bef.previousRPN ?? (bef.severity && bef.occurrence && bef.detectability ? bef.severity * bef.occurrence * bef.detectability : null);
-                const newRPN = aft.rpn ?? aft.newRPN ?? (aft.severity && aft.occurrence && aft.detectability ? aft.severity * aft.occurrence * aft.detectability : null);
-                const prevSRI = bef.sri ?? bef.previousSRI;
-                const newSRI = aft.sri ?? aft.newSRI;
-                const prevLevel = bef.riskLevel ?? bef.previousRiskLevel;
-                const newLevel = aft.riskLevel ?? aft.newRiskLevel;
-
-                const prevSev = bef.severity ?? bef.previousSeverity;
-                const newSev = aft.severity ?? aft.newSeverity;
-                const prevOcc = bef.occurrence ?? bef.previousOccurrence;
-                const newOcc = aft.occurrence ?? aft.newOccurrence;
-                const prevDet = bef.detectability ?? bef.previousDetectability;
-                const newDet = aft.detectability ?? aft.newDetectability;
-
-                return (
-                  <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
-                    <div className="flex items-center justify-between pb-2 border-b border-background/20">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-bold">جزئیات ارزیابی ریسک و FMEA</span>
-                      </div>
-                      <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-mono">
-                        {selectedLog.action} / {selectedLog.user}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">تامین‌کننده / سورس:</span>
-                        <span className="font-bold text-white">{supplier || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
-                        <span className="font-bold text-white">{material || 'N/A'}</span>
-                      </div>
-                    </div>
-
-                    {/* RPN, SRI & Risk Level Comparison */}
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-background/20 text-xs text-center">
-                      <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">RPN (شاخص ریسک)</span>
-                        <span className="font-mono text-rose-300 text-[11px] block">{prevRPN ?? '-'}</span>
-                        <span className="font-mono text-emerald-400 font-bold text-xs">{newRPN ?? '-'}</span>
-                      </div>
-                      <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">SRI (ریسک کل)</span>
-                        <span className="font-mono text-rose-300 text-[11px] block">{prevSRI ?? '-'}</span>
-                        <span className="font-mono text-emerald-400 font-bold text-xs">{newSRI ?? '-'}</span>
-                      </div>
-                      <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">سطح ریسک</span>
-                        <span className="font-bold text-rose-300 text-[11px] block">{prevLevel ?? '-'}</span>
-                        <span className="font-bold text-emerald-400 text-xs">{newLevel ?? '-'}</span>
-                      </div>
-                    </div>
-
-                    {/* FMEA Parameter Changes */}
-                    {(prevSev !== undefined || newSev !== undefined) && (
-                      <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
-                        <span className="text-muted-foreground text-[10px] block">پارامترهای FMEA (شدت، وقوع، تشخیص):</span>
-                        <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px] bg-background/10 p-2 rounded-lg border border-background/20">
-                          <div>
-                            <span className="text-muted-foreground block">شدت (Severity)</span>
-                            <span className="text-background/80">{prevSev ?? '-'} &rarr; <strong className="text-amber-300">{newSev ?? '-'}</strong></span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground block">وقوع (Occurrence)</span>
-                            <span className="text-background/80">{prevOcc ?? '-'} &rarr; <strong className="text-amber-300">{newOcc ?? '-'}</strong></span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground block">تشخیص (Detectability)</span>
-                            <span className="text-background/80">{prevDet ?? '-'} &rarr; <strong className="text-amber-300">{newDet ?? '-'}</strong></span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* STRUCTURED SPS & SCORES SUMMARY CARD */}
-              {(() => {
-                const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
-                const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
-
-                const isScore = 
-                  selectedLog.entityType === 'Score' || 
-                  (selectedLog.description && (selectedLog.description.includes('SPS') || selectedLog.description.includes('امتیاز')));
-
-                if (!isScore) return null;
-
-                const prevTotal = bef.totalSPS ?? (bef.scores ? Math.round((bef.scores.commercial*0.2 + bef.scores.qa*0.4 + bef.scores.planning*0.1 + bef.scores.finance*0.3)*10)/10 : '-');
-                const newTotal = aft.totalSPS ?? (aft.scores ? Math.round((aft.scores.commercial*0.2 + aft.scores.qa*0.4 + aft.scores.planning*0.1 + aft.scores.finance*0.3)*10)/10 : '-');
-                const prevGrade = bef.grade ?? '-';
-                const newGrade = aft.grade ?? '-';
-
-                const prevQA = bef.qualityScore ?? bef.scores?.qa ?? '-';
-                const newQA = aft.qualityScore ?? aft.scores?.qa ?? '-';
-                const prevFin = bef.financeScore ?? bef.scores?.finance ?? '-';
-                const newFin = aft.financeScore ?? aft.scores?.finance ?? '-';
-                const prevCom = bef.commercialScore ?? bef.scores?.commercial ?? '-';
-                const newCom = aft.commercialScore ?? aft.scores?.commercial ?? '-';
-                const prevPln = bef.planningScore ?? bef.scores?.planning ?? '-';
-                const newPln = aft.planningScore ?? aft.scores?.planning ?? '-';
-
-                return (
-                  <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
-                    <div className="flex items-center justify-between pb-2 border-b border-background/20">
-                      <div className="flex items-center gap-2">
-                        <Calculator className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-bold">جزئیات محاسبه امتیاز SPS و رتبه‌بندی</span>
-                      </div>
-                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">
-                        SPS Score Calculation
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS قبلی:</span>
-                        <span className="font-mono text-rose-300 font-bold text-sm">{prevTotal} (Grade: {prevGrade})</span>
-                      </div>
-                      <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS جدید:</span>
-                        <span className="font-mono text-emerald-400 font-bold text-sm">{newTotal} (Grade: {newGrade})</span>
-                      </div>
-                    </div>
-
-                    {/* Department Breakdown */}
-                    <div className="pt-2 border-t border-background/20 space-y-1 text-[11px]">
-                      <span className="text-muted-foreground text-[10px] block">تفکیک امتیازات بخش‌های ارزیابی (Department Breakdown):</span>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[10px] font-mono bg-background/10 p-2 rounded-lg border border-background/20">
-                        <div>
-                          <span className="text-muted-foreground block">کیفیت QA (40%)</span>
-                          <span className="text-background/80">{prevQA} &rarr; <strong className="text-emerald-400">{newQA}</strong></span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block">مالی (30%)</span>
-                          <span className="text-background/80">{prevFin} &rarr; <strong className="text-emerald-400">{newFin}</strong></span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block">بازرگانی (20%)</span>
-                          <span className="text-background/80">{prevCom} &rarr; <strong className="text-emerald-400">{newCom}</strong></span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block">انبار/برنامه‌ریزی (10%)</span>
-                          <span className="text-background/80">{prevPln} &rarr; <strong className="text-emerald-400">{newPln}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* STRUCTURED RANKING SUMMARY CARD */}
-              {(() => {
-                const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
-                const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
-
-                const isRanking = 
-                  selectedLog.entityType === 'Ranking' || 
-                  (selectedLog.description && (selectedLog.description.includes('رتبه') || selectedLog.description.includes('Rank')));
-
-                if (!isRanking) return null;
-
-                const prevRank = bef.previousRank ?? '-';
-                const newRank = aft.newRank ?? '-';
-                const prevSPS = bef.previousSPS ?? '-';
-                const newSPS = aft.newSPS ?? '-';
-
-                return (
-                  <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
-                    <div className="flex items-center justify-between pb-2 border-b border-background/20">
-                      <div className="flex items-center gap-2">
-                        <Award className="w-4 h-4 text-purple-400" />
-                        <span className="text-xs font-bold">تغییر خودکار جایگاه در جدول رتبه‌بندی (Supplier Ranking)</span>
-                      </div>
-                      <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">
-                        SYSTEM / Auto-Recalculated
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 text-center">
-                      <div className="bg-background/10 p-3 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">رتبه قبلی (Previous Rank):</span>
-                        <span className="font-mono text-rose-400 font-extrabold text-lg">#{prevRank}</span>
-                        <span className="text-muted-foreground text-[10px] block font-mono">SPS: {prevSPS}</span>
-                      </div>
-                      <div className="bg-background/10 p-3 rounded-lg border border-background/20">
-                        <span className="text-muted-foreground text-[10px] block">رتبه جدید (New Rank):</span>
-                        <span className="font-mono text-emerald-400 font-extrabold text-lg">#{newRank}</span>
-                        <span className="text-muted-foreground text-[10px] block font-mono">SPS: {newSPS}</span>
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-background/70 bg-background/10 p-2 rounded-lg flex items-center justify-between border border-background/20">
-                      <span>دلیل محاسبه: {selectedLog.reason || 'SPS score recalculated'}</span>
-                      <span className="text-purple-300 font-mono">Trigger Source: SYSTEM</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="space-y-3 pt-4 border-t border-border">
-                <span className="text-[11px] font-bold text-muted-foreground block">بررسی مقایسه‌ای فیلدها (Field-level Diff):</span>
+                    );
+                  })()}
+                </div>
 
                 {isLoadingDetail ? (
                   <div className="flex items-center gap-1.5 text-muted-foreground py-3 text-xs">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span className="italic">در حال بارگذاری تغییرات از دیتابیس...</span>
                   </div>
+                ) : isNonDataEvent(selectedLog) ? (
+                  <div className="text-[11px] text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
+                    این رویداد تغییر داده‌ای ندارد؛ ثبت یک اقدام است (ورود/خروج). مشخصات کاربر و دستگاه در «اطلاعات فنی رویداد» آمده است.
+                  </div>
                 ) : (() => {
                   const diff = computeFieldDiff(selectedLog.before, selectedLog.after);
                   const bothObjects = (selectedLog.before && typeof selectedLog.before === 'object') || (selectedLog.after && typeof selectedLog.after === 'object');
                   if (diff.length === 0) {
                     return (
-                      <div className="text-[11px] text-muted-foreground italic bg-muted border border-border rounded-lg p-3">
-                        {!selectedLog.before && selectedLog.after ? 'رکورد جدید ایجاد شده (بدون مقدار قبلی).'
+                      <div className="text-[11px] text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
+                        {!selectedLog.before && !bothObjects
+                          ? 'این رویداد تغییر داده‌ای ندارد؛ فقط ثبت یک اقدام است (مانند ورود به سامانه). شرح آن در ادامه آمده است.'
+                          : !selectedLog.before && selectedLog.after ? 'رکورد جدید ایجاد شده است (مقدار قبلی وجود ندارد).'
                           : selectedLog.before && !selectedLog.after ? 'رکورد حذف شده است.'
-                          : bothObjects ? 'تغییری در فیلدها ثبت نشده است.'
-                          : 'جزئیات فیلدی برای این رویداد در دسترس نیست.'}
+                          : 'در این ثبت، مقدار هیچ فیلدی تغییر نکرده است.'}
                       </div>
                     );
                   }
@@ -1401,6 +1098,405 @@ export const AuditTrailView: React.FC = () => {
                   );
                 })()}
               </div>
+              {/* Description box */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground block">شرح فعالیت انجام شده (GMP Note):</span>
+                <div className="bg-amber-50/40 border border-amber-200/50 dark:bg-amber-950/30 dark:border-amber-900 p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
+                  {selectedLog.description}
+                </div>
+              </div>
+
+              {/* Reason for Change (GMP Necessity) */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground block">دلیل رسمی تغییرات (Change Rationale):</span>
+                <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
+                  {selectedLog.reason}
+                </div>
+              </div>
+
+
+              {/* Context, folded away: the same facts, one click from the change. */}
+              <details className="group border border-border rounded-xl bg-muted/30">
+                <summary className="cursor-pointer select-none px-4 py-2.5 text-[11px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-2">
+                  <ChevronLeft className="w-3.5 h-3.5 shrink-0 transition-transform group-open:-rotate-90" />
+                  <span>اطلاعات فنی رویداد (کاربر، ماژول، دستگاه و جزئیات تخصصی)</span>
+                </summary>
+                <div className="p-4 pt-0 space-y-5">
+                {/* Core Information Cards */}
+                <div className="grid grid-cols-2 gap-3.5 bg-muted p-4 rounded-xl border border-border">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-muted-foreground font-bold block">کاربر ثبت‌کننده:</span>
+                    <span className="text-xs font-bold text-foreground">{selectedLog.user}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-muted-foreground font-bold block">سمت سازمانی:</span>
+                    <span className="text-xs font-bold text-muted-foreground">{roleLabels[selectedLog.role] || selectedLog.role}</span>
+                  </div>
+                  <div className="space-y-0.5 pt-2 border-t border-border/50">
+                    <span className="text-[10px] text-muted-foreground font-bold block">تاریخ و ساعت:</span>
+                    <span className="text-xs font-bold text-foreground font-mono">{selectedLog.date} - {selectedLog.time}</span>
+                  </div>
+                  <div className="space-y-0.5 pt-2 border-t border-border/50">
+                    <span className="text-[10px] text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
+                    <span className="text-xs font-mono font-bold text-muted-foreground">{selectedLog.correlationId}</span>
+                  </div>
+                </div>
+
+                {/* Scope cards */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">گروه رویداد (Event Category):</span>
+                    <span className="font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 dark:bg-cyan-950/50 dark:text-cyan-200 dark:border-cyan-900 px-2 py-0.5 rounded-md">
+                      {selectedLog.eventType || 'User Activity'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">ماژول مربوطه:</span>
+                    <span className="font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{AUDIT_MODULE_LABELS[selectedLog.module] || selectedLog.module}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">عنوان هدف:</span>
+                    <span className="font-bold text-foreground">{selectedLog.recordName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">نوع اکشن:</span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${actionLabels[selectedLog.action]?.bg || 'bg-muted text-foreground'}`}>
+                      {actionLabels[selectedLog.action]?.label || selectedLog.action}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
+                    <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress || '127.0.0.1'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">دستگاه / مرورگر:</span>
+                    <span className="font-mono text-[10px] font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
+                      {selectedLog.userAgent || 'Chrome / Windows'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-bold">سطح بحرانیت:</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${severityLabels[selectedLog.severity]?.bg || 'bg-muted text-foreground'}`}>
+                      <CheckCircle className="w-3 h-3" />
+                      {severityLabels[selectedLog.severity]?.label || selectedLog.severity}
+                    </span>
+                  </div>
+                </div>
+
+                {/* STRUCTURED LAB / SAMPLE SUMMARY CARD */}
+                {(() => {
+                  const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
+                  const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
+                
+                  const sourceName = aft.sourceName || bef.sourceName || selectedLog.recordName;
+                  const material = aft.material || bef.material;
+                  const testName = aft.testName || bef.testName || (selectedLog.recordName?.includes('QC') ? selectedLog.recordName : null);
+                  const beforeResult = bef.testResult || bef.comments;
+                  const afterResult = aft.testResult || aft.comments;
+                  const beforeStatus = bef.decision || bef.status || bef.effectiveSampleStatus || bef.previousStatus;
+                  const afterStatus = aft.decision || aft.status || aft.effectiveSampleStatus || aft.newStatus;
+                  const prevCounters = bef.previousCounters || { reject: bef.previousRejectCount, pass: bef.previousPassCount, conditional: bef.previousConditionalCount };
+                  const newCounters = aft.newCounters || { reject: aft.newRejectCount, pass: aft.newPassCount, conditional: aft.newConditionalCount };
+
+                  const hasLabSummary = testName || beforeResult || afterResult || beforeStatus || afterStatus || prevCounters.reject !== undefined || newCounters.reject !== undefined;
+
+                  if (!hasLabSummary) return null;
+
+                  return (
+                    <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-background/20">
+                        <div className="flex items-center gap-2">
+                          <FlaskConical className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-bold">جزئیات اختصاصی آزمایشگاه و وضعیت نمونه</span>
+                        </div>
+                        <span className="text-[10px] bg-background/10 text-background/80 px-2 py-0.5 rounded-full font-mono">
+                          {selectedLog.module} / {selectedLog.recordName}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">نام سورس / شرکت:</span>
+                          <span className="font-bold text-white">{sourceName || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
+                          <span className="font-bold text-white">{material || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">کد آزمون / Test Name:</span>
+                          <span className="font-mono text-amber-300 font-bold">{testName || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">کاربر ثبت کننده:</span>
+                          <span className="font-medium">{selectedLog.user}</span>
+                        </div>
+                      </div>
+
+                      {(beforeResult || afterResult) && (
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
+                          <div>
+                            <span className="text-rose-300 text-[10px] block">نتیجه آزمایش (Before):</span>
+                            <span className="font-mono text-rose-200 bg-rose-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{beforeResult || 'نامشخص / تعریف اولیه'}</span>
+                          </div>
+                          <div>
+                            <span className="text-emerald-300 text-[10px] block">نتیجه آزمایش (After):</span>
+                            <span className="font-mono text-emerald-200 bg-emerald-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{afterResult || 'حذف شده یا بدون تغییر'}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {(beforeStatus || afterStatus) && (
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
+                          <div>
+                            <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (Before):</span>
+                            <span className="font-bold text-rose-300">{beforeStatus || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (After):</span>
+                            <span className="font-bold text-emerald-300">{afterStatus || 'N/A'}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {(prevCounters.reject !== undefined || newCounters.reject !== undefined) && (
+                        <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
+                          <span className="text-muted-foreground text-[10px] block">شمارنده‌های نتایج آزمایشگاه (Laboratory Counters):</span>
+                          <div className="flex items-center justify-between bg-background/10 p-2 rounded-lg text-background/80 font-mono text-[10px]">
+                            <div>
+                              <span className="text-muted-foreground">قبلی: </span>
+                              <span className="text-emerald-400">Pass: {prevCounters.pass ?? 0}</span> | <span className="text-amber-400">Cond: {prevCounters.conditional ?? 0}</span> | <span className="text-rose-400">Reject: {prevCounters.reject ?? 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">جدید: </span>
+                              <span className="text-emerald-400 font-bold">Pass: {newCounters.pass ?? 0}</span> | <span className="text-amber-400 font-bold">Cond: {newCounters.conditional ?? 0}</span> | <span className="text-rose-400 font-bold">Reject: {newCounters.reject ?? 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* STRUCTURED RISK / FMEA SUMMARY CARD */}
+                {(() => {
+                  const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
+                  const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
+                
+                  const isRiskOrFmea = 
+                    selectedLog.module === 'Risk Assessment' || 
+                    selectedLog.entityType === 'Risk Assessment' || 
+                    selectedLog.entityType === 'FMEA' ||
+                    (selectedLog.description && (selectedLog.description.includes('FMEA') || selectedLog.description.includes('ریسک') || selectedLog.description.includes('RPN')));
+
+                  if (!isRiskOrFmea) return null;
+
+                  const supplier = aft.supplier || bef.supplier || selectedLog.recordName;
+                  const material = aft.material || bef.material;
+                  const prevRPN = bef.rpn ?? bef.previousRPN ?? (bef.severity && bef.occurrence && bef.detectability ? bef.severity * bef.occurrence * bef.detectability : null);
+                  const newRPN = aft.rpn ?? aft.newRPN ?? (aft.severity && aft.occurrence && aft.detectability ? aft.severity * aft.occurrence * aft.detectability : null);
+                  const prevSRI = bef.sri ?? bef.previousSRI;
+                  const newSRI = aft.sri ?? aft.newSRI;
+                  const prevLevel = bef.riskLevel ?? bef.previousRiskLevel;
+                  const newLevel = aft.riskLevel ?? aft.newRiskLevel;
+
+                  const prevSev = bef.severity ?? bef.previousSeverity;
+                  const newSev = aft.severity ?? aft.newSeverity;
+                  const prevOcc = bef.occurrence ?? bef.previousOccurrence;
+                  const newOcc = aft.occurrence ?? aft.newOccurrence;
+                  const prevDet = bef.detectability ?? bef.previousDetectability;
+                  const newDet = aft.detectability ?? aft.newDetectability;
+
+                  return (
+                    <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-background/20">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          <span className="text-xs font-bold">جزئیات ارزیابی ریسک و FMEA</span>
+                        </div>
+                        <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-mono">
+                          {selectedLog.action} / {selectedLog.user}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">تامین‌کننده / سورس:</span>
+                          <span className="font-bold text-white">{supplier || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
+                          <span className="font-bold text-white">{material || 'N/A'}</span>
+                        </div>
+                      </div>
+
+                      {/* RPN, SRI & Risk Level Comparison */}
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-background/20 text-xs text-center">
+                        <div className="bg-background/10 p-2 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">RPN (شاخص ریسک)</span>
+                          <span className="font-mono text-rose-300 text-[11px] block">{prevRPN ?? '-'}</span>
+                          <span className="font-mono text-emerald-400 font-bold text-xs">{newRPN ?? '-'}</span>
+                        </div>
+                        <div className="bg-background/10 p-2 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">SRI (ریسک کل)</span>
+                          <span className="font-mono text-rose-300 text-[11px] block">{prevSRI ?? '-'}</span>
+                          <span className="font-mono text-emerald-400 font-bold text-xs">{newSRI ?? '-'}</span>
+                        </div>
+                        <div className="bg-background/10 p-2 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">سطح ریسک</span>
+                          <span className="font-bold text-rose-300 text-[11px] block">{prevLevel ?? '-'}</span>
+                          <span className="font-bold text-emerald-400 text-xs">{newLevel ?? '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* FMEA Parameter Changes */}
+                      {(prevSev !== undefined || newSev !== undefined) && (
+                        <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
+                          <span className="text-muted-foreground text-[10px] block">پارامترهای FMEA (شدت، وقوع، تشخیص):</span>
+                          <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px] bg-background/10 p-2 rounded-lg border border-background/20">
+                            <div>
+                              <span className="text-muted-foreground block">شدت (Severity)</span>
+                              <span className="text-background/80">{prevSev ?? '-'} &rarr; <strong className="text-amber-300">{newSev ?? '-'}</strong></span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block">وقوع (Occurrence)</span>
+                              <span className="text-background/80">{prevOcc ?? '-'} &rarr; <strong className="text-amber-300">{newOcc ?? '-'}</strong></span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block">تشخیص (Detectability)</span>
+                              <span className="text-background/80">{prevDet ?? '-'} &rarr; <strong className="text-amber-300">{newDet ?? '-'}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* STRUCTURED SPS & SCORES SUMMARY CARD */}
+                {(() => {
+                  const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
+                  const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
+
+                  const isScore = 
+                    selectedLog.entityType === 'Score' || 
+                    (selectedLog.description && (selectedLog.description.includes('SPS') || selectedLog.description.includes('امتیاز')));
+
+                  if (!isScore) return null;
+
+                  const prevTotal = bef.totalSPS ?? (bef.scores ? Math.round((bef.scores.commercial*0.2 + bef.scores.qa*0.4 + bef.scores.planning*0.1 + bef.scores.finance*0.3)*10)/10 : '-');
+                  const newTotal = aft.totalSPS ?? (aft.scores ? Math.round((aft.scores.commercial*0.2 + aft.scores.qa*0.4 + aft.scores.planning*0.1 + aft.scores.finance*0.3)*10)/10 : '-');
+                  const prevGrade = bef.grade ?? '-';
+                  const newGrade = aft.grade ?? '-';
+
+                  const prevQA = bef.qualityScore ?? bef.scores?.qa ?? '-';
+                  const newQA = aft.qualityScore ?? aft.scores?.qa ?? '-';
+                  const prevFin = bef.financeScore ?? bef.scores?.finance ?? '-';
+                  const newFin = aft.financeScore ?? aft.scores?.finance ?? '-';
+                  const prevCom = bef.commercialScore ?? bef.scores?.commercial ?? '-';
+                  const newCom = aft.commercialScore ?? aft.scores?.commercial ?? '-';
+                  const prevPln = bef.planningScore ?? bef.scores?.planning ?? '-';
+                  const newPln = aft.planningScore ?? aft.scores?.planning ?? '-';
+
+                  return (
+                    <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-background/20">
+                        <div className="flex items-center gap-2">
+                          <Calculator className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs font-bold">جزئیات محاسبه امتیاز SPS و رتبه‌بندی</span>
+                        </div>
+                        <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">
+                          SPS Score Calculation
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS قبلی:</span>
+                          <span className="font-mono text-rose-300 font-bold text-sm">{prevTotal} (Grade: {prevGrade})</span>
+                        </div>
+                        <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS جدید:</span>
+                          <span className="font-mono text-emerald-400 font-bold text-sm">{newTotal} (Grade: {newGrade})</span>
+                        </div>
+                      </div>
+
+                      {/* Department Breakdown */}
+                      <div className="pt-2 border-t border-background/20 space-y-1 text-[11px]">
+                        <span className="text-muted-foreground text-[10px] block">تفکیک امتیازات بخش‌های ارزیابی (Department Breakdown):</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[10px] font-mono bg-background/10 p-2 rounded-lg border border-background/20">
+                          <div>
+                            <span className="text-muted-foreground block">کیفیت QA (40%)</span>
+                            <span className="text-background/80">{prevQA} &rarr; <strong className="text-emerald-400">{newQA}</strong></span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block">مالی (30%)</span>
+                            <span className="text-background/80">{prevFin} &rarr; <strong className="text-emerald-400">{newFin}</strong></span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block">بازرگانی (20%)</span>
+                            <span className="text-background/80">{prevCom} &rarr; <strong className="text-emerald-400">{newCom}</strong></span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block">انبار/برنامه‌ریزی (10%)</span>
+                            <span className="text-background/80">{prevPln} &rarr; <strong className="text-emerald-400">{newPln}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* STRUCTURED RANKING SUMMARY CARD */}
+                {(() => {
+                  const bef = selectedLog.before && typeof selectedLog.before === 'object' ? selectedLog.before : {};
+                  const aft = selectedLog.after && typeof selectedLog.after === 'object' ? selectedLog.after : {};
+
+                  const isRanking = 
+                    selectedLog.entityType === 'Ranking' || 
+                    (selectedLog.description && (selectedLog.description.includes('رتبه') || selectedLog.description.includes('Rank')));
+
+                  if (!isRanking) return null;
+
+                  const prevRank = bef.previousRank ?? '-';
+                  const newRank = aft.newRank ?? '-';
+                  const prevSPS = bef.previousSPS ?? '-';
+                  const newSPS = aft.newSPS ?? '-';
+
+                  return (
+                    <div className="bg-foreground text-background p-4 rounded-xl space-y-3 border border-border shadow-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-background/20">
+                        <div className="flex items-center gap-2">
+                          <Award className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs font-bold">تغییر خودکار جایگاه در جدول رتبه‌بندی (Supplier Ranking)</span>
+                        </div>
+                        <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">
+                          SYSTEM / Auto-Recalculated
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-center">
+                        <div className="bg-background/10 p-3 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">رتبه قبلی (Previous Rank):</span>
+                          <span className="font-mono text-rose-400 font-extrabold text-lg">#{prevRank}</span>
+                          <span className="text-muted-foreground text-[10px] block font-mono">SPS: {prevSPS}</span>
+                        </div>
+                        <div className="bg-background/10 p-3 rounded-lg border border-background/20">
+                          <span className="text-muted-foreground text-[10px] block">رتبه جدید (New Rank):</span>
+                          <span className="font-mono text-emerald-400 font-extrabold text-lg">#{newRank}</span>
+                          <span className="text-muted-foreground text-[10px] block font-mono">SPS: {newSPS}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-background/70 bg-background/10 p-2 rounded-lg flex items-center justify-between border border-background/20">
+                        <span>دلیل محاسبه: {selectedLog.reason || 'SPS score recalculated'}</span>
+                        <span className="text-purple-300 font-mono">Trigger Source: SYSTEM</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                </div>
+              </details>
             </div>
 
             {/* Drawer Footer */}

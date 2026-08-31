@@ -374,6 +374,12 @@ model AuditLog {
   reasonForChange String?  @map("reason_for_change") @db.Text
   beforeData      Json?    @map("before_data")
   afterData       Json?    @map("after_data")
+  // Metadata about the event, not part of the change itself. These used to be
+  // folded into `after_data`, which made them show up as "added fields" in the
+  // before/after comparison of every record.
+  ipAddress       String?  @map("ip_address") @db.VarChar(64)
+  userAgent       String?  @map("user_agent") @db.Text
+  eventType       String?  @map("event_type") @db.VarChar(50)
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([timestamp])

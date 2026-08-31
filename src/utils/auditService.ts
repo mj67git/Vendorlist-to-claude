@@ -207,22 +207,11 @@ export class AuditService {
     }
 
     try {
-      // Enrich afterData with metadata if not present
-      let afterData = input.afterData;
-      if (afterData && typeof afterData === 'object') {
-        afterData = {
-          ...afterData,
-          eventType: input.eventType || afterData.eventType,
-          ipAddress: input.ipAddress || afterData.ipAddress,
-          userAgent: input.userAgent || afterData.userAgent,
-        };
-      } else if (input.ipAddress || input.userAgent || input.eventType) {
-        afterData = {
-          eventType: input.eventType,
-          ipAddress: input.ipAddress,
-          userAgent: input.userAgent,
-        };
-      }
+      // Metadata about the event goes in its own columns, never into the change
+      // data. Folding ip/device/eventType into `afterData` made them show up as
+      // "added fields" in the before/after comparison of every record — noise on
+      // top of the one thing a reviewer opens that panel to see.
+      const afterData = input.afterData;
 
       const record = await prisma.auditLog.create({
         data: {
@@ -241,6 +230,9 @@ export class AuditService {
           reasonForChange: input.reasonForChange || null,
           beforeData: input.beforeData || null,
           afterData: afterData || null,
+          ipAddress: input.ipAddress || null,
+          userAgent: input.userAgent || null,
+          eventType: input.eventType || null,
         }
       });
       console.log(`[AuditService] Successfully persisted audit record to PostgreSQL: ${record.auditId}`);

@@ -78,6 +78,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   ROLE_CHANGE: 'تغییر سمت (Role)',
   PERMISSION_CHANGE: 'تغییر دسترسی',
   RESET_PASSWORD: 'بازنشانی رمز عبور',
+  // Written by PUT /api/source-selections — the "ثبت سورس منتخب" button in the
+  // category views. Without these two the action filter showed the raw English.
+  CREATE_SOURCE_SELECTION: 'ثبت سورس منتخب',
+  UPDATE_SOURCE_SELECTION: 'تغییر سورس منتخب',
+  Reject: 'رد کردن',
+  ChangeSupplier: 'تغییر فروشندهٔ سورس',
 };
 
 /**
