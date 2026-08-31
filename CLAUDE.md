@@ -137,8 +137,8 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 - **لاگین روی Vercel:** `admin / 123456` (از `DEFAULT_USERS` در `server.ts`) با `mustChangePassword: true` — اولین ورود، تغییر رمز خواسته می‌شود. (محلی با `prisma/seed.ts` رمز `123` است.)
 
 ## Git / تحویل
-- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`، با PR #9 باز به main). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
-- **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها) — همه در `main`.
+- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p4`، از `main` تازه). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن. برنچ merge‌شده را دوباره استفاده نکن — کامیت جدید روی تاریخچهٔ merge‌شده انباشته می‌شود.
+- **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها)، #6–#9، #10 (ردیابی تغییرات + ماژول کاربران + سطوح دسترسی) — همه در `main`.
 - هر تغییر: typecheck + build + تست زنده (در صورت لمس backend) → commit با پیام واضح → push. **`STATUS.md` را بعد از هر تغییر به‌روزرسانی کن.**
 - push گاهی 502 می‌دهد؛ با backoff retry کن.
 
