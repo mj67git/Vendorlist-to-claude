@@ -254,10 +254,40 @@ export class AuditService {
   /**
    * Retrieve multiple audit logs with optional filters and pagination
    */
+  /**
+   * Translate the table's sort choice into an `orderBy`.
+   *
+   * The column headers used to be decorative: the view kept `sortField` and
+   * `sortDirection` in state, drew an arrow from them, and never sent them
+   * anywhere — every page came back ordered by timestamp regardless. On an
+   * audit trail, a control that claims an order it does not apply is worse
+   * than no control.
+   *
+   * Sorting has to happen here rather than in the browser because the list is
+   * paginated server-side: ordering the ten rows on screen would only ever
+   * sort the page, not the log.
+   *
+   * `timestamp` is always the tie-breaker so equal keys keep a stable,
+   * meaningful order.
+   */
+  private static orderFor(sortBy?: string, sortDir?: string) {
+    const dir = sortDir === 'asc' ? 'asc' : 'desc';
+    switch (sortBy) {
+      case 'user': return [{ userName: dir }, { timestamp: 'desc' as const }];
+      // Severity is deliberately not offered: the column stores free text with
+      // two spellings for one level (`Info`/`Information`, see auditTaxonomy),
+      // so a text sort would put "Critical" next to "Information" and read as
+      // an order that means nothing. Severity is a filter instead.
+      case 'date':
+      default: return [{ timestamp: dir }];
+    }
+  }
+
   public static async getAuditLogs(
     filters?: AuditLogFilters,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    sort?: { by?: string; dir?: string }
   ): Promise<{ data: any[]; total: number }> {
     const prisma = requirePrisma();
     if (!prisma) {
@@ -419,7 +449,7 @@ export class AuditService {
       const [data, total] = await Promise.all([
         prisma.auditLog.findMany({
           where,
-          orderBy: { timestamp: "desc" },
+          orderBy: this.orderFor(sort?.by, sort?.dir) as any,
           skip,
           take: limit,
         }),
@@ -496,7 +526,8 @@ export class AuditService {
    */
   public static async searchAuditLogs(
     query: string,
-    filters?: AuditLogFilters
+    filters?: AuditLogFilters,
+    sort?: { by?: string; dir?: string }
   ): Promise<any[]> {
     const prisma = requirePrisma();
     if (!prisma) {
@@ -563,7 +594,7 @@ export class AuditService {
 
       const logs = await prisma.auditLog.findMany({
         where,
-        orderBy: { timestamp: "desc" },
+        orderBy: this.orderFor(sort?.by, sort?.dir) as any,
         take: 100,
       });
 

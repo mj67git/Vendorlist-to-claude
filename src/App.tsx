@@ -824,7 +824,7 @@ export default function App() {
     if (state.view === 'archive') return 'آرشیو کامل';
     if (state.view === 'supplier-audit') return 'بررسی یکپارچه تامین‌کننده';
     if (state.view === 'materials') return 'مخزن مواد اولیه';
-    if (state.view === 'audit-trail') return 'Audit Trail';
+    if (state.view === 'audit-trail') return 'ردیابی تغییرات';
     if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
     if (state.view === 'users') return 'مدیریت کاربران';
     if (state.view === 'tasks') return 'کارتابل اقدامات';

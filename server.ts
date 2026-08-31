@@ -2843,17 +2843,19 @@ async function startServer() {
       if (req.query.quickFilter && req.query.quickFilter !== "all") filters.quickFilter = req.query.quickFilter as string;
 
       const query = (req.query.query as string || "").trim();
+      // The table's sort choice, applied in SQL — see AuditService.orderFor.
+      const sort = { by: req.query.sortBy as string, dir: req.query.sortDir as string };
       let result;
 
       if (query) {
-        const searched = await AuditService.searchAuditLogs(query, filters);
+        const searched = await AuditService.searchAuditLogs(query, filters, sort);
         const skip = (page - 1) * limit;
         result = {
           data: searched.slice(skip, skip + limit),
           total: searched.length,
         };
       } else {
-        result = await AuditService.getAuditLogs(filters, page, limit);
+        result = await AuditService.getAuditLogs(filters, page, limit, sort);
       }
 
       res.json(result);
