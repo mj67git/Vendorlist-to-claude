@@ -362,6 +362,11 @@ model AuditLog {
   correlationId   String?  @map("correlation_id") @db.VarChar(50)
   timestamp       DateTime @default(now()) @map("timestamp")
   userId          String?  @map("user_id") @db.VarChar(50)
+  // The column carries a `fa-IR-x-icu` collation, applied by the migration
+  // 20260831180000_audit_user_name_persian_collation, so that the audit table's
+  // "sort by user" orders Persian names alphabetically instead of by code point.
+  // Prisma has no notation for a column collation, so it lives only in the
+  // migration — do not regenerate this column from `db pull` and expect it back.
   userName        String?  @map("user_name") @db.VarChar(100)
   role            String?  @map("role") @db.VarChar(50)
   module          String   @map("module") @db.VarChar(100)

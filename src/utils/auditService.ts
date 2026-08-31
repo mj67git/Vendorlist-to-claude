@@ -265,6 +265,9 @@ export class AuditService {
   private static orderFor(sortBy?: string, sortDir?: string) {
     const dir = sortDir === 'asc' ? 'asc' : 'desc';
     switch (sortBy) {
+      // `user_name` carries a Persian ICU collation (see schema.prisma), so this
+      // plain orderBy sorts by the Persian alphabet rather than by code point —
+      // Prisma cannot express COLLATE itself, so the column holds it instead.
       case 'user': return [{ userName: dir }, { timestamp: 'desc' as const }];
       // Severity is deliberately not offered: the column stores free text with
       // two spellings for one level (`Info`/`Information`, see auditTaxonomy),
