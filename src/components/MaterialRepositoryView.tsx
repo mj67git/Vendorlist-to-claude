@@ -609,10 +609,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   const sourceCount = vendorsByMaterial.get(material.id)?.length || 0;
                   return (
                   <tr key={material.id} className="hover:bg-accent/70 transition-colors">
-                    <td className="py-3 px-4 font-bold text-foreground max-w-[16rem]">
+                    <td className="py-3 px-4 font-bold text-foreground max-w-[16rem] xl:max-w-[24rem]">
                       <EntityName name={material.nameFa} lines={2} className="whitespace-normal" />
                     </td>
-                    <td className="py-3 px-4 font-mono text-xs text-muted-foreground max-w-[16rem]" dir="ltr">
+                    <td className="py-3 px-4 font-mono text-xs text-muted-foreground max-w-[16rem] xl:max-w-[22rem]" dir="ltr">
                       <EntityName name={material.nameEn} lines={2} className="whitespace-normal" />
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -620,7 +620,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         {role.labelEn} <span className="font-normal">· {role.labelFa}</span>
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-foreground max-w-[14rem]">
+                    <td className="py-3 px-4 text-foreground max-w-[14rem] xl:max-w-[20rem]">
                       <EntityName name={material.finalProduct} lines={2} className="whitespace-normal" />
                     </td>
                     <td className="py-3 px-4 text-center font-mono text-xs text-muted-foreground" dir="ltr">{material.cas}</td>

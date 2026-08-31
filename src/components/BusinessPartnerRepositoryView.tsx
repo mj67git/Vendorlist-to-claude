@@ -993,7 +993,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   return (
                     <tr key={partner.id} className="hover:bg-muted/70 transition-colors">
                       {/* Name */}
-                      <td className="py-3 px-4 font-bold text-foreground max-w-[18rem]">
+                      <td className="py-3 px-4 font-bold text-foreground max-w-[18rem] xl:max-w-[26rem]">
                         <EntityName name={partner.name} lines={2} className="font-black whitespace-normal" />
                       </td>
 

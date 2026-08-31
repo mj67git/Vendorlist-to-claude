@@ -46,6 +46,9 @@ import { Avatar, AvatarFallback } from './components/ui/avatar';
  * separately and assembled instead, which also avoids stripping punctuation out
  * of a formatted string afterwards.
  */
+/** The page container every view is laid out in. */
+const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
+
 function formatSystemDate(d: Date): string {
   const day = d.toLocaleDateString('fa-IR', { day: 'numeric' });
   const month = d.toLocaleDateString('fa-IR', { month: 'long' });
@@ -1899,7 +1902,14 @@ export default function App() {
           </header>
 
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full print:overflow-visible">
-            <div className={(view === 'audit-trail' || view === 'materials') && !selectedVendor ? "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8" : "max-w-5xl mx-auto p-4 sm:p-8"}>
+            {/* One width for the whole app.
+                This used to be a two-view exception list: only the materials
+                repository and the audit trail got 1600px and everything else was
+                capped at max-w-5xl (1024px), which threw away 624px — 38% of the
+                usable area — on a 1920px screen, on pages whose tables have seven
+                columns. A shared constant also means a new view is right by
+                default instead of waiting for someone to remember the list. */}
+            <div className={CONTENT_WIDTH}>
               {renderContent()}
             </div>
           </div>

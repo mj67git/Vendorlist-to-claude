@@ -377,7 +377,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
 
   return (
-    <div className="space-y-6 fade-in relative pb-10 max-w-6xl mx-auto text-right" dir="rtl">
+    <div className="space-y-6 fade-in relative pb-10 text-right" dir="rtl">
       
       {/* Back Button */}
       <button 
@@ -451,7 +451,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   suppliers are independent records now, so that link says
                   nothing about whether a middleman exists. */}
               {sourcePartner.grade ? (
-                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
+                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1 max-w-[75ch]">
                   <span>گرید ارزیابی فروشنده: {sourcePartner.grade}</span>
                 </div>
               ) : null}
@@ -668,7 +668,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   <EntityName name={sourcePartner.name} lines={2} />
                 </div>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1">
+                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1 max-w-[75ch]">
                   <div className="flex items-start gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
                     <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
@@ -736,7 +736,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <span>سوابق انحرافات</span>
               </div>
-              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right" dir="auto">
+              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
                 <ul className="list-disc list-inside space-y-1.5">
                   {vendor.rejectionReasons.map((reason, idx) => (
                     <li key={idx} className="break-words">{reason}</li>
@@ -994,7 +994,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                 <div className="mt-8 space-y-6">
                   {/* ScoreCards - 2x2 Grid Layout */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     {FORM_LAYOUT.map(layout => {
                       const deptScore = vendor.scores[layout.id as keyof typeof vendor.scores];
                       if (deptScore === undefined || deptScore === null) return null;

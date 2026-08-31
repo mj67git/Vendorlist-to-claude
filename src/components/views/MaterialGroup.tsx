@@ -248,7 +248,11 @@ export const MaterialGroup: React.FC<{
                       widths, so the columns line up from row to row. */}
                   <div className="flex items-center gap-4 shrink-0">
                     <div className={`hidden sm:grid items-center gap-4 ${
-                      categoryId === 'blacklist' ? 'grid-cols-[8rem]' : 'grid-cols-[8rem_7rem_7rem]'
+                      // Wider tracks once the page itself is wide, so the metric
+                      // block breathes instead of hugging the right edge.
+                      categoryId === 'blacklist'
+                        ? 'grid-cols-[8rem] xl:grid-cols-[10rem]'
+                        : 'grid-cols-[8rem_7rem_7rem] xl:grid-cols-[10rem_9rem_9rem]'
                     }`}>
                     {/* Column 1: Score */}
                     <div className="flex flex-col items-center justify-center text-center">
