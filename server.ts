@@ -6,6 +6,19 @@ import { createServer as createViteServer } from "vite";
 import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
+import { AUDIT_EVENT_GROUPS } from "./src/utils/auditTaxonomy.js";
+import { canSupplySources, calculateGradeAndStatus } from "./src/utils/sopEvaluation.js";
+import { findDuplicateMaterial, type MaterialKeyFields } from "./src/utils/materialDuplicates.js";
+import {
+  can,
+  effectivePermissions,
+  hasCustomPermissions,
+  forbiddenScoreChanges,
+  forbiddenRawScoreChanges,
+  sanitizePermissions,
+  roleTemplate,
+  type Permission,
+} from "./src/utils/permissions.js";
 import { 
   vendorSchema,
   vendorProfileSchema,
@@ -99,7 +112,14 @@ function mapMaterialToClient(m: any) {
     pharmacopoeia: m.pharmacopoeia || 'USP',
     standardNameFa: m.standardNameFa || '',
     standardNameEn: m.standardNameEn || '',
+    // The blob itself is deliberately absent: it is fetched from
+    // GET /api/materials/:id/specification/file (project rule 5).
     specificationFile: m.specificationFile || undefined,
+    specificationFileSize: m.specificationFileSize ?? undefined,
+    hasSpecificationFile: !!m.specificationFileData,
+    specificationUploadedAt: m.specificationUploadedAt
+      ? (m.specificationUploadedAt.toISOString?.() || m.specificationUploadedAt)
+      : undefined,
     createdAt: m.createdAt ? (m.createdAt.toISOString?.() || m.createdAt) : new Date().toISOString(),
   };
 }
@@ -120,6 +140,56 @@ function materialDataFromBody(b: any) {
     standardNameEn: b.standardNameEn || null,
     specificationFile: b.specificationFile || null,
   };
+}
+
+/**
+ * Reject a material that duplicates one already in the repository.
+ *
+ * The repository form has checked this since it was written, but only in the
+ * browser — so it was advice, not a rule (project rule 14). The decision itself
+ * lives in `src/utils/materialDuplicates.ts` and is read by both sides, so the
+ * two cannot drift apart.
+ *
+ * Returns the response body when the write must be refused, or null to proceed.
+ * The rejection is audited like any other refused change, the way a blocked
+ * delete already is.
+ */
+async function rejectDuplicateMaterial(
+  prisma: PrismaClient,
+  req: any,
+  candidate: MaterialKeyFields,
+  current: MaterialKeyFields | null,
+): Promise<{ error: string; duplicateOf?: string } | null> {
+  const rows = await prisma.material.findMany({
+    select: { id: true, name: true, nameEn: true, cas: true, role: true, finalProductEn: true },
+  });
+  const existing: MaterialKeyFields[] = rows.map(m => ({
+    id: m.id, nameFa: m.name, nameEn: m.nameEn, cas: m.cas, role: m.role, finalProductEn: m.finalProductEn,
+  }));
+
+  const hit = findDuplicateMaterial(candidate, existing, current);
+  if (!hit) return null;
+
+  const now = new Date();
+  await AuditService.createAuditRecord({
+    auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    correlationId: crypto.randomUUID(),
+    userId: req.user.username,
+    userName: req.user.name,
+    role: req.user.role,
+    module: "مدیریت مواد",
+    action: current ? "Update" : "Create",
+    severity: "Warning",
+    description: `ثبت مادهٔ تکراری رد شد: ${hit.reason}`,
+    entityType: "Material",
+    entityId: hit.material.id || "",
+    entityName: hit.material.nameFa || hit.material.nameEn || "",
+    reasonForChange: "Rejected duplicate material",
+    beforeData: null,
+    afterData: { attempted: candidate, duplicateOf: hit.material.id, rule: hit.field },
+  });
+
+  return { error: hit.reason, duplicateOf: hit.material.id };
 }
 
 function isValidPostgresUrl(url?: string | null): boolean {
@@ -457,6 +527,63 @@ async function getBusinessPartnersList(): Promise<any[]> {
   return rows.map(mapPartnerRow);
 }
 
+/**
+ * Refuse a source whose IRC is not the 16-digit IFDA code.
+ *
+ * The form enforces this too, but that gate is cosmetic (project rule 14).
+ * Empty is allowed — not every source has a licence on file yet — and a value
+ * that is unchanged from what is already stored is left alone, so records
+ * predating the rule (they carry placeholders like "N/A") stay editable.
+ */
+function ircViolation(irc: unknown, previousIrc?: unknown): string | null {
+  const value = typeof irc === "string" ? irc.trim() : "";
+  const previous = typeof previousIrc === "string" ? previousIrc.trim() : "";
+  if (value === previous) return null;
+  if (value === "" || value === "N/A" || value === "NA" || value === "-") return null;
+  if (/^\d{16}$/.test(value)) return null;
+  return "کد IRC باید دقیقاً ۱۶ رقم عددی باشد.";
+}
+
+/**
+ * Refuse a source whose supplier does not meet the SOP.
+ *
+ * The client greys these out, but that gate is cosmetic (project rule 14): the
+ * record is only actually protected if the API refuses it too. Returns an error
+ * message when the write must be rejected, or null when it may proceed.
+ *
+ * A supplier that is already attached to the record is left alone, so a source
+ * saved before this rule existed stays editable rather than becoming
+ * unsaveable.
+ */
+async function sopSupplierViolation(
+  supplierId: string | null | undefined,
+  previousSupplierId?: string | null,
+): Promise<string | null> {
+  if (!supplierId || supplierId === previousSupplierId) return null;
+  const prisma = requirePrisma();
+  const row = await prisma.businessPartner.findUnique({
+    where: { id: supplierId },
+    include: { evaluation: true },
+  });
+  if (!row) return "فروشندهٔ انتخاب‌شده در مخزن شرکای تجاری یافت نشد.";
+
+  // Derive the grade from the score rather than trusting the stored grade
+  // column, which is what the client does on load (reconcileSupplierEvaluation).
+  // They disagree in the seeded data: bp_sup_2 is stored as grade B on a score
+  // of 80, which the rubric grades A. Reading the column here would have
+  // refused a supplier the form shows as selectable.
+  const derivedGrade = row.evaluation
+    ? calculateGradeAndStatus(row.evaluation.totalScore ?? 0, row.evaluation.grade !== "Not Evaluated").grade
+    : undefined;
+
+  const verdict = canSupplySources({
+    type: row.type as string,
+    status: row.status as string,
+    evaluation: derivedGrade ? { grade: derivedGrade } : null,
+  });
+  return verdict.allowed ? null : `${row.name}: ${verdict.reason}`;
+}
+
 async function seedDefaultBusinessPartners() {
   const prisma = requirePrisma();
   const count = await prisma.businessPartner.count();
@@ -467,16 +594,34 @@ async function seedDefaultBusinessPartners() {
   }
 }
 
-async function getVendorsList(): Promise<any[]> {
+/**
+ * Build the vendor objects the API serves.
+ *
+ * Pass `vendorId` to build just one. Without it every query below runs
+ * unfiltered, which is correct for the list endpoint and ruinous for the
+ * sixteen handlers that only ever wanted a single record: fetching one vendor
+ * used to mean loading every vendor, every evaluation, every activity log and
+ * every analysis result, then discarding all but one. The `where` clauses use
+ * indexes that already exist on the schema.
+ */
+async function getVendorsList(vendorId?: string): Promise<any[]> {
   const prisma = requirePrisma();
   {
-    const vendors = await prisma.vendor.findMany();
-    const vendorMaterials = await prisma.vendorMaterial.findMany();
-    const materials = await prisma.material.findMany();
-    const evaluations = await prisma.evaluation.findMany();
-    const activityLogRows = await prisma.activityLog.findMany({ orderBy: { createdAt: "asc" } });
-    const riskRows = await prisma.riskAssessment.findMany();
-    const analysisRows = await prisma.analysisRecord.findMany({ orderBy: { createdAt: "asc" } });
+    // An empty `where` is a no-op, so the same code path serves both the full
+    // list and a single record.
+    const only: any = vendorId ? { vendorId } : {};
+    const vendors = await prisma.vendor.findMany({ where: vendorId ? { id: vendorId } : {} });
+    const vendorMaterials = await prisma.vendorMaterial.findMany({ where: only });
+    // Materials are reached through the links above, so when building a single
+    // vendor only the ones it actually references need loading.
+    const materialIds = [...new Set(vendorMaterials.map(vm => vm.materialId).filter(Boolean))] as string[];
+    const materials = await prisma.material.findMany({
+      where: vendorId ? { id: { in: materialIds } } : {},
+    });
+    const evaluations = await prisma.evaluation.findMany({ where: only });
+    const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });
+    const riskRows = await prisma.riskAssessment.findMany({ where: only });
+    const analysisRows = await prisma.analysisRecord.findMany({ where: only, orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
     const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
@@ -523,9 +668,17 @@ async function getVendorsList(): Promise<any[]> {
       analysisByVendor.set(a.vendorId, existing);
     });
 
+    // Indexed by vendor rather than scanned per vendor: the previous .find()
+    // inside this loop made the list endpoint O(n²) — at 1,200 vendors that is
+    // over a million comparisons for a single request.
+    const linkByVendor = new Map<string, any>();
+    for (const vm of vendorMaterials) {
+      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
+    }
+
     const result: any[] = [];
     for (const v of vendors) {
-      const link = vendorMaterials.find(vm => vm.vendorId === v.id);
+      const link = linkByVendor.get(v.id);
       const materialObj = link ? materialsMap.get(link.materialId) : null;
       const evalObj = evaluationsMap.get(v.id);
 
@@ -585,7 +738,16 @@ async function getVendorsList(): Promise<any[]> {
         material: materialObj ? materialObj.name : "نامشخص",
         materialEn: materialObj ? materialObj.nameEn : "Unknown",
         cas: materialObj ? materialObj.cas : "N/A",
-        irc: materialObj ? materialObj.irc : "N/A",
+        // IRC lives on the source. Rows written before that column existed only
+        // have it on their material, so fall back there rather than blanking a
+        // licence number that is really on file.
+        irc: (v as any).irc ?? (materialObj ? materialObj.irc : "N/A"),
+        // The source's own licence expiry, which is written by PATCH /contact
+        // and audited on change but was never read back out. Everything that
+        // reads it — the dashboard's expiring-licence card, the detail page,
+        // the supplier overview — therefore saw nothing, so the feature looked
+        // implemented and always reported zero.
+        ircExpiryDate: v.ircExpiryDate ?? null,
         isSample: link ? link.isSample : false,
         category: link ? link.category : "foreign",
         scores: scoreObj,
@@ -601,9 +763,52 @@ async function getVendorsList(): Promise<any[]> {
   }
 }
 
+/**
+ * The minimum needed to place a vendor in the ranking: an id, its scores, and
+ * whether it is a sample (samples rank among samples).
+ *
+ * Ranking a single vendor used to call getVendorsList() twice — before and
+ * after the save — which loaded every activity log and analysis record in the
+ * database to produce one integer. The ranking logic itself is untouched;
+ * rankVendor still receives objects of the shape it expects.
+ */
+async function getRankingSnapshot(): Promise<any[]> {
+  const prisma = requirePrisma();
+  const [links, evaluations] = await Promise.all([
+    prisma.vendorMaterial.findMany({ select: { vendorId: true, isSample: true, category: true } }),
+    prisma.evaluation.findMany({
+      select: {
+        vendorId: true, scores: true,
+        commercialScore: true, qaScore: true, planningScore: true, financeScore: true,
+      },
+    }),
+  ]);
+
+  const linkByVendor = new Map<string, any>();
+  for (const l of links) if (!linkByVendor.has(l.vendorId)) linkByVendor.set(l.vendorId, l);
+
+  return evaluations.map(ev => {
+    let scores: any = null;
+    try { scores = ev.scores ? JSON.parse(ev.scores as any) : null; } catch { /* fall through */ }
+    if (!scores) {
+      scores = {
+        commercial: ev.commercialScore, qa: ev.qaScore,
+        planning: ev.planningScore, finance: ev.financeScore,
+      };
+    }
+    const link = linkByVendor.get(ev.vendorId);
+    return {
+      id: ev.vendorId,
+      scores,
+      isSample: link ? link.isSample : false,
+      category: link ? link.category : "foreign",
+    };
+  });
+}
+
 async function getVendorById(id: string): Promise<any> {
-  const list = await getVendorsList();
-  return list.find(v => v.id === id) || null;
+  const list = await getVendorsList(id);
+  return list[0] || null;
 }
 
 async function saveVendorToDb(v: any): Promise<boolean> {
@@ -641,6 +846,7 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        irc: irc || null,
         riskAssessment: null,
         analysisRecords: null,
       },
@@ -654,28 +860,37 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        irc: irc || null,
         riskAssessment: null,
         analysisRecords: null,
       },
     });
 
-    const materialId = generateMaterialId(cas, irc, material, materialEn);
-    await prisma.material.upsert({
-      where: { id: materialId },
-      update: {
-        name: material || "نامشخص",
-        nameEn: materialEn || "Unknown",
-        cas: cas || "N/A",
-        irc: irc || "N/A",
-      },
-      create: {
-        id: materialId,
-        name: material || "نامشخص",
-        nameEn: materialEn || "Unknown",
-        cas: cas || "N/A",
-        irc: irc || "N/A",
-      },
-    });
+    /**
+     * Link to the material the form actually picked from the catalogue.
+     *
+     * The id used to be derived with `generateMaterialId(cas, irc, …)`, so the
+     * source's IRC became part of the material's identity: registering a source
+     * with an IRC minted a second material row for a substance already in the
+     * catalogue (`mat_<cas>_<irc>` beside the real `M-…`) and linked the source
+     * to that duplicate. Deriving is now only the fallback for legacy payloads
+     * that carry no materialId, and the IRC is no longer part of it.
+     */
+    const materialId = v.materialId || generateMaterialId(cas, undefined, material, materialEn);
+    const existingMaterial = await prisma.material.findUnique({ where: { id: materialId } });
+    if (!existingMaterial) {
+      // Only ever create the catalogue entry from a vendor payload; never
+      // overwrite one, or saving a source would rewrite the master record.
+      await prisma.material.create({
+        data: {
+          id: materialId,
+          name: material || "نامشخص",
+          nameEn: materialEn || "Unknown",
+          cas: cas || "N/A",
+          irc: "N/A",
+        },
+      });
+    }
 
     // Delete any old links for this vendor that point to a different material
     await prisma.vendorMaterial.deleteMany({
@@ -685,15 +900,23 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       }
     });
 
-    const linkId = `link_${id}_${materialId}`;
+    /**
+     * Upsert on (vendorId, materialId), not on the synthetic `link_<v>_<m>` id.
+     *
+     * Links created outside this function (seeds, imports) carry their own ids,
+     * so keying the upsert on the synthetic one tried to *insert* a second row
+     * for a pair that already exists and hit the unique constraint. It stayed
+     * hidden only because the material id used to be derived from the payload,
+     * which made the deleteMany above drop the existing link first.
+     */
     await prisma.vendorMaterial.upsert({
-      where: { id: linkId },
+      where: { vendorId_materialId: { vendorId: id, materialId } },
       update: {
         isSample: isSample ?? false,
         category: category || "foreign",
       },
       create: {
-        id: linkId,
+        id: `link_${id}_${materialId}`,
         vendorId: id,
         materialId: materialId,
         isSample: isSample ?? false,
@@ -784,6 +1007,8 @@ interface AppUser {
   password: { hash: string; salt: string };
   permissions: any;
   mustChangePassword: boolean;
+  isActive: boolean;
+  lastLoginAt: Date | null;
 }
 
 function mapUserRow(row: any): AppUser {
@@ -794,6 +1019,11 @@ function mapUserRow(row: any): AppUser {
     password: { hash: row.passwordHash, salt: row.passwordSalt },
     permissions: row.permissions ?? [],
     mustChangePassword: row.mustChangePassword !== false,
+    // Both of these columns existed but were dropped here, which is why nothing
+    // in the app could see them: an account could be marked inactive and still
+    // sign in, and "last login" was never available to show.
+    isActive: row.isActive !== false,
+    lastLoginAt: row.lastLoginAt ?? null,
   };
 }
 
@@ -840,8 +1070,133 @@ function requireAuth(req: any, res: any, next: any) {
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ error: "Access Denied: Session integrity verification failed" });
+    // 401, not 403: the token is missing or no longer verifies, which is a
+    // failure to authenticate. 403 is reserved for a known user who is not
+    // allowed to do this, so the client can tell the two apart.
+    return res.status(401).json({ error: "Access Denied: Session integrity verification failed" });
   }
+}
+
+/**
+ * Restrict a route to specific roles. Chain it after requireAuth, which is what
+ * populates req.user from the token.
+ *
+ * The role checks the UI performs are for usability only: currentUser is read
+ * from localStorage and can be edited in devtools, so the server has to be the
+ * one that decides. Without this every signed-in user could reach the user
+ * endpoints and grant themselves admin — which would undermine the audit trail,
+ * since its value rests on access control being trustworthy.
+ */
+/**
+ * Refuse changes that would leave nobody able to administer the system.
+ *
+ * Without these an admin can lock the whole organisation out of user
+ * management with one click — demote or close the only admin account and there
+ * is no longer any route back in short of editing the database by hand.
+ * Returns a message when the change must be refused, or null when it is safe.
+ */
+async function checkAdminSafety(
+  actor: { username: string },
+  targetUsername: string,
+  change: { role?: string; isActive?: boolean; deleting?: boolean },
+): Promise<string | null> {
+  const target = targetUsername.toLowerCase();
+  const isSelf = actor.username.toLowerCase() === target;
+
+  if (isSelf) {
+    if (change.deleting) return "حذف حساب کاربری خودتان امکان‌پذیر نیست.";
+    if (change.isActive === false) return "غیرفعال‌کردن حساب کاربری خودتان امکان‌پذیر نیست.";
+    if (change.role && change.role !== "admin") return "تغییر نقش خودتان از مدیر سیستم امکان‌پذیر نیست.";
+  }
+
+  const losesAdmin =
+    change.deleting || change.isActive === false || (change.role && change.role !== "admin");
+  if (!losesAdmin) return null;
+
+  const current = await getUserByUsername(target);
+  if (!current || current.role !== "admin" || current.isActive === false) return null;
+
+  const activeAdmins = await requirePrisma().user.count({
+    where: { role: "admin" as any, isActive: true },
+  });
+  if (activeAdmins <= 1) {
+    return "این تنها مدیر فعال سامانه است؛ ابتدا یک مدیر دیگر تعریف یا فعال کنید.";
+  }
+  return null;
+}
+
+/**
+ * Restrict a route to the roles holding a permission, read from the shared
+ * policy table that the UI reads too. The UI hides what a role cannot do; this
+ * is what actually prevents it — a hidden button is still a reachable endpoint.
+ */
+/**
+ * Refuse a permission change that would leave nobody able to administer users.
+ *
+ * `users.manage` is the way back in: strip it from the last account that holds
+ * it and the only remaining route to user management is the database.
+ */
+async function checkPermissionSafety(
+  actor: { username: string },
+  targetUsername: string,
+  nextPermissions: Permission[],
+): Promise<string | null> {
+  const target = targetUsername.toLowerCase();
+  const keepsAdmin = nextPermissions.includes("users.manage");
+  if (keepsAdmin) return null;
+
+  if (actor.username.toLowerCase() === target) {
+    return "برداشتن دسترسی «مدیریت کاربران» از حساب خودتان امکان‌پذیر نیست.";
+  }
+
+  const current = await getUserByUsername(target);
+  if (!current || current.isActive === false) return null;
+  if (!can(current, "users.manage")) return null;
+
+  const others = (await getAllUsers()).filter(
+    u => u.username.toLowerCase() !== target && u.isActive !== false && can(u, "users.manage"),
+  );
+  if (others.length === 0) {
+    return "این تنها حساب دارای دسترسی «مدیریت کاربران» است؛ ابتدا این دسترسی را به کاربر دیگری بدهید.";
+  }
+  return null;
+}
+
+function requirePermission(permission: Permission) {
+  return async function (req: any, res: any, next: any) {
+    // The account is loaded rather than read off the token. The token lives for
+    // seven days and carries only the role, so an admin's change to someone's
+    // permissions would not take effect until it expired — which would defeat
+    // the point of being able to change them. This is one primary-key lookup on
+    // write requests; reads do not go through here.
+    try {
+      const account = await getUserByUsername(req.user?.username || "");
+      if (!account || account.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      if (!can(account, permission)) {
+        return res.status(403).json({
+          error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
+        });
+      }
+      req.account = account;
+      next();
+    } catch (err: any) {
+      console.error("Permission check failed:", err);
+      return res.status(500).json({ error: "بررسی سطح دسترسی با خطا مواجه شد." });
+    }
+  };
+}
+
+function requireRole(...roles: string[]) {
+  return function (req: any, res: any, next: any) {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: "عدم دسترسی: این عملیات فقط برای مدیران سیستم مجاز است.",
+      });
+    }
+    next();
+  };
 }
 
 async function startServer() {
@@ -917,10 +1272,10 @@ async function startServer() {
         description: "تلاش ناموفق برای ورود به سیستم: عدم ارسال نام کاربری یا کلمه عبور",
         reasonForChange: "عدم ارسال مشخصات ورودی (Missing Credentials)",
         beforeData: null,
-        afterData: { attemptedUsername: username || null, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: username || null }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(400).json({ error: "Username and password are required credentials" });
+      return res.status(400).json({ error: "نام کاربری و کلمهٔ عبور را وارد کنید." });
     }
 
     const matchedUser = await getUserByUsername(username);
@@ -942,10 +1297,10 @@ async function startServer() {
         description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${username}: کاربر یافت نشد`,
         reasonForChange: "نام کاربری نادرست یا تعریف نشده در پایگاه داده",
         beforeData: null,
-        afterData: { attemptedUsername: username, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(401).json({ error: "Incorrect username or password. Please try again." });
+      return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
     }
 
     const isPasswordCorrect = verifyPassword(password, matchedUser.password);
@@ -968,10 +1323,36 @@ async function startServer() {
         description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${matchedUser.username}: کلمه عبور اشتباه است`,
         reasonForChange: "کلمه عبور وارد شده با هش ذخیره شده مطابقت ندارد",
         beforeData: null,
-        afterData: { attemptedUsername: matchedUser.username, ip: ipAddress, device: userAgent }
+        afterData: { attemptedUsername: matchedUser.username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
-      return res.status(401).json({ error: "Incorrect username or password. Please try again." });
+      return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
+    }
+
+    // A deactivated account is refused here, after the password check, so the
+    // response cannot be used to tell a closed account from a wrong password.
+    if (matchedUser.isActive === false) {
+      AuditService.createAuditRecord({
+        auditId,
+        userId: matchedUser.username,
+        userName: matchedUser.name,
+        role: matchedUser.role,
+        module: "احراز هویت",
+        eventType: "Authentication",
+        ipAddress,
+        userAgent,
+        entityType: "Security Event",
+        entityId: matchedUser.username,
+        entityName: matchedUser.name,
+        action: "FAILED_LOGIN",
+        severity: "Warning",
+        description: `تلاش برای ورود با حساب کاربری غیرفعال ${matchedUser.username}`,
+        reasonForChange: "حساب کاربری توسط مدیر سیستم غیرفعال شده است",
+        beforeData: null,
+        afterData: { attemptedUsername: matchedUser.username }
+      }).catch(err => console.error("Audit for inactive login failed:", err));
+
+      return res.status(403).json({ error: "این حساب کاربری غیرفعال است. با مدیر سیستم تماس بگیرید." });
     }
 
     // Sign the JWT securely
@@ -980,6 +1361,16 @@ async function startServer() {
       JWT_SECRET,
       { expiresIn: "7d" }
     );
+
+    // Read the previous sign-in before overwriting it: what a person wants to
+    // see when they log in is when they were *last* here, not the moment they
+    // just arrived. It is returned once at login and then left alone, since
+    // /api/auth/me deliberately does not send it back.
+    const previousLoginAt = matchedUser.lastLoginAt ? new Date(matchedUser.lastLoginAt).toISOString() : null;
+
+    requirePrisma().user
+      .update({ where: { username: matchedUser.username.toLowerCase() }, data: { lastLoginAt: new Date() } })
+      .catch(err => console.error("Failed to record last login:", err));
 
     const mustChangePassword = matchedUser.mustChangePassword !== false;
 
@@ -1001,7 +1392,7 @@ async function startServer() {
       description: `ورود موفقیت‌آمیز کاربر ${matchedUser.name} (${matchedUser.username}) به سامانه`,
       reasonForChange: "احراز هویت موفق با کلمه عبور و تولید کلید JWT",
       beforeData: null,
-      afterData: { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, ip: ipAddress, device: userAgent }
+      afterData: { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name }
     }).catch(err => console.error("Audit logging failed on login:", err));
 
     res.json({
@@ -1011,6 +1402,12 @@ async function startServer() {
         username: matchedUser.username,
         role: matchedUser.role,
         name: matchedUser.name,
+        // The effective list, so the UI gates on exactly what the server will.
+        permissions: effectivePermissions(matchedUser),
+        // The client only ever receives the effective list, so it cannot work
+        // out on its own whether that came from the role or from an override.
+        permissionsCustom: hasCustomPermissions(matchedUser),
+        previousLoginAt,
         mustChangePassword
       }
     });
@@ -1051,7 +1448,7 @@ async function startServer() {
         description: `خروج موفقیت‌آمیز کاربر ${req.user.name} (${req.user.username}) از سامانه`,
         reasonForChange: "ارسال درخواست خروج صریح از سوی کاربر",
         beforeData: { sessionStatus: "Active" },
-        afterData: { sessionStatus: "Logged Out", ip: ipAddress, device: userAgent }
+        afterData: { sessionStatus: "Logged Out" }
       });
 
       res.json({ success: true, message: "با موفقیت از سیستم خارج شدید" });
@@ -1129,26 +1526,154 @@ async function startServer() {
         username: matchedUser.username,
         role: matchedUser.role,
         name: matchedUser.name,
+        permissions: effectivePermissions(matchedUser),
         mustChangePassword: false
       }
     });
   });
 
   // Fetch / verify logged in user's profile state
+  // The client calls this on boot to re-check the account it restored from
+  // localStorage. Role and name therefore come from the database rather than
+  // from the token: the token is valid for seven days, so reading the role back
+  // out of it would just echo whatever was true when the user signed in and
+  // could never report a role change or a closed account.
   app.get("/api/auth/me", requireAuth, async (req: any, res) => {
     const username = req.user.username;
     const matchedUser = await getUserByUsername(username);
-    const mustChangePassword = matchedUser ? matchedUser.mustChangePassword !== false : false;
 
-    res.json({ 
-      success: true, 
+    // 401 here so authFetch ends the session: an account that was closed or
+    // deactivated mid-session should be signed out on the next load rather than
+    // keeping its access until the seven-day token runs out.
+    if (!matchedUser || matchedUser.isActive === false) {
+      return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+    }
+
+    res.json({
+      success: true,
       user: {
-        username: req.user.username,
-        role: req.user.role,
-        name: req.user.name,
-        mustChangePassword
+        username: matchedUser.username,
+        role: matchedUser.role,
+        name: matchedUser.name,
+        permissions: effectivePermissions(matchedUser),
+        // The client only ever receives the effective list, so it cannot work
+        // out on its own whether that came from the role or from an override.
+        permissionsCustom: hasCustomPermissions(matchedUser),
+        mustChangePassword: matchedUser.mustChangePassword !== false
       }
     });
+  });
+
+  /**
+   * The signed-in user's own recent activity.
+   *
+   * The audit trail itself is admin-only, but reading back what *you* did is
+   * not a privileged act, and it is the fastest way for someone to notice
+   * activity on their account that was not theirs. The filter is taken from the
+   * token, never from the query string, so this cannot be pointed at anyone
+   * else's history.
+   */
+  app.get("/api/auth/my-activity", requireAuth, async (req: any, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 8, 25);
+      const result = await AuditService.getAuditLogs({ userId: req.user.username }, 1, limit);
+      res.json({ success: true, data: result?.data ?? [], total: result?.total ?? 0 });
+    } catch (err: any) {
+      console.error("Failed to fetch own activity:", err);
+      res.status(500).json({ error: "دریافت فعالیت اخیر با خطا مواجه شد." });
+    }
+  });
+
+  // ==========================================
+  // Source selection — the recorded purchasing decision per material
+  // ==========================================
+
+  app.get("/api/source-selections", requireAuth, async (req: any, res) => {
+    try {
+      const rows = await requirePrisma().sourceSelection.findMany();
+      res.json(rows.map(r => ({
+        materialKey: r.materialKey,
+        category: r.category,
+        vendorId: r.vendorId,
+        reason: r.reason,
+        decidedBy: r.decidedBy,
+        decidedAt: r.decidedAt.toISOString(),
+      })));
+    } catch (err: any) {
+      console.error("Failed to fetch source selections:", err);
+      res.status(500).json({ error: "دریافت انتخاب سورس‌ها با خطا مواجه شد." });
+    }
+  });
+
+  /**
+   * Record (or change) which source is bought for a material.
+   *
+   * The reason is mandatory: a recommendation the system produced is not a
+   * decision anyone made, and "why this supplier" is exactly what an auditor
+   * asks. Requires vendor.write — the same permission as registering a source.
+   */
+  app.put("/api/source-selections", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+    try {
+      const { materialKey, category, vendorId, reason } = req.body || {};
+      if (!materialKey || !category || !vendorId) {
+        return res.status(400).json({ error: "فیلدهای materialKey، category و vendorId الزامی هستند." });
+      }
+      if (!reason || String(reason).trim().length < 10) {
+        return res.status(400).json({ error: "ثبت دلیل انتخاب الزامی است و باید حداقل ۱۰ کاراکتر باشد." });
+      }
+
+      const vendor = await getVendorById(vendorId);
+      if (!vendor) return res.status(404).json({ error: "سورس یافت نشد." });
+
+      const prisma = requirePrisma();
+      const previous = await prisma.sourceSelection.findUnique({
+        where: { materialKey_category: { materialKey, category } },
+      });
+
+      const decidedBy = req.user.name || req.user.username;
+      const saved = await prisma.sourceSelection.upsert({
+        where: { materialKey_category: { materialKey, category } },
+        create: { materialKey, category, vendorId, reason: String(reason).trim(), decidedBy },
+        update: { vendorId, reason: String(reason).trim(), decidedBy, decidedAt: new Date() },
+      });
+
+      const now = new Date();
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "ارزیابی سورس‌ها",
+        action: previous ? "UPDATE_SOURCE_SELECTION" : "CREATE_SOURCE_SELECTION",
+        severity: "Warning",
+        description: previous && previous.vendorId !== vendorId
+          ? `سورس منتخب برای «${materialKey}» از یک تأمین‌کننده به «${vendor.name}» تغییر یافت.`
+          : `«${vendor.name}» به‌عنوان سورس منتخب برای «${materialKey}» ثبت شد.`,
+        entityType: "SourceSelection",
+        entityId: `${category}:${materialKey}`,
+        entityName: vendor.name,
+        eventType: "Data Change",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        reasonForChange: String(reason).trim(),
+        beforeData: previous
+          ? { vendorId: previous.vendorId, reason: previous.reason, decidedBy: previous.decidedBy }
+          : null,
+        afterData: { vendorId, reason: String(reason).trim(), decidedBy, materialKey, category },
+      });
+
+      res.json({
+        success: true,
+        selection: {
+          materialKey: saved.materialKey, category: saved.category, vendorId: saved.vendorId,
+          reason: saved.reason, decidedBy: saved.decidedBy, decidedAt: saved.decidedAt.toISOString(),
+        },
+      });
+    } catch (err: any) {
+      console.error("Failed to save source selection:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Dynamic configuration endpoint for scoring weights & mapping criteria
@@ -1160,7 +1685,7 @@ async function startServer() {
   });
 
   // Get all vendors (Unified Database)
-  app.get("/api/vendors", async (req, res) => {
+  app.get("/api/vendors", requireAuth, async (req: any, res) => {
     try {
       const list = await getVendorsList();
       res.json(list);
@@ -1233,7 +1758,7 @@ async function startServer() {
   });
 
   // Create or Update single vendor (Unified Database)
-  app.post("/api/vendors", requireAuth, async (req: any, res) => {
+  app.post("/api/vendors", requireAuth, requirePermission("vendor.create"), async (req: any, res) => {
     try {
       const validationResult = vendorSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -1251,6 +1776,36 @@ async function startServer() {
       }
       
       const existing = await getVendorById(v.id);
+
+      const ircError = ircViolation((v as any).irc, (existing as any)?.irc);
+      if (ircError) {
+        return res.status(422).json({ error: ircError });
+      }
+
+      const sopError = await sopSupplierViolation((v as any).supplierId, (existing as any)?.supplierId);
+      if (sopError) {
+        AuditService.createAuditRecord({
+          auditId: `AUD-SOP-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Source Management",
+          eventType: "Data Change",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "Source",
+          entityId: v.id,
+          entityName: (v as any).material || v.name || "سورس",
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
+          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          beforeData: null,
+          afterData: { supplierId: (v as any).supplierId, refusal: sopError },
+        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        return res.status(422).json({ error: sopError });
+      }
+
       await saveVendorToDb(v);
       const updated = await getVendorById(v.id);
 
@@ -1387,7 +1942,7 @@ async function startServer() {
   });
 
   // Update vendor profile (Unified Database)
-  app.patch("/api/vendors/:id/profile", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1403,6 +1958,36 @@ async function startServer() {
         ...current,
         ...p
       };
+
+      const ircError = ircViolation((p as any).irc, (current as any).irc);
+      if (ircError) {
+        return res.status(422).json({ error: ircError });
+      }
+
+      const sopError = await sopSupplierViolation((updatedVendor as any).supplierId, (current as any).supplierId);
+      if (sopError) {
+        AuditService.createAuditRecord({
+          auditId: `AUD-SOP-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Source Management",
+          eventType: "Data Change",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "Source",
+          entityId: id,
+          entityName: current.material || current.name || "سورس",
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
+          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          beforeData: null,
+          afterData: { supplierId: (updatedVendor as any).supplierId, refusal: sopError },
+        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        return res.status(422).json({ error: sopError });
+      }
+
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 
@@ -1462,7 +2047,7 @@ async function startServer() {
   });
 
   // Update vendor contact details (Unified Database)
-  app.patch("/api/vendors/:id/contact", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1550,7 +2135,26 @@ async function startServer() {
       }
       const s = validationResult.data;
 
-      const allVendorsBefore = await getVendorsList();
+      // A simple allow/deny on this route is not enough. It replaces the whole
+      // scores object rather than patching one field, so a caller entitled to
+      // send it could carry another department's score along in the payload.
+      // Compare against what is stored and refuse anything they may not touch.
+      const scorer = await getUserByUsername(req.user?.username || "");
+      if (!scorer || scorer.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      const offending = [
+        ...forbiddenScoreChanges(scorer, current.scores as any, s.scores as any),
+        ...forbiddenRawScoreChanges(scorer, current.rawScores as any, s.rawScores as any),
+      ];
+      if (offending.length > 0) {
+        const unique = [...new Set(offending)].join('، ');
+        return res.status(403).json({
+          error: `عدم دسترسی: شما تنها مجاز به ثبت امتیاز دپارتمان خود هستید (تلاش برای تغییر: ${unique}).`,
+        });
+      }
+
+      const allVendorsBefore = await getRankingSnapshot();
       const prevRank = getVendorRank(id, allVendorsBefore);
 
       const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -1595,7 +2199,7 @@ async function startServer() {
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
 
-      const allVendorsAfter = await getVendorsList();
+      const allVendorsAfter = await getRankingSnapshot();
       const newRank = getVendorRank(id, allVendorsAfter);
 
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
@@ -1635,7 +2239,6 @@ async function startServer() {
           financeScore: prevScores.finance,
           commercialScore: prevScores.commercial,
           planningScore: prevScores.planning,
-          scores: prevScores,
           status: current.status
         },
         afterData: {
@@ -1645,7 +2248,6 @@ async function startServer() {
           financeScore: newScores.finance,
           commercialScore: newScores.commercial,
           planningScore: newScores.planning,
-          scores: newScores,
           status: result.status
         }
       }).catch(err => console.error("Audit logging failed on scores update:", err));
@@ -1686,7 +2288,7 @@ async function startServer() {
   });
 
   // Update vendor activity logs (Unified Database)
-  app.patch("/api/vendors/:id/logs", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1704,7 +2306,35 @@ async function startServer() {
       };
       await saveVendorToDb(updatedVendor);
       const result = await getVendorById(id);
-      console.log(`[UnifiedDB] Append/Saved audit log events for vendor: ${id}`);
+
+      // This was the only write endpoint in the API that left no audit record,
+      // so editing or deleting an entry in a source's activity log was the one
+      // change in the system with no trace behind it.
+      const prevLogs = current.activityLogs || [];
+      const nextLogs = updatedVendor.activityLogs || [];
+      if (JSON.stringify(prevLogs) !== JSON.stringify(nextLogs)) {
+        const userObj = req.user || {};
+        const now = new Date();
+        await AuditService.createAuditRecord({
+          auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          correlationId: crypto.randomUUID(),
+          userId: userObj.username || 'system',
+          userName: userObj.name || userObj.username || 'کاربر سیستم',
+          role: userObj.role || 'user',
+          module: "Source Management",
+          entityType: "ActivityLog",
+          entityId: id,
+          entityName: current.name || id,
+          action: nextLogs.length >= prevLogs.length ? "Create" : "Delete",
+          severity: nextLogs.length < prevLogs.length ? "Warning" : "Information",
+          description: nextLogs.length >= prevLogs.length
+            ? `ثبت سابقهٔ فعالیت برای سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`
+            : `حذف سابقهٔ فعالیت از سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`,
+          reasonForChange: (req.body?.reasonForChange as string) || "ویرایش سوابق فعالیت سورس",
+          beforeData: { activityLogCount: prevLogs.length, activityLogs: prevLogs },
+          afterData: { activityLogCount: nextLogs.length, activityLogs: nextLogs },
+        }).catch(err => console.error("Audit logging failed on activity logs update:", err));
+      }
       res.json({ success: true, part: "logs", vendor: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1712,7 +2342,7 @@ async function startServer() {
   });
 
   // Update vendor analysis records & logs (Unified Database)
-  app.patch("/api/vendors/:id/analysis", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/analysis", requireAuth, requirePermission("vendor.analysis"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -1988,7 +2618,7 @@ async function startServer() {
   });
 
   // Update vendor risk assessment (Unified Database)
-  app.patch("/api/vendors/:id/risk", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/risk", requireAuth, requirePermission("vendor.risk"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2125,7 +2755,7 @@ async function startServer() {
   });
 
   // Delete vendor (Unified Database)
-  app.delete("/api/vendors/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/vendors/:id", requireAuth, requirePermission("vendor.delete"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2204,39 +2834,54 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
       const filters: any = {};
-      if (req.query.userId) filters.userId = req.query.userId as string;
+      // The filter form offers user *names* (that is what /filters returns),
+      // so matching only on userId silently returned nothing.
+      if (req.query.userId) filters.user = req.query.userId as string;
       if (req.query.module && req.query.module !== "all") filters.module = req.query.module as string;
-      if (req.query.eventType && req.query.eventType !== "all") filters.eventType = req.query.eventType as string;
+      // Coarse group = a fixed set of modules, enforced here rather than being
+      // dropped on the floor like the old `eventType` parameter was.
+      const group = req.query.group as string;
+      if (group && group !== "all" && AUDIT_EVENT_GROUPS[group]) {
+        filters.modules = AUDIT_EVENT_GROUPS[group].modules;
+      }
       if (req.query.action && req.query.action !== "all") filters.action = req.query.action as string;
       if (req.query.severity && req.query.severity !== "all") filters.severity = req.query.severity as string;
       if (req.query.entityId) filters.entityId = req.query.entityId as string;
       if (req.query.correlationId) filters.correlationId = req.query.correlationId as string;
-      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
-      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+      // An unparseable date used to become `Invalid Date` and blow up the query
+      // with a 500 — which is exactly what the Jalali text the form sent did.
+      const parseDate = (raw: unknown) => {
+        if (!raw) return undefined;
+        const d = new Date(raw as string);
+        return isNaN(d.getTime()) ? undefined : d;
+      };
+      const startDate = parseDate(req.query.startDate);
+      const endDate = parseDate(req.query.endDate);
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
       if (req.query.quickFilter && req.query.quickFilter !== "all") filters.quickFilter = req.query.quickFilter as string;
 
       const query = (req.query.query as string || "").trim();
+      // The table's sort choice, applied in SQL — see AuditService.orderFor.
+      const sort = { by: req.query.sortBy as string, dir: req.query.sortDir as string };
       let result;
 
       if (query) {
-        const searched = await AuditService.searchAuditLogs(query, filters);
+        const searched = await AuditService.searchAuditLogs(query, filters, sort);
         const skip = (page - 1) * limit;
         result = {
           data: searched.slice(skip, skip + limit),
           total: searched.length,
         };
       } else {
-        result = await AuditService.getAuditLogs(filters, page, limit);
+        result = await AuditService.getAuditLogs(filters, page, limit, sort);
       }
 
       res.json(result);
@@ -2246,11 +2891,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/stats", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/stats", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const result = await AuditService.getAuditLogs({}, 1, 10000);
       const total = result.total;
@@ -2280,11 +2922,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/filters", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/filters", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const result = await AuditService.getAuditLogs({}, 1, 10000);
       const uniqueUsers = Array.from(new Set(result.data.map((l: any) => l.userName || l.userId).filter(Boolean)));
@@ -2299,11 +2938,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs/:id", requireAuth, async (req: any, res) => {
+  app.get("/api/audit-logs/:id", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "عدم دسترسی: مشاهده ردیابی تغییرات (Audit Trail) فقط برای مدیران سیستم مجاز است." });
-      }
 
       const log = await AuditService.getAuditById(req.params.id);
       if (!log) {
@@ -2319,14 +2955,17 @@ async function startServer() {
   // --- User Management Endpoints ---
   // ==========================================
 
-  app.get("/api/users", requireAuth, async (req: any, res) => {
+  app.get("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const usersList = (await getAllUsers()).map(u => ({
         username: u.username,
         name: u.name,
         role: u.role,
-        permissions: u.permissions || [],
-        mustChangePassword: u.mustChangePassword !== false
+        permissions: sanitizePermissions(u.permissions),
+        effectivePermissions: effectivePermissions(u),
+        mustChangePassword: u.mustChangePassword !== false,
+        isActive: u.isActive !== false,
+        lastLoginAt: u.lastLoginAt || null
       }));
       res.json(usersList);
     } catch (err: any) {
@@ -2334,14 +2973,42 @@ async function startServer() {
     }
   });
 
-  app.post("/api/users", requireAuth, async (req: any, res) => {
+  app.post("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const { username, name, role, password, permissions, reasonForChange } = req.body;
       if (!username || !name || !role) {
         return res.status(400).json({ error: "فیلدهای username، name و role الزامی هستند." });
       }
 
-      const key = username.toLowerCase();
+      // These rules used to live only in the React form, so the endpoint itself
+      // accepted a username with spaces, a one-character password, an unknown
+      // role (silently coerced to `commercial` while the response echoed back
+      // the invalid one) and permission names that exist nowhere. Rule 14: the
+      // server is where access rules are enforced, the form is only UX.
+      const cleanName = String(name).trim();
+      if (!cleanName) {
+        return res.status(400).json({ error: "نام و نام خانوادگی الزامی است." });
+      }
+      const key = String(username).trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,}$/.test(key)) {
+        return res.status(400).json({
+          error: "نام کاربری باید حداقل ۳ کاراکتر و فقط شامل حروف لاتین، عدد، نقطه، خط تیره یا زیرخط باشد.",
+        });
+      }
+      if (!ALLOWED_USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `سمت سازمانی نامعتبر است. مقادیر مجاز: ${ALLOWED_USER_ROLES.join("، ")}`,
+        });
+      }
+      // An omitted password falls back to the shared default, which the account
+      // must change on first sign-in; a supplied one has to be a real password.
+      if (password !== undefined && String(password).length < 6) {
+        return res.status(400).json({ error: "کلمه عبور اولیه باید حداقل ۶ کاراکتر باشد." });
+      }
+      if (permissions !== undefined && !Array.isArray(permissions)) {
+        return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
+      }
+
       if (await getUserByUsername(key)) {
         return res.status(400).json({ error: "کاربری با این نام کاربری قبلاً تعریف شده است." });
       }
@@ -2349,18 +3016,20 @@ async function startServer() {
       const uSalt = generateSalt();
       const uPassword = password || "123456";
       const newUser = {
-        username: username,
-        name: name,
-        role: role,
-        permissions: permissions || [],
+        username: key,
+        name: cleanName,
+        role: role as UserRoleValue,
+        // Unknown names are dropped rather than stored, exactly as in PATCH and
+        // PUT /permissions — this was the one write path that skipped it.
+        permissions: sanitizePermissions(permissions),
         mustChangePassword: true
       };
 
       await requirePrisma().user.create({
         data: {
           username: key,
-          name,
-          role: normalizeUserRole(role) as any,
+          name: cleanName,
+          role: newUser.role as any,
           passwordHash: hashPassword(uPassword, uSalt),
           passwordSalt: uSalt,
           permissions: newUser.permissions,
@@ -2380,26 +3049,38 @@ async function startServer() {
         module: "مدیریت کاربران",
         action: "CREATE_USER",
         severity: "Information",
-        description: `کاربر جدید با نام کاربری ${username} و سمت ${role} توسط ${req.user.name} ایجاد شد.`,
+        description: `کاربر جدید با نام کاربری ${key} و سمت ${newUser.role} توسط ${req.user.name} ایجاد شد.`,
         entityType: "User",
-        entityId: username,
-        entityName: name,
+        entityId: key,
+        entityName: cleanName,
         eventType: "Authorization",
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "تعریف دسترسی پرسنل جدید فرآیندی",
         beforeData: null,
-        afterData: { username, name, role, permissions: newUser.permissions, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { username: key, name: cleanName, role: newUser.role, permissions: newUser.permissions }
       });
 
-      res.json({ success: true, user: { username, name, role, permissions: newUser.permissions } });
+      // The stored record, not the submitted one: the response used to echo the
+      // request back, so an invalid role reached the client as if it had been
+      // accepted and the table showed it until the next reload.
+      res.json({
+        success: true,
+        user: {
+          username: key,
+          name: cleanName,
+          role: newUser.role,
+          permissions: newUser.permissions,
+          effectivePermissions: effectivePermissions({ role: newUser.role, permissions: newUser.permissions } as any),
+        },
+      });
     } catch (err: any) {
       console.error("Failed to create user:", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.patch("/api/users/:username", requireAuth, async (req: any, res) => {
+  app.patch("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2407,12 +3088,31 @@ async function startServer() {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
 
-      const { name, role, permissions, reasonForChange } = req.body;
-      const originalData = { name: current.name, role: current.role, permissions: current.permissions || [] };
+      const { name, role, permissions, isActive, reasonForChange } = req.body;
+      const originalData = {
+        name: current.name,
+        role: current.role,
+        permissions: current.permissions || [],
+        isActive: current.isActive !== false,
+      };
+
+      const unsafe = await checkAdminSafety(req.user, targetUsername, { role, isActive });
+      if (unsafe) return res.status(400).json({ error: unsafe });
 
       if (name) current.name = name;
+      if (typeof isActive === "boolean") current.isActive = isActive;
+
+      const roleChanged = !!role && role !== current.role;
       if (role) current.role = role;
-      if (permissions) current.permissions = permissions;
+
+      if (permissions) {
+        current.permissions = sanitizePermissions(permissions);
+      } else if (roleChanged) {
+        // Moving someone to a new role clears their old exceptions. Carrying
+        // them across would silently follow a person into a different job —
+        // the new role's template is the honest starting point.
+        current.permissions = [];
+      }
 
       await requirePrisma().user.update({
         where: { username: targetUsername },
@@ -2420,6 +3120,7 @@ async function startServer() {
           name: current.name,
           role: normalizeUserRole(current.role) as any,
           permissions: current.permissions ?? [],
+          isActive: current.isActive !== false,
         },
       });
 
@@ -2444,22 +3145,34 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "بروزرسانی سمت سازمانی / دسترسی‌های سیستمی",
         beforeData: originalData,
-        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false }
       });
 
-      res.json({ success: true, user: { username: current.username, name: current.name, role: current.role, permissions: current.permissions } });
+      res.json({
+        success: true,
+        permissionsReset: roleChanged && !permissions,
+        user: {
+          username: current.username, name: current.name, role: current.role,
+          permissions: sanitizePermissions(current.permissions),
+          effectivePermissions: effectivePermissions(current),
+          isActive: current.isActive !== false,
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.delete("/api/users/:username", requireAuth, async (req: any, res) => {
+  app.delete("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
       if (!current) {
         return res.status(404).json({ error: "کاربر یافت نشد" });
       }
+
+      const unsafeDelete = await checkAdminSafety(req.user, targetUsername, { deleting: true });
+      if (unsafeDelete) return res.status(400).json({ error: unsafeDelete });
 
       const reasonForChange = req.query.reasonForChange as string || "حذف دسترسی پرسنل تسویه شده";
       const beforeData = { username: current.username, name: current.name, role: current.role, permissions: current.permissions || [] };
@@ -2496,7 +3209,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/users/:username/role", requireAuth, async (req: any, res) => {
+  app.put("/api/users/:username/role", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2508,12 +3221,30 @@ async function startServer() {
       if (!role) {
         return res.status(400).json({ error: "فیلد role الزامی است" });
       }
+      if (!ALLOWED_USER_ROLES.includes(role)) {
+        return res.status(400).json({
+          error: `سمت سازمانی نامعتبر است. مقادیر مجاز: ${ALLOWED_USER_ROLES.join("، ")}`,
+        });
+      }
+
+      const unsafeRole = await checkAdminSafety(req.user, targetUsername, { role });
+      if (unsafeRole) return res.status(400).json({ error: unsafeRole });
 
       const oldRole = current.role;
+      const oldPermissions = sanitizePermissions(current.permissions);
+      const roleChanged = role !== oldRole;
       current.role = role;
+      // The same rule PATCH follows: a new role starts from its own template,
+      // so the previous job's exceptions do not follow the person. This route
+      // used to keep them, which meant the two ways of changing a role left the
+      // account in different states.
+      if (roleChanged) current.permissions = [];
       await requirePrisma().user.update({
         where: { username: targetUsername },
-        data: { role: normalizeUserRole(role) as any },
+        data: {
+          role: role as any,
+          ...(roleChanged ? { permissions: [] } : {}),
+        },
       });
 
       const now = new Date();
@@ -2535,17 +3266,77 @@ async function startServer() {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "ارتقای سطح دسترسی سازمانی",
-        beforeData: { role: oldRole },
-        afterData: { role, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        beforeData: { role: oldRole, permissions: oldPermissions },
+        afterData: { role, permissions: current.permissions ?? [] }
       });
 
-      res.json({ success: true, role });
+      res.json({ success: true, role, permissionsReset: roleChanged && oldPermissions.length > 0 });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.put("/api/users/:username/permissions", requireAuth, async (req: any, res) => {
+  // An admin sets a temporary password for someone who is locked out. The
+  // account is flagged to change it on the next sign-in, so the admin never
+  // ends up knowing a password the user keeps using.
+  app.post("/api/users/:username/reset-password", requireAuth, requireRole("admin"), async (req: any, res) => {
+    try {
+      const targetUsername = req.params.username.toLowerCase();
+      const current = await getUserByUsername(targetUsername);
+      if (!current) {
+        return res.status(404).json({ error: "کاربر یافت نشد" });
+      }
+
+      const { newPassword, reasonForChange } = req.body;
+      if (!newPassword || String(newPassword).length < 6) {
+        return res.status(400).json({ error: "کلمه عبور موقت باید حداقل ۶ کاراکتر باشد." });
+      }
+      if (newPassword === "123" || newPassword === "123456") {
+        return res.status(400).json({ error: "کلمه عبور موقت نمی‌تواند رمز پیش‌فرض باشد." });
+      }
+
+      const newSalt = generateSalt();
+      await requirePrisma().user.update({
+        where: { username: targetUsername },
+        data: {
+          passwordHash: hashPassword(newPassword, newSalt),
+          passwordSalt: newSalt,
+          mustChangePassword: true,
+        },
+      });
+
+      const now = new Date();
+      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await AuditService.createAuditRecord({
+        auditId,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت کاربران",
+        action: "RESET_PASSWORD",
+        severity: "Critical",
+        description: `کلمه عبور حساب کاربری ${targetUsername} توسط ${req.user.name} بازنشانی شد و تغییر آن در ورود بعدی الزامی گردید.`,
+        entityType: "User",
+        entityId: targetUsername,
+        entityName: current.name,
+        eventType: "Authorization",
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        reasonForChange: reasonForChange || "بازنشانی کلمه عبور به درخواست کاربر",
+        // The password itself is never recorded — only the fact of the reset.
+        beforeData: { mustChangePassword: current.mustChangePassword !== false },
+        afterData: { mustChangePassword: true, passwordReset: true }
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Failed to reset password:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/users/:username/permissions", requireAuth, requireRole("admin"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -2554,15 +3345,24 @@ async function startServer() {
       }
 
       const { permissions, reasonForChange } = req.body;
-      if (!permissions) {
-        return res.status(400).json({ error: "فیلد permissions الزامی است" });
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
       }
 
-      const oldPermissions = current.permissions || [];
-      current.permissions = permissions;
+      // Unknown names are dropped rather than stored, so a typo cannot end up
+      // as a permission nobody can see in the dialog but that sits in the row.
+      const cleaned = sanitizePermissions(permissions);
+
+      // Same lockout class as role changes: nobody may strip the last account
+      // that can still administer users, and nobody may strip their own.
+      const unsafe = await checkPermissionSafety(req.user, targetUsername, cleaned);
+      if (unsafe) return res.status(400).json({ error: unsafe });
+
+      const oldPermissions = sanitizePermissions(current.permissions);
+      current.permissions = cleaned;
       await requirePrisma().user.update({
         where: { username: targetUsername },
-        data: { permissions },
+        data: { permissions: cleaned },
       });
 
       const now = new Date();
@@ -2585,10 +3385,10 @@ async function startServer() {
         userAgent: getUserAgent(req),
         reasonForChange: reasonForChange || "تغییر اختیارات فرآیندی در ماژول‌های سامانه",
         beforeData: { permissions: oldPermissions },
-        afterData: { permissions, eventType: "Authorization", ipAddress: getClientIp(req), userAgent: getUserAgent(req) }
+        afterData: { permissions: cleaned }
       });
 
-      res.json({ success: true, permissions });
+      res.json({ success: true, permissions: cleaned });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2608,7 +3408,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/materials", requireAuth, async (req: any, res) => {
+  app.post("/api/materials", requireAuth, requirePermission("material.create"), async (req: any, res) => {
     try {
       const b = req.body;
       const reasonForChange = b.reasonForChange;
@@ -2624,6 +3424,13 @@ async function startServer() {
       if (existing) {
         return res.status(400).json({ error: "ماده‌ای با این شناسه قبلاً در سیستم ثبت شده است" });
       }
+
+      const duplicate = await rejectDuplicateMaterial(
+        prisma, req,
+        { id: materialId, nameFa: data.name, nameEn: data.nameEn, cas: data.cas, role: data.role, finalProductEn: data.finalProductEn },
+        null,
+      );
+      if (duplicate) return res.status(409).json(duplicate);
 
       const created = await prisma.material.create({ data: { id: materialId, ...data } });
       const newMaterial = mapMaterialToClient(created);
@@ -2658,7 +3465,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/materials/:id", requireAuth, async (req: any, res) => {
+  app.patch("/api/materials/:id", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const b = req.body;
@@ -2684,8 +3491,32 @@ async function startServer() {
         pharmacopoeia: b.pharmacopoeia ?? current.pharmacopoeia,
         standardNameFa: b.standardNameFa ?? current.standardNameFa,
         standardNameEn: b.standardNameEn ?? current.standardNameEn,
-        specificationFile: b.specificationFile ?? current.specificationFile,
+        // `??` everywhere else means "a field that is not supplied keeps its
+        // value". For the attachment that read the wrong way: sending an
+        // explicit null to detach the file kept the old name, so removing a
+        // Specification never actually persisted. An explicit null clears here;
+        // an absent key still keeps the current value.
+        specificationFile: "specificationFile" in b ? b.specificationFile : current.specificationFile,
       });
+
+      // Clearing the file name through a plain PATCH must not leave the blob
+      // behind — the record would then claim no attachment while still storing
+      // one.
+      const clearedSpecification = !!current.specificationFile && !incoming.specificationFile;
+      if (clearedSpecification) {
+        Object.assign(incoming, {
+          specificationFileSize: null,
+          specificationFileData: null,
+          specificationUploadedAt: null,
+        });
+      }
+
+      const duplicate = await rejectDuplicateMaterial(
+        prisma, req,
+        { id, nameFa: incoming.name, nameEn: incoming.nameEn, cas: incoming.cas, role: incoming.role, finalProductEn: incoming.finalProductEn },
+        { id, nameFa: current.name, nameEn: current.nameEn, cas: current.cas, role: current.role, finalProductEn: current.finalProductEn },
+      );
+      if (duplicate) return res.status(409).json(duplicate);
 
       const updated = await prisma.material.update({ where: { id }, data: incoming });
       const updatedMaterial = mapMaterialToClient(updated);
@@ -2717,7 +3548,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/materials/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/materials/:id", requireAuth, requirePermission("material.delete"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
@@ -2788,7 +3619,136 @@ async function startServer() {
     }
   });
 
-  app.put("/api/materials/:id/status", requireAuth, async (req: any, res) => {
+  // ---------------------------------------------------------------------------
+  // Specification attachment
+  //
+  // The form used to record only the file name: the user picked a document,
+  // saw its name on the record, and nothing was ever stored. In a GxP system
+  // that is a documentation claim with nothing behind it. The three endpoints
+  // below store, serve and remove the actual file.
+  //
+  // The blob lives in a column and is fetched on demand, the same shape the SOP
+  // documents use (project rule 5), so listing the repository never carries
+  // base64.
+  // ---------------------------------------------------------------------------
+
+  /** Roughly the payload ceiling: express.json caps the body at 10mb, and a
+   *  data URL is ~33% larger than the file it encodes. */
+  const MAX_SPECIFICATION_BYTES = 7 * 1024 * 1024;
+
+  app.put("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { fileName, fileSize, fileDataUrl, reasonForChange } = req.body || {};
+      const prisma = requirePrisma();
+
+      if (!fileName || typeof fileDataUrl !== "string" || !fileDataUrl.startsWith("data:")) {
+        return res.status(400).json({ error: "فایل ارسالی نامعتبر است." });
+      }
+      if (typeof fileSize === "number" && fileSize > MAX_SPECIFICATION_BYTES) {
+        return res.status(413).json({ error: "حجم فایل بیش از حد مجاز (۷ مگابایت) است." });
+      }
+
+      const current = await prisma.material.findUnique({ where: { id } });
+      if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+
+      const isReplacement = !!current.specificationFileData;
+      const updated = await prisma.material.update({
+        where: { id },
+        data: {
+          specificationFile: fileName,
+          specificationFileSize: typeof fileSize === "number" ? fileSize : null,
+          specificationFileData: fileDataUrl,
+          specificationUploadedAt: new Date(),
+        },
+      });
+
+      const now = new Date();
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت مواد",
+        action: "Update",
+        severity: "Information",
+        description: `${isReplacement ? "جایگزینی" : "بارگذاری"} فایل Specification برای ماده ${current.name} (${fileName}).`,
+        entityType: "Material",
+        entityId: id,
+        entityName: current.name,
+        reasonForChange: reasonForChange || (isReplacement ? "جایگزینی مدرک مشخصات فنی" : "بارگذاری مدرک مشخصات فنی"),
+        // The blob is never written into the audit row; only what changed about it.
+        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
+        afterData: { specificationFile: fileName, specificationFileSize: fileSize ?? null },
+      });
+
+      res.json({ success: true, material: mapMaterialToClient(updated) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/materials/:id/specification/file", requireAuth, async (req: any, res) => {
+    try {
+      const prisma = requirePrisma();
+      const material = await prisma.material.findUnique({ where: { id: req.params.id } });
+      if (!material || !material.specificationFileData) {
+        return res.status(404).json({ error: "فایلی برای این ماده یافت نشد" });
+      }
+      res.json({
+        fileName: material.specificationFile,
+        fileSize: material.specificationFileSize,
+        fileDataUrl: material.specificationFileData,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const prisma = requirePrisma();
+      const current = await prisma.material.findUnique({ where: { id } });
+      if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+
+      const updated = await prisma.material.update({
+        where: { id },
+        data: {
+          specificationFile: null,
+          specificationFileSize: null,
+          specificationFileData: null,
+          specificationUploadedAt: null,
+        },
+      });
+
+      const now = new Date();
+      await AuditService.createAuditRecord({
+        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        correlationId: crypto.randomUUID(),
+        userId: req.user.username,
+        userName: req.user.name,
+        role: req.user.role,
+        module: "مدیریت مواد",
+        action: "Delete",
+        severity: "Warning",
+        description: `فایل Specification ماده ${current.name} حذف شد (${current.specificationFile || "بدون نام"}).`,
+        entityType: "Material",
+        entityId: id,
+        entityName: current.name,
+        reasonForChange: (req.query.reasonForChange as string) || "حذف مدرک مشخصات فنی",
+        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
+        afterData: null,
+      });
+
+      res.json({ success: true, material: mapMaterialToClient(updated) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/materials/:id/status", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
@@ -2896,7 +3856,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/business-partners", requireAuth, async (req: any, res) => {
+  app.post("/api/business-partners", requireAuth, requirePermission("partner.create"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const partner = req.body;
@@ -2938,7 +3898,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+  app.put("/api/business-partners/:id", requireAuth, requirePermission("partner.edit"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
@@ -2977,7 +3937,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/business-partners/:id", requireAuth, async (req: any, res) => {
+  app.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.delete"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;

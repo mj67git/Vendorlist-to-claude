@@ -8,7 +8,7 @@
 
 ## استک فنی
 - **Frontend:** React 19 + Vite 6 + TypeScript، Tailwind CSS 4، shadcn/ui (Radix)، lucide-react، recharts، motion، فونت Vazirmatn.
-- **Backend:** Express 5 در `server.ts` (مونولیت، ~۲۹۰۰ خط)، Prisma 5 → **PostgreSQL**.
+- **Backend:** Express 5 در `server.ts` (مونولیت، ~۳۴۰۰ خط)، Prisma 5 → **PostgreSQL**.
 - **Entry points:** `server.ts` (بک‌اند + serve فرانت)، `src/main.tsx` → `src/App.tsx` (فرانت، ~۱۷۰۰ خط — فقط تابع `App()`: state ناوبری، sync، و `renderContent`).
   - **کامپوننت‌ها فایل خودشان را دارند** — چیز جدیدی داخل `App.tsx` ننویس:
     - `src/components/views/` → `HomeView`, `CategoryView`, `MaterialGroup`, `MaterialsComparisonSection`, `ArchiveView`, `SupplierAuditView`
@@ -28,7 +28,9 @@
    - کالر باید `<FormModal open={...}>` را **بدون شرط** رندر کند (نه `{cond && <FormModal/>}`)، وگرنه `AnimatePresence` انیمیشن خروج را نمی‌بیند.
    - **children حتی وقتی بسته است ارزیابی می‌شوند.** اگر محتوا به رکوردی وابسته است که ممکن است null باشد، داخل children گاردش کن (`{entity && (<>…</>)}`) وگرنه صفحه crash می‌کند.
    - تأییدیه‌های مخرب: `closeOnBackdrop={false}` بگذار (Esc همچنان لغو می‌کند).
+   - **پنل `[&>*]:min-h-0` دارد و این تزئینی نیست.** حداقلِ خودکارِ اندازهٔ یک flex item نمی‌گذارد کوچک‌تر از محتوایش شود؛ بدون آن، wrapperِ `flex flex-col` کالر ارتفاع طبیعی خودش را نگه می‌داشت، `overflow-hidden` پنل هرچه از ۹۲vh می‌گذشت را می‌برید و **فوتر با دکمهٔ ذخیره از صفحه بیرون می‌افتاد** — ضمن اینکه بدنهٔ `overflow-y-auto` هم اسکرول نمی‌شد چون ارتفاعی بیشتر از پنل گرفته بود. (ظرف‌های اسکرول‌دار حداقل خودکارشان صفر است، پس فقط همان فرزند مستقیم به این نیاز دارد.)
    - استثناها: `CommandPalette`، `PrintableForms` (نمای چاپ)، پاپ‌اورهای انکرشده (اعلان‌ها، منوی کاربر) و اسکریم سایدبار موبایل.
+   - **چرا این قاعده اجباری است (نه سلیقه‌ای):** هر view داخل `motion.div` صفحه‌گردانی رندر می‌شود که روی **`filter`** انیمیت می‌کند، و یک `filter` غیر از `none` هم **containing block** برای فرزندان `position: fixed` می‌سازد و هم یک **stacking context**. پس overlay دست‌سازِ `fixed inset-0` داخل یک view، به‌جای viewport نسبت به جعبهٔ صفحه چیده می‌شود و z-indexش زیر هدر اصلی (`sticky z-10`) حبس می‌شود — هرچقدر هم بالا باشد. `FormModal` با `createPortal` به `document.body` می‌رود و از هر دو فرار می‌کند. استثناهای بالا هم دقیقاً به همین دلیل یا portal می‌زنند (`PrintableForms`) یا بیرون از `<main>` رندر می‌شوند (`CommandPalette`).
 
 8b. **فرم سورس یک صفحه است، نه مودال:** مسیرهای `#/category/<cat>/new` و `#/category/<cat>/vendor/<id>/edit`. چون خودش دیالوگ باز می‌کند، مودال‌کردنش «مودال داخل مودال» می‌ساخت. محافظ تغییرات ذخیره‌نشده داخل `VendorForm` ثبت می‌شود (dirty-check واقعی، نه صرفِ باز بودن فرم).
    - `handleSelectVendor` هنگام push باید `formMode: null` بگذارد و اگر از صفحهٔ فرم می‌آید آن ورودی را **جایگزین** کند؛ وگرنه رکورد تازه‌ساخته `formMode` را ارث می‌برد و دوباره فرم رندر می‌شود.
@@ -41,7 +43,7 @@
    - **همهٔ** مسیرهای ناوبری باید از `runGuarded()` رد شوند تا محافظ «تغییرات ذخیره‌نشده» کار کند. صفحهٔ جزئیاتِ جدید که فرم ویرایش دارد باید `registerNavGuard(() => isDirty)` را در `useEffect` ثبت و در cleanup با `null` پاک کند.
    - `expandedMaterial` داخل ورودیِ `viewHistory` زندگی می‌کند (نه state جدا) تا با بازگشت و reload حفظ شود.
    - **هوک‌های ناوبری باید بالای early-return‌های لاگین/تغییر رمز بمانند** وگرنه ترتیب هوک‌ها می‌شکند (`Rendered more hooks…`). برای دسترسی به توابعی که پایین‌تر تعریف می‌شوند از ref استفاده کن (الگوی `goBackRef`).
-   - **مسیریابی hash (`src/utils/navRoutes.ts`):** URL منبع حقیقتِ «کاربر کجاست» است — `#/`, `#/materials`, `#/category/foreign`, `#/category/foreign?m=<ماده>`, `#/category/foreign/vendor/<id>`. عمداً hash است نه path، چون روی سرور داخلی شرکت به rewrite نیاز ندارد (هرچند `vercel.json` از قبل catch-all دارد). هر view جدید باید در `encodeRoute`/`decodeRoute` هم اضافه شود، وگرنه لینکش قابل اشتراک نیست.
+   - **مسیریابی hash (`src/utils/navRoutes.ts`):** URL منبع حقیقتِ «کاربر کجاست» است — `#/`, `#/materials`, `#/category/foreign`, `#/category/foreign?m=<ماده>`, `#/category/foreign/vendor/<id>`, `#/tasks/<eval|risk|sop|irc>`. عمداً hash است نه path، چون روی سرور داخلی شرکت به rewrite نیاز ندارد (هرچند `vercel.json` از قبل catch-all دارد). هر view جدید باید در `encodeRoute`/`decodeRoute` هم اضافه شود، وگرنه لینکش قابل اشتراک نیست.
    - هر push در استک یک ورودی **واقعی** در تاریخچهٔ مرورگر می‌سازد؛ `goBack`/`goToHistoryIndex` به `history.back()`/`go(-n)` واگذار می‌کنند و **تنها جایی که استک را عقب می‌برد `popstate` است**. پس Back، Forward و منوی تاریخچهٔ مرورگر همگی بومی کار می‌کنند. (الگوی قدیمی sentinel حذف شد.)
    - برای جلوگیری از حلقه، `applyingUrlRef` هنگام اعمال تغییرِ آمده از URL ست می‌شود؛ `pushedEntriesRef` می‌شمارد چند ورودی ساخته‌ایم تا در دیپ‌لینک (که ورودی مرورگر ندارد) Back کاربر را از سایت بیرون نیندازد.
    - لینک فقط `id` سورس را حمل می‌کند؛ رکورد کامل از `db` بازسازی می‌شود. تا رسیدن داده `vendorLinkPending` حالت loading نشان می‌دهد و اگر id واقعاً نبود پیام «سورس یافت نشد» — رکورد ناقص رندر نکن. بعد از رسیدن داده، stub روی استک با رکورد واقعی جایگزین می‌شود تا breadcrumb نام درست را نشان دهد.
@@ -60,6 +62,35 @@
    - `reconcileSupplierEvaluation` روی load اجرا می‌شود تا ارزیابی ذخیره‌شدهٔ ناسازگار با مدارکش خودترمیم شود؛ `updatedAt/updatedBy` عمداً حفظ می‌شود تا محاسبهٔ مجدد شبیه ارزیابی تازهٔ انسانی نباشد.
    - نکته: `getRankParams` (سورس‌ها) گرید `D` دارد ولی مقیاس دیگری است (A: ۸۰-۱۰۰ … D: ۰-۳۹) و به SOP ربطی ندارد.
 
+   - **فقط فروشندهٔ گرید A می‌تواند به سورس وصل شود** (`canSupplySources` در همین فایل). تولیدکننده مشمول نیست چون اصلاً SOP نمی‌گیرد. راه انحراف (override) عمداً وجود ندارد. سرور هم در `POST /api/vendors` و `PATCH /api/vendors/:id/profile` با **۴۲۲** رد می‌کند و رویداد را در audit ثبت می‌کند؛ گیت سمت کلاینت فقط UX است (قاعدهٔ ۱۴).
+   - فروشندهٔ ازقبل‌متصل به یک سورس مستثناست، وگرنه رکوردهای قدیمی غیرقابل‌ویرایش می‌شوند.
+   - **گرید را از امتیاز مشتق کن، نه از ستون `grade`.** این دو در داده واگرا می‌شوند (`bp_sup_2` با امتیاز ۸۰ ستون `grade='B'` دارد در حالی که رابریک آن را A می‌داند). کلاینت روی load با `reconcileSupplierEvaluation` اصلاح می‌کند، پس سرور هم باید با `calculateGradeAndStatus` همان کار را بکند وگرنه فروشنده‌ای را رد می‌کند که فرم مجاز نشان داده است.
+14. **دسترسی سمت‌سرور اجباری است، نه سمت‌کلاینت.** گیت‌های `role === 'admin'` در فرانت فقط برای UX‌اند (چون `currentUser` از localStorage می‌آید و قابل ویرایش است). هر endpoint حساس باید `requireAuth` + `requireRole('admin')` داشته باشد (`server.ts`).
+   - **۴۰۱ و ۴۰۳ معنای متفاوت دارند:** `requireAuth` برای توکن نامعتبر **۴۰۱** می‌دهد و `authFetch` روی آن نشست را پاک می‌کند؛ `requireRole` برای عدم مجوز **۴۰۳** می‌دهد و `authFetch` نباید کاربر را خارج کند. (قبلاً ۴۰۳ هم خروج می‌داد و چون داشبورد فید ادمین‌ویژهٔ audit را صدا می‌زند، هیچ کاربر غیرادمینی نمی‌توانست وارد شود.)
+   - **جدول سیاست واحد `src/utils/permissions.ts`** — هم `server.ts` و هم کامپوننت‌ها از همین می‌خوانند. **شرط نقش دستی ننویس**؛ از `can(role, permission)` و `canScoreDepartment(role, dept)` استفاده کن، وگرنه UI و سرور دوباره واگرا می‌شوند (همان چیزی که باعث شد دکمه‌ها مخفی باشند ولی endpoint اجازه بدهد).
+     - ماتریس: `admin` همه · `commercial` = `vendor.create/edit` + `partner.create/edit/delete` + `score.commercial` · `qa` = `vendor.analysis` + `material.create/edit/delete` + `score.qa` · `planning`/`finance` فقط `score.<خودشان>` · `lab` هیچ (در enum مانده چون حذفش مهاجرت می‌خواهد).
+     - **مجوزها به تفکیک عملیات‌اند، نه به تفکیک ماژول:** `material.create` ≠ `material.edit` ≠ `material.delete` (همین‌طور `partner.*` و `vendor.*`). هر endpoint گارد خودش را دارد؛ POST↔create، PATCH/PUT↔edit، DELETE↔delete.
+     - **نام‌های بازنشسته در `LEGACY_PERMISSIONS` باز می‌شوند، نه اینکه دور ریخته شوند.** `material.write` ذخیره‌شده هنوز هر سه را می‌دهد؛ به همین دلیل مهاجرت دیتابیس لازم نشد. اگر مجوزی را تفکیک کردی، حتماً نگاشتش را همان‌جا اضافه کن وگرنه کاربران قدیمی بی‌صدا دسترسی از دست می‌دهند.
+     - `archive.read` **حذف شد** چون هیچ endpointای آن را اعمال نمی‌کرد — آرشیو نمایی از دادهٔ سورس‌هاست که همه می‌خوانند. مجوزی که سرور اعمال نمی‌کند نساز؛ در فرم به‌جای چک‌باکس مرده، خانهٔ قفل‌شده با دلیل بگذار (`PERMISSION_MODULES` + `LOCKED_REASONS`).
+     - سه ماژول **تفکیک‌پذیر نیستند** چون endpointشان کل مجموعه را جایگزین می‌کند (قاعدهٔ ۱۲): نتایج آزمایشگاهی، ارزیابی ریسک، امتیازدهی. در فرم یک تیک واحد می‌گیرند.
+     - **نقش فقط الگوست.** `users.permissions` (JSON) استثنای پر‌کاربر است: **خالی = از نقش پیروی کن** (وضعیت همهٔ کاربران قدیمی، پس مهاجرت لازم نبود)، پرشده = همان فهرست **جایگزین** الگو می‌شود. `can(user, perm)` کاربر می‌گیرد نه رشتهٔ نقش.
+     - **`requirePermission` رکورد کاربر را از دیتابیس می‌خواند، نه از JWT.** توکن هفت‌روزه است و فقط `role` دارد؛ اگر از توکن خوانده شود تغییر دسترسی تا یک هفته اثر نمی‌کند. هزینه‌اش یک کوئری با کلید اصلی روی درخواست‌های نوشتنی است.
+     - تغییر نقش، استثناها را پاک می‌کند (وگرنه استثنای شغل قبلی بی‌صدا دنبال کاربر می‌آید). `checkPermissionSafety` نمی‌گذارد آخرین دارندهٔ `users.manage` یا خودِ کاربر آن را از دست بدهد.
+     - **امتیازدهی گارد ساده ندارد:** `PATCH /api/vendors/:id/scores` کل شیء را جایگزین می‌کند، پس هندلر با `forbiddenScoreChanges`/`forbiddenRawScoreChanges` payload را با مقدار ذخیره‌شده مقایسه می‌کند. «ثبت‌نشده» و «صفر» عمداً یکی حساب می‌شوند، وگرنه فرم (که برای دپارتمان‌های غیرقابل‌ویرایش صفر می‌فرستد) روی سورس بدون امتیاز رد می‌شد.
+   - **ماژول کاربران:** `src/components/UsersView.tsx` (مسیر `#/users`، ادمین‌ویژه). `checkAdminSafety` در `server.ts` جلوی قفل‌شدن کل سازمان را می‌گیرد: ادمین نمی‌تواند خودش را حذف/غیرفعال/تنزل دهد و آخرین مدیر فعال حذف نمی‌شود.
+
+15. **نام موجودیت‌ها (سورس/ماده/شریک) هرگز بی‌صدا بریده نمی‌شود.** از `src/components/EntityName.tsx` استفاده کن، نه `truncate` دستی. ترتیب اولویت: (۱) سقف عرض نگذار و بگذار جا بیفتد، (۲) `lines={2}` برای شکستن به دو خط، (۳) برش + tooltip — فقط جایی که ارتفاع سطر واقعاً ثابت است، و **هیچ‌وقت بدون tooltip**. نام فارسی معمولاً ۲۰–۳۰ کاراکتر و لاتین تا ۴۰ است؛ در `text-xs` یعنی ~۲۱۰–۲۶۰px.
+   - **`truncate` را روی ظرف `flex` نگذار.** `text-overflow` به فرزندان flex اعمال نمی‌شود، پس متن **بدون «…» سخت بریده می‌شود** و کاربر اصلاً نمی‌فهمد نام ناقص است. `truncate`/`line-clamp` فقط روی خودِ عنصر متن.
+   - بج‌ها و چیپ‌های کنار نام باید `shrink-0` باشند **و** در ظرفی با `flex-wrap`، وگرنه چون بج‌ها کوچک نمی‌شوند تمام فشار روی نام می‌افتد (در نمودار مقایسه، از ۱۸۰px مشترک گاهی فقط ~۷۷px به نام می‌رسید).
+   - `TooltipContent` باید در `TooltipPrimitive.Portal` باشد — به همان دلیلِ `FormModal` (قاعدهٔ ۸): انیمیشن `filter` در صفحه‌گردانی هم containing block و هم stacking context می‌سازد. `TooltipProvider` در `src/main.tsx` نصب شده (نه `App.tsx`، چون App برای صفحهٔ ورود early-return دارد و Radix بدون Provider خطا می‌دهد).
+   - **`useIsOverflowing` عمداً callback ref دارد، نه `useRef`.** وصل‌شدن tooltip عنصر را جابه‌جا می‌کند، پس React گرهٔ اندازه‌گیری‌شده را unmount و گرهٔ تازه mount می‌کند؛ با ref معمولی، `ResizeObserver` روی گرهٔ جدا‌شده می‌ماند، آن گره `0x0` گزارش می‌دهد و tooltip بی‌صدا خاموش می‌شود. اندازه‌گیریِ گرهٔ جداشده یا صفر‌اندازه دور ریخته می‌شود.
+
+16. **واژگان Audit یک‌جا تعریف می‌شود (`src/utils/auditTaxonomy.ts`).** ستون‌های `module`/`action`/`severity` در `audit_log` متن آزادند، پس فیلتر فقط وقتی کار می‌کند که مقدارِ ارسالی **دقیقاً** همان چیزی باشد که `server.ts` نوشته است. فهرست دستی در فرم فیلتر ننویس — از `AUDIT_MODULE_LABELS` / `AUDIT_ACTION_LABELS` / `AUDIT_EVENT_GROUPS` استفاده کن (همان الگوی `permissions.ts`: هم سرور هم کلاینت از یک فایل می‌خوانند).
+   - وقتی `AuditService.log({ module: … })` جدیدی اضافه کردی، ماژول را همان‌جا هم ثبت کن وگرنه در فیلتر نامرئی می‌شود.
+   - `Info` و `Information` یک سطح‌اند (سرور `Information` می‌نویسد، store لوکال `Info`)؛ با `severityMatches()` تطبیق بده، نه مقایسهٔ مستقیم.
+   - **`eventType` ستون نیست** — کلیدی داخل JSON `after_data` است و روی اغلب رکوردها وجود ندارد؛ فیلتر روی آن نساز. گروه‌بندی رویداد = مجموعه‌ای از `module`ها (`AUDIT_EVENT_GROUPS`) که سرور با `module IN (…)` اعمال می‌کند.
+   - بازهٔ تاریخ در UI **شمسی** است و باید قبل از ارسال به ISO تبدیل شود (`jalaliToIso`)؛ `new Date('1405/05/12')` در سرور `Invalid Date` می‌شد.
+
 ## ساختار داده (۱۲ جدول نرمال — `prisma/schema.prisma`)
 - **Auth:** `users` (نقش enum، رمز hash+salt)
 - **Materials:** `materials` (فیلدهای غنی: role, pharmacopoeia, iupac, ...)
@@ -67,6 +98,7 @@
 - **Risk (FMEA):** `risk_assessments` · **Lab:** `analysis_records` · **Activity:** `activity_logs`
 - **Business Partners:** `business_partners`, `supplier_evaluations`, `sop_documents`
 - **Audit:** `audit_log` (canonical، کاملاً ایندکس)
+- **انتخاب سورس:** `source_selections` (یکتا روی `material_key + category`؛ تصمیم انسانیِ «سورس برندهٔ این ماده» با دلیل الزامی. موتور امتیازدهی فقط **پیشنهاد** می‌دهد — پیشنهاد را تصمیم ثبت‌شده حساب نکن.)
 - همهٔ FKها با CASCADE/SET NULL صریح. دیاگرام: artifact «نقشهٔ دیتابیس VLSE».
 
 ## الگوهای مهم کد
@@ -79,7 +111,7 @@
 bun install                 # نصب (پروژه از bun.lock استفاده می‌کند)
 ./node_modules/.bin/tsc --noEmit          # typecheck (== npm run lint)
 ./node_modules/.bin/vite build            # build فرانت (تأیید UI)
-./node_modules/.bin/tsx --test tests/*.test.ts   # تست‌ها
+./node_modules/.bin/tsx --test tests/*.test.ts   # تست‌ها (اکنون ۸۱ مورد)
 ```
 **تست زندهٔ محلی (این محیط docker ندارد، postgres را با کاربر `postgres` اجرا کن):**
 ```bash
@@ -105,7 +137,7 @@ setsid ./node_modules/.bin/tsx server.ts >/tmp/vlse_server.log 2>&1 </dev/null &
 - **لاگین روی Vercel:** `admin / 123456` (از `DEFAULT_USERS` در `server.ts`) با `mustChangePassword: true` — اولین ورود، تغییر رمز خواسته می‌شود. (محلی با `prisma/seed.ts` رمز `123` است.)
 
 ## Git / تحویل
-- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
+- **برنچ کاری:** برنچ جاری در `STATUS.md` ذکر شده (فعلاً `claude/vlse-modules-p3`، با PR #9 باز به main). روی همان کار کن و push کن؛ برای ادامهٔ کار PR جدید به `main` بزن.
 - **PRهای merge‌شده:** #2 (نرمال‌سازی دیتابیس)، #3 (بهبود ماژول‌ها) — همه در `main`.
 - هر تغییر: typecheck + build + تست زنده (در صورت لمس backend) → commit با پیام واضح → push. **`STATUS.md` را بعد از هر تغییر به‌روزرسانی کن.**
 - push گاهی 502 می‌دهد؛ با backoff retry کن.

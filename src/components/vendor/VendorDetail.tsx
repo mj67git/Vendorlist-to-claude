@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
+import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
 import { ScoreCard } from '../../components/ScoringGuide';
@@ -12,8 +13,10 @@ import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUti
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
+import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
+import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -28,14 +31,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
   // Only the stages the current user is allowed to perform are shown.
-  const canRisk = currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab';
-  const canAnalysis = currentUser?.role === 'admin' || currentUser?.role === 'qa';
+  const canRisk = can(currentUser, 'vendor.risk');
+  const canAnalysis = can(currentUser, 'vendor.analysis');
+  const canEditVendor = can(currentUser, 'vendor.edit');
+  const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
     ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
     ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
     ...(canAnalysis ? [{ id: 'analysis', title: 'ثبت نتایج آزمایشگاهی', icon: Microscope }] : []),
   ];
-  const [evalStageRaw, setEvalStage] = useState<string>(evalStages[0]?.id || 'score');
+  const [evalStageRaw, setEvalStageRaw] = useState<string>(evalStages[0]?.id || 'score');
+  const stepperRef = React.useRef<HTMLDivElement | null>(null);
+  /** Move to a step and bring it into view; the content swaps below the fold otherwise. */
+  const setEvalStage = (id: string) => {
+    setEvalStageRaw(id);
+    requestAnimationFrame(() => {
+      stepperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
   const evalStage = evalStages.some(s => s.id === evalStageRaw) ? evalStageRaw : (evalStages[0]?.id || 'score');
   const evalStageIdx = evalStages.findIndex(s => s.id === evalStage);
   const showEvalWizard = evalStages.length >= 2;
@@ -86,13 +99,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       e.stopPropagation();
     }
     if (!newAnalysis.date.trim()) {
-      alert('لطفاً تاریخ آزمایش را انتخاب کنید.');
+      setAddAnalysisError('تاریخ آزمایش را انتخاب کنید.');
       return;
     }
     if (!newAnalysis.qcCode.trim()) {
-      alert('لطفاً کد آزمایشگاهی (QC Code) را وارد کنید.');
+      setAddAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
       return;
     }
+    setAddAnalysisError(null);
 
     const record = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
@@ -151,6 +165,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const [confirmDeleteAnalysisId, setConfirmDeleteAnalysisId] = useState<string | null>(null);
 
    const handleEditAnalysisStart = (record: AnalysisRecord) => {
+    setEditAnalysisError(null);
     setEditingAnalysisId(record.id);
     setEditingAnalysis({
       date: record.date || '',
@@ -165,17 +180,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const handleEditAnalysisCancel = () => {
     setEditingAnalysisId(null);
     setEditingAnalysis(null);
+    setEditAnalysisError(null);
   };
 
   const handleEditAnalysisSave = (recordId: string) => {
     if (!editingAnalysis || !editingAnalysis.date.trim()) {
-      alert('لطفاً تاریخ آزمایش را انتخاب کنید.');
+      setEditAnalysisError('تاریخ آزمایش را انتخاب کنید.');
       return;
     }
     if (!editingAnalysis.qcCode.trim()) {
-      alert('لطفاً کد آزمایشگاهی (QC Code) را وارد کنید.');
+      setEditAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
       return;
     }
+    setEditAnalysisError(null);
 
     const updatedRecords = (vendor.analysisRecords || []).map(r => {
       if (r.id === recordId) {
@@ -237,14 +254,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   };
 
   // Admin manual decision for sources/suppliers (not samples): reject → Black List, or restore.
+  /**
+   * Validation messages for the laboratory records, shown next to the control
+   * that is missing. These were native alert()s: they blocked the interface,
+   * ignored the page's direction and theme, and once dismissed left no sign of
+   * which field was at fault.
+   */
+  const [addAnalysisError, setAddAnalysisError] = useState<string | null>(null);
+  const [editAnalysisError, setEditAnalysisError] = useState<string | null>(null);
+
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectDecisionReason, setRejectDecisionReason] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const handleAdminRejectSource = () => {
     if (!rejectDecisionReason.trim()) {
-      alert('لطفاً دلیل رد این سورس را وارد کنید (الزامی).');
+      setRejectError('دلیل رد این سورس الزامی است.');
       return;
     }
+    setRejectError(null);
     const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
     const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
     const newLog = {
@@ -266,9 +294,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   const handleAdminRestoreSource = () => {
     if (!rejectDecisionReason.trim()) {
-      alert('لطفاً دلیل بازگردانی این سورس را وارد کنید (الزامی).');
+      setRejectError('دلیل بازگردانی این سورس الزامی است.');
       return;
     }
+    setRejectError(null);
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
       action: `بازگردانی سورس "${vendor.material}" (${vendor.name}) از لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
@@ -322,36 +351,33 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
-  if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'lab') {
-    const deptId = currentUser.role;
-    if (deptId === 'qa' || deptId === 'commercial' || deptId === 'planning' || deptId === 'finance') {
-      displayedScore = (vendor.scores as any)?.[deptId] ?? null;
-    }
+  // Someone responsible for a single department sees that department's score
+  // rather than the weighted total. With per-user permissions a person can now
+  // hold more than one, and then the overall figure is the meaningful one.
+  const myDepartments = scorableDepartments(currentUser);
+  const isDepartmentScore = !!currentUser && myDepartments.length === 1;
+  if (isDepartmentScore) {
+    displayedScore = (vendor.scores as any)?.[myDepartments[0]] ?? null;
   }
+  const departmentLabel = isDepartmentScore
+    ? ({ commercial: 'بازرگانی', qa: 'کیفیت', planning: 'برنامه‌ریزی', finance: 'مالی' } as Record<string, string>)[myDepartments[0]] || 'بخش شما'
+    : '';
   const scoreConfig = getScoreColorConfig(displayedScore, vendor.status);
 
   // Who this source buys from, and in what role. A source links to exactly one
   // partner — resolving a "manufacturer" and a "supplier" separately used to
   // land on the same record and render it twice. See utils/vendorPartner.
   const sourcePartner = resolveVendorPartner(vendor, partners);
-  const isDirectFromManufacturer = sourcePartner.role === 'manufacturer';
+  const partnerIsManufacturer = sourcePartner.role === 'manufacturer';
 
-  // Material Repository resolution for standard names
-  const matchedMaterial = materials.find(m => 
-    (vendor.materialId && m.id === vendor.materialId) ||
-    (m.standardNameFa && vendor.material && m.standardNameFa.trim().toLowerCase() === vendor.material.trim().toLowerCase()) ||
-    (m.nameFa && vendor.material && m.nameFa.trim().toLowerCase() === vendor.material.trim().toLowerCase()) ||
-    (m.standardNameEn && vendor.materialEn && m.standardNameEn.trim().toLowerCase() === vendor.materialEn.trim().toLowerCase()) ||
-    (m.nameEn && vendor.materialEn && m.nameEn.trim().toLowerCase() === vendor.materialEn.trim().toLowerCase())
-  );
+  // Which catalogue entry actually carries the standard name for this source's
+  // material — see utils/materialNames for why the linked record is not always it.
+  const { material: matchedMaterial, standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
+    resolveMaterialNames(vendor, materials);
 
-  const displayStandardNameFa = matchedMaterial?.standardNameFa || matchedMaterial?.nameFa || vendor.material;
-  const displayStandardNameEn = matchedMaterial?.standardNameEn || matchedMaterial?.nameEn || vendor.materialEn;
-
-  const isScored = vendor.scores && Object.values(vendor.scores).some(v => v > 0);
 
   return (
-    <div className="space-y-6 fade-in relative pb-10 max-w-6xl mx-auto text-right" dir="rtl">
+    <div className="space-y-6 fade-in relative pb-10 text-right" dir="rtl">
       
       {/* Back Button */}
       <button 
@@ -363,10 +389,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       </button>
 
       {showConfirmDelete && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-6 text-center fade-in shadow-sm">
-           <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
+        <div className="mb-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl p-6 text-center fade-in shadow-sm">
+           <AlertCircle className="w-12 h-12 text-red-600 dark:text-red-400 mx-auto mb-4" />
            <h3 className="text-xl font-bold text-foreground mb-1">آیا از حذف این فایل مطمئن هستید؟</h3>
-           <p className="text-red-700 mb-6 font-medium text-sm">این عملیات غیر قابل بازگشت است و سورس به همراه تمامی ارزیابی‌های آن از سیستم حذف خواهد شد.</p>
+           <p className="text-red-700 dark:text-red-300 mb-6 font-medium text-sm">این عملیات غیر قابل بازگشت است و سورس به همراه تمامی ارزیابی‌های آن از سیستم حذف خواهد شد.</p>
            <div className="flex justify-center gap-4">
               <button 
                 onClick={() => setShowConfirmDelete(false)}
@@ -388,35 +414,45 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       <div className={`bg-card border border-border/60 rounded-2xl p-6 mb-6 shadow-sm ${scoreConfig.heroBorder}`}>
         <div className="flex flex-col xl:flex-row items-start justify-between gap-5 pb-1">
           <div className="flex items-center gap-5">
-            {/* Score Ring */}
-            <div className={`w-20 h-20 shrink-0 rounded-full border-4 flex items-center justify-center bg-muted ${scoreConfig.border}`}>
-              <span className="font-mono text-2xl font-black">
-                {displayedScore !== null ? displayedScore : '-'}
+            {/* Score ring.
+                The figure is the weighted total for most viewers but a single
+                department's own score for someone who only scores that one, so
+                it is captioned; unlabelled, two people read the same ring as
+                the same thing. */}
+            <div className="shrink-0 flex flex-col items-center gap-1.5">
+              <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center bg-muted ${scoreConfig.border}`}>
+                <span className="font-mono text-2xl font-black">
+                  {displayedScore !== null ? displayedScore : '-'}
+                </span>
+              </div>
+              <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">
+                {displayedScore === null
+                  ? 'بدون امتیاز'
+                  : isDepartmentScore
+                    ? `امتیاز ${departmentLabel}`
+                    : 'امتیاز کل'}
               </span>
             </div>
             
             <div className="text-right">
               {/* The partner, labelled by the role it actually has. */}
               <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
-                <span>{sourcePartner.roleLabel} : {sourcePartner.name}</span>
+                <span>{sourcePartner.roleLabel}: {sourcePartner.name}</span>
                 {sourcePartner.country && (
                   <>
-                    <span className="mx-3 sm:mx-4 text-slate-300 font-normal">|</span>
-                    <span>کشور : {sourcePartner.country}</span>
+                    <span className="mx-3 sm:mx-4 text-border font-normal">|</span>
+                    <span>کشور: {sourcePartner.country}</span>
                   </>
                 )}
               </div>
 
-              {isDirectFromManufacturer ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    خرید بی‌واسطه از تولیدکننده
-                  </span>
-                </div>
-              ) : sourcePartner.grade ? (
-                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
-                  <span>Grade : {sourcePartner.grade}</span>
+              {/* A source used to claim "bought straight from the maker" whenever
+                  its partner happened to be a manufacturer. Manufacturers and
+                  suppliers are independent records now, so that link says
+                  nothing about whether a middleman exists. */}
+              {sourcePartner.grade ? (
+                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1 max-w-[75ch]">
+                  <span>گرید ارزیابی فروشنده: {sourcePartner.grade}</span>
                 </div>
               ) : null}
             </div>
@@ -424,23 +460,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           
           <div className="flex flex-col items-start xl:items-end gap-2">
             <div className="flex gap-2">
-              {currentUser.role === 'admin' && (
-                <>
-                  <button 
-                    onClick={() => onEditVendor?.()}
-                    className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
-                  >
-                    <Pencil className="w-4 h-4" />
-                    <span>ویرایش اطلاعات</span>
-                  </button>
-                  <button 
-                    onClick={() => setShowConfirmDelete(true)}
-                    className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-600 shadow-sm"
-                    title="حذف"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
+              {/* Editing and deleting are separate permissions: commercial may
+                  register and correct a source, but only an admin removes one. */}
+              {canEditVendor && (
+                <button 
+                  onClick={() => onEditVendor?.()}
+                  className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                >
+                  <Pencil className="w-4 h-4" />
+                  <span>ویرایش اطلاعات</span>
+                </button>
+              )}
+              {canDeleteVendor && (
+                <button 
+                  onClick={() => setShowConfirmDelete(true)}
+                  className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/40 dark:bg-red-950/30 hover:text-red-600 dark:text-red-400 shadow-sm"
+                  title="حذف"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
             </div>
 
@@ -448,16 +486,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             <div className="mt-1">
               {vendor.isSample ? (
                 <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
-                  vendor.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                  vendor.status === 'conditional' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                  'bg-red-50 text-red-700 border border-red-200'
+                  vendor.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
+                  vendor.status === 'conditional' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                  'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
                 }`}>
                   <ClipboardCheck className="w-4 h-4 ml-1.5" />
                   {vendor.status === 'approved' ? 'نمونه: تایید شده (Approved)' :
                    vendor.status === 'conditional' ? 'نمونه: تایید مشروط (Conditional)' : 'نمونه: مردود (Rejected)'}
                 </div>
               ) : (
-                !isScored && <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
               )}
             </div>
           </div>
@@ -469,16 +507,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         const check = checkLicenseExpiry(vendor.ircExpiryDate);
         if (check.status === 'expired') {
           return (
-            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-rose-900 shadow-xs flex items-center justify-between gap-4 fade-in">
+            <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 text-rose-900 dark:text-rose-300 shadow-xs flex items-center justify-between gap-4 fade-in">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-600/10 border border-rose-600/20 flex items-center justify-center text-rose-600 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-rose-600/10 border border-rose-600/20 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="font-extrabold text-sm text-rose-900">
+                  <div className="font-extrabold text-sm text-rose-900 dark:text-rose-300">
                     هشدار اضطراری: مجوز IRC / قانونی این سورس منقضی شده است!
                   </div>
-                  <div className="text-xs text-rose-700 mt-0.5">
+                  <div className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
                     تاریخ انقضا: <strong className="font-mono font-bold">{vendor.ircExpiryDate}</strong> ({Math.abs(check.daysLeft || 0)} روز گذشته). تمدید فوری مجوز الزامی است.
                   </div>
                 </div>
@@ -491,16 +529,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         }
         if (check.status === 'expiring_soon') {
           return (
-            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-amber-950 shadow-xs flex items-center justify-between gap-4 fade-in">
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-2xl p-4 text-amber-950 dark:text-amber-300 shadow-xs flex items-center justify-between gap-4 fade-in">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
                   <AlertTriangle className="w-5 h-5 animate-bounce" />
                 </div>
                 <div>
-                  <div className="font-extrabold text-sm text-amber-900">
+                  <div className="font-extrabold text-sm text-amber-900 dark:text-amber-300">
                     اعلان تمدید مجوز (کمتر از ۲ ماه تا انقضا)
                   </div>
-                  <div className="text-xs text-amber-800 mt-0.5">
+                  <div className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
                     مجوز IRC این سورس در تاریخ <strong className="font-mono font-bold">{vendor.ircExpiryDate}</strong> منقضی می‌شود (<strong>{check.daysLeft} روز باقی‌مانده</strong>). لطفاً فرآیند تمدید را آغاز فرمایید.
                   </div>
                 </div>
@@ -517,7 +555,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       {/* 1. اطلاعات تامین کننده */}
       <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
         <div className="flex items-center gap-2.5 mb-5 border-b border-border pb-3">
-          <Globe className="w-4 h-4 text-cyan-600" />
+          <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
           <h3 className="font-bold text-foreground text-sm">مشخصات فنی و اطلاعات عمومی</h3>
         </div>
         
@@ -525,7 +563,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           {/* مشخصات اصلی ماده اولیه و کدهای ثبتی */}
           <div className="space-y-4">
             {/* جعبه شاخص ماده اولیه */}
-            <div className="bg-muted/40 border border-slate-900/5 rounded-xl p-4 shadow-inner space-y-3">
+            <div className="bg-muted/40 border border-border rounded-xl p-4 shadow-inner space-y-3">
               <div>
                 <div className="text-muted-foreground text-xs font-bold mb-1">نام استاندارد فارسی:</div>
                 <div className="font-black text-foreground text-lg sm:text-xl leading-relaxed" title={displayStandardNameFa}>
@@ -544,8 +582,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5 font-mono">CAS Number</div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-slate-900/5 text-sm" dir="ltr">
+                  <div className="text-muted-foreground text-xs mb-1.5">شمارهٔ CAS</div>
+                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
                     {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '-'}
                   </div>
                 </div>
@@ -553,10 +591,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5 font-mono">
-                    {vendor.category === 'veterinary' ? 'IVC Code' : 'IRC Code'}
+                  <div className="text-muted-foreground text-xs mb-1.5">
+                    {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
                   </div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-slate-900/5 text-sm" dir="ltr">
+                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
                     {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '-'}
                   </div>
                 </div>
@@ -577,17 +615,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             {vendor.ircExpiryDate}
                           </span>
                           {check.status === 'expired' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
                               منقضی
                             </span>
                           )}
                           {check.status === 'expiring_soon' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-900">
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
                               {check.daysLeft} روز
                             </span>
                           )}
                           {check.status === 'valid' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
                               معتبر
                             </span>
                           )}
@@ -602,8 +640,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
               <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
                 <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">کد سیستم / Unique ID</div>
-                  <div className="font-mono text-cyan-700 font-bold bg-cyan-50/50 text-center py-1.5 px-3 rounded-lg border border-cyan-100 text-sm" dir="ltr">
+                  <div className="text-muted-foreground text-xs mb-1.5">کد داخلی سامانه</div>
+                  <div className="font-mono text-muted-foreground text-center py-1.5 px-3 text-sm" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
                     {vendor.id.substring(0, 8).toUpperCase()}
                   </div>
                 </div>
@@ -614,20 +652,23 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده) */}
           <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs space-y-4">
             <div className="flex items-center gap-2 text-foreground font-bold text-xs sm:text-sm border-b border-border/60 pb-3">
-              <Building2 className="w-4 h-4 text-cyan-600" />
+              <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               <span>اطلاعات تماس و آدرس</span>
             </div>
 
-            <div className={`grid grid-cols-1 gap-4 ${isDirectFromManufacturer ? 'md:grid-cols-2' : ''}`}>
+            <div className="grid grid-cols-1 gap-4">
               <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${isDirectFromManufacturer ? 'text-indigo-900' : 'text-emerald-900'}`}>
-                  {isDirectFromManufacturer
-                    ? <Factory className="w-4 h-4 text-indigo-600 shrink-0" />
-                    : <Handshake className="w-4 h-4 text-emerald-600 shrink-0" />}
-                  <span className="truncate">{sourcePartner.roleLabel}: {sourcePartner.name}</span>
+                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
+                  {partnerIsManufacturer
+                    ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                  {/* The role label is kept out of the clip so it cannot spend
+                      the budget the partner name needs. */}
+                  <span className="shrink-0">{sourcePartner.roleLabel}:</span>
+                  <EntityName name={sourcePartner.name} lines={2} />
                 </div>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1">
+                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1 max-w-[75ch]">
                   <div className="flex items-start gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
                     <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
@@ -664,9 +705,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     </div>
                   )}
 
+                  {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
+                    && !sourcePartner.email && !sourcePartner.website && (
+                    <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
+                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
+                        از همان‌جا قابل تکمیل است.
+                      </span>
+                    </div>
+                  )}
+
                   {sourcePartner.website && (
                     <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline font-mono text-[11px]">
+                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-[11px]">
                         {sourcePartner.website}
                       </a>
                     </div>
@@ -674,23 +726,6 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
               </div>
 
-              {/* Only meaningful when the partner IS the factory: there is no middleman. */}
-              {isDirectFromManufacturer && (
-                <div className="bg-emerald-50/50 border border-emerald-200/80 rounded-xl p-4 flex flex-col justify-center text-right text-emerald-900 text-xs space-y-2 min-h-[120px]">
-                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
-                    <div className="flex items-center gap-1.5 font-bold text-emerald-800">
-                      <CheckCircle className="w-4 h-4 text-emerald-600" />
-                      <span>خرید بی‌واسطه از تولیدکننده</span>
-                    </div>
-                    <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
-                      مستقیم
-                    </span>
-                  </div>
-                  <p className="text-muted-foreground text-[11px] leading-relaxed">
-                    این سورس فاقد فروشنده واسطه بوده و کلیه فرآیندهای خرید و ارسال به صورت مستقیم و بدون واسطه از کارخانه سازنده مرجع صورت می‌پذیرد.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -698,10 +733,10 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           {vendor.rejectionReasons && vendor.rejectionReasons.length > 0 && (
             <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs">
               <div className="flex items-center gap-2 mb-3 text-foreground font-bold text-xs sm:text-sm">
-                <AlertTriangle className="w-4 h-4 text-cyan-600" />
+                <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <span>سوابق انحرافات</span>
               </div>
-              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right" dir="auto">
+              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
                 <ul className="list-disc list-inside space-y-1.5">
                   {vendor.rejectionReasons.map((reason, idx) => (
                     <li key={idx} className="break-words">{reason}</li>
@@ -714,33 +749,33 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       </div>
 
       {vendor.isSample && (
-        <div className="bg-indigo-50/50 border border-indigo-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
-          <div className="bg-indigo-100 p-3 rounded-xl border border-indigo-200 shrink-0 text-indigo-600">
+        <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+          <div className="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 text-indigo-600 dark:text-indigo-400">
             <Info className="w-5 h-5" />
           </div>
           <div className="text-right">
-            <h3 className="text-base font-bold text-indigo-850 mb-1">نمونه تستی (Sample)</h3>
-            <p className="text-indigo-700 text-sm font-medium">برای مواردی که به عنوان «نمونه» ثبت می‌شوند، نیازی به ارزیابی ریسک و فرم امتیازدهی دوره‌ای دپارتمان‌ها نمی‌باشد.</p>
+            <h3 className="text-base font-bold text-indigo-900 dark:text-indigo-300 mb-1">نمونه تستی (Sample)</h3>
+            <p className="text-indigo-700 dark:text-indigo-300 text-sm font-medium">برای مواردی که به عنوان «نمونه» ثبت می‌شوند، نیازی به ارزیابی ریسک و فرم امتیازدهی دوره‌ای دپارتمان‌ها نمی‌باشد.</p>
           </div>
         </div>
       )}
 
       {vendor.status === 'rejected' && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 md:p-8 shadow-sm">
+        <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-6 md:p-8 shadow-sm">
           <div className="flex items-start gap-4">
-            <div className="bg-rose-100 p-3 rounded-xl border border-rose-200 shrink-0 text-rose-600">
+            <div className="bg-rose-100 dark:bg-rose-900/40 p-3 rounded-xl border border-rose-200 dark:border-rose-800 shrink-0 text-rose-600 dark:text-rose-400">
               <AlertTriangle className="w-8 h-8" />
             </div>
             <div className="text-right flex-1 min-w-0">
               {vendor.isSample || vendor.category === 'sample' ? (
                 <>
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="text-lg font-black text-rose-900">وضعیت: نمونه مردود در کنترل کیفیت (QC Rejected Sample)</h3>
+                    <h3 className="text-lg font-black text-rose-900 dark:text-rose-300">وضعیت: نمونه مردود در کنترل کیفیت (QC Rejected Sample)</h3>
                     <span className="bg-rose-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-full">
                       مردود / Reject
                     </span>
                   </div>
-                  <p className="text-rose-700 text-sm mb-5 font-semibold">
+                  <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 font-semibold">
                     این نمونه بر اساس نتایج آزمایشگاهی دپارتمان کنترل کیفیت (QC) و به دلیل عدم انطباق با مشخصات فنی/فارماکوپه‌ای تایید نگردیده و مردود شده است:
                   </p>
 
@@ -756,19 +791,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {rejectedQCRecords.length > 0 && (
                           <div className="space-y-3">
                             {rejectedQCRecords.map((r, idx) => (
-                              <div key={r.id || idx} className="bg-card border border-rose-200/80 rounded-xl p-4 shadow-xs space-y-2.5">
-                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-100 pb-2 text-xs">
+                              <div key={r.id || idx} className="bg-card border border-rose-200/80 dark:border-rose-800 rounded-xl p-4 shadow-xs space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-100 dark:border-rose-800 pb-2 text-xs">
                                   <div className="flex items-center gap-3">
-                                    <span className="font-bold text-rose-900">
-                                      برگه آزمایش {idx + 1}: کد QC <span className="font-mono bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 font-bold">{r.qcCode}</span>
+                                    <span className="font-bold text-rose-900 dark:text-rose-300">
+                                      برگه آزمایش {idx + 1}: کد QC <span className="font-mono bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 font-bold">{r.qcCode}</span>
                                     </span>
-                                    <span className="text-slate-300">|</span>
+                                    <span className="text-border">|</span>
                                     <span className="text-muted-foreground font-medium">تاریخ آزمایش: <span className="font-mono font-bold text-foreground">{r.date}</span></span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {r.deviationReason && r.deviationReason !== 'None' && (
-                                      <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded text-[11px] font-bold">
-                                        <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                      <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                                        <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                         انحراف: {
                                           r.deviationReason === 'OOS' ? 'خارج از حدود مشخصات (OOS)' :
                                           r.deviationReason === 'OOT' ? 'خارج از روند (OOT)' :
@@ -779,15 +814,15 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                         }
                                       </span>
                                     )}
-                                    <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[11px] font-bold">
+                                    <span className="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold">
                                       تصمیم: مردود (Reject)
                                     </span>
                                   </div>
                                 </div>
 
                                 {r.comments && (
-                                  <div className="text-xs text-foreground bg-rose-50/40 p-2.5 rounded-lg border border-rose-100/60 leading-relaxed">
-                                    <span className="font-bold text-rose-900 block mb-0.5">گزارش و توضیحات کارشناس کنترل کیفیت:</span>
+                                  <div className="text-xs text-foreground bg-rose-50/40 dark:bg-rose-950/30 p-2.5 rounded-lg border border-rose-100/60 dark:border-rose-800 leading-relaxed">
+                                    <span className="font-bold text-rose-900 dark:text-rose-300 block mb-0.5">گزارش و توضیحات کارشناس کنترل کیفیت:</span>
                                     <p className="whitespace-pre-wrap">{r.comments}</p>
                                   </div>
                                 )}
@@ -805,11 +840,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {/* Other general rejection reasons if any */}
                         {nonQcRejectionReasons.length > 0 && (
                           <div className="mt-3 space-y-2">
-                            <h4 className="text-xs font-bold text-rose-900">سایر دلایل و ملاحظات عدم تایید:</h4>
+                            <h4 className="text-xs font-bold text-rose-900 dark:text-rose-300">سایر دلایل و ملاحظات عدم تایید:</h4>
                             <ul className="space-y-1.5">
                               {nonQcRejectionReasons.map((reason, idx) => (
-                                <li key={idx} className="bg-card border border-rose-100 px-3.5 py-2.5 rounded-xl text-rose-800 text-xs flex gap-2.5 items-start font-medium shadow-xs">
-                                  <span className="bg-rose-50 text-rose-700 text-[10px] w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                                <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-3.5 py-2.5 rounded-xl text-rose-800 dark:text-rose-300 text-xs flex gap-2.5 items-start font-medium shadow-xs">
+                                  <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-[10px] w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
                                   <span>{reason}</span>
                                 </li>
                               ))}
@@ -820,8 +855,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {rejectedQCRecords.length === 0 && nonQcRejectionReasons.length === 0 && vendor.rejectionReasons && (
                           <ul className="space-y-2">
                             {vendor.rejectionReasons.map((reason, idx) => (
-                              <li key={idx} className="bg-card border border-rose-100 px-4 py-3 rounded-xl text-rose-800 text-sm flex gap-3 items-start font-medium shadow-sm">
-                                <span className="bg-rose-50 text-rose-700 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                              <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
+                                <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
                                 <span>{reason}</span>
                               </li>
                             ))}
@@ -833,19 +868,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-bold text-rose-800 mb-1">وضعیت: لیست سیاه — تامین‌کننده رد صلاحیت شده</h3>
-                  <p className="text-rose-700 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است (Disqualified due to critical non-conformities):</p>
+                  <h3 className="text-lg font-bold text-rose-800 dark:text-rose-300 mb-1">وضعیت: لیست سیاه — تامین‌کننده رد صلاحیت شده</h3>
+                  <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است (Disqualified due to critical non-conformities):</p>
                   
                   <ul className="space-y-2">
                     {vendor.rejectionReasons?.map((reason, idx) => (
-                      <li key={idx} className="bg-card border border-rose-100 px-4 py-3 rounded-xl text-rose-800 text-sm flex gap-3 items-start font-medium shadow-sm">
-                        <span className="bg-rose-50 text-rose-700 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                      <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
+                        <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
                         {reason}
                       </li>
                     ))}
                   </ul>
 
-                  <div className="mt-6 border-t border-rose-200 pt-4 flex items-center text-xs text-rose-600/70 font-mono">
+                  <div className="mt-6 border-t border-rose-200 dark:border-rose-800 pt-4 flex items-center text-xs text-rose-600 dark:text-rose-400/70 font-mono">
                     <Info className="w-4 h-4 mr-2" /> {vendor.category === 'veterinary' ? 'IVC' : 'IRC'}_ISSUE_DATE: {vendor.lastAudit || 'N/A'}
                   </div>
                 </>
@@ -857,7 +892,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
       {/* Guided evaluation wizard header (stepper) */}
       {showEvalWizard && (
-        <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm">
+        <div ref={stepperRef} className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm scroll-mt-4">
           <div className="flex items-center gap-2.5 mb-4">
             <ClipboardCheck className="w-4 h-4 text-primary" />
             <h3 className="font-bold text-foreground text-sm">فرآیند ارزیابی سورس <span className="text-muted-foreground text-xs font-normal font-mono">(Evaluation Workflow)</span></h3>
@@ -880,7 +915,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <span className={`text-[10px] sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.title}</span>
                   </button>
                   {i < evalStages.length - 1 && (
-                    <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-slate-200 overflow-hidden">
+                    <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-muted overflow-hidden">
                       <div className={`h-full rounded-full transition-all duration-300 ${i < evalStageIdx ? 'bg-primary w-full' : 'w-0'}`} />
                     </div>
                   )}
@@ -896,13 +931,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm overflow-hidden text-right">
           <div className="border-b border-border px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-cyan-600" />
+              <FileText className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               <h3 className="font-bold text-foreground text-sm">ارزیابی عملکرد تامین‌کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Evaluation)</span></h3>
             </div>
             {currentUser && currentUser.role !== 'lab' && !showAdminScoresEdit && (
               <button 
                 onClick={() => setShowAdminScoresEdit(true)}
-                className="px-3 py-1.5 rounded-lg bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 transition-colors text-xs font-bold flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-800 transition-colors text-xs font-bold flex items-center gap-1.5"
               >
                 {vendor.scores && Object.values(vendor.scores).some(v => v > 0) ? 'تغییر امتیازات' : 'ثبت امتیاز ارزیابی'}
               </button>
@@ -920,7 +955,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           <div className="p-6">
             {showAdminScoresEdit ? (
               <div ref={evalFormRef} className="space-y-6">
-                <div className="bg-cyan-600/5 border border-cyan-600/20 rounded-xl p-4 flex items-center gap-3 text-cyan-700 text-right">
+                <div className="bg-cyan-600/5 border border-cyan-600/20 rounded-xl p-4 flex items-center gap-3 text-cyan-700 dark:text-cyan-300 text-right">
                   <Info className="w-5 h-5 flex-shrink-0" />
                   <div>
                     <h4 className="font-bold text-sm">{vendor.scores && Object.values(vendor.scores).some(v => v > 0) ? 'ویرایش امتیازات ارزیابی' : 'ثبت ارزیابی جدید'}</h4>
@@ -947,7 +982,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   <div className="bg-muted/50 border border-border/60 rounded-xl p-4 text-right flex items-center gap-3 text-muted-foreground mb-2">
                     <div className="w-1.5 h-8 bg-cyan-600 rounded-full" />
                     <div className="text-xs">
-                      کاربر گرامی، شما با سطح دسترسی <strong className="text-cyan-700">
+                      کاربر گرامی، شما با سطح دسترسی <strong className="text-cyan-700 dark:text-cyan-300">
                         {currentUser?.role === 'qa' ? 'کیفیت (QA)' : 
                          currentUser?.role === 'commercial' ? 'بازرگانی' : 
                          currentUser?.role === 'planning' ? 'برنامه‌ریزی و انبار' : 
@@ -959,13 +994,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                 <div className="mt-8 space-y-6">
                   {/* ScoreCards - 2x2 Grid Layout */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     {FORM_LAYOUT.map(layout => {
                       const deptScore = vendor.scores[layout.id as keyof typeof vendor.scores];
                       if (deptScore === undefined || deptScore === null) return null;
                       
-                      // Security Restriction: Only show the score of the user's role, except for Admin
-                      if (currentUser?.role !== 'admin' && layout.id !== currentUser?.role) return null;
+                      // Only the department a user may score is shown to them.
+                      if (!canScoreDepartment(currentUser, layout.id)) return null;
                       
                       return (
                         <ScoreCard 
@@ -989,7 +1024,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                   {/* Radar Chart (Distribution) is now below the scores, Admin only */}
                   {currentUser?.role === 'admin' && (
-                    <div className="bg-card border border-slate-900/10 rounded-xl p-4 shadow-sm">
+                    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
                       <div className="text-center mb-4">
                         <h4 className="font-bold text-foreground text-sm mb-1">نمودار توزیع امتیازات بخش‌ها <span className="font-mono text-xs">(Score Distribution)</span></h4>
                         <div className="w-16 h-1 bg-cyan-500/20 mx-auto rounded-full" />
@@ -1014,7 +1049,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-slate-250">
+              <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
                 هیچ امتیازی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
               </div>
             )}
@@ -1070,16 +1105,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 {[...scoreHistory].reverse().map((h) => {
                   const delta = (typeof h.totalSPS === 'number' && typeof h.previousSPS === 'number') ? +(h.totalSPS - h.previousSPS).toFixed(1) : null;
                   return (
-                    <tr key={h.id} className="border-b border-slate-50 hover:bg-accent/60">
+                    <tr key={h.id} className="border-b border-border hover:bg-accent/60">
                       <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                       <td className="py-2 px-2 text-center font-mono font-bold text-foreground">{h.totalSPS}</td>
                       <td className="py-2 px-2 text-center font-mono">
                         {delta === null || delta === 0 ? (
                           <span className="text-muted-foreground">—</span>
                         ) : delta > 0 ? (
-                          <span className="text-emerald-600">▲ {delta}</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">▲ {delta}</span>
                         ) : (
-                          <span className="text-red-500">▼ {Math.abs(delta)}</span>
+                          <span className="text-red-500 dark:text-red-400">▼ {Math.abs(delta)}</span>
                         )}
                       </td>
                       <td className="py-2 px-2 text-center">
@@ -1096,17 +1131,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 3. ارزیابی ریسک تامین کنندگان */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && (currentUser?.role === 'admin' || currentUser?.role === 'qa' || currentUser?.role === 'lab') && (
+      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && canRisk && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-amber-500" />
+              <ShieldAlert className="w-4 h-4 text-amber-500 dark:text-amber-400" />
               <h3 className="font-bold text-foreground text-sm">ارزیابی ریسک تامین کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk Assessment)</span></h3>
             </div>
-            {(currentUser.role === 'qa' || currentUser.role === 'lab' || currentUser.role === 'admin') && !showRiskAssessment && (
+            {canRisk && !showRiskAssessment && (
               <button 
                 onClick={() => setShowRiskAssessment(true)}
-                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors text-xs font-bold"
+                className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 transition-colors text-xs font-bold"
               >
                 {vendor.riskAssessment ? 'بروزرسانی ارزیابی ریسک' : 'ثبت ارزیابی ریسک'}
               </button>
@@ -1123,15 +1158,15 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           ) : vendor.riskAssessment ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
               <div className={`p-5 rounded-2xl border flex items-center justify-between gap-4 md:col-span-1 ${
-                vendor.riskAssessment.riskLevel === 'Low' ? 'bg-emerald-50/40 border-emerald-500/20' : 
-                vendor.riskAssessment.riskLevel === 'Medium' ? 'bg-amber-50/40 border-amber-500/20' : 
-                'bg-red-50/40 border-red-500/20'
+                vendor.riskAssessment.riskLevel === 'Low' ? 'bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-500/20' : 
+                vendor.riskAssessment.riskLevel === 'Medium' ? 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-500/20' : 
+                'bg-red-50/40 dark:bg-red-950/30 border-red-500/20'
               }`}>
                 <div className="flex items-center gap-3">
                   <Activity className={`w-6 h-6 shrink-0 ${
-                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600' : 
-                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600' : 
-                    'text-red-600'
+                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600 dark:text-emerald-400' : 
+                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600 dark:text-amber-400' : 
+                    'text-red-600 dark:text-red-400'
                   }`} />
                   <div className="text-right">
                     <div className="font-black text-foreground text-base">
@@ -1141,9 +1176,9 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   </div>
                 </div>
                 <div className={`text-3xl font-black font-mono shrink-0 leading-none ${
-                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600' : 
-                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600' : 
-                    'text-red-600'
+                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600 dark:text-emerald-400' : 
+                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600 dark:text-amber-400' : 
+                    'text-red-600 dark:text-red-400'
                 }`}>
                   {Number(vendor.riskAssessment.sri).toFixed(1)}
                 </div>
@@ -1151,14 +1186,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
               <div className="grid grid-cols-2 gap-4 md:col-span-2">
                 <div className="bg-muted/50 p-4 rounded-xl border border-border flex items-center justify-between px-5">
-                  <span className="text-xs text-slate-505 font-semibold font-mono">Risk Score</span>
+                  <span className="text-xs text-muted-foreground font-semibold font-mono">Risk Score</span>
                   <span className="text-sm font-black font-mono text-foreground">{vendor.riskAssessment.riskScore}</span>
                 </div>
                 <div className="bg-muted/50 p-4 rounded-xl border border-border flex items-center justify-between px-5">
-                  <span className="text-xs text-slate-505 font-semibold">کلاس ریسک کلی</span>
+                  <span className="text-xs text-muted-foreground font-semibold">کلاس ریسک کلی</span>
                   <span className={`text-sm font-bold ${
-                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600' :
-                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600' : 'text-red-600'
+                    vendor.riskAssessment.riskLevel === 'Low' ? 'text-emerald-600 dark:text-emerald-400' :
+                    vendor.riskAssessment.riskLevel === 'Medium' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
                   }`}>{vendor.riskAssessment.riskLevel}</span>
                 </div>
                 <div className="bg-muted/50 p-4 rounded-xl border border-border col-span-2 flex justify-between items-center px-5">
@@ -1225,13 +1260,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   </thead>
                   <tbody>
                     {[...riskHistory].reverse().map((h) => (
-                      <tr key={h.id} className="border-b border-slate-50 hover:bg-accent/60">
+                      <tr key={h.id} className="border-b border-border hover:bg-accent/60">
                         <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                         <td className="py-2 px-2 text-center">
                           <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                            h.riskLevel === 'Low' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            h.riskLevel === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            h.riskLevel === 'High' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-muted text-muted-foreground border-border'
+                            h.riskLevel === 'Low' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
+                            h.riskLevel === 'Medium' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' :
+                            h.riskLevel === 'High' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'bg-muted text-muted-foreground border-border'
                           }`}>
                             {h.riskLevel === 'Low' ? 'پایین' : h.riskLevel === 'Medium' ? 'متوسط' : h.riskLevel === 'High' ? 'بالا' : (h.riskLevel || '—')}
                           </span>
@@ -1250,11 +1285,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 4. ثبت نتایج آزمایشگاه */}
-      {(!showEvalWizard || evalStage === 'analysis') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
+      {(!showEvalWizard || evalStage === 'analysis') && canAnalysis && (
         <div id="purchase-history-analysis-section" className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-border pb-4">
             <div className="flex items-center gap-3">
-              <Microscope className="w-5 h-5 text-indigo-600 animate-pulse" />
+              <Microscope className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-pulse" />
               <div>
                 <h3 className="font-bold text-foreground text-sm">سابقه خرید و نتایج آنالیز آزمایشگاهی</h3>
                 <p className="text-xs text-muted-foreground mt-1">مدیریت و ثبت اطلاعات آزمایش، کدهای آزمایشگاهی (QC)، وضعیت انحراف و تصمیم نهایی (صرفاً ادمین و واحد کیفیت)</p>
@@ -1272,23 +1307,23 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
           {/* Inline Form to add laboratory record */}
           {showAddAnalysisForm && (
-            <div id="add-analysis-form" className="mb-6 p-6 rounded-2xl border border-indigo-100 bg-indigo-50/25 space-y-4">
+            <div id="add-analysis-form" className="mb-6 p-6 rounded-2xl border border-indigo-100 dark:border-indigo-800 bg-indigo-50/25 dark:bg-indigo-950/30 space-y-4">
               {analysisSuccess ? (
-                <div className="flex items-center justify-center gap-3 py-8 px-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-800 font-bold text-sm fade-in">
-                  <CheckCircle className="w-5 h-5 text-emerald-600 bounce-in" />
+                <div className="flex items-center justify-center gap-3 py-8 px-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-800 dark:text-emerald-300 font-bold text-sm fade-in">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 bounce-in" />
                   <span>سابقه آزمایش با موفقیت ثبت گردید.</span>
                 </div>
               ) : (
                 <>
-                  <div className="text-sm font-bold text-indigo-950 flex items-center gap-1.5 pb-2 border-b border-indigo-100">
-                    <Microscope className="w-4 h-4 text-indigo-600" />
+                  <div className="text-sm font-bold text-indigo-950 dark:text-indigo-300 flex items-center gap-1.5 pb-2 border-b border-indigo-100 dark:border-indigo-800">
+                    <Microscope className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     <span>فرم ثبت نتایج و سوابق آنالیز ماده</span>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Date */}
                     <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">تاریخ آزمایش <span className="text-red-500">*</span></label>
+                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">تاریخ آزمایش <span className="text-red-500 dark:text-red-400">*</span></label>
                       <ShamsiDatePicker
                         value={newAnalysis.date}
                         onChange={(date) => setNewAnalysis({ ...newAnalysis, date })}
@@ -1298,7 +1333,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                     {/* QC Code */}
                     <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">کد آزمایشگاهی / QC Code <span className="text-red-500">*</span></label>
+                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">کد آزمایشگاهی / QC Code <span className="text-red-500 dark:text-red-400">*</span></label>
                       <input
                         id="new-qc-code-input"
                         type="text"
@@ -1360,16 +1395,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     />
                   </div>
 
+                  {addAnalysisError && (
+                    <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{addAnalysisError}</span>
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       id="cancel-analysis-btn"
                       type="button"
                       onClick={() => {
+                        setAddAnalysisError(null);
                         setShowAddAnalysisForm(false);
                         setNewAnalysis({ date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]), qcCode: '', decision: 'Pass', deviationReason: 'None', comments: '' });
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-all"
+                      className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent active:bg-border rounded-lg transition-all"
                     >
                       انصراف
                     </button>
@@ -1400,20 +1443,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <div className="mb-6 space-y-4">
                 {/* Summary strip */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 text-center">
-                    <div className="text-2xl font-black font-mono text-emerald-700">{pass}</div>
-                    <div className="text-[11px] font-bold text-emerald-600">قبول (Pass)</div>
+                  <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-300">{pass}</div>
+                    <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">قبول (Pass)</div>
                   </div>
-                  <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3 text-center">
-                    <div className="text-2xl font-black font-mono text-blue-700">{cond}</div>
-                    <div className="text-[11px] font-bold text-blue-600">قبول مشروط</div>
+                  <div className="bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-blue-700 dark:text-blue-300">{cond}</div>
+                    <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400">قبول مشروط</div>
                   </div>
-                  <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3 text-center">
-                    <div className="text-2xl font-black font-mono text-rose-700">{rej}</div>
-                    <div className="text-[11px] font-bold text-rose-600">مردود (Reject)</div>
+                  <div className="bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black font-mono text-rose-700 dark:text-rose-300">{rej}</div>
+                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400">مردود (Reject)</div>
                   </div>
                   <div className="bg-muted border border-border rounded-xl p-3 text-center">
-                    <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700' : passRate >= 50 ? 'text-amber-600' : 'text-rose-700'}`}>{passRate}%</div>
+                    <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700 dark:text-emerald-300' : passRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-700 dark:text-rose-300'}`}>{passRate}%</div>
                     <div className="text-[11px] font-bold text-muted-foreground">نرخ قبولی</div>
                   </div>
                 </div>
@@ -1421,7 +1464,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 {/* Lab results trend line chart (Pass=100 / Conditional=50 / Reject=0) */}
                 <div className="bg-muted/50 border border-border/60 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-4">
-                    <Activity className="w-4 h-4 text-indigo-600" />
+                    <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     <h4 className="font-bold text-foreground text-xs">روند کیفی نتایج آزمایشگاهی <span className="text-muted-foreground font-normal font-mono">(Lab Quality Trend)</span></h4>
                   </div>
                   <div className="h-56 w-full" dir="ltr">
@@ -1452,17 +1495,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
 
                 {/* Admin decision box for sources/suppliers (not samples) */}
-                {!(vendor.isSample || vendor.category === 'sample') && (currentUser?.role === 'admin' || currentUser?.role === 'qa') && (
-                  <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 border-rose-200' : 'bg-amber-50/40 border-amber-200'}`}>
+                {!(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                  <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'}`}>
                     <div className="flex items-center gap-2 mb-2">
-                      <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'}`} />
+                      <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />
                       <h4 className="font-bold text-foreground text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-muted-foreground font-normal font-mono">(QA Decision)</span></h4>
                     </div>
                     {vendor.status === 'rejected' ? (
-                      <p className="text-[11px] text-rose-700 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                      <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
                     ) : (
                       <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-                        وجود {rej > 0 ? <strong className="text-rose-600">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
+                        وجود {rej > 0 ? <strong className="text-rose-600 dark:text-rose-400">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
                       </p>
                     )}
                     {showRejectBox ? (
@@ -1474,8 +1517,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
                         />
+                        {rejectError && (
+                          <div role="alert" className="flex items-start gap-2 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                            <span>{rejectError}</span>
+                          </div>
+                        )}
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-slate-200 rounded-lg">انصراف</button>
+                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent rounded-lg">انصراف</button>
                           {vendor.status === 'rejected' ? (
                             <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
                           ) : (
@@ -1517,7 +1566,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     const isDeletingThis = confirmDeleteAnalysisId === record.id;
 
                     return (
-                      <tr key={record.id || index} className={`${isEditingThis ? 'bg-indigo-50/30' : 'hover:bg-accent/50'} transition-all`}>
+                      <tr key={record.id || index} className={`${isEditingThis ? 'bg-indigo-50/30 dark:bg-indigo-950/30' : 'hover:bg-accent/50'} transition-all`}>
                         <td className="py-3 px-3 text-center font-mono text-muted-foreground font-semibold">{rowNumber}</td>
                         <td className="py-3 px-3">
                           {isEditingThis ? (
@@ -1540,7 +1589,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               type="text"
                               value={editingAnalysis?.qcCode || ''}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, qcCode: e.target.value })}
-                              className="px-2 py-1 rounded-lg border border-indigo-250 font-mono text-center text-xs w-full bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-505"
+                              className="px-2 py-1 rounded-lg border border-border font-mono text-center text-xs w-full bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                               dir="ltr"
                             />
                           ) : (
@@ -1554,7 +1603,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             <select
                               value={editingAnalysis?.decision || 'Pass'}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, decision: e.target.value as any })}
-                              className="px-2 py-1 rounded-lg border border-indigo-250 text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-505 font-medium"
+                              className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
                             >
                               <option value="Pass">Pass</option>
                               <option value="Approved Conditional">Approved Conditional</option>
@@ -1562,9 +1611,9 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             </select>
                           ) : (
                             <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              record.decision === 'Pass' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              record.decision === 'Approved Conditional' ? 'bg-indigo-50 text-[#3b82f6] border border-blue-200' :
-                              'bg-rose-50 text-rose-700 border border-rose-200'
+                              record.decision === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
+                              record.decision === 'Approved Conditional' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-[#3b82f6] border border-blue-200 dark:border-blue-800' :
+                              'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                             }`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${record.decision === 'Pass' ? 'bg-emerald-500 animate-pulse' : record.decision === 'Approved Conditional' ? 'bg-blue-500' : 'bg-rose-500'}`} />
                               <span>{record.decision === 'Pass' ? 'قبول (Pass)' : record.decision === 'Approved Conditional' ? 'قبول مشروط' : 'مردود (Reject)'}</span>
@@ -1578,7 +1627,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <select
                                 value={editingAnalysis?.deviationReason || 'None'}
                                 onChange={e => setEditingAnalysis({ ...editingAnalysis!, deviationReason: e.target.value as any })}
-                                className="px-2 py-1 rounded-lg border border-indigo-250 text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-505 font-medium"
+                                className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
                               >
                                 <option value="None">None</option>
                                 <option value="NCR">NCR</option>
@@ -1592,12 +1641,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             ) : (
                               <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
                                 record.deviationReason === 'None' ? 'bg-muted text-muted-foreground' :
-                                record.deviationReason === 'NCR' ? 'bg-orange-105 text-orange-800 border border-orange-200' :
-                                record.deviationReason === 'Deviation' ? 'bg-amber-100 text-amber-800 border border-amber-250' :
-                                record.deviationReason === 'OOS' ? 'bg-red-100 text-red-905 border border-red-300' :
-                                record.deviationReason === 'CAPA' ? 'bg-teal-55 text-teal-700 border border-teal-200' :
-                                record.deviationReason === 'OOT' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                'bg-purple-100 text-purple-800 border border-purple-200'
+                                record.deviationReason === 'NCR' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800' :
+                                record.deviationReason === 'Deviation' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                                record.deviationReason === 'OOS' ? 'bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-300 border border-red-300 dark:border-red-800' :
+                                record.deviationReason === 'CAPA' ? 'bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800' :
+                                record.deviationReason === 'OOT' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
+                                'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
                               }`}>
                                 {record.deviationReason}
                               </span>
@@ -1611,11 +1660,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 rows={2}
                                 value={editingAnalysis?.comments || ''}
                                 onChange={e => setEditingAnalysis({ ...editingAnalysis!, comments: e.target.value })}
-                                className="px-2 py-1 rounded-lg border border-indigo-250 text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-505 leading-normal"
+                                className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring leading-normal"
                                 placeholder="توضیحات..."
                               />
                             ) : (
-                              <span className="text-slate-605 leading-relaxed font-light">{record.comments || 'فاقد توضیحات تکمیلی'}</span>
+                              <span className="text-muted-foreground leading-relaxed font-light">{record.comments || 'فاقد توضیحات تکمیلی'}</span>
                             )}
                           </td>
 
@@ -1626,6 +1675,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                           {/* Actions */}
                           <td className="py-3 px-3 text-center">
+                            {isEditingThis && editAnalysisError && (
+                              <div role="alert" className="mb-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
+                                {editAnalysisError}
+                              </div>
+                            )}
                             {isEditingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
                                 <button
@@ -1637,7 +1691,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 </button>
                                 <button
                                   onClick={handleEditAnalysisCancel}
-                                  className="px-2 py-1 bg-muted hover:bg-slate-200 text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
                                   title="انصراف"
                                 >
                                   انصراف
@@ -1654,7 +1708,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 </button>
                                 <button
                                   onClick={() => setConfirmDeleteAnalysisId(null)}
-                                  className="px-2 py-1 bg-muted hover:bg-slate-200 text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
                                   title="لغو"
                                 >
                                   لغو
@@ -1664,14 +1718,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <div className="flex items-center justify-center gap-1" dir="ltr">
                                 <button
                                   onClick={() => handleEditAnalysisStart(record)}
-                                  className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition-all"
+                                  className="p-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 dark:bg-indigo-950/30 rounded transition-all"
                                   title="ویرایش"
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => setConfirmDeleteAnalysisId(record.id)}
-                                  className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-all"
+                                  className="p-1 text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/40 dark:bg-rose-950/30 rounded transition-all"
                                   title="حذف"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1686,7 +1740,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </table>
               </div>
             ) : (
-              <div className="text-center py-10 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-slate-250">
+              <div className="text-center py-10 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
                 هیچ سابقه خرید یا نتیجه آنالیز آزمایشگاهی برای این سورس ثبت نشده است.
               </div>
             )}
@@ -1707,7 +1761,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 مرحله بعد <ChevronLeft className="w-4 h-4" />
               </button>
             ) : (
-              <span className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-emerald-700 bg-emerald-50 border border-emerald-200">
+              <span className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle className="w-4 h-4" /> آخرین مرحله
               </span>
             )}

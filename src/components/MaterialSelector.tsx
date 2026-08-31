@@ -2,6 +2,7 @@ import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, Package, X, Upload, FileText } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia } from '../types';
+import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
 
 interface Props {
   value?: string;
@@ -10,16 +11,6 @@ interface Props {
   onAddMaterial?: (mat: Material) => void;
   oldMaterialName?: string;
 }
-
-const roleOptions: { value: MaterialRole; label: string; code: string; fullLabel: string }[] = [
-  { value: 'API', label: 'ماده موثره', code: 'API', fullLabel: 'ماده موثره دارویی (API)' },
-  { value: 'Intermediate', label: 'حدواسط', code: 'INT', fullLabel: 'حدواسط (Intermediate)' },
-  { value: 'Solvent', label: 'حلال', code: 'SOL', fullLabel: 'حلال (Solvent)' },
-  { value: 'Reagent / Reactant', label: 'واکنشگر', code: 'REA', fullLabel: 'واکنش‌گر (Reagent)' },
-  { value: 'Excipient', label: 'اکسپیانت', code: 'EXP', fullLabel: 'اکسپیانت (Excipient)' },
-  { value: 'Packaging Item', label: 'ملزومات بسته‌بندی', code: 'PKG', fullLabel: 'ملزومات بسته‌بندی (Packaging)' },
-  { value: 'Other', label: 'سایر موارد', code: 'OTH', fullLabel: 'سایر موارد (Other)' },
-];
 
 const pharmacopoeiaOptions: Pharmacopoeia[] = ['USP', 'BP', 'EP', 'JP', 'IP', 'Ph. Eur.', 'ChP', 'In-house', 'Other'];
 
@@ -42,19 +33,15 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
   const selectedMaterial = materials.find(m => m.id === value);
 
-  const getRoleInfo = (role?: MaterialRole) => {
-    return roleOptions.find(r => r.value === role) || roleOptions[0];
-  };
-
   const generateStandardNameFa = (data: Partial<Material>) => {
-    const roleInfo = getRoleInfo(data.role as MaterialRole);
+    const roleInfo = getMaterialRole(data.role);
     const nameFaStr = data.nameFa?.trim() || '---';
     const finalProductStr = data.finalProduct?.trim() || '---';
-    return `${roleInfo.label} - ${nameFaStr} (برای ${finalProductStr})`;
+    return `${roleInfo.labelFa} - ${nameFaStr} (برای ${finalProductStr})`;
   };
 
   const generateStandardNameEn = (data: Partial<Material>) => {
-    const roleInfo = getRoleInfo(data.role as MaterialRole);
+    const roleInfo = getMaterialRole(data.role);
     const nameEnStr = data.nameEn?.trim() || '---';
     const finalProductEnStr = data.finalProductEn?.trim() || data.finalProduct?.trim() || '---';
     return `${roleInfo.code}-${nameEnStr} (For ${finalProductEnStr})`;
@@ -129,7 +116,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center justify-between w-full bg-card border rounded-lg px-3 py-2 cursor-pointer transition-colors text-right text-sm ${
-            isOpen ? 'border-[#0071E3] ring-1 ring-[#0071E3]' : 'border-border hover:border-[var(--border-hover-color)]'
+            isOpen ? 'border-ring ring-1 ring-ring' : 'border-border hover:border-[var(--border-hover-color)]'
           } ${!selectedMaterial && !isOpen && !oldMaterialName ? 'text-muted-foreground' : 'text-foreground'}`}
         >
           <div className="flex-1 truncate pr-1">
@@ -317,7 +304,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as MaterialRole })}
                     className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
                   >
-                    {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.value} - {opt.fullLabel}</option>)}
+                    {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                   </select>
                 </div>
 

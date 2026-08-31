@@ -4,9 +4,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Resp
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
 import { exportBusinessPartnersToExcel } from '../utils/excelExport';
+import { categoryLabels } from '../constants/categories';
+import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
-  CheckCircle, CheckCircle2, XCircle, ArrowUpDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
+  CheckCircle, CheckCircle2, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
   FileText, Upload, Download, FileCheck, Award, ShieldCheck, AlertCircle, Paperclip,
   RefreshCw, AlertTriangle, Package
 } from 'lucide-react';
@@ -27,10 +29,14 @@ import {
   calculateDocScore, 
   getDefaultSupplierEvaluation, 
   computeSupplierEvaluation, 
-  validateSupplierEvaluation 
+  validateSupplierEvaluation,
+  describeGrade,
+  canSupplySources
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
+import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
+import { can } from '../utils/permissions';
 
 interface Props {
   partners: BusinessPartner[];
@@ -39,9 +45,71 @@ interface Props {
   onDeletePartner: (id: string) => void;
   currentUser: User | null;
   db?: Vendor[];
+  /** True while the first fetch is still in flight, so the table shows
+      skeletons instead of claiming there are no partners. */
+  isLoading?: boolean;
 }
 
-type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt';
+/**
+ * Saving a partner sends the whole record, so all five SOP documents travel in
+ * one body — and `express.json` on the server caps that at 10mb while a data
+ * URL is ~33% larger than the file it encodes. Without a guard here, a couple
+ * of large PDFs produced a 413 that the UI never showed.
+ */
+const MAX_DOC_BYTES = 3 * 1024 * 1024;
+const MAX_DOCS_TOTAL_BYTES = 6 * 1024 * 1024;
+
+const formatFileSize = (bytes?: number) => {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} بایت`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} کیلوبایت`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
+};
+
+type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt' | 'grade';
+
+/** Persian has its own alphabet order; a plain `<` sorts by code point. */
+const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
+
+/**
+ * A sortable column header that says which column is sorted and which way.
+ *
+ * These were clickable `<th>`s with the same neutral glyph on every column: not
+ * reachable by keyboard, not announced as controls, and no way to tell what the
+ * table was ordered by.
+ */
+const SortHeader: React.FC<{
+  field: SortField;
+  label: string;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  onSort: (f: SortField) => void;
+}> = ({ field, label, sortField, sortOrder, onSort }) => {
+  const active = sortField === field;
+  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      scope="col"
+      className={`p-0 ${active ? 'text-foreground' : ''}`}
+      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        title={`مرتب‌سازی بر اساس ${label}`}
+        className="w-full py-3 px-4 flex items-center gap-1 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <span>{label}</span>
+        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
+      </button>
+    </th>
+  );
+};
+
+/** Worst first when descending: the order a quality reviewer reads in. */
+const GRADE_RANK: Record<string, number> = {
+  'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
+};
 type SortOrder = 'asc' | 'desc';
 
 export const BusinessPartnerRepositoryView: React.FC<Props> = ({
@@ -50,7 +118,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   onEditPartner,
   onDeletePartner,
   currentUser,
-  db = []
+  db = [],
+  isLoading = false
 }) => {
   // Search & Filters state
   const [search, setSearch] = useState('');
@@ -66,7 +135,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -114,14 +183,6 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const getConnectedSources = (partner: BusinessPartner) =>
     (db || []).filter(v => v.manufacturerId === partner.id || v.supplierId === partner.id || v.id === partner.id);
 
-  const gradeBadgeCls = (g?: string | null) => {
-    if (g === 'A') return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300';
-    if (g === 'B') return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300';
-    if (g === 'C') return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300';
-    if (g === 'rejected' || g === 'black list') return 'bg-rose-600 text-white border-rose-700';
-    return 'bg-muted text-muted-foreground border-border';
-  };
-
   const renderConnectedSources = (partner: BusinessPartner) => {
     const sources = getConnectedSources(partner);
     const roleLabel = partner.type === 'Manufacturer' ? 'به‌عنوان تولیدکننده' : 'به‌عنوان فروشنده';
@@ -155,15 +216,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {v.materialEn && <span className="font-mono text-[10px] text-muted-foreground block">{v.materialEn}</span>}
                     </td>
                     <td className="py-2 px-3 text-foreground">{v.name}</td>
-                    <td className="py-2 px-3 text-muted-foreground">{v.category}</td>
+                    {/* The stored key (`foreign`, `packaging`, …) is a database
+                        value, not something to show a user — everywhere else in
+                        the app it goes through the same label map. */}
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category || '—'}
+                    </td>
                     <td className="py-2 px-3 text-center">
-                      {v.grade ? (
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${gradeBadgeCls(v.grade)}`}>
-                          {v.grade === 'rejected' || v.grade === 'black list' ? 'لیست سیاه' : `Grade ${v.grade}`}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">{v.status === 'rejected' ? 'مردود' : v.status || '—'}</span>
-                      )}
+                      {/* Was a local copy of the grade badge that fell back to
+                          the raw English status ('new', 'approved') when a
+                          source had no grade yet. GradeBadge is the shared one
+                          and always speaks Persian. */}
+                      <GradeBadge grade={v.grade as any} status={v.status as any} scores={v.scores} />
                     </td>
                   </tr>
                 ))}
@@ -224,6 +288,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     return computeSupplierEvaluation(evalDocs);
   }, [evalDocs]);
 
+  /** Bytes currently attached across all SOP documents — see MAX_DOCS_TOTAL_BYTES. */
+  const docsTotalBytes = useMemo(
+    () => Object.values(evalDocs).reduce((sum, doc) => sum + (doc.fileSize || 0), 0),
+    [evalDocs],
+  );
+
   // Unique countries list for country filter
   const availableCountries = useMemo(() => {
     const list = partners.map(p => p.country.trim()).filter(Boolean);
@@ -238,13 +308,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     const active = partners.filter(p => p.status === 'Active').length;
     const inactive = partners.filter(p => p.status === 'Inactive').length;
 
-    const approvedSuppliers = suppliers.filter(s => 
-      s.evaluation?.grade === 'A' || s.evaluation?.grade === 'B'
-    ).length;
-
-    const rejectedOrConditionalSuppliers = suppliers.filter(s => 
-      s.evaluation?.grade === 'C' || s.evaluation?.grade === 'Pending Review' || s.evaluation?.grade === 'Blacklist'
-    ).length;
+    // "Approved" used to mean grade A **or B**, but only grade A may be
+    // attached to a source and the server rejects the rest with 422 — so the
+    // card counted suppliers the system refuses. It now asks the same function
+    // the gate asks, and the two cards partition the suppliers exactly.
+    const eligibleSuppliers = suppliers.filter(s => canSupplySources(s).allowed).length;
+    const blockedSuppliers = suppliers.length - eligibleSuppliers;
 
     return { 
       total, 
@@ -252,8 +321,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       suppliers: suppliers.length, 
       active, 
       inactive,
-      approvedSuppliers,
-      rejectedOrConditionalSuppliers
+      eligibleSuppliers,
+      blockedSuppliers
     };
   }, [partners]);
 
@@ -328,21 +397,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
       return true;
     }).sort((a, b) => {
-      let aVal = (a[sortField] || '').toString().toLowerCase();
-      let bVal = (b[sortField] || '').toString().toLowerCase();
-
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      if (sortField === 'grade') {
+        const rank = (p: BusinessPartner) =>
+          p.type === 'Supplier' ? (GRADE_RANK[p.evaluation?.grade || 'Not Evaluated'] ?? 0) : -1;
+        return dir * (rank(a) - rank(b));
+      }
+      // Dates are ISO strings, which the collator orders correctly as text.
+      return dir * collator.compare(String(a[sortField] ?? ''), String(b[sortField] ?? ''));
     });
   }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, countryFilter, sortField, sortOrder]);
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredPartners.length / itemsPerPage) || 1;
+  const totalPages = Math.max(1, Math.ceil(filteredPartners.length / itemsPerPage));
+  // Deleting the last row of the last page used to strand the user on an empty
+  // page with no way back but paging manually.
+  const page = Math.min(currentPage, totalPages);
+  useEffect(() => { if (currentPage !== page) setCurrentPage(page); }, [currentPage, page]);
   const paginatedPartners = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
+    const start = (page - 1) * itemsPerPage;
     return filteredPartners.slice(start, start + itemsPerPage);
-  }, [filteredPartners, currentPage]);
+  }, [filteredPartners, page, itemsPerPage]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -457,6 +532,21 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   };
 
   const handleDocFileUpload = (key: SOPDocumentKey, file: File) => {
+    // Refuse here, with a reason, rather than letting the server reject the
+    // whole evaluation later for a size the user was never told about.
+    if (file.size > MAX_DOC_BYTES) {
+      setFormError(`حجم فایل «${file.name}» (${formatFileSize(file.size)}) بیش از حد مجاز هر مدرک (${formatFileSize(MAX_DOC_BYTES)}) است.`);
+      return;
+    }
+    const othersTotal = Object.entries(evalDocs)
+      .filter(([k]) => k !== key)
+      .reduce((sum, [, doc]) => sum + (doc.fileSize || 0), 0);
+    if (othersTotal + file.size > MAX_DOCS_TOTAL_BYTES) {
+      setFormError(`مجموع حجم مدارک پیوست از ${formatFileSize(MAX_DOCS_TOTAL_BYTES)} بیشتر می‌شود. ابتدا یکی از فایل‌های موجود را حذف کنید.`);
+      return;
+    }
+    setFormError(null);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
@@ -637,48 +727,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     }
   };
 
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // Find linked Suppliers for a Manufacturer
-  const getGradeBadgeClass = (grade?: string) => {
-    switch (grade) {
-      case 'A': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      case 'B': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'C': return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      default: return 'bg-muted text-foreground border-border';
-    }
-  };
-
-  // نتیجهٔ ارزیابی SOP بر اساس گرید (فقط گرید نمایش داده می‌شود، بدون وضعیت مانیتورینگ)
-  const gradeApprovalLabel = (grade?: string): { label: string; cls: string } => {
-    switch (grade) {
-      case 'A': return { label: 'Approved', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
-      case 'B': return { label: 'Permit Approval', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
-      case 'C': return { label: 'Expired', cls: 'bg-amber-100 text-amber-800 border-amber-300' };
-      case 'Blacklist': return { label: 'Black List', cls: 'bg-rose-100 text-rose-800 border-rose-300' };
-      case 'Pending Review': return { label: 'Pending Review', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
-      default: return { label: grade || '—', cls: 'bg-muted text-foreground border-border' };
-    }
-  };
+  /** Both grade colour tables lived here; they now come from the shared one. */
+  const getGradeBadgeClass = (grade?: string) => describeGrade(grade).tone;
 
   const getDocStatusInfo = (status: SOPDocumentStatus | null) => {
     switch (status) {
       case 'Approved':
-        return { label: 'Approved', desc: 'تایید شده (۱۰۰٪)', badge: 'bg-emerald-500/15 text-emerald-700 border-emerald-300' };
+        return { label: 'Approved', desc: 'تایید شده (۱۰۰٪)', badge: 'bg-emerald-500/15 text-emerald-700 border-emerald-300 dark:text-emerald-300 dark:border-emerald-800' };
       case 'Permit Approval':
-        return { label: 'Permit Approval', desc: 'تایید مشروط (۵۰٪)', badge: 'bg-amber-500/15 text-amber-700 border-amber-300' };
+        return { label: 'Permit Approval', desc: 'تایید مشروط (۵۰٪)', badge: 'bg-amber-500/15 text-amber-700 border-amber-300 dark:text-amber-300 dark:border-amber-800' };
       case 'Expired':
         return { label: 'Expired', desc: 'منقضی شده (۲۵٪)', badge: 'bg-orange-500/15 text-orange-700 border-orange-300' };
       case 'Not Submitted':
-        return { label: 'Not Submitted', desc: 'ارائه نشده (۰٪)', badge: 'bg-rose-500/15 text-rose-700 border-rose-300' };
+        return { label: 'Not Submitted', desc: 'ارائه نشده (۰٪)', badge: 'bg-rose-500/15 text-rose-700 border-rose-300 dark:text-rose-300 dark:border-rose-800' };
       default:
         return { label: 'انتخاب نشده', desc: 'بدون وضعیت', badge: 'bg-muted text-muted-foreground border-border' };
     }
@@ -686,274 +747,245 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
   return (
     <div className="space-y-6 fade-in pb-12" style={{ direction: 'rtl' }}>
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden border border-slate-700/50">
-        <div className="absolute top-0 left-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-blue-400 font-mono text-xs uppercase tracking-wider">
+      {/* KPI cards — same shape as the materials repository so the two
+          repositories read as one product: one card per fact, icon tile on the
+          side, number in mono. The gradient hero that used to sit above them
+          was a second visual language for the same page and went invisible in
+          dark mode, so the title now lives in the toolbar card below, exactly
+          as it does in the materials view. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'کل شرکای تجاری', en: 'Total Partners', value: stats.total, Icon: Building2,
+            tone: 'bg-muted text-foreground border-border' },
+          { label: 'تولیدکنندگان', en: 'Manufacturers', value: stats.manufacturers, Icon: Factory,
+            tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
+          { label: 'فروشندگان', en: 'Suppliers', value: stats.suppliers, Icon: Handshake,
+            tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
+          { label: 'مجاز برای اتصال به سورس', en: 'Grade A · Approved', value: stats.eligibleSuppliers, Icon: ShieldCheck,
+            tone: 'bg-teal-50 text-teal-600 border-teal-100 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-900' },
+          { label: 'غیرمجاز برای اتصال', en: 'Below Grade A', value: stats.blockedSuppliers, Icon: AlertTriangle,
+            tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
+        ].map(card => (
+          <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
+              <card.Icon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              {/* Wraps rather than truncating: «مجاز برای اتصال به سورس» is the
+                  whole point of the card and lost its ending at this width. */}
+              <div className="text-[11px] font-bold text-muted-foreground leading-tight">{card.label}</div>
+              {/* The counts come from the same list the table shows, so they
+                  cannot claim a number while that list is still loading. */}
+              {isLoading
+                ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
+                : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
+              <div className="text-[10px] text-muted-foreground font-mono truncate">{card.en}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Title + toolbar, in the materials-repository layout */}
+      <div className="bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-mono text-xs uppercase tracking-wider">
               <Building2 className="w-4 h-4" />
               <span>Business Partner & Supplier Quality Evaluation</span>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              مخزن شرکای تجاری و ارزیابی Supplier
-            </h1>
-            <p className="text-slate-300 text-xs leading-relaxed max-w-2xl">
-              ثبت و مدیریت ساختاریافته تولیدکنندگان (Manufacturers)، فروشندگان (Suppliers)، ارتباط سازمانی و ارزیابی کیفی کیفی تامین‌کنندگان مطابق با SOP و موازین GMP دارویی.
-            </p>
+            <h1 className="text-xl font-black text-foreground tracking-tight">مخزن شرکای تجاری و ارزیابی فروشنده</h1>
+            <p className="text-xs text-muted-foreground">ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP</p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                placeholder="جستجو در نام، کشور، شهر، رابط، ایمیل، تلفن"
+                className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
+              />
+            </div>
+
             <button
               onClick={() => exportBusinessPartnersToExcel(filteredPartners, db || [])}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 border border-emerald-400/30"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-muted hover:bg-accent border border-border text-foreground px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0"
             >
               <Download className="w-4 h-4" />
-              <span>خروجی اکسل شرکا (XLSX)</span>
+              <span>خروجی اکسل</span>
             </button>
-            <button
-              onClick={handleOpenAdd}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 border border-blue-400/30"
-            >
-              <Plus className="w-4 h-4" />
-              <span>ثبت شریک تجاری جدید</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* KPI Stat Cards (5 Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {/* Total Partners */}
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">کل شرکای تجاری</span>
-            <div className="p-2 bg-muted rounded-lg text-foreground">
-              <Building2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-foreground font-mono">{stats.total}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Total Partners</div>
-        </div>
-
-        {/* Manufacturers */}
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">تولیدکنندگان</span>
-            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100">
-              <Factory className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-indigo-600 font-mono">{stats.manufacturers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Manufacturers</div>
-        </div>
-
-        {/* Suppliers */}
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">فروشندگان</span>
-            <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 border border-emerald-100">
-              <Handshake className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-emerald-600 font-mono">{stats.suppliers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Suppliers</div>
-        </div>
-
-        {/* Approved Suppliers */}
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">تامین‌کنندگان تاییدشده</span>
-            <div className="p-2 bg-teal-50 rounded-lg text-teal-600 border border-teal-100">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-teal-600 font-mono">{stats.approvedSuppliers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Grade A/B Approved</div>
-        </div>
-
-        {/* Conditional / Rejected Suppliers */}
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-muted-foreground">مشروط یا مردود</span>
-            <div className="p-2 bg-amber-50 rounded-lg text-amber-600 border border-amber-100">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-amber-600 font-mono">{stats.rejectedOrConditionalSuppliers}</div>
-          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Conditional / Rejected</div>
-        </div>
-      </div>
-
-      {/* Control Bar: Smart Search & Advanced Filters */}
-      <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
-        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
-          {/* Smart Search Input */}
-          <div className="relative w-full lg:w-96">
-            <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              placeholder="جستجوی هوشمند (نام شرکت، تولیدکننده، کشور، ایمیل، رابط...)"
-              className="w-full bg-muted border border-border rounded-lg pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
-            />
-          </div>
-
-          {/* Type Filter Selector Buttons */}
-          <div className="flex items-center gap-1.5 bg-muted border border-border rounded-lg p-1 text-xs shrink-0 overflow-x-auto">
-            <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1 shrink-0" />
-            <button
-              onClick={() => { setTypeFilter('All'); setCurrentPage(1); }}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${typeFilter === 'All' ? 'bg-card shadow text-foreground font-bold' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              همه انواع
-            </button>
-            <button
-              onClick={() => { setTypeFilter('Manufacturer'); setCurrentPage(1); }}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${typeFilter === 'Manufacturer' ? 'bg-indigo-600 text-white font-bold' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Manufacturer
-            </button>
-            <button
-              onClick={() => { setTypeFilter('Supplier'); setCurrentPage(1); }}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${typeFilter === 'Supplier' ? 'bg-emerald-600 text-white font-bold' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Supplier
-            </button>
-          </div>
-        </div>
-
-        {/* Dropdown Filters Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-2 border-t border-border text-xs">
-          {/* Supplier SOP Status Filter */}
-          <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
-            <select
-              value={sopStatusFilter}
-              onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-blue-500 font-medium"
-            >
-              <option value="All">همه وضعیت‌های SOP</option>
-              <option value="Approved Supplier">Approved Supplier (تایید شده)</option>
-              <option value="Approved with Monitoring">Approved with Monitoring (پایش)</option>
-              <option value="Conditional Supplier">Conditional Supplier (مشروط)</option>
-              <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
-              <option value="Blacklist">Blacklist (لیست سیاه)</option>
-              <option value="Not Evaluated">Not Evaluated (ارزیابی نشده)</option>
-            </select>
-          </div>
-
-          {/* Supplier SOP Grade Filter */}
-          <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
-            <select
-              value={gradeFilter}
-              onChange={e => { setGradeFilter(e.target.value as any); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-blue-500 font-medium"
-            >
-              <option value="All">همه گریدها</option>
-              <option value="A">Grade A (عالی: ۸۰-۱۰۰)</option>
-              <option value="B">Grade B (قبول با پایش: ۶۰-۷۹)</option>
-              <option value="C">Grade C (مشروط: ۴۰-۵۹)</option>
-              <option value="Pending Review">Pending Review (در حال بررسی)</option>
-              <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
-              <option value="Not Evaluated">ارزیابی نشده</option>
-            </select>
-          </div>
-
-          {/* Country Filter */}
-          <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1">کشور سازنده / فروشنده</label>
-            <select
-              value={countryFilter}
-              onChange={e => { setCountryFilter(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-blue-500 font-medium"
-            >
-              <option value="All">همه کشورها</option>
-              {availableCountries.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* System Status Filter */}
-          <div>
-            <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت فعالیت سیستم</label>
-            <select
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-blue-500 font-medium"
-            >
-              <option value="All">همه وضعیت‌ها</option>
-              <option value="Active">فعال (Active)</option>
-              <option value="Inactive">غیرفعال (Inactive)</option>
-              <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
-            </select>
-          </div>
-
-          {/* Reset Filters Button */}
-          <div className="flex items-end">
-            {hasActiveFilters && (
+            {can(currentUser, 'partner.create') && (
               <button
-                onClick={handleResetFilters}
-                className="w-full px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                onClick={handleOpenAdd}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>حذف فیلترها</span>
+                <Plus className="w-4 h-4" />
+                <span>ثبت شریک تجاری جدید</span>
               </button>
             )}
           </div>
         </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 pt-3 border-t border-border">
+          <div className="flex items-center gap-1.5 bg-muted border border-border rounded-xl p-1 text-xs shrink-0 overflow-x-auto">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1 shrink-0" />
+            {([
+              { key: 'All', label: 'همه انواع' },
+              { key: 'Manufacturer', label: 'Manufacturer' },
+              { key: 'Supplier', label: 'Supplier' },
+            ] as const).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => { setTypeFilter(opt.key as any); setCurrentPage(1); }}
+                className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                  typeFilter === opt.key ? 'bg-card shadow text-foreground font-bold' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
+              <select
+                value={sopStatusFilter}
+                onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
+                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+              >
+                <option value="All">همه وضعیت‌های SOP</option>
+                <option value="Approved Supplier">Approved Supplier (تاییدشده)</option>
+                <option value="Approved with Monitoring">Approved with Monitoring (با پایش)</option>
+                <option value="Conditional Supplier">Conditional Supplier (مشروط)</option>
+                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
+                <option value="Blacklist">Blacklist (لیست سیاه)</option>
+                <option value="Not Evaluated">Not Evaluated (ارزیابی نشده)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
+              <select
+                value={gradeFilter}
+                onChange={e => { setGradeFilter(e.target.value as any); setCurrentPage(1); }}
+                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+              >
+                <option value="All">همه گریدها</option>
+                <option value="A">Grade A (تاییدشده: ۸۰-۱۰۰)</option>
+                <option value="B">Grade B (با پایش: ۶۰-۷۹)</option>
+                <option value="C">Grade C (مشروط: ۴۰-۵۹)</option>
+                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
+                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
+                <option value="Not Evaluated">ارزیابی نشده</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground block mb-1">کشور سازنده / فروشنده</label>
+              <select
+                value={countryFilter}
+                onChange={e => { setCountryFilter(e.target.value); setCurrentPage(1); }}
+                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+              >
+                <option value="All">همه کشورها</option>
+                {availableCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت فعالیت سیستم</label>
+              <select
+                value={statusFilter}
+                onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
+                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+              >
+                <option value="All">همه وضعیت‌ها</option>
+                <option value="Active">فعال (Active)</option>
+                <option value="Inactive">غیرفعال (Inactive)</option>
+                <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
+              </select>
+            </div>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              onClick={handleResetFilters}
+              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 border rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>حذف فیلترها</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Table */}
-      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+      <div className="bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
+          <table className="w-full text-right border-collapse" aria-busy={isLoading}>
+            <caption className="sr-only">فهرست شرکای تجاری ثبت‌شده</caption>
             <thead>
               <tr className="bg-muted/80 border-b border-border text-muted-foreground text-xs font-bold">
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('name')}>
-                  <div className="flex items-center gap-1">
-                    <span>نام شرکت</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('type')}>
-                  <div className="flex items-center gap-1">
-                    <span>نوع</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('country')}>
-                  <div className="flex items-center gap-1">
-                    <span>کشور / شهر</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4">نتیجهٔ ارزیابی SOP</th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('status')}>
-                  <div className="flex items-center gap-1">
-                    <span>وضعیت سیستم</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 cursor-pointer hover:bg-muted transition-colors" onClick={() => handleSort('createdAt')}>
-                  <div className="flex items-center gap-1">
-                    <span>تاریخ ثبت</span>
-                    <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 text-center">عملیات</th>
+                <SortHeader field="name" label="نام شرکت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="type" label="نوع" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="country" label="کشور / شهر" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="grade" label="نتیجهٔ ارزیابی SOP" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="status" label="وضعیت سیستم" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="createdAt" label="تاریخ ثبت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <th scope="col" className="py-3 px-4 text-center">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-xs">
-              {paginatedPartners.length === 0 ? (
+              {isLoading ? (
+                /* Until the first fetch lands there is nothing to show, and the
+                   empty state below would claim the repository is empty. */
+                [0, 1, 2, 3, 4].map(i => (
+                  <tr key={`skeleton-${i}`} aria-hidden="true">
+                    {Array.from({ length: 7 }).map((_, c) => (
+                      <td key={c} className="py-3.5 px-4">
+                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '80%' : c > 4 ? '3rem' : '60%' }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : paginatedPartners.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <Building2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    هیچ شریک تجاری با مشخصات وارد شده یافت نشد.
+                  <td colSpan={7} className="py-14 text-center">
+                    <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+                    {hasActiveFilters ? (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">هیچ شریکی با این جستجو یا فیلترها پیدا نشد.</p>
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          پاک‌کردن جستجو و فیلترها
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-muted-foreground">هنوز شریک تجاری‌ای ثبت نشده است.</p>
+                        {can(currentUser, 'partner.create') ? (
+                          <button
+                            type="button"
+                            onClick={handleOpenAdd}
+                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                          >
+                            <Plus className="w-4 h-4" />
+                            ثبت اولین شریک تجاری
+                          </button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">ثبت شریک تجاری در دسترس نقش شما نیست.</p>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -961,21 +993,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   return (
                     <tr key={partner.id} className="hover:bg-muted/70 transition-colors">
                       {/* Name */}
-                      <td className="py-3 px-4 font-bold text-foreground">
-                        <div className="flex flex-col">
-                          <span className="text-foreground font-black">{partner.name}</span>
-                        </div>
+                      <td className="py-3 px-4 font-bold text-foreground max-w-[18rem] xl:max-w-[26rem]">
+                        <EntityName name={partner.name} lines={2} className="font-black whitespace-normal" />
                       </td>
 
                       {/* Type */}
                       <td className="py-3 px-4">
                         {partner.type === 'Manufacturer' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-900 border">
                             <Factory className="w-3 h-3" />
                             Manufacturer
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900 border">
                             <Handshake className="w-3 h-3" />
                             Supplier
                           </span>
@@ -996,13 +1026,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
                             <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${gradeApprovalLabel(partner.evaluation.grade).cls}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${describeGrade(partner.evaluation.grade).tone}`}>
                                 <Award className="w-3 h-3" />
-                                {gradeApprovalLabel(partner.evaluation.grade).label}
+                                {partner.evaluation.grade} · {describeGrade(partner.evaluation.grade).fa}
                               </span>
                               <span className="text-[10px] font-mono text-muted-foreground font-bold">
                                 ({partner.evaluation.totalScore}/100)
                               </span>
+                              {/* The grade alone does not answer the question the
+                                  buyer actually has. Only grade A may be attached
+                                  to a source, and the server refuses the rest with
+                                  422 — so the row says so instead of letting the
+                                  refusal come as a surprise later. */}
+                              {!canSupplySources(partner).allowed && (
+                                <span
+                                  title={canSupplySources(partner).reason}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border"
+                                >
+                                  <XCircle className="w-3 h-3 shrink-0" />
+                                  قابل اتصال به سورس نیست
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
@@ -1015,7 +1059,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   handleOpenEdit(partner);
                                   setActiveModalTab('evaluation');
                                 }}
-                                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                                disabled={!can(currentUser, 'partner.edit')}
+                                title={can(currentUser, 'partner.edit') ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
+                                className="text-[11px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                               >
                                 شروع ارزیابی
                               </button>
@@ -1029,17 +1075,17 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {/* System Status */}
                       <td className="py-3 px-4">
                         {partner.status === 'Active' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/50 dark:text-teal-200 dark:border-teal-900 border">
                             <CheckCircle2 className="w-3 h-3" />
                             Active
                           </span>
                         ) : partner.status === 'Blacklisted' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-600 text-white border border-rose-700">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-600 text-white border border-rose-700 dark:bg-rose-700 dark:border-rose-800">
                             <AlertTriangle className="w-3 h-3" />
                             Blacklist
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900 border">
                             <XCircle className="w-3 h-3" />
                             Inactive
                           </span>
@@ -1056,22 +1102,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => handleOpenView(partner)}
-                            className="p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className={`p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
                             title="مشاهده جزئیات کامل"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => handleOpenEdit(partner)}
-                            className="p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                            title="ویرایش اطلاعات"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          {currentUser?.role === 'admin' && (
+                          {/* Delete was gated but edit was not, so a user without
+                              `partner.edit` could fill in the whole form only for
+                              the server to refuse the save. */}
+                          {can(currentUser, 'partner.edit') && (
+                            <button
+                              onClick={() => handleOpenEdit(partner)}
+                              className={`p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                              title="ویرایش اطلاعات"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {can(currentUser, 'partner.delete') && (
                             <button
                               onClick={() => handleDeletePartnerClick(partner)}
-                              className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              className={`p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
                               title="حذف"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1088,15 +1139,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         </div>
 
         {/* Table Footer / Pagination */}
-        <div className="p-3 bg-muted border-t border-border">
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={filteredPartners.length}
-            startIndex={(currentPage - 1) * itemsPerPage}
-            endIndex={currentPage * itemsPerPage}
-            onPageChange={setCurrentPage}
-          />
+        <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+            <span>تعداد در هر صفحه</span>
+            <select
+              value={itemsPerPage}
+              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              className={`bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+            >
+              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <div className="flex-1 min-w-0">
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={filteredPartners.length}
+              startIndex={(page - 1) * itemsPerPage}
+              endIndex={page * itemsPerPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </div>
       </div>
 
@@ -1117,7 +1180,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 {/* Sticky Top Header */}
                 <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900 border flex items-center justify-center font-bold">
                       <Building2 className="w-5 h-5" />
                     </div>
                     <div>
@@ -1143,7 +1206,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <form id="partner-form" onSubmit={handleSubmitForm} className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
                   {/* Error Banner */}
                   {formError && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+                    <div className="p-3 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-xs font-semibold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>{formError}</span>
                     </div>
@@ -1164,7 +1227,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         }}
                         className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                           formData.type === 'Manufacturer'
-                            ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500'
+                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200 border-indigo-500 shadow-sm ring-1 ring-indigo-500'
                             : 'bg-muted border-border text-muted-foreground hover:bg-muted'
                         }`}
                       >
@@ -1180,7 +1243,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         }}
                         className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                           formData.type === 'Supplier'
-                            ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm ring-1 ring-emerald-500'
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200 border-emerald-500 shadow-sm ring-1 ring-emerald-500'
                             : 'bg-muted border-border text-muted-foreground hover:bg-muted'
                         }`}
                       >
@@ -1373,19 +1436,31 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               {formData.type === 'Supplier' && activeModalTab === 'evaluation' && (
                 <div className="space-y-4">
                   {/* Banner */}
-                  <div className="p-3 bg-gradient-to-r from-emerald-900 to-slate-900 text-white rounded-xl flex items-center justify-between shadow-sm">
+                  <div className="p-3 bg-muted/60 border border-border rounded-xl flex items-center justify-between shadow-xs">
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-2 font-bold text-xs text-emerald-400">
+                      <div className="flex items-center gap-2 font-bold text-xs text-emerald-600 dark:text-emerald-400">
                         <ShieldCheck className="w-4 h-4" />
                         <span>Supplier Evaluation (مطابق SOP شرکت)</span>
                       </div>
-                      <p className="text-[11px] text-slate-300">
+                      <p className="text-[11px] text-muted-foreground">
                         تعیین وضعیت دقیق ۵ مدرک الزامی SOP جهت محاسبه خودکار امتیاز، Grade و وضعیت تایید Supplier.
                       </p>
                     </div>
                   </div>
 
-                  {/* 5 SOP Documents Checklist */}
+                  {/* How much of the attachment budget is spent — the save sends
+                      every document in one body, so this is the number that
+                      decides whether the server will accept it. */}
+                  {docsTotalBytes > 0 && (
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground px-1">
+                      <span>مجموع حجم مدارک پیوست: <span className="font-mono font-bold text-foreground">{formatFileSize(docsTotalBytes)}</span> از {formatFileSize(MAX_DOCS_TOTAL_BYTES)}</span>
+                      {docsTotalBytes > MAX_DOCS_TOTAL_BYTES * 0.8 && (
+                        <span className="text-amber-600 dark:text-amber-400 font-bold">نزدیک به سقف مجاز</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SOP Documents Checklist */}
                   <div className="space-y-3">
                     {SOP_DOCUMENTS_DEF.map((def, idx) => {
                       const doc = evalDocs[def.key] || {
@@ -1401,7 +1476,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <div key={def.key} className="p-3.5 bg-muted border border-border rounded-xl space-y-3 hover:border-border transition-colors">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
                             <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full bg-slate-200 text-foreground font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                              <span className="w-6 h-6 rounded-full bg-muted border border-border text-foreground font-mono text-xs font-bold flex items-center justify-center shrink-0">
                                 {idx + 1}
                               </span>
                               <div>
@@ -1431,7 +1506,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 value={doc.status || ''}
                                 onChange={e => handleDocStatusChange(def.key, e.target.value as SOPDocumentStatus)}
                                 className={`w-full text-xs rounded-lg px-3 py-2 border font-bold focus:outline-none transition-colors ${
-                                  !doc.status ? 'border-amber-300 bg-amber-50/50 text-amber-900' : 'border-border bg-card text-foreground'
+                                  !doc.status ? 'border-amber-300 bg-amber-50/50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200' : 'border-border bg-card text-foreground'
                                 }`}
                               >
                                 <option value="" disabled>-- انتخاب وضعیت مدرک --</option>
@@ -1466,7 +1541,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleDocFileView(doc, editingPartner?.id)}
-                                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                      className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
                                       title="مشاهده فایل"
                                     >
                                       <Eye className="w-3.5 h-3.5" />
@@ -1474,7 +1549,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleDocFileDownload(doc, editingPartner?.id)}
-                                      className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                                      className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
                                       title="دانلود فایل"
                                     >
                                       <Download className="w-3.5 h-3.5" />
@@ -1482,7 +1557,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleDocFileRemove(def.key)}
-                                      className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                                      className="p-1 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded"
                                       title="حذف فایل"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1492,7 +1567,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               ) : (
                                 <label className="flex items-center justify-center gap-2 p-2 bg-card border border-dashed border-border rounded-lg text-muted-foreground hover:border-blue-500 hover:text-blue-600 cursor-pointer text-xs transition-colors">
                                   <Upload className="w-3.5 h-3.5" />
-                                  <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک</span>
+                                  <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک (حداکثر {formatFileSize(MAX_DOC_BYTES)})</span>
                                   <input
                                     type="file"
                                     className="hidden"
@@ -1512,38 +1587,42 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* Summary Card (Live Real-time Calculated) */}
-                  <div className="p-4 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl border border-slate-700/80 shadow-lg space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
-                      <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                        <Award className="w-4 h-4 text-emerald-400" />
+                  {/* Inverted with tokens rather than a fixed slate gradient:
+                      this panel is the computed result, and it has to keep that
+                      contrast in both themes (same treatment as the standard-name
+                      preview in the materials repository). */}
+                  <div className="p-4 bg-foreground text-background rounded-2xl border border-border shadow-lg space-y-3">
+                    <div className="flex items-center justify-between border-b border-background/20 pb-2">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <Award className="w-4 h-4 shrink-0" />
                         <span>نتیجه ارزیابی کیفی Supplier (Live SOP Result)</span>
                       </span>
-                      <span className="text-[10px] text-muted-foreground font-mono">
+                      <span className="text-[10px] text-background/70 font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">مجموع امتیاز (Total Score)</span>
-                        <div className="text-xl font-black text-white font-mono">
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">مجموع امتیاز (Total Score)</span>
+                        <div className="text-xl font-black font-mono">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="text-muted-foreground text-sm">-- / ۱۰۰</span>
+                            <span className="text-background/60 text-sm">-- / ۱۰۰</span>
                           ) : (
                             <>
-                              {computedEval.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
+                              {computedEval.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
                             </>
                           )}
                         </div>
                       </div>
 
                       {/* Grade */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 border border-slate-600">
+                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
                               ارزیابی نشده
                             </span>
                           ) : (
@@ -1557,16 +1636,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
 
                       {/* Supplier Status */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">وضعیت Supplier Status</span>
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 border border-slate-600">
+                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
                               در انتظار ارزیابی
                             </span>
                           ) : (
-                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(computedEval.grade).cls}`}>
-                              {gradeApprovalLabel(computedEval.grade).label}
+                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(computedEval.grade).tone}`}>
+                              {describeGrade(computedEval.grade).en} ({describeGrade(computedEval.grade).fa})
                             </span>
                           )}
                         </div>
@@ -1593,7 +1672,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => setActiveModalTab('evaluation')}
-                        className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
                         <span>ادامه به ارزیابی SOP Supplier</span>
@@ -1602,14 +1681,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {editingPartner && currentUser?.role === 'admin' && (
+                    {editingPartner && can(currentUser, 'partner.edit') && (
                       <button
                         type="button"
                         onClick={() => {
                           setIsModalOpen(false);
                           handleDeletePartnerClick(editingPartner);
                         }}
-                        className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                         title="حذف شریک تجاری"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1619,7 +1698,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={() => setIsModalOpen(false)}
-                      className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-slate-200/60 rounded-xl transition-colors border border-border cursor-pointer"
+                      className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
                     >
                       انصراف
                     </button>
@@ -1669,7 +1748,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {currentUser?.role === 'admin' && selectedPartner.status !== 'Blacklisted' && (
+                {can(currentUser, 'partner.edit') && selectedPartner.status !== 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => { setBlacklistTarget(selectedPartner); setBlacklistReason(''); }}
@@ -1680,18 +1759,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>لیست سیاه</span>
                   </button>
                 )}
-                {currentUser?.role === 'admin' && selectedPartner.status === 'Blacklisted' && (
+                {can(currentUser, 'partner.edit') && selectedPartner.status === 'Blacklisted' && (
                   <button
                     type="button"
                     onClick={() => handleRestoreFromBlacklist(selectedPartner)}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 border rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
                     title="خروج از لیست سیاه"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>خروج از لیست سیاه</span>
                   </button>
                 )}
-                {currentUser?.role === 'admin' && (
+                {can(currentUser, 'partner.delete') && (
                   <button
                     type="button"
                     onClick={() => handleDeletePartnerClick(selectedPartner)}
@@ -1867,28 +1946,28 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 </div>
 
                 {/* 2. Supplier Evaluation Summary Card */}
-                <div className="p-4 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl border border-slate-700/80 shadow-lg space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Award className="w-4 h-4 text-emerald-400" />
+                <div className="p-4 bg-foreground text-background rounded-2xl border border-border shadow-lg space-y-3">
+                  <div className="flex items-center justify-between border-b border-background/20 pb-2">
+                    <span className="text-xs font-bold flex items-center gap-1.5">
+                      <Award className="w-4 h-4 shrink-0" />
                       <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
                     </span>
-                    <span className="text-[10px] text-muted-foreground font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
+                    <span className="text-[10px] text-background/70 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
 
                   {selectedPartner.evaluation && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">مجموع امتیاز ارزیابی (Score)</span>
-                        <div className="text-2xl font-black text-white font-mono">
-                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
+                        <div className="text-2xl font-black font-mono">
+                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
                         </div>
                       </div>
 
                       {/* Grade */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-3 py-0.5 rounded-lg font-mono font-black text-sm border ${getGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                             {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending Review' :
@@ -1899,19 +1978,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
 
                       {/* Supplier Status */}
-                      <div className="bg-slate-800/80 border border-slate-700 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-muted-foreground font-bold block">وضعیت Supplier Status</span>
+                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-[10px] text-background/70 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
-                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${gradeApprovalLabel(selectedPartner.evaluation.grade).cls}`}>
-                            {gradeApprovalLabel(selectedPartner.evaluation.grade).label}
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(selectedPartner.evaluation.grade).tone}`}>
+                            {describeGrade(selectedPartner.evaluation.grade).en} ({describeGrade(selectedPartner.evaluation.grade).fa})
                           </span>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 bg-slate-800/80 border border-slate-700 rounded-xl text-center space-y-1">
-                      <span className="text-amber-400 font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
-                      <p className="text-[11px] text-muted-foreground">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
+                    <div className="p-4 bg-background/10 border border-background/20 rounded-xl text-center space-y-1">
+                      <span className="font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
+                      <p className="text-[11px] text-background/70">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
                 </div>
@@ -1961,7 +2040,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             const prev = arr[i + 1];
                             const delta = prev ? +(h.totalScore - prev.totalScore).toFixed(1) : null;
                             return (
-                              <tr key={h.id} className="border-b border-slate-50 hover:bg-muted/60">
+                              <tr key={h.id} className="border-b border-border hover:bg-muted/60">
                                 <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                                 <td className="py-2 px-2 text-center font-mono font-bold text-foreground">{h.totalScore}</td>
                                 <td className="py-2 px-2 text-center font-mono">
@@ -2022,14 +2101,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     <div className="flex items-center justify-center gap-1">
                                       <button
                                         onClick={() => doc && handleDocFileView(doc, selectedPartner?.id)}
-                                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                        className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
                                         title="مشاهده"
                                       >
                                         <Eye className="w-3.5 h-3.5" />
                                       </button>
                                       <button
                                         onClick={() => doc && handleDocFileDownload(doc, selectedPartner?.id)}
-                                        className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                                        className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
                                         title="دانلود"
                                       >
                                         <Download className="w-3.5 h-3.5" />
@@ -2068,7 +2147,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-6 py-2.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-foreground font-sans font-bold text-xs transition-colors cursor-pointer"
+                className="px-6 py-2.5 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-sans font-bold text-xs transition-colors cursor-pointer"
               >
                 بستن
               </button>
@@ -2106,7 +2185,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => { setBlacklistTarget(null); setBlacklistReason(''); }}
-                className="px-4 py-2 bg-muted hover:bg-slate-200 text-foreground rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                className="px-4 py-2 bg-muted hover:bg-accent border border-border text-foreground rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 انصراف
               </button>
@@ -2138,7 +2217,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
             <div className="text-xs text-muted-foreground space-y-2 leading-relaxed">
               <p>
-                آیا از حذف شریک تجاری <strong className="text-slate-950">"{partnerToDelete.name}"</strong> اطمینان دارید؟
+                آیا از حذف شریک تجاری <strong className="text-foreground">"{partnerToDelete.name}"</strong> اطمینان دارید؟
               </p>
               {partnerToDelete.type === 'Supplier' ? (
                 <p className="text-rose-700 bg-rose-50/50 p-2 rounded-lg font-medium border border-rose-100">
@@ -2226,7 +2305,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setDeleteConstraintError(null)}
-                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-foreground text-background hover:opacity-90 text-xs font-bold shadow-md transition-opacity cursor-pointer"
               >
                 متوجه شدم
               </button>

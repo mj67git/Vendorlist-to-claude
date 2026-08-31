@@ -67,6 +67,49 @@ export function calculateGradeAndStatus(totalScore: number, isEvaluated: boolean
   }
 }
 
+/**
+ * How a supplier grade is named and coloured, in one place.
+ *
+ * The repository badge used to have its own table that labelled grade B
+ * "Permit Approval" and grade C "Expired". Those are *document* statuses from
+ * the rubric above (Approved / Permit Approval / Expired / Not Submitted), not
+ * verdicts about a supplier: reading "Expired" against a company says nothing
+ * true about it, and the same supplier was called "Permit Approval" here and
+ * "Approved with Monitoring" — its real status — two panels away.
+ *
+ * The wording below is `calculateGradeAndStatus`'s own, so the badge, the
+ * filters and the evaluation panel finally say the same thing.
+ */
+export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: string }> = {
+  'A': {
+    en: 'Approved Supplier', fa: 'تاییدشده',
+    tone: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-900',
+  },
+  'B': {
+    en: 'Approved with Monitoring', fa: 'تاییدشده با پایش',
+    tone: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-900',
+  },
+  'C': {
+    en: 'Conditional Supplier', fa: 'مشروط',
+    tone: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-900',
+  },
+  'Pending Review': {
+    en: 'Pending Review', fa: 'در انتظار تصمیم',
+    tone: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-950/60 dark:text-yellow-200 dark:border-yellow-900',
+  },
+  'Blacklist': {
+    en: 'Blacklist', fa: 'لیست سیاه',
+    tone: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-900',
+  },
+  'Not Evaluated': {
+    en: 'Not Evaluated', fa: 'ارزیابی نشده',
+    tone: 'bg-muted text-foreground border-border',
+  },
+};
+
+export const describeGrade = (grade?: string | null) =>
+  GRADE_LABELS[(grade as SOPGrade)] || { en: grade || '—', fa: '', tone: 'bg-muted text-foreground border-border' };
+
 export function getDefaultSupplierEvaluation(): SupplierEvaluation {
   const documents = {} as Record<SOPDocumentKey, SOPDocumentEval>;
   
@@ -163,4 +206,41 @@ export function reconcileSupplierEvaluation<T extends { type?: string; evaluatio
     return partner;
   }
   return { ...partner, evaluation: { ...fresh, updatedBy: ev.updatedBy, updatedAt: ev.updatedAt } };
+}
+
+/**
+ * Whether a business partner may be attached to a source.
+ *
+ * The SOP admits only grade A suppliers ("Approved Supplier", 80 points and
+ * above). Anything below that, and anything not assessed at all, is refused.
+ *
+ * Two things this deliberately does not do:
+ *  - It does not judge manufacturers. Only suppliers are SOP-evaluated
+ *    (project rule 4), so a manufacturer has no grade to test and applying the
+ *    rule to one would make every manufacturer unselectable.
+ *  - It offers no override. The rule is a hard gate, by decision.
+ *
+ * `server.ts` and `PartnerSelector` both read this, so the field the user sees
+ * greyed out is exactly the one the API refuses.
+ */
+export function canSupplySources(
+  partner: { type: string; status?: string; evaluation?: { grade?: string } | null } | null | undefined,
+): { allowed: boolean; reason: string } {
+  if (!partner) return { allowed: false, reason: 'شریک تجاری یافت نشد.' };
+
+  if (partner.status === 'Blacklisted') {
+    return { allowed: false, reason: 'در لیست سیاه است و قابل انتخاب نیست.' };
+  }
+
+  // Manufacturers carry no SOP evaluation; the grade rule does not apply.
+  if (partner.type !== 'Supplier') return { allowed: true, reason: '' };
+
+  const grade = partner.evaluation?.grade;
+  if (!grade || grade === 'Not Evaluated') {
+    return { allowed: false, reason: 'ارزیابی SOP این فروشنده انجام نشده است.' };
+  }
+  if (grade !== 'A') {
+    return { allowed: false, reason: `گرید ارزیابی این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };
+  }
+  return { allowed: true, reason: '' };
 }

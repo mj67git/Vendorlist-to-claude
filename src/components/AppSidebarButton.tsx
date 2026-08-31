@@ -100,7 +100,6 @@ const variantStyles: Record<string, VariantStyle> = {
 interface AppSidebarButtonProps {
   icon: LucideIcon;
   label: string;
-  sub?: string;
   badge?: string | number;
   alert?: number;
   active: boolean;
@@ -112,7 +111,6 @@ interface AppSidebarButtonProps {
 export function AppSidebarButton({
   icon: Icon,
   label,
-  sub,
   badge,
   alert,
   active,
@@ -131,7 +129,7 @@ export function AppSidebarButton({
       title={collapsed ? label : undefined}
       className={cn(
         'w-full flex items-center rounded-xl text-xs font-semibold transition-all duration-200 text-right group relative cursor-pointer',
-        collapsed ? 'justify-center p-2' : 'gap-3 px-3.5 py-2.5',
+        collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2',
         active
           ? currentStyle.activeClass
           : cn('bg-transparent', currentStyle.hoverClass)
@@ -139,7 +137,7 @@ export function AppSidebarButton({
     >
       <div
         className={cn(
-          'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-all duration-200 relative',
+          'w-7 h-7 rounded-lg shrink-0 flex items-center justify-center transition-all duration-200 relative',
           active
             ? currentStyle.iconActiveClass
             : currentStyle.iconHoverClass
@@ -147,30 +145,21 @@ export function AppSidebarButton({
       >
         <Icon className="w-4 h-4" aria-hidden="true" />
         {collapsed && hasAlert && (
-          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center animate-pulse">{alert}</span>
+          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{alert}</span>
         )}
       </div>
 
+      {/* The English subtitle under every label (FOREIGN PURCHASE, MATERIALS
+          MASTER, AUDIT TRAIL CENTER …) doubled the height of all twelve rows
+          and pushed the nav past the viewport. The Persian label is the label. */}
       {!collapsed && (
-        <div className="flex flex-col overflow-hidden text-right flex-1 min-w-0">
-          <span className="font-bold leading-tight truncate text-inherit">
-            {label}
-          </span>
-          {sub && (
-            <span
-              className={cn(
-                'text-[10px] truncate font-mono uppercase tracking-wider mt-0.5',
-                active ? 'text-white/80' : 'text-muted-foreground/80'
-              )}
-            >
-              {sub}
-            </span>
-          )}
-        </div>
+        <span className="font-bold leading-tight truncate text-inherit flex-1 min-w-0 text-right">
+          {label}
+        </span>
       )}
 
       {!collapsed && hasAlert && (
-        <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 bg-rose-600 text-white animate-pulse" title="نیازمند توجه">
+        <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 bg-rose-600 text-white" title="نیازمند توجه">
           {alert}
         </span>
       )}

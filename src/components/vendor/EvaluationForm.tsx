@@ -6,6 +6,7 @@ import { Scores, User, Vendor } from '../../types';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { calculateDeptAverage, getRawScoreValue, deconstructScores } from '../../utils/scoreUtils';
+import { canScoreDepartment } from '../../utils/permissions';
 
 // extracted from App.tsx
 
@@ -46,9 +47,8 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const visibleFormLayout = currentUser?.role === 'admin'
-    ? FORM_LAYOUT
-    : FORM_LAYOUT.filter(d => d.id === currentUser?.role);
+  // Only the departments this user may score are rendered — admin gets all four.
+  const visibleFormLayout = FORM_LAYOUT.filter(d => canScoreDepartment(currentUser, d.id));
 
   const handleSlider = (deptId: string, critKey: string, val: string) => {
     setScores(prev => ({

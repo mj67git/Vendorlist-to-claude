@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Award, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
+import { EntityName } from '../../components/EntityName';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -15,15 +16,33 @@ import { categoryCardStyles } from '../../constants/categoryCardStyles';
 // extracted from App.tsx
 
 export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
+  /**
+   * The supplier population, excluding sample records.
+   *
+   * `stats` used to count `db` outright while the pending-actions panel below
+   * deliberately filtered samples out, so the same screen showed two different
+   * definitions of "supplier" without saying so.
+   */
+  const sourceVendors = useMemo(
+    () => db.filter(v => !v.isSample && v.category !== 'sample'),
+    [db],
+  );
+  const sampleCount = db.length - sourceVendors.length;
+
   const stats = useMemo(() => {
+    const rejected = sourceVendors.filter(isVendorRejected).length;
+    const gradeA = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'A').length;
+    const gradeB = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'B').length;
+    const gradeC = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'C').length;
     return {
-      total: db.length,
-      gradeA: db.filter(v => v.grade === 'A').length,
-      gradeB: db.filter(v => v.grade === 'B').length,
-      gradeC: db.filter(v => v.grade === 'C').length,
-      rejected: db.filter(isVendorRejected).length
+      total: sourceVendors.length,
+      gradeA, gradeB, gradeC, rejected,
+      // The five cards used to add up to two thirds of the population and stop
+      // there, silently dropping every source that has no grade yet — while the
+      // donut right beside them showed exactly that slice.
+      ungraded: sourceVendors.length - gradeA - gradeB - gradeC - rejected,
     };
-  }, [db]);
+  }, [sourceVendors]);
 
   const rejectedVendors = db.filter(isVendorRejected);
 
@@ -39,31 +58,27 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   }, [db]);
 
   // Grade distribution for the donut (semantic ordinal grade colours).
-  const gradeDistribution = useMemo(() => {
-    const graded = stats.gradeA + stats.gradeB + stats.gradeC + stats.rejected;
-    const ungraded = Math.max(0, stats.total - graded);
-    return [
-      { name: 'Grade A', value: stats.gradeA, color: '#10b981' },
-      { name: 'Grade B', value: stats.gradeB, color: '#3b82f6' },
-      { name: 'Grade C', value: stats.gradeC, color: '#f59e0b' },
-      { name: 'Reject / سیاه', value: stats.rejected, color: '#e11d48' },
-      { name: 'بدون گرید', value: ungraded, color: '#94a3b8' },
-    ].filter(d => d.value > 0);
-  }, [stats]);
+  const gradeDistribution = useMemo(() => [
+      { name: 'گرید A', value: stats.gradeA, color: '#10b981' },
+      { name: 'گرید B', value: stats.gradeB, color: '#3b82f6' },
+      { name: 'گرید C', value: stats.gradeC, color: '#f59e0b' },
+      { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48' },
+      { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8' },
+    ].filter(d => d.value > 0), [stats]);
 
   // Pending-actions center: real, actionable quality gaps.
   const pendingActions = useMemo(() => {
-    const realVendors = db.filter(v => !v.isSample && v.category !== 'sample');
+    const realVendors = sourceVendors;
     const notEvaluated = realVendors.filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'));
     const noRisk = realVendors.filter(v => v.status !== 'rejected' && !v.riskAssessment);
     const sopPending = (partners || []).filter(p => p.type === 'Supplier' && (!p.evaluation || p.evaluation.grade === 'Not Evaluated'));
     return [
-      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, items: notEvaluated, icon: ClipboardList, tone: 'amber' },
-      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, items: noRisk, icon: ShieldAlert, tone: 'orange' },
-      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, items: [], icon: Award, tone: 'blue' },
-      { key: 'irc', label: 'IRC نزدیک انقضا / منقضی', count: expiringVendors.length, items: expiringVendors.map(e => e.vendor), icon: Calendar, tone: 'rose' },
+      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, icon: ClipboardList, tone: 'amber' },
+      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, icon: ShieldAlert, tone: 'orange' },
+      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
+      { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: expiringVendors.length, icon: Calendar, tone: 'rose' },
     ];
-  }, [db, partners, expiringVendors]);
+  }, [sourceVendors, partners, expiringVendors]);
 
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
@@ -81,11 +96,18 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
   useEffect(() => {
     if (!currentUser) return;
-    if (isLocalMode()) { setRecentAudit(readLocalAudit().slice(0, 5)); return; }
+    // Sign-ins are the highest-volume event in the log and say nothing about the
+    // state of the supply base, so five of them filled this feed and pushed out
+    // every actual data change. Ask for a wider slice and keep the changes.
+    const withoutSignInNoise = (rows: any[]) => rows
+      .filter(l => l.module !== 'احراز هویت' && !['LOGIN', 'LOGOUT', 'FAILED_LOGIN'].includes(l.action))
+      .slice(0, 5);
+
+    if (isLocalMode()) { setRecentAudit(withoutSignInNoise(readLocalAudit())); return; }
     let cancelled = false;
-    authFetch('/api/audit-logs?page=1&limit=5')
+    authFetch('/api/audit-logs?page=1&limit=40')
       .then(res => (res.ok ? res.json() : null))
-      .then(j => { if (!cancelled && j?.data) setRecentAudit(j.data.slice(0, 5)); })
+      .then(j => { if (!cancelled && j?.data) setRecentAudit(withoutSignInNoise(j.data)); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [currentUser, db, partners, materials]);
@@ -99,67 +121,94 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
 
   return (
     <div className="space-y-7 fade-in">
-      {/* HERO SECTION */}
-      <div className="border-b border-border/80 pb-5">
-        <div className="text-primary font-mono text-xs tracking-widest uppercase mb-1.5 font-bold">Vendor List & Supplier Evaluation System (VLSE)</div>
-        <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight mb-1.5">
-              سیستم جامع ارزیابی و رتبه‌بندی کیفی تامین‌کنندگان
-            </h2>
-          </div>
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            {currentUser && (
-              <Button 
-                onClick={onOpenSourceForm}
-                className="w-full sm:w-auto h-11 px-6 shadow-sm gap-2 text-sm font-bold shrink-0"
+      {/* PAGE HEADER — the system's own name is already in the sidebar and the
+          browser tab; repeating it a third time cost the top 180px of a screen
+          that is opened several times a day. */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
+        <h2 className="text-lg font-black text-foreground tracking-tight">خلاصهٔ وضعیت تامین‌کنندگان</h2>
+        {currentUser && (
+          <Button onClick={onOpenSourceForm} className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0">
+            <Plus className="w-4 h-4" />
+            ثبت سورس جدید
+          </Button>
+        )}
+      </div>
+
+      {/* WHAT NEEDS DOING — first, and full width.
+          This is the only part of the dashboard that tells the user what to do
+          next. It used to sit second, at half width, underneath five statistic
+          cards and a donut that between them showed the same five numbers
+          twice. */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <ClipboardList className="w-4 h-4 text-primary" />
+          <h3 className="font-bold text-foreground text-sm">کارهای معوق</h3>
+          <span className="text-[11px] text-muted-foreground">— برای رسیدگی روی هر مورد کلیک کنید</span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {pendingActions.map(a => {
+            // Opening the backlog, not the first record in it: jumping
+            // straight into one of twelve told the user neither which record
+            // they had landed on nor what else was waiting.
+            const clickable = a.count > 0;
+            return (
+              <button
+                key={a.key}
+                type="button"
+                disabled={!clickable}
+                onClick={() => { if (clickable) onNavigate('tasks', null, a.key); }}
+                className={`text-right rounded-xl border p-3.5 transition-all ${
+                  clickable ? `${toneClasses[a.tone]} hover:shadow-sm cursor-pointer` : 'bg-muted/40 border-border text-muted-foreground cursor-default'
+                }`}
               >
-                <Plus className="w-4 h-4" />
-                ثبت سورس جدید (Source)
-              </Button>
-            )}
-          </div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <a.icon className="w-4 h-4" />
+                  <span className="text-2xl font-black font-mono tabular-nums">{a.count}</span>
+                </div>
+                <div className="text-[11px] font-bold leading-snug">{a.label}</div>
+                <div className="text-[10px] mt-1 opacity-80">{clickable ? 'رسیدگی ←' : 'موردی باقی نمانده'}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-
       {/* KPI ROW */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {[
-          { label: 'کل تامین‌کنندگان', value: stats.total, color: 'text-primary', badgeVariant: 'info' as const, sub: 'Total Vendors', percent: 100 },
-          { label: 'Grade A', value: stats.gradeA, color: 'text-emerald-600 dark:text-emerald-400', badgeVariant: 'gradeA' as const, sub: 'امتیاز ۸۰ تا ۱۰۰ (تایید کامل)', percent: stats.total > 0 ? Math.round((stats.gradeA/stats.total)*100) : 0 },
-          { label: 'Grade B', value: stats.gradeB, color: 'text-blue-600 dark:text-blue-400', badgeVariant: 'gradeB' as const, sub: 'امتیاز ۶۰ تا ۷۹ (تایید با پایش)', percent: stats.total > 0 ? Math.round((stats.gradeB/stats.total)*100) : 0 },
-          { label: 'Grade C', value: stats.gradeC, color: 'text-amber-600 dark:text-amber-400', badgeVariant: 'gradeC' as const, sub: 'امتیاز ۴۰ تا ۵۹ (مشروط)', percent: stats.total > 0 ? Math.round((stats.gradeC/stats.total)*100) : 0 },
-          { label: 'Reject / لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const, sub: 'امتیاز ۰ تا ۳۹ (لیست سیاه)', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
+          { label: 'کل سورس‌ها', value: stats.total, color: 'text-primary', badgeVariant: 'info' as const, sub: sampleCount > 0 ? `بدون احتساب ${sampleCount} نمونه` : 'به‌جز نمونه‌ها', percent: 100 },
+          { label: 'گرید A', value: stats.gradeA, color: 'text-emerald-600 dark:text-emerald-400', badgeVariant: 'gradeA' as const, sub: 'امتیاز ۸۰ تا ۱۰۰ (تایید کامل)', percent: stats.total > 0 ? Math.round((stats.gradeA/stats.total)*100) : 0 },
+          { label: 'گرید B', value: stats.gradeB, color: 'text-blue-600 dark:text-blue-400', badgeVariant: 'gradeB' as const, sub: 'امتیاز ۶۰ تا ۷۹ (تایید با پایش)', percent: stats.total > 0 ? Math.round((stats.gradeB/stats.total)*100) : 0 },
+          { label: 'گرید C', value: stats.gradeC, color: 'text-amber-600 dark:text-amber-400', badgeVariant: 'gradeC' as const, sub: 'امتیاز ۴۰ تا ۵۹ (مشروط)', percent: stats.total > 0 ? Math.round((stats.gradeC/stats.total)*100) : 0 },
+          { label: 'بدون گرید', value: stats.ungraded, color: 'text-muted-foreground', badgeVariant: 'info' as const, sub: 'هنوز ارزیابی نشده‌اند', percent: stats.total > 0 ? Math.round((stats.ungraded/stats.total)*100) : 0 },
+          { label: 'لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const, sub: 'مردود یا لیست سیاه', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
         ].map(s => (
-          <Card key={s.label} className="p-4.5 space-y-3 bg-card border-border/80 hover:border-primary/30 transition-all">
-            <div className="flex items-center justify-between">
+          <Card key={s.label} className="p-4 space-y-2.5 bg-card border-border/80 hover:border-primary/30 transition-all">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold text-foreground">{s.label}</span>
-              <Badge variant={s.badgeVariant} className="text-[10px] px-1.5 py-0 font-mono">
+              <Badge variant={s.badgeVariant} className="text-[10px] px-1.5 py-0 font-mono shrink-0">
                 {s.percent}%
               </Badge>
             </div>
-            <div className={`text-3xl sm:text-4xl font-black tabular-nums font-mono ${s.color}`}>
+            {/* The progress bar that used to sit here measured each number
+                against the total it was already a percentage of, and painted
+                every one of them the same blue — so the "total" card carried a
+                permanently full bar of itself. The badge already says it. */}
+            <div className={`text-3xl font-black tabular-nums font-mono ${s.color}`}>
               {s.value}
             </div>
-            <div className="text-[11px] text-muted-foreground truncate">{s.sub}</div>
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div 
-                className="h-full rounded-full bg-primary transition-all duration-700" 
-                style={{ width: `${s.percent || 0}%` }} 
-              />
-            </div>
+            <div className="text-[11px] text-muted-foreground leading-snug">{s.sub}</div>
           </Card>
         ))}
       </div>
 
-      {/* ANALYTICS ROW: grade donut + action center */}
+      {/* GRADE MIX + ACTIVITY are grouped below the numbers they explain. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Grade distribution donut */}
         <Card className="p-5 bg-card border-border/80">
           <div className="flex items-center gap-2 mb-3">
             <PieChartIcon className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">توزیع گرید کیفی <span className="text-muted-foreground text-xs font-normal font-mono">(Grade Mix)</span></h3>
+            <h3 className="font-bold text-foreground text-sm">توزیع گرید کیفی</h3>
           </div>
           {gradeDistribution.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground text-xs">داده‌ای برای نمایش نیست.</div>
@@ -190,157 +239,79 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           )}
         </Card>
 
-        {/* Action center */}
+        {/* Lab pass rate — beside the grade mix, since both summarise quality. */}
         <Card className="p-5 bg-card border-border/80 lg:col-span-2">
-          <div className="flex items-center gap-2 mb-3">
-            <ClipboardList className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">مرکز اقدامات معلق <span className="text-muted-foreground text-xs font-normal font-mono">(Action Center)</span></h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {pendingActions.map(a => {
-              const clickable = a.items.length > 0;
-              return (
-                <button
-                  key={a.key}
-                  type="button"
-                  disabled={!clickable}
-                  onClick={() => { if (clickable) onSelectVendor(a.items[0]); }}
-                  className={`text-right rounded-xl border p-3 transition-all ${toneClasses[a.tone]} ${clickable ? 'hover:shadow-sm cursor-pointer' : 'opacity-70 cursor-default'}`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <a.icon className="w-4 h-4" />
-                    <span className="text-2xl font-black font-mono tabular-nums">{a.count}</span>
-                  </div>
-                  <div className="text-[11px] font-bold leading-snug">{a.label}</div>
-                  {clickable && a.count > 0 && <div className="text-[10px] mt-1 opacity-80 group-hover:underline">رسیدگی ←</div>}
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-      </div>
-
-      {/* ACTIVITY ROW: recent audit + lab pass rate */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Recent audit */}
-        <Card className="p-5 bg-card border-border/80 lg:col-span-2">
-          <div className="flex items-center gap-2 mb-3">
-            <History className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">آخرین فعالیت‌ها <span className="text-muted-foreground text-xs font-normal font-mono">(Recent Activity)</span></h3>
-          </div>
-          {recentAudit.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-xs">فعالیتی برای نمایش ثبت نشده است.</div>
-          ) : (
-            <div className="divide-y divide-border">
-              {recentAudit.map((l, i) => {
-                const sev = l.severity === 'Critical' ? 'bg-rose-500' : l.severity === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500';
-                let when = '';
-                try { const d = new Date(l.timestamp || l.createdAt); when = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch {}
-                return (
-                  <div key={l.id || i} className="flex items-center gap-2.5 py-2">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action} — ${l.entityName || ''}`}</div>
-                      <div className="text-[10px] text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        {/* Lab pass rate */}
-        <Card className="p-5 bg-card border-border/80">
           <div className="flex items-center gap-2 mb-3">
             <Microscope className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">نرخ قبولی آزمایشگاه <span className="text-muted-foreground text-xs font-normal font-mono">(Lab Pass)</span></h3>
+            <h3 className="font-bold text-foreground text-sm">نرخ قبولی آزمایشگاه</h3>
           </div>
           {labStats.total === 0 ? (
             <div className="text-center py-8 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
           ) : (
-            <div className="space-y-3">
-              <div className="text-center">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+              <div className="shrink-0 text-center sm:text-right">
                 <div className={`text-4xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
               </div>
-              <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
-                <div className="h-full bg-emerald-500" style={{ width: `${(labStats.pass / labStats.total) * 100}%` }} />
-                <div className="h-full bg-blue-500" style={{ width: `${(labStats.cond / labStats.total) * 100}%` }} />
-                <div className="h-full bg-rose-500" style={{ width: `${(labStats.rej / labStats.total) * 100}%` }} />
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Pass {labStats.pass}</span>
-                <span className="text-blue-600 dark:text-blue-400 font-bold">مشروط {labStats.cond}</span>
-                <span className="text-rose-600 dark:text-rose-400 font-bold">Reject {labStats.rej}</span>
+              <div className="flex-1 space-y-2">
+                <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
+                  <div className="h-full bg-emerald-500" style={{ width: `${(labStats.pass / labStats.total) * 100}%` }} />
+                  <div className="h-full bg-blue-500" style={{ width: `${(labStats.cond / labStats.total) * 100}%` }} />
+                  <div className="h-full bg-rose-500" style={{ width: `${(labStats.rej / labStats.total) * 100}%` }} />
+                </div>
+                {/* Was "Pass 4 / مشروط 2 / Reject 1": three labels, two languages. */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">قبول {labStats.pass}</span>
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">مشروط {labStats.cond}</span>
+                  <span className="text-rose-600 dark:text-rose-400 font-bold">مردود {labStats.rej}</span>
+                </div>
               </div>
             </div>
           )}
         </Card>
       </div>
 
-      {/* LICENSE EXPIRY ALERTS (IF ANY) */}
-      {expiringVendors.length > 0 && (
-        <Card className="border-amber-300/80 dark:border-amber-600/40 bg-amber-50/40 dark:bg-amber-950/20 p-5 space-y-3.5">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-                <AlertTriangle className="w-4 h-4 animate-bounce" />
-              </div>
-              <div>
-                <div className="font-extrabold text-sm text-foreground flex items-center gap-2">
-                  <span>هشدار انقضای مجوزهای قانونی (IRC / IVC)</span>
-                  <Badge variant="warning" className="text-[10px] font-mono font-bold">
-                    {expiringVendors.length} مورد نیازمند تمدید
-                  </Badge>
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  مجوزهای زیر کمتر از ۲ ماه تا انقضا فاصله دارند یا تاریخ اعتبار آن‌ها سپری شده است:
-                </div>
-              </div>
-            </div>
+      {/* RECENT ACTIVITY — a plain full-width list rather than a fourth card
+          grid, so the page stops repeating one layout family end to end. */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <History className="w-4 h-4 text-primary" />
+          <h3 className="font-bold text-foreground text-sm">آخرین تغییرات ثبت‌شده</h3>
+        </div>
+        {recentAudit.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-xs border border-dashed border-border rounded-xl">
+            تغییری برای نمایش ثبت نشده است.
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-            {expiringVendors.slice(0, 6).map(({ vendor, check }) => (
-              <div
-                key={vendor.id}
-                onClick={() => onSelectVendor(vendor)}
-                className="bg-card hover:bg-accent/50 border border-border hover:border-primary/40 p-3.5 rounded-xl transition-all shadow-2xs cursor-pointer flex flex-col justify-between space-y-2 group"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="font-bold text-xs text-foreground group-hover:text-primary transition-colors truncate">
-                    {vendor.material || vendor.name}
+        ) : (
+          <div className="divide-y divide-border border-t border-border">
+            {recentAudit.map((l, i) => {
+              const sev = l.severity === 'Critical' ? 'bg-rose-500' : l.severity === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500';
+              let when = '';
+              try { const d = new Date(l.timestamp || l.createdAt); when = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch {}
+              return (
+                <div key={l.id || i} className="flex items-center gap-2.5 py-2.5">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action}: ${l.entityName || ''}`}</div>
+                    <div className="text-[10px] text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
                   </div>
-                  {check.status === 'expired' ? (
-                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-bold shrink-0">
-                      منقضی
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-bold shrink-0">
-                      {check.daysLeft} روز مانده
-                    </Badge>
-                  )}
+                  <span className="text-[10px] text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground truncate flex items-center justify-between">
-                  <span>سورس: <strong className="text-foreground">{vendor.name}</strong></span>
-                  {vendor.irc && <span className="font-mono text-[10px] text-muted-foreground">IRC: {vendor.irc}</span>}
-                </div>
-                <div className="text-[11px] text-muted-foreground border-t border-border pt-2 flex items-center justify-between">
-                  <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                  <span className="text-primary font-bold text-[10px] group-hover:underline">بررسی سورس ←</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </Card>
-      )}
+        )}
+      </div>
+
+      {/* The expiring-licence list used to be rendered here. It moved to the
+          worklist (#/tasks/irc): the dashboard grew longer exactly as the
+          backlog grew, which is backwards — a dashboard should summarise and
+          hand off. The counter in the pending-actions card is the entry point. */}
 
       {/* CATEGORY CARDS */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
-          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground font-bold">دسته‌بندی‌های تامین (CATEGORIES)</div>
+          <h3 className="font-bold text-foreground text-sm">دسته‌بندی‌های تامین</h3>
           <span className="text-xs text-muted-foreground">انتخاب دسته‌بندی برای مدیریت تخصصی</span>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -350,7 +321,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               ? catVendors.filter(v => v.status === 'approved').length 
               : catVendors.filter(v => v.grade === 'A' || v.grade === 'B').length;
             const other = catVendors.length - verified;
-            const verifiedLabel = id === 'sample' ? 'Approved' : 'تایید شده';
+            const verifiedLabel = 'تایید شده';
             const otherLabel = id === 'sample' ? 'مشروط / رد' : 'سایر';
             const style = categoryCardStyles[id] || categoryCardStyles.foreign;
 
@@ -358,7 +329,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               <Card 
                 key={id}
                 onClick={() => onNavigate('category', id)}
-                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow}`}
+                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${catVendors.length === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
               >
                 <div className="flex items-start justify-between">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-all duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
@@ -373,7 +344,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                 </div>
 
                 <div className="border-t border-border/70 pt-3 flex items-center justify-between">
-                  <div className={`font-mono text-3xl font-black transition-all duration-300 group-hover:scale-105 origin-left ${style.statText}`}>{catVendors.length}</div>
+                  <div className={`font-mono text-3xl font-black transition-all duration-300 group-hover:scale-105 origin-left ${catVendors.length === 0 ? 'text-muted-foreground' : style.statText}`}>{catVendors.length}</div>
                   <div className="text-right">
                     <div className="text-foreground font-bold text-xs">{verified} {verifiedLabel}</div>
                     <div className="text-muted-foreground text-[10px] mt-0.5">{other} {otherLabel}</div>
@@ -385,40 +356,6 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </div>
       </div>
 
-      {/* ALERT PANELS */}
-      <div className="space-y-4">
-        {/* NEW VENDORS PANEL */}
-        <Card className="p-5 space-y-3 bg-card border-border/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Plus className="w-4 h-4 text-primary" />
-              <div className="font-bold text-foreground text-sm">در انتظار ارزیابی اولیه کیفی</div>
-            </div>
-            <Badge variant="info" className="font-mono text-xs">
-              {db.filter(v => v.status === 'new').length} مورد جدید
-            </Badge>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
-            {db.filter(v => v.status === 'new').slice(0, 3).map(v => (
-              <div key={v.id} className="bg-muted/40 border border-border/60 rounded-xl p-3 flex items-center justify-between hover:bg-muted transition-colors">
-                <div className="min-w-0 pr-1">
-                  <div className="text-foreground font-bold text-xs truncate">{v.name}</div>
-                  <div className="text-muted-foreground text-[11px] truncate">{v.material}</div>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => onSelectVendor(v)} 
-                  className="text-primary hover:text-primary/80 text-xs h-7 px-2 shrink-0 font-bold"
-                >
-                  مشاهده
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
     </div>
   );
 }

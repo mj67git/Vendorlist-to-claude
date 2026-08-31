@@ -2,6 +2,7 @@ import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Shield, Key, AlertCircle, CheckCircle, Eye, EyeOff, X } from 'lucide-react';
 import { User } from '../types';
+import { authFetch } from '../services/authFetch';
 
 interface ChangePasswordModalProps {
   currentUser: User;
@@ -55,13 +56,11 @@ export function ChangePasswordModal({
 
     setLoading(true);
 
-    const token = localStorage.getItem('app_jwt_token');
-    fetch('/api/auth/change-password', {
+    // Goes through authFetch like every other call: attaching the token by hand
+    // also meant skipping its 401/403 handling, so an expired session showed a
+    // generic error here instead of signing the user out.
+    authFetch('/api/auth/change-password', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      },
       body: JSON.stringify({ currentPassword, newPassword })
     })
       .then(async (res) => {

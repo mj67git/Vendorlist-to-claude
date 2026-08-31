@@ -8,7 +8,13 @@
 
 export type RouteView =
   | 'home' | 'category' | 'archive' | 'supplier-audit'
-  | 'audit-trail' | 'materials' | 'business-partners';
+  | 'audit-trail' | 'materials' | 'business-partners' | 'users'
+  /** The worklist behind the dashboard's pending-action cards. */
+  | 'tasks';
+
+/** The four backlogs the dashboard counts, each its own tab of the worklist. */
+export const TASK_KEYS = ['eval', 'risk', 'sop', 'irc'] as const;
+export type TaskKey = (typeof TASK_KEYS)[number];
 
 export interface RouteState {
   view: RouteView;
@@ -17,15 +23,17 @@ export interface RouteState {
   expandedMaterial?: string | null;
   /** The source form is a page of its own, so it has a URL like any other view. */
   formMode?: 'create' | 'edit' | null;
+  /** Which backlog the worklist is showing. */
+  taskKey?: TaskKey | null;
 }
 
 export const CATEGORY_IDS = ['foreign', 'domestic', 'veterinary', 'packaging', 'sample', 'blacklist'];
 
-const SIMPLE_VIEWS: RouteView[] = ['archive', 'supplier-audit', 'audit-trail', 'materials', 'business-partners'];
+const SIMPLE_VIEWS: RouteView[] = ['archive', 'supplier-audit', 'audit-trail', 'materials', 'business-partners', 'users'];
 
 /** Stable identity of a location, used to match a URL against the nav stack. */
-export function routeKey(s: { view: string; categoryId?: string | null; vendorId?: string | null; formMode?: string | null }): string {
-  return `${s.view}|${s.categoryId ?? ''}|${s.vendorId ?? ''}|${s.formMode ?? ''}`;
+export function routeKey(s: { view: string; categoryId?: string | null; vendorId?: string | null; formMode?: string | null; taskKey?: string | null }): string {
+  return `${s.view}|${s.categoryId ?? ''}|${s.vendorId ?? ''}|${s.formMode ?? ''}|${s.taskKey ?? ''}`;
 }
 
 /** Serialize a location to a hash string (including the leading '#'). */
@@ -47,6 +55,11 @@ export function encodeRoute(s: RouteState): string {
   }
   if (s.view === 'category' && s.categoryId) {
     return `#/category/${encodeURIComponent(s.categoryId)}${q}`;
+  }
+  // Each backlog is its own address, so a colleague can be sent straight to
+  // "the sources nobody has evaluated" rather than to the dashboard.
+  if (s.view === 'tasks') {
+    return s.taskKey ? `#/tasks/${s.taskKey}` : '#/tasks/eval';
   }
   if (SIMPLE_VIEWS.includes(s.view)) return `#/${s.view}`;
   return '#/';
@@ -91,6 +104,15 @@ export function decodeRoute(rawHash: string): RouteState | null {
     if (segs.length === 2) return { view: 'home', categoryId: null, vendorId: segs[1] };
   }
 
+  if (segs[0] === 'tasks') {
+    const key = segs[1];
+    if (segs.length === 1) return { view: 'tasks', categoryId: null, vendorId: null, taskKey: 'eval' };
+    if (segs.length === 2 && (TASK_KEYS as readonly string[]).includes(key)) {
+      return { view: 'tasks', categoryId: null, vendorId: null, taskKey: key as TaskKey };
+    }
+    return null;
+  }
+
   if (segs.length === 1 && SIMPLE_VIEWS.includes(segs[0] as RouteView)) {
     return { view: segs[0] as RouteView, categoryId: null, vendorId: null };
   }
@@ -114,6 +136,8 @@ export function buildStackFromRoute(r: RouteState): RouteState[] {
   const stack: RouteState[] = [home];
   if (r.view === 'category' && r.categoryId) {
     stack.push({ view: 'category', categoryId: r.categoryId, vendorId: null, expandedMaterial: r.expandedMaterial ?? null });
+  } else if (r.view === 'tasks') {
+    stack.push({ view: 'tasks', categoryId: null, vendorId: null, taskKey: r.taskKey ?? 'eval' });
   } else if (r.view !== 'home') {
     stack.push({ view: r.view, categoryId: null, vendorId: null });
   }

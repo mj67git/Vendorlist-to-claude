@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
@@ -16,21 +16,61 @@ import { VendorForm } from './components/vendor/VendorForm';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
-import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState } from './utils/navRoutes';
+import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { AuditTrailView } from './components/AuditTrailView';
+import { UsersView } from './components/UsersView';
+import { can, effectivePermissions } from './utils/permissions';
+import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
 import { MaterialRepositoryView } from './components/MaterialRepositoryView';
 import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
+import { WorklistView } from './components/views/WorklistView';
+import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
-import { authFetch, isLocalMode } from './services/authFetch';
+import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
+
+/**
+ * The header clock's date, read the way a date is spoken in Persian: day,
+ * month, year, then the weekday.
+ *
+ * `toLocaleDateString` with all four parts returns "۱۴۰۵ شهریور ۴, چهارشنبه" —
+ * year first and the weekday stranded behind a comma. The parts are requested
+ * separately and assembled instead, which also avoids stripping punctuation out
+ * of a formatted string afterwards.
+ */
+/** The page container every view is laid out in. */
+const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
+
+function formatSystemDate(d: Date): string {
+  const day = d.toLocaleDateString('fa-IR', { day: 'numeric' });
+  const month = d.toLocaleDateString('fa-IR', { month: 'long' });
+  const year = d.toLocaleDateString('fa-IR', { year: 'numeric' });
+  const weekday = d.toLocaleDateString('fa-IR', { weekday: 'long' });
+  return `${day} ${month} ${year} · ${weekday}`;
+}
+
+/**
+ * Everything the header clock shows, built in one place.
+ *
+ * The Gregorian date rides along because the people using this correspond with
+ * suppliers abroad, where a Persian date means nothing. ISO order rather than a
+ * localized form so it cannot be misread as day-first or month-first.
+ */
+function buildSystemTime(d: Date) {
+  return {
+    faDate: formatSystemDate(d),
+    time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+    isoDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+  };
+}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -42,23 +82,23 @@ export default function App() {
     }
   });
 
-  const [systemTime, setSystemTime] = useState(() => {
-    const d = new Date();
-    return {
-      faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).replace(/،/g, ''),
-      time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    };
-  });
+  const [systemTime, setSystemTime] = useState(() => buildSystemTime(new Date()));
 
+  // The clock used to tick every second, and since it lives on App every tick
+  // re-rendered the whole tree — sixty times a minute to move a digit nobody
+  // reads in a supplier-evaluation system. It now updates once a minute, and
+  // each tick is scheduled to land on the next minute boundary rather than a
+  // flat 60s later, so the displayed minute never lags behind the real one.
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer: number;
+    const tick = () => {
       const d = new Date();
-      setSystemTime({
-        faDate: d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).replace(/،/g, ''),
-        time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-    }, 1000);
-    return () => clearInterval(timer);
+      setSystemTime(buildSystemTime(d));
+      const msToNextMinute = 60_000 - (d.getSeconds() * 1000 + d.getMilliseconds());
+      timer = window.setTimeout(tick, msToNextMinute);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
   }, []);
 
   const normalizeAndCleanVendor = (v: any): Vendor => {
@@ -125,11 +165,68 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Offline cache only — PostgreSQL is the source of truth, so losing this is a
+  // degraded experience, never data loss. Two things matter here:
+  //
+  //  - The per-record history is dropped. Logs, analysis results and the
+  //    per-question raw scores are roughly two thirds of a vendor's JSON and
+  //    are never read from the cache (the detail page always refetches), so
+  //    caching them just consumed the browser's ~5MB budget for nothing. The
+  //    arrays are kept as empty arrays rather than removed, so a cached record
+  //    still has the shape every component expects.
+  //  - Writing is guarded. localStorage measures in UTF-16, so a list that is
+  //    3MB over the wire needs ~6MB of quota; past that setItem throws
+  //    QuotaExceededError, and an uncaught throw in an effect takes the whole
+  //    page down. On failure the stale cache is dropped and the app carries on
+  //    against the server.
   useEffect(() => {
-    localStorage.setItem('app_db', JSON.stringify(db));
+    try {
+      const slim = db.map(v => ({ ...v, activityLogs: [], analysisRecords: [], rawScores: undefined }));
+      localStorage.setItem('app_db', JSON.stringify(slim));
+    } catch (err) {
+      console.warn('Vendor cache exceeded the browser storage quota; continuing without it.', err);
+      try { localStorage.removeItem('app_db'); } catch { /* nothing left to do */ }
+    }
   }, [db]);
 
+  // Re-check the restored account against the server once per load. currentUser
+  // is rehydrated from localStorage, and every role gate in the UI reads it, so
+  // without this a user whose role was changed — or whose account was closed —
+  // keeps their old access until some other call happens to return 401.
+  // Deliberately runs on mount only: it verifies what was restored, and must not
+  // re-fire when the value it writes back changes.
+  const revalidatedRef = useRef(false);
   useEffect(() => {
+    if (!currentUser || revalidatedRef.current || isLocalMode()) return;
+    revalidatedRef.current = true;
+
+    authFetch('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        const fresh = data?.user;
+        if (!fresh) return;
+        setCurrentUser(prev => {
+          if (!prev) return prev;
+          const changed =
+            prev.role !== fresh.role ||
+            prev.name !== fresh.name ||
+            (prev.mustChangePassword ?? false) !== (fresh.mustChangePassword ?? false);
+          return changed ? { ...prev, ...fresh } : prev;
+        });
+      })
+      .catch(() => {
+        // Offline or unreachable: authFetch already signs the user out on a
+        // 401/403, so anything else here is a transport problem, not a verdict
+        // on the account. Keep the cached session rather than locking them out.
+      });
+  }, [currentUser]);
+
+  useEffect(() => {
+    // Both endpoints below are auth-gated, so this must wait for a signed-in
+    // user: on the login screen a 401 would make authFetch clear the session
+    // and reload, which reloads straight back into this effect.
+    if (!currentUser) return;
+
     const isAllowedVendor = (v: any) => {
       if (!v || !v.id) return false;
       if (typeof v.id === 'string' && v.id.startsWith('vF')) {
@@ -172,7 +269,7 @@ export default function App() {
             setIsSyncing(false);
           });
       });
-  }, []);
+  }, [currentUser]);
 
   const [materials, setMaterials] = useState<Material[]>(() => {
     try {
@@ -201,11 +298,28 @@ export default function App() {
   }, [currentUser]);
 
   const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
+    /**
+     * The bundled partner list is demo data, so it only stands in for the
+     * database in local demo mode.
+     *
+     * With a real backend it used to be the fallback whenever the browser cache
+     * was empty, which meant a fresh browser showed invented partners — with
+     * grades and SOP results — as if they came from the server, and the list was
+     * never empty so the loading skeleton could not appear either. PostgreSQL is
+     * the single source of truth (project rule 1); an empty list until the fetch
+     * answers is the honest state. (The server still seeds these same partners
+     * into an empty database on first startup — that path writes real rows.)
+     */
     try {
       const saved = localStorage.getItem('app_business_partners');
-      return (saved ? JSON.parse(saved) : INITIAL_BUSINESS_PARTNERS_DB).map(reconcileSupplierEvaluation);
+      const cached = saved ? JSON.parse(saved) : null;
+      // An empty cached array is not a cache: it is what normal mode writes
+      // before its first fetch answers, and honouring it would leave local demo
+      // mode — which has no backend to fill it — permanently empty.
+      if (Array.isArray(cached) && cached.length > 0) return cached.map(reconcileSupplierEvaluation);
+      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB.map(reconcileSupplierEvaluation) : [];
     } catch {
-      return INITIAL_BUSINESS_PARTNERS_DB;
+      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB : [];
     }
   });
 
@@ -222,6 +336,10 @@ export default function App() {
   // an unauthenticated call would trigger authFetch's 401 session reload.
   useEffect(() => {
     if (!currentUser) return;
+    // Its own flag: `isSyncing` tracks the vendors fetch, so borrowing it would
+    // have the partner table stop showing skeletons while its own request is
+    // still in flight.
+    setPartnersLoading(true);
     authFetch('/api/business-partners')
       .then(res => {
         if (!res.ok) throw new Error('API response failed');
@@ -236,13 +354,16 @@ export default function App() {
       })
       .catch(err => {
         console.error("Failed to load business partners from backend. Using local cache.", err);
-      });
+      })
+      .finally(() => setPartnersLoading(false));
   }, [currentUser]);
 
   type ViewState = {
-    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners';
+    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users' | 'tasks';
     categoryId: Category | null;
     selectedVendor: Vendor | null;
+    /** Which backlog the worklist page is showing. */
+    taskKey?: TaskKey | null;
     expandedMaterial?: string | null;
     /** The source form is a page, not an overlay — this is which page. */
     formMode?: 'create' | 'edit' | null;
@@ -260,6 +381,7 @@ export default function App() {
     selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
     expandedMaterial: r.expandedMaterial ?? null,
     formMode: r.formMode ?? null,
+    taskKey: r.taskKey ?? null,
   });
 
   const viewStateToRoute = (s: ViewState): RouteState => ({
@@ -268,6 +390,7 @@ export default function App() {
     vendorId: s.selectedVendor?.id ?? null,
     expandedMaterial: s.expandedMaterial ?? null,
     formMode: s.formMode ?? null,
+    taskKey: s.taskKey ?? null,
   });
 
   const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
@@ -481,7 +604,25 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  /**
+   * Whether the toast is reporting a failure.
+   *
+   * The toast used to infer this from a keyword regex over the message, which
+   * is a guess: "عدم دسترسی: … اجازهٔ انجام این عملیات را نمی‌دهد" matched none
+   * of the words, so a refused save was announced with a green check. Callers
+   * that know say so; the regex stays as the fallback for the rest.
+   */
+  const [toastKind, setToastKind] = useState<'success' | 'error' | null>(null);
+
+  /** Show a toast and, when the caller knows, say which kind it is. */
+  const notify = (message: string, kind: 'success' | 'error' = 'success', ms = kind === 'error' ? 6000 : 3000) => {
+    setToastKind(kind);
+    setToastMsg(message);
+    setTimeout(() => { setToastMsg(null); setToastKind(null); }, ms);
+  };
   const [isSyncing, setIsSyncing] = useState(true);
+  /** True while the business-partner list is being fetched. */
+  const [partnersLoading, setPartnersLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
   // "connection failed" banner (the mount fetch runs before demo login is set).
@@ -489,14 +630,45 @@ export default function App() {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Session facts for the user menu. The remaining time is recomputed each time
+  // the menu opens rather than ticking, since it is a coarse label.
+  const [myActivity, setMyActivity] = useState<any[] | null>(null);
+  const [sessionLeftLabel, setSessionLeftLabel] = useState<string | null>(null);
+  const [sessionExpiringSoon, setSessionExpiringSoon] = useState(false);
+  const myPermissionCount = effectivePermissions(currentUser).length;
+  const myPermissionsCustom = currentUser?.permissionsCustom === true;
+
+  useEffect(() => {
+    if (!showUserMenu || !currentUser) return;
+
+    const remaining = sessionRemainingMs();
+    setSessionLeftLabel(formatRemaining(remaining));
+    setSessionExpiringSoon(remaining !== null && remaining < 24 * 60 * 60 * 1000);
+
+    if (isLocalMode()) { setMyActivity([]); return; }
+    let cancelled = false;
+    authFetch('/api/auth/my-activity?limit=4')
+      .then(res => (res.ok ? res.json() : null))
+      .then(j => { if (!cancelled) setMyActivity(Array.isArray(j?.data) ? j.data : []); })
+      .catch(() => { if (!cancelled) setMyActivity([]); });
+    return () => { cancelled = true; };
+  }, [showUserMenu, currentUser]);
   const { isDark, toggleTheme } = useTheme();
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
-  const handleLogout = () => {
-    localStorage.removeItem('app_jwt_token');
-    localStorage.removeItem('app_currentUser');
-    localStorage.removeItem('app_viewHistory');
-    localStorage.removeItem('app_local_mode');
+  const handleLogout = async () => {
+    // Tell the server first, so the LOGOUT record actually reaches the audit
+    // trail: logging out purely client-side left the log with sign-ins and no
+    // matching sign-outs, which breaks its completeness under ALCOA+. The local
+    // session is cleared either way — a failed request must never trap the user
+    // in a signed-in state.
+    try {
+      await authFetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      /* offline, expired token, or local mode — clear the session regardless */
+    }
+    clearAuthenticationSession();
     setCurrentUser(null);
   };
 
@@ -547,7 +719,7 @@ export default function App() {
     action();
   };
 
-  const navigate = (newView: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners', newCat: Category | null = null) => {
+  const navigate = (newView: ViewState['view'], newCat: Category | null = null, taskKey: TaskKey | null = null) => {
     runGuarded(() => {
       setViewHistory(prev => {
         if (newView === 'home') {
@@ -558,12 +730,13 @@ export default function App() {
         // of pushing a duplicate (which previously made "back" re-enter a source
         // detail the user had deliberately left).
         const existing = prev.map((s, i) => ({ s, i }))
-          .filter(({ s }) => s.view === newView && s.categoryId === newCat && s.selectedVendor === null)
+          .filter(({ s }) => s.view === newView && s.categoryId === newCat
+            && (s.taskKey ?? null) === taskKey && s.selectedVendor === null)
           .pop();
         if (existing) {
           return prev.slice(0, existing.i + 1);
         }
-        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null }]);
+        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null, taskKey }]);
       });
       setSidebarOpen(false);
     });
@@ -651,8 +824,10 @@ export default function App() {
     if (state.view === 'archive') return 'آرشیو کامل';
     if (state.view === 'supplier-audit') return 'بررسی یکپارچه تامین‌کننده';
     if (state.view === 'materials') return 'مخزن مواد اولیه';
-    if (state.view === 'audit-trail') return 'Audit Trail';
+    if (state.view === 'audit-trail') return 'ردیابی تغییرات';
     if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
+    if (state.view === 'users') return 'مدیریت کاربران';
+    if (state.view === 'tasks') return 'کارتابل اقدامات';
     if (state.view === 'category' && state.categoryId) {
       return categoryLabels[state.categoryId]?.fa || 'دسته‌بندی';
     }
@@ -953,27 +1128,71 @@ export default function App() {
   // Business Partner Repository module), so the client no longer posts its own
   // audit records — that would double-log every change.
 
+  /**
+   * Why a rejected save must be surfaced, not logged.
+   *
+   * Both handlers used to end in `.catch(err => console.error(...))` and never
+   * looked at `res.ok`. A 403 (no permission), a 400 (validation) or a 413 (an
+   * evaluation whose attached documents exceed the body limit) therefore left
+   * the user with a green "saved successfully" toast, the change alive in
+   * memory, and nothing on the server — until the next reload silently took it
+   * away. For a supplier evaluation in a GxP system that is the worst possible
+   * failure mode, so a rejected write now rolls the optimistic update back and
+   * says what happened.
+   */
+  const describePartnerFailure = async (res: Response, fallback: string) => {
+    const body = await res.json().catch(() => ({} as any));
+    if (body?.error) return body.error as string;
+    if (res.status === 413) return 'حجم مدارک پیوست بیش از حد مجاز سرور است. فایل‌های کوچک‌تری بارگذاری کنید.';
+    if (res.status === 403) return 'دسترسی لازم برای این تغییر را ندارید.';
+    return fallback;
+  };
+
   const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
+    const snapshot = businessPartners;
     setBusinessPartners([newPartner, ...businessPartners]);
-    setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-    setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
+    if (isLocalMode()) {
+      setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     authFetch('/api/business-partners', {
       method: 'POST',
       body: JSON.stringify(newPartner)
-    }).catch(err => console.error("Failed to persist new business partner:", err));
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ثبت شریک تجاری در سرور ناموفق بود.'));
+        notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
+      })
+      .catch(err => {
+        setBusinessPartners(snapshot);
+        notify(err.message || 'ثبت شریک تجاری در سرور ناموفق بود.', 'error');
+      });
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
+    const snapshot = businessPartners;
     const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
     setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
-    setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-    setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
+    if (isLocalMode()) {
+      setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
       body: JSON.stringify(updatedPartner)
-    }).catch(err => console.error("Failed to persist business partner update:", err));
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
+      })
+      .catch(err => {
+        setBusinessPartners(snapshot);
+        notify(err.message || 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.', 'error');
+      });
   };
 
   const handleDeleteBusinessPartner = (id: string) => {
@@ -1001,8 +1220,7 @@ export default function App() {
       })
       .catch(err => {
         setBusinessPartners(snapshot);
-        setToastMsg(err.message || 'حذف شریک تجاری در سرور ناموفق بود.');
-        setTimeout(() => setToastMsg(null), 5000);
+        notify(err.message || 'حذف شریک تجاری در سرور ناموفق بود.', 'error');
       });
   };
 
@@ -1067,16 +1285,29 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      if (currentUser?.role === 'admin') {
-        keyName = 'archive';
-        content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
-      } else {
-        keyName = 'home-fallback';
-        content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
-      }
+      // No permission gate: the archive is a view over vendor data every
+      // signed-in user can already read, so hiding the page protected nothing.
+      // The `archive.read` permission it used to check was never enforced on any
+      // endpoint — see the note on LEGACY_PERMISSIONS.
+      keyName = 'archive';
+      content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
+    } else if (view === 'tasks') {
+      const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
+      keyName = `tasks-${taskKey}`;
+      content = (
+        <WorklistView
+          taskKey={taskKey}
+          db={db}
+          partners={businessPartners}
+          currentUser={currentUser}
+          onSelectVendor={handleSelectVendor}
+          onNavigate={v => navigate(v as any)}
+          onSwitchTask={k => navigate('tasks', null, k)}
+        />
+      );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} />;
+      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = (
@@ -1087,6 +1318,7 @@ export default function App() {
           onDeleteMaterial={handleDeleteMaterial}
           currentUser={currentUser}
           db={db}
+          isLoading={isSyncing && materials.length === 0}
         />
       );
     } else if (view === 'business-partners') {
@@ -1099,11 +1331,16 @@ export default function App() {
           onDeletePartner={handleDeleteBusinessPartner}
           currentUser={currentUser}
           db={db}
+          // Not `&& length === 0`: with no cache the list falls back to the
+          // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty and
+          // the skeleton could never appear — the seed was being shown as if it
+          // were the server's data while the real fetch was still in flight.
+          isLoading={partnersLoading}
         />
       );
     } else if (view === 'audit-trail') {
 
-      if (currentUser?.role === 'admin') {
+      if (can(currentUser, 'audit.read')) {
         keyName = 'audit-trail';
         content = <AuditTrailView />;
       } else {
@@ -1126,9 +1363,33 @@ export default function App() {
           </div>
         );
       }
+    } else if (view === 'users') {
+      if (can(currentUser, 'users.manage')) {
+        keyName = 'users';
+        content = <UsersView currentUser={currentUser} />;
+      } else {
+        keyName = 'users-denied';
+        content = (
+          <div className="p-8 max-w-xl mx-auto my-12 bg-rose-50 border border-rose-200 rounded-2xl text-center space-y-4 shadow-sm" style={{ direction: 'rtl' }}>
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-black text-rose-900">عدم دسترسی به مدیریت کاربران</h2>
+            <p className="text-xs text-rose-700 leading-relaxed font-medium">
+              تعریف و تغییر دسترسی پرسنل تنها در اختیار مدیران ارشد سیستم (Administrator) است.
+            </p>
+            <button
+              onClick={() => navigate('home')}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              بازگشت به صفحه اصلی
+            </button>
+          </div>
+        );
+      }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
-      content = <CategoryView db={db} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      content = <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
@@ -1182,17 +1443,20 @@ export default function App() {
           ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
           flex flex-col shadow-xs
         `}>
-          {/* BRAND BLOCK */}
-          <div className={`py-4.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center shrink-0">
-                <img src={temadLogo} alt="Logo" className="h-12 w-auto object-contain" />
-              </div>
-              <div className={`flex-col justify-center text-right ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-xs sm:text-sm leading-tight tracking-tight">Vendor List & Supplier Evaluation System (VLSE)</span>
-                <span className="text-primary font-mono text-[10px] sm:text-[11px] mt-0.5 tracking-tight font-bold">
-                  سیستم ارزیابی تامین‌کنندگان
-                </span>
+          {/* BRAND BLOCK — the Persian name is the name of the system; the
+              English one is a subtitle. It used to be the other way round: a
+              three-line English headline at 14px above a 10px Persian line in
+              a mono face, in an application whose entire interface is Persian. */}
+          <div className={`py-3.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Dark navy mark on a dark card is all but invisible, so it gets
+                  a light plate in dark mode — same fix as the login screen. */}
+              <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
+                <img src={temadLogo} alt="تماد" className="h-10 w-auto object-contain" />
+              </span>
+              <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
+                <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
+                <span className="text-muted-foreground text-[10px] mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
               </div>
             </div>
             <button
@@ -1236,7 +1500,7 @@ export default function App() {
             </div>
           )}
 
-          <nav className="flex-1 px-3 py-3.5 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
             <SidebarButton collapsed={sidebarCollapsed}
               icon={Home} label="صفحه اصلی" 
               variant="home"
@@ -1244,9 +1508,8 @@ export default function App() {
               onClick={() => navigate('home')} 
             />
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
-              <span className="text-[10px] font-bold text-muted-foreground">CATEGORIES</span>
             </div>
             {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
@@ -1259,56 +1522,67 @@ export default function App() {
                   key={id}
                   variant={id}
                   badge={count}
-                  icon={meta.icon} label={meta.fa} sub={meta.en}
+                  icon={meta.icon} label={meta.fa}
                   active={view === 'category' && categoryId === id} 
                   onClick={() => navigate('category', id)} 
                 />
               );
             })}
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
-              <span className="text-[10px] font-bold text-muted-foreground">REPOSITORY</span>
             </div>
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Building2} label="مخزن شرکای تجاری" sub="Business Partners"
+              icon={Building2} label="مخزن شرکای تجاری"
               badge={businessPartners?.length || 0}
               variant="business-partners"
               active={view === 'business-partners'} 
               onClick={() => navigate('business-partners')} 
             />
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Database} label="مخزن مواد اولیه" sub="Materials Master"
+              icon={Database} label="مخزن مواد اولیه"
               badge={materials?.length || 0}
               variant="materials"
               active={view === 'materials'} 
               onClick={() => navigate('materials')} 
             />
 
-            <div className={`pt-4 pb-1.5 px-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70 flex items-center justify-between ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
-              <span className="text-[10px] font-bold text-muted-foreground">GOVERNANCE</span>
             </div>
-            {currentUser?.role === 'admin' && (
-              <>
-                <SidebarButton collapsed={sidebarCollapsed}
-                  icon={Archive} label="آرشیو کامل داده‌ها" sub="Full Master Archive"
-                  badge={db.length}
-                  variant="archive"
-                  active={view === 'archive'} 
-                  onClick={() => navigate('archive')} 
-                />
-                <SidebarButton collapsed={sidebarCollapsed}
-                  icon={History} label="ردیابی تغییرات (Audit)" sub="Audit Trail Center"
-                  alert={criticalAuditCount}
-                  variant="audit-trail"
-                  active={view === 'audit-trail'} 
-                  onClick={() => navigate('audit-trail')} 
-                />
-              </>
+            {/* Each entry is gated by the permission its page and endpoints
+                actually check, not by `role === 'admin'`. A raw role test here
+                diverged from the pages themselves: someone holding the
+                `users.manage` exception was allowed by the page but never saw
+                the link, and the archive — which every signed-in user may read,
+                see the note on the `archive` branch — was hidden from everyone
+                but admins (rule 14: one policy table, both sides). */}
+            <SidebarButton collapsed={sidebarCollapsed}
+              icon={Archive} label="آرشیو کامل داده‌ها"
+              badge={db.length}
+              variant="archive"
+              active={view === 'archive'}
+              onClick={() => navigate('archive')}
+            />
+            {can(currentUser, 'audit.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={History} label="ردیابی تغییرات"
+                alert={criticalAuditCount}
+                variant="audit-trail"
+                active={view === 'audit-trail'}
+                onClick={() => navigate('audit-trail')}
+              />
+            )}
+            {can(currentUser, 'users.manage') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={UserCog} label="مدیریت کاربران"
+                variant="audit-trail"
+                active={view === 'users'}
+                onClick={() => navigate('users')}
+              />
             )}
             <SidebarButton collapsed={sidebarCollapsed}
-              icon={Handshake} label="بررسی یکپارچه تامین‌کننده" sub="Supplier 360 Audit"
+              icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
               variant="supplier-audit"
               active={view === 'supplier-audit'} 
               onClick={() => navigate('supplier-audit')} 
@@ -1357,7 +1631,7 @@ export default function App() {
                         <React.Fragment key={idx}>
                           {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
                           {isLast ? (
-                            <span className="font-bold text-foreground truncate max-w-[180px]" aria-current="page">{label}</span>
+                            <EntityName name={label} lines={1} aria-current="page" className="font-bold text-foreground max-w-[180px]" />
                           ) : (
                             <button
                               onClick={() => goToHistoryIndex(idx)}
@@ -1374,12 +1648,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Beautiful Live System Clock & Calendar */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
-                <span className="font-semibold text-foreground">{systemTime.faDate}</span>
-                <span className="text-border">|</span>
-                <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
-              </div>
             </div>
             
             <div className="flex items-center gap-2 sm:gap-3">
@@ -1406,7 +1674,7 @@ export default function App() {
                 >
                   <Bell className="w-4 h-4" />
                   {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
                       {expiringVendors.length}
                     </span>
                   )}
@@ -1477,8 +1745,20 @@ export default function App() {
                 )}
               </div>
 
-              {currentUser?.role === 'admin' && (
-                <Button 
+              {/* `users.manage` is the policy table's name for "administers the
+                  system", so this is the same audience as the old
+                  `role === 'admin'` test — but read from the one table both the
+                  UI and the server use, and it follows a per-user exception
+                  instead of ignoring it (rule 14).
+
+                  Note this gate is a deliberate house rule, not a security
+                  boundary: the file is built in the browser from `db`, which
+                  `GET /api/vendors` already serves to every signed-in user. A
+                  server permission cannot be added for it without inventing one
+                  no endpoint enforces — the mistake `archive.read` was deleted
+                  for. */}
+              {can(currentUser, 'users.manage') && (
+                <Button
                   variant="outline"
                   size="sm"
                   onClick={handleDownloadBackup}
@@ -1486,14 +1766,32 @@ export default function App() {
                   title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
                 >
                   <Download className="w-3.5 h-3.5 text-primary" />
-                  <span className="hidden md:inline">پشتیبان‌گیری (JSON)</span>
+                  <span className="hidden md:inline">پشتیبان‌گیری</span>
                 </Button>
               )}
 
-              <div className="hidden lg:flex bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300">سیستم فعال</span>
+              {/* Live clock, in the top-left beside the account box. */}
+              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
+                <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
+                <span className="text-border">|</span>
+                <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
+                <span className="text-border">|</span>
+                <span className="font-mono text-[10px] text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
+                  {systemTime.isoDate}
+                </span>
               </div>
+
+              {/* This used to be a permanently green, permanently pulsing
+                  "سیستم فعال" chip. A status that cannot change is not status,
+                  it is decoration. The one thing here that genuinely varies is
+                  whether the session is talking to the database at all, so the
+                  chip now appears only when it is not. */}
+              {isLocalMode() && (
+                <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
+                </div>
+              )}
 
               {/* User menu (moved from the sidebar) */}
               {currentUser && (
@@ -1516,7 +1814,7 @@ export default function App() {
                   {showUserMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-60 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
+                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
                         <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
                           <Avatar className="h-9 w-9 border border-border">
                             <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
@@ -1526,6 +1824,59 @@ export default function App() {
                             <span className="text-[10px] font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                           </div>
                         </div>
+                        {/* Session facts: when they were last here, how long this
+                            session has left, and what they can do. */}
+                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-[10px] text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <History className="w-3 h-3" />
+                              ورود قبلی
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {formatDateTime(currentUser.previousLoginAt) || 'اولین ورود'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="w-3 h-3" />
+                              اعتبار نشست
+                            </span>
+                            <span className={`font-semibold ${sessionExpiringSoon ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
+                              {sessionLeftLabel || '—'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <Shield className="w-3 h-3" />
+                              سطح دسترسی
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {myPermissionCount} مورد{myPermissionsCustom ? ' (سفارشی)' : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* My recent activity, straight from the audit trail. */}
+                        <div className="px-3.5 py-2.5 border-b border-border">
+                          <span className="text-[10px] font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
+                          {myActivity === null ? (
+                            <span className="text-[10px] text-muted-foreground italic">در حال بارگذاری...</span>
+                          ) : myActivity.length === 0 ? (
+                            <span className="text-[10px] text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
+                          ) : (
+                            <ul className="space-y-1">
+                              {myActivity.map((a: any) => (
+                                <li key={a.id} className="flex items-start gap-1.5 text-[10px] leading-snug">
+                                  <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
+                                  <span className="text-muted-foreground truncate" title={a.description}>
+                                    {a.description || a.action}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
                         <div className="p-1.5">
                           <button
                             onClick={toggleTheme}
@@ -1537,6 +1888,15 @@ export default function App() {
                             </span>
                             <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
                           </button>
+                          {can(currentUser, 'users.manage') && (
+                            <button
+                              onClick={() => { setShowUserMenu(false); navigate('users'); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
+                            >
+                              <UserCog className="w-4 h-4 text-primary" />
+                              مدیریت کاربران
+                            </button>
+                          )}
                           <button
                             onClick={() => { setShowUserMenu(false); setShowChangePasswordModal(true); }}
                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
@@ -1561,7 +1921,14 @@ export default function App() {
           </header>
 
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full print:overflow-visible">
-            <div className={(view === 'audit-trail' || view === 'materials') && !selectedVendor ? "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8" : "max-w-5xl mx-auto p-4 sm:p-8"}>
+            {/* One width for the whole app.
+                This used to be a two-view exception list: only the materials
+                repository and the audit trail got 1600px and everything else was
+                capped at max-w-5xl (1024px), which threw away 624px — 38% of the
+                usable area — on a 1920px screen, on pages whose tables have seven
+                columns. A shared constant also means a new view is right by
+                default instead of waiting for someone to remember the list. */}
+            <div className={CONTENT_WIDTH}>
               {renderContent()}
             </div>
           </div>
@@ -1635,7 +2002,7 @@ export default function App() {
 
         {/* Global Toast (theme-aware; error vs. success styling) */}
         {toastMsg && (() => {
-          const isError = /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف/.test(toastMsg);
+          const isError = toastKind ? toastKind === 'error' : /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف|عدم دسترسی/.test(toastMsg);
           return (
             <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
               {isError

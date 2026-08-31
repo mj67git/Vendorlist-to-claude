@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe, ShieldCheck, Sparkles } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
 import { BusinessPartner, BusinessPartnerType } from '../types';
+import { canSupplySources } from '../utils/sopEvaluation';
+import { EntityName } from './EntityName';
 
 interface PartnerSelectorProps {
   type: BusinessPartnerType;
@@ -10,11 +12,8 @@ interface PartnerSelectorProps {
   onChange?: (id: string, partner?: BusinessPartner) => void;
   onSelect?: (id: string, partner?: BusinessPartner) => void;
   partners: BusinessPartner[];
-  selectedManufacturerId?: string;
-  manufacturerId?: string;
   onOpenCreateModal?: () => void;
   onAddNew?: () => void;
-  optional?: boolean;
   disabled?: boolean;
   existingVendorSupplierId?: string;
 }
@@ -27,11 +26,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   onChange,
   onSelect,
   partners,
-  selectedManufacturerId,
-  manufacturerId,
   onOpenCreateModal,
   onAddNew,
-  optional = false,
   disabled = false,
   existingVendorSupplierId
 }) => {
@@ -44,8 +40,6 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     if (onOpenCreateModal) onOpenCreateModal();
     if (onAddNew) onAddNew();
   };
-  const effectiveMfgId = selectedManufacturerId ?? manufacturerId;
-
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -58,14 +52,18 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
         setIsOpen(false);
       }
     };
+    let focusTimer: number | undefined;
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      setTimeout(() => {
+      focusTimer = window.setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      // Without this, closing the dropdown inside the delay still fired the
+      // focus and pulled the caret into a now-hidden search box.
+      if (focusTimer !== undefined) window.clearTimeout(focusTimer);
     };
   }, [isOpen]);
 
@@ -87,11 +85,26 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   // Filter partners. In anyType mode, every partner (manufacturer or supplier)
   // is selectable — they are independent now.
   const availablePartners = partners.filter(p => {
-    // Blacklisted partners cannot be selected for new/edited sources.
-    if (p.status === 'Blacklisted' && p.id !== selectedId) return false;
+    // A blacklisted partner is hidden outright, unless it is the one already
+    // attached to the record being edited.
+    if (p.status === 'Blacklisted' && p.id !== currentValue) return false;
     if (anyType) return true;
     return p.type === type;
   });
+
+  /**
+   * The SOP admits only grade A suppliers. Blocked ones are listed but not
+   * selectable rather than hidden: a supplier missing from the list reads as
+   * "not registered yet" and the user goes off and creates a duplicate.
+   *
+   * The partner already attached to an existing source stays selectable, so a
+   * record saved before this rule can still be edited instead of silently
+   * losing its supplier on the next save.
+   */
+  const eligibility = (p: BusinessPartner) =>
+    p.id === currentValue ? { allowed: true, reason: '' } : canSupplySources(p);
+
+  const blockedCount = availablePartners.filter(p => !eligibility(p).allowed).length;
 
   // Filter based on search term
   const filteredPartners = availablePartners.filter(p => {
@@ -110,8 +123,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   const labelTitle = anyType
     ? 'تأمین‌کننده (تولیدکننده یا فروشنده)'
     : isManufacturer
-    ? 'کارخانه تولیدی مرجع (Manufacturer)'
-    : 'فروشنده / بازرگانی واسطه (Supplier)';
+    ? 'تولیدکننده'
+    : 'فروشنده';
 
   return (
     <div className="space-y-1 relative font-sans" dir="rtl" ref={dropdownRef}>
@@ -124,13 +137,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <Handshake className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           )}
           <span>{labelTitle}</span>
-          {!optional ? (
-            <span className="text-rose-500 font-bold">*</span>
-          ) : (
-            <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.2 rounded mr-1">
-              اختیاری (در صورت خرید مستقیم خالی بگذارید)
-            </span>
-          )}
+          <span className="text-rose-500 font-bold">*</span>
         </label>
 
         <button
@@ -140,7 +147,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
           className={`font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer ${
             disabled
               ? 'text-muted-foreground cursor-not-allowed opacity-50'
-              : 'text-[#0071E3] hover:text-[#0025D2]'
+              : 'text-primary hover:text-primary-hover'
           }`}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -163,7 +170,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             disabled
               ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
-              ? 'border-[#0071E3] ring-2 ring-[#0071E3]/20 shadow-xs'
+              ? 'border-ring ring-2 ring-ring/20 shadow-xs'
               : 'border-border hover:border-slate-400'
           }`}
         >
@@ -181,9 +188,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             {selectedPartner ? (
               <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
                 <div className="min-w-0">
-                  <div className="font-bold text-foreground truncate text-xs sm:text-sm">
-                    {selectedPartner.name}
-                  </div>
+                  <EntityName
+                    as="div"
+                    name={selectedPartner.name}
+                    lines={2}
+                    className="font-bold text-foreground text-xs sm:text-sm"
+                  />
                   <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
                     {selectedPartner.nameEn && (
                       <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">
@@ -218,31 +228,19 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               </div>
             ) : (
               <div className="flex items-center justify-between flex-1 min-w-0 pr-1">
-                {optional && !isManufacturer ? (
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shadow-2xs">
-                      <Sparkles className="w-3 h-3 text-emerald-600" />
-                      خرید بی‌واسطه از تولیدکننده (مستقیم)
-                    </span>
-                    <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                      — کلیک جهت انتخاب فروشنده واسطه
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    {disabled && !isManufacturer
-                      ? 'ابتدا تولیدکننده مرجع را انتخاب کنید'
-                      : isManufacturer
-                      ? '-- جستجو و انتخاب تولیدکننده مرجع --'
-                      : '-- جستجو و انتخاب فروشنده واسطه --'}
-                  </span>
-                )}
+                <span className="text-muted-foreground text-xs">
+                  {anyType
+                    ? 'جستجو و انتخاب تولیدکننده یا فروشنده'
+                    : isManufacturer
+                    ? 'جستجو و انتخاب تولیدکننده'
+                    : 'جستجو و انتخاب فروشنده'}
+                </span>
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-1 text-muted-foreground mr-2 shrink-0">
-            {selectedPartner && optional && (
+            {selectedPartner && (
               <span
                 role="button"
                 tabIndex={0}
@@ -256,13 +254,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     triggerChange('', undefined);
                   }
                 }}
-                title="حذف و تغییر به خرید بی‌واسطه"
+                title="حذف انتخاب"
                 className="p-1 hover:bg-accent hover:text-foreground rounded-md transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </span>
             )}
-            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-[#0071E3]' : ''}`} />
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180 text-primary' : ''}`} />
           </div>
         </button>
 
@@ -278,8 +276,8 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={`جستجو بر اساس نام فارسی، انگلیسی یا کشور ${isManufacturer ? 'تولیدکننده' : 'فروشنده'}...`}
-                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#0071E3] focus:ring-1 focus:ring-[#0071E3]"
+                  placeholder="جستجو بر اساس نام، کشور یا شهر..." 
+                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 />
                 {searchTerm && (
                   <button
@@ -295,69 +293,44 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
             {/* List Body */}
             <div className="max-h-60 overflow-y-auto divide-y divide-border p-1.5">
-              {/* Special Option for Supplier: Direct Purchase (خرید بی‌واسطه) */}
-              {!isManufacturer && optional && (
-                <div
-                  onClick={() => {
-                    triggerChange('', undefined);
-                    setIsOpen(false);
-                  }}
-                  className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between mb-1 ${
-                    !currentValue
-                      ? 'bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-bold'
-                      : 'hover:bg-emerald-50/40 text-foreground'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold flex items-center gap-1.5">
-                        <span>خرید بی‌واسطه از تولیدکننده (Direct Purchase)</span>
-                        <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded">
-                          بدون واسطه
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        خرید به صورت مستقیم از کارخانه سازنده صورت گرفته و فروشنده واسطه‌ای وجود ندارد.
-                      </div>
-                    </div>
-                  </div>
-                  {!currentValue && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
-                </div>
-              )}
-
               {/* Partner Items */}
               {filteredPartners.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground text-xs">
-                  <div>هیچ {isManufacturer ? 'تولیدکننده‌ای' : 'فروشنده‌ای'} با این مشخصات یافت نشد.</div>
+                  <div>شریکی با این مشخصات یافت نشد.</div>
                   <button
                     type="button"
                     onClick={() => {
                       setIsOpen(false);
                       triggerOpenCreate();
                     }}
-                    className="mt-3 inline-flex items-center gap-1 text-[#0071E3] hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
+                    className="mt-3 inline-flex items-center gap-1 text-primary hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ ثبت شریک تجاری جدید در مخزن</span>
+                    <span>ثبت شریک تجاری جدید</span>
                   </button>
                 </div>
               ) : (
                 filteredPartners.map(p => {
                   const isSelected = p.id === currentValue;
+                  const { allowed, reason } = eligibility(p);
                   return (
                     <div
                       key={p.id}
+                      role="option"
+                      aria-selected={isSelected}
+                      aria-disabled={!allowed}
+                      title={allowed ? undefined : reason}
                       onClick={() => {
+                        if (!allowed) return;
                         triggerChange(p.id, p);
                         setIsOpen(false);
                       }}
-                      className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-blue-50 border border-blue-200 text-blue-950 font-bold'
-                          : 'hover:bg-accent text-foreground'
+                      className={`p-2.5 rounded-xl transition-all flex items-center justify-between ${
+                        !allowed
+                          ? 'opacity-55 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-blue-50 border border-blue-200 text-blue-950 font-bold cursor-pointer'
+                          : 'hover:bg-accent text-foreground cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -376,10 +349,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold truncate flex items-center gap-2">
-                            <span>{p.name}</span>
+                          {/* The clip was on this flex row, not on the name, so
+                              the blacklist badge cut the name off with no
+                              ellipsis to show anything was missing. */}
+                          <div className="text-xs font-bold flex items-center gap-2 min-w-0">
+                            <EntityName name={p.name} lines={1} />
                             {p.status === 'Blacklisted' && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold">
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold shrink-0">
                                 بلک‌لیست
                               </span>
                             )}
@@ -404,6 +380,11 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                               </>
                             )}
                           </div>
+                          {!allowed && (
+                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
+                              {reason}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -421,7 +402,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                             </span>
                           )
                         )}
-                        {isSelected && <Check className="w-4 h-4 text-[#0071E3]" />}
+                        {isSelected && <Check className="w-4 h-4 text-primary" />}
                       </div>
                     </div>
                   );
@@ -433,6 +414,11 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <div className="p-2 border-t border-border bg-muted/50 flex items-center justify-between text-xs">
               <span className="text-[11px] text-muted-foreground">
                 {filteredPartners.length} مورد یافت شد
+                {blockedCount > 0 && (
+                  <span className="text-amber-700 dark:text-amber-400 font-bold">
+                    {' '}· {blockedCount} مورد طبق SOP قابل انتخاب نیست
+                  </span>
+                )}
               </span>
               <button
                 type="button"
@@ -440,7 +426,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                   setIsOpen(false);
                   triggerOpenCreate();
                 }}
-                className="text-[#0071E3] hover:text-[#0025D2] font-bold text-xs flex items-center gap-1"
+                className="text-primary hover:text-primary-hover font-bold text-xs flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ ثبت {anyType ? 'تأمین‌کننده جدید' : isManufacturer ? 'تولیدکننده جدید' : 'فروشنده جدید'}</span>

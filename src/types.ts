@@ -7,6 +7,18 @@ export interface User {
   username: string;
   role: Role;
   name: string;
+  /** Effective permissions from the server: the per-user overrides when set,
+   *  otherwise the role's template. Absent for sessions restored from an older
+   *  cache, in which case the role template applies. */
+  permissions?: string[];
+  /** When this account last signed in *before* the current session. Sent once
+   *  at login and deliberately not refreshed, so it keeps meaning "last time",
+   *  not "this time". */
+  /** True when an admin adjusted this account away from its role template.
+   *  Comes from the server: the client only receives the effective list and so
+   *  cannot tell the two apart by itself. */
+  permissionsCustom?: boolean;
+  previousLoginAt?: string | null;
   mustChangePassword?: boolean;
 }
 
@@ -89,7 +101,14 @@ export interface Material {
   finalProduct: string;
   finalProductEn: string;
   pharmacopoeia: Pharmacopoeia;
+  /** File name of the Specification attachment. */
   specificationFile?: string;
+  specificationFileSize?: number;
+  /** Whether the server actually holds the file. The blob itself is fetched
+      from `GET /api/materials/:id/specification/file` on demand, so it is never
+      carried in a list payload (project rule 5). */
+  hasSpecificationFile?: boolean;
+  specificationUploadedAt?: string;
   standardNameFa: string;
   standardNameEn: string;
   irc?: string;
@@ -152,7 +171,8 @@ export interface BusinessPartner {
   contactPerson?: string;
   phone?: string;
   website?: string;
-  manufacturerId?: string; // Required when type === 'Supplier'
+  // manufacturerId was removed with the flat partner model: a supplier is not
+  // owned by a manufacturer, and `business_partners` has no such column.
   status: 'Active' | 'Inactive' | 'Blacklisted';
   evaluation?: SupplierEvaluation;
   createdAt: string;

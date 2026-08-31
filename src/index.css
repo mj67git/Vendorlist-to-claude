@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import "vazirmatn/misc/Farsi-Digits/Vazirmatn-FD-font-face.css";
 
+/**
+ * Bind the `dark:` variant to the `.dark` class, which is what the theme switcher
+ * toggles on <html>.
+ *
+ * Without this, Tailwind v4 falls back to `@media (prefers-color-scheme: dark)`,
+ * so every `dark:` utility in the codebase followed the *operating system* rather
+ * than the in-app switch. The token block below flips correctly (it is plain CSS
+ * under `.dark`), which is why the app looked broadly right and this went
+ * unnoticed — but each hand-written `dark:bg-…` / `dark:text-…` pair stayed in its
+ * light form for anyone whose OS was set to light.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Vazirmatn FD", system-ui, sans-serif;
   --font-mono: "Vazirmatn FD", ui-monospace, Courier, monospace;

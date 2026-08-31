@@ -4,6 +4,7 @@ import { AnimatePresence } from 'motion/react';
 import { FormModal } from '../../components/FormModal';
 import { MaterialSelector } from '../../components/MaterialSelector';
 import { PartnerSelector } from '../../components/PartnerSelector';
+import { EntityName } from '../../components/EntityName';
 import { ShamsiDatePicker } from '../../components/ShamsiDatePicker';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -63,8 +64,9 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string>(() => {
     if (existingVendor?.manufacturerId) return existingVendor.manufacturerId;
     if (existingVendor?.name) {
-      const match = partners.find(p => p.type === 'Supplier' && p.name.trim().toLowerCase() === existingVendor.name.trim().toLowerCase());
-      if (match?.manufacturerId) return match.manufacturerId;
+      // A supplier no longer points at a manufacturer, so the old lookup that
+      // read `match.manufacturerId` off a Supplier record has gone: the field
+      // does not exist on the table and always came back undefined.
       const mfgMatch = partners.find(p => p.type === 'Manufacturer' && p.name.trim().toLowerCase() === existingVendor.name.trim().toLowerCase());
       if (mfgMatch) return mfgMatch.id;
     }
@@ -87,12 +89,24 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [newPartnerType, setNewPartnerType] = useState<'Manufacturer' | 'Supplier'>('Manufacturer');
   const [newPartnerError, setNewPartnerError] = useState<string | null>(null);
 
+  /**
+   * Which required field is missing, if any.
+   *
+   * This used to be a native `alert()`: it blocked the whole interface, could
+   * not be styled or laid out right-to-left, and once dismissed left no trace
+   * of which field it was talking about. The error now lives next to the field
+   * it belongs to, and submitting scrolls that field into view and focuses it.
+   */
+  const [fieldError, setFieldError] = useState<null | 'material' | 'partner' | 'irc'>(null);
+  const materialFieldRef = useRef<HTMLDivElement | null>(null);
+  const partnerFieldRef = useRef<HTMLDivElement | null>(null);
+  const ircFieldRef = useRef<HTMLDivElement | null>(null);
+
   // Modals Data State
 
   const [newSupplierTab, setNewSupplierTab] = useState<'general' | 'evaluation'>('general');
   const [newSupplierData, setNewSupplierData] = useState({
     name: '',
-    nameEn: '',
     country: 'ایران',
     city: '',
     address: '',
@@ -100,25 +114,31 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     contactPerson: '',
     phone: '',
     website: '',
-    status: 'Active' as 'Active' | 'Inactive' | 'Blacklisted'
+    status: 'Active' as 'Active' | 'Inactive'
   });
 
+  // Unset, exactly as the partner module's form opens. These used to default
+  // to Approved, so a supplier created from here was born with a full 100 and
+  // a Grade A that nobody had actually assessed.
   const [newSupplierSopDocs, setNewSupplierSopDocs] = useState<{
-    manufacturerLetter: SOPDocumentStatus;
-    authorizedSignatory: SOPDocumentStatus;
-    businessLicense: SOPDocumentStatus;
-    officialEnglishTranslation: SOPDocumentStatus;
-    legalization: SOPDocumentStatus;
+    manufacturerLetter: SOPDocumentStatus | null;
+    authorizedSignatory: SOPDocumentStatus | null;
+    businessLicense: SOPDocumentStatus | null;
+    officialEnglishTranslation: SOPDocumentStatus | null;
+    legalization: SOPDocumentStatus | null;
   }>({
-    manufacturerLetter: 'Approved',
-    authorizedSignatory: 'Approved',
-    businessLicense: 'Approved',
-    officialEnglishTranslation: 'Approved',
-    legalization: 'Approved'
+    manufacturerLetter: null,
+    authorizedSignatory: null,
+    businessLicense: null,
+    officialEnglishTranslation: null,
+    legalization: null
   });
 
   const selectedManufacturer = partners.find(p => p.type === 'Manufacturer' && p.id === selectedManufacturerId);
   const selectedSupplier = partners.find(p => p.type === 'Supplier' && p.id === selectedSupplierId);
+  // "Not Evaluated" is a real stored grade, so an evaluation object alone does
+  // not mean anyone has assessed the documents.
+  const sopEvaluated = !!selectedSupplier?.evaluation && selectedSupplier.evaluation.grade !== 'Not Evaluated';
 
   // Helper Audit
   const logSourceSelectionAudit = (action: string, details: string, beforeValue: any, afterValue: any) => {
@@ -185,7 +205,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       id: (isSupplier ? 'bp_sup_' : 'bp_mfg_') + Math.random().toString(36).substring(2, 9),
       type: newPartnerType,
       name: newSupplierData.name.trim(),
-      nameEn: newSupplierData.nameEn.trim() || undefined,
       country: newSupplierData.country.trim(),
       city: newSupplierData.city.trim() || undefined,
       address: newSupplierData.address.trim() || undefined,
@@ -222,7 +241,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
     setNewSupplierData({
       name: '',
-      nameEn: '',
       country: 'ایران',
       city: '',
       address: '',
@@ -233,11 +251,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       status: 'Active'
     });
     setNewSupplierSopDocs({
-      manufacturerLetter: 'Approved',
-      authorizedSignatory: 'Approved',
-      businessLicense: 'Approved',
-      officialEnglishTranslation: 'Approved',
-      legalization: 'Approved'
+      manufacturerLetter: null,
+      authorizedSignatory: null,
+      businessLicense: null,
+      officialEnglishTranslation: null,
+      legalization: null
     });
     setNewSupplierTab('general');
     setShowNewSupplierModal(false);
@@ -258,21 +276,61 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     return () => registerNavGuard(null);
   }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
 
+  /**
+   * IRC is the 16-digit IFDA code. It stays optional, but a half-typed one is
+   * worse than an empty one: it looks like a filed licence and is unsearchable.
+   * Persian/Arabic digits are normalised on the way in so a user typing on a
+   * Persian keyboard is not told their correct code is wrong.
+   */
+  const IRC_LENGTH = 16;
+  const toFaDigits = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+  const toLatinDigits = (input: string) =>
+    input
+      .replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 1776))
+      .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 1632));
+  const ircDigits = formData.irc.trim();
+  const isIrcValid = ircDigits === '' || /^\d{16}$/.test(ircDigits);
+  const ircTooShort = ircDigits !== '' && /^\d+$/.test(ircDigits) && ircDigits.length !== IRC_LENGTH;
+  /**
+   * Records predating this rule carry things like "N/A". Blocking on an
+   * untouched legacy value would make those sources uneditable, so the warning
+   * still shows but only a *changed* value blocks the save.
+   */
+  const isLegacyIrcUntouched = !!existingVendor && (existingVendor.irc || '') === formData.irc;
+  const blocksSubmitOnIrc = !isIrcValid && !isLegacyIrcUntouched;
+
+  const focusMissingField = (which: 'material' | 'partner' | 'irc') => {
+    setFieldError(which);
+    const target =
+      which === 'material' ? materialFieldRef.current
+      : which === 'partner' ? partnerFieldRef.current
+      : ircFieldRef.current;
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target?.querySelector<HTMLElement>('button, input, select')?.focus();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.materialId) {
-      alert('لطفاً یک ماده از مخزن مواد اولیه انتخاب کنید.');
+      focusMissingField('material');
       return;
     }
 
     if (!selectedManufacturerId && !selectedSupplierId) {
-      alert('لطفاً تأمین‌کنندهٔ این سورس (تولیدکننده یا فروشنده) را از مخزن شرکای تجاری انتخاب کرده یا ثبت کنید.');
+      focusMissingField('partner');
       return;
     }
 
+    // IRC stays optional, but a filled one must be the real 16-digit code.
+    if (blocksSubmitOnIrc) {
+      focusMissingField('irc');
+      return;
+    }
+
+    setFieldError(null);
+
     const newId = existingVendor?.id || ('v' + Math.random().toString(36).substring(2, 6));
-    const isDirectPurchase = !selectedSupplierId;
     const finalPartnerDisplayName = selectedSupplier?.name || selectedManufacturer?.name || formData.name;
     
     // Process rejections
@@ -431,7 +489,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
         >
               <div className="flex justify-between items-center border-b border-border pb-3 mb-3 shrink-0">
                 <h3 className="font-bold text-foreground text-base flex items-center gap-2">
-                  <Handshake className="w-5 h-5 text-[#0071E3]" />
+                  <Handshake className="w-5 h-5 text-primary" />
                   ثبت تأمین‌کننده جدید (New Business Partner)
                 </h3>
                 <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
@@ -441,27 +499,24 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
               {/* Partner kind — manufacturers and suppliers are independent records */}
               <div className="shrink-0 mb-3">
-                <label className="text-[11px] font-bold text-muted-foreground block mb-1.5">نوع شریک تجاری:</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs font-bold text-foreground block mb-1.5">نوع موجودیت <span className="text-rose-500">*</span></label>
+                <div className="grid grid-cols-2 gap-3">
                   {([
-                    { key: 'Manufacturer', label: 'تولیدکننده', sub: 'Manufacturer', icon: Building2 },
-                    { key: 'Supplier', label: 'فروشنده', sub: 'Supplier', icon: Handshake },
+                    { key: 'Manufacturer', label: 'تولیدکننده (Manufacturer)', icon: Building2,
+                      on: 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500' },
+                    { key: 'Supplier', label: 'فروشنده / Supplier', icon: Handshake,
+                      on: 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm ring-1 ring-emerald-500' },
                   ] as const).map(opt => (
                     <button
                       key={opt.key}
                       type="button"
                       onClick={() => { setNewPartnerType(opt.key); setNewSupplierTab('general'); setNewPartnerError(null); }}
-                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-right transition-all ${
-                        newPartnerType === opt.key
-                          ? 'bg-[#0071E3]/10 border-[#0071E3] text-[#0071E3]'
-                          : 'bg-card border-border text-muted-foreground hover:bg-accent'
+                      className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        newPartnerType === opt.key ? opt.on : 'bg-muted border-border text-muted-foreground hover:bg-accent'
                       }`}
                     >
-                      <opt.icon className="w-4 h-4 shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-bold">{opt.label}</span>
-                        <span className="block text-[10px] opacity-70 font-mono">{opt.sub}</span>
-                      </span>
+                      <opt.icon className="w-4 h-4" />
+                      <span>{opt.label}</span>
                     </button>
                   ))}
                 </div>
@@ -479,7 +534,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('general')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      newSupplierTab === 'general' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
                     }`}
                   >
                     ۱. مشخصات عمومی
@@ -488,7 +543,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('evaluation')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      newSupplierTab === 'evaluation' ? 'bg-[#0071E3] text-white' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
                     }`}
                   >
                     ۲. ارزیابی مدارک SOP
@@ -507,58 +562,99 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   </div>
                 )}
 
+                {/* Same fields, in the same order, as the partner form in the
+                    business-partner module — this dialog writes the same record,
+                    so asking for a different set of details (it used to open on
+                    a Persian *and* an English name, which that form does not
+                    collect at all) produced partners that looked different
+                    depending on where they were created. */}
                 {(newSupplierTab === 'general' || newPartnerType !== 'Supplier') ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام شرکت {newPartnerType === 'Supplier' ? 'فروشنده' : 'تولیدکننده'} (فارسی): *</label>
-                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3]" value={newSupplierData.name} onChange={e => setNewSupplierData({...newSupplierData, name: e.target.value})} placeholder="مثلاً: بازرگانی فارمد" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">{newPartnerType === 'Supplier' ? 'Supplier' : 'Manufacturer'} Name (English):</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.nameEn} onChange={e => setNewSupplierData({...newSupplierData, nameEn: e.target.value})} placeholder="e.g. Pharmed Trading" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">کشور: *</label>
-                      <input required type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.country} onChange={e => setNewSupplierData({...newSupplierData, country: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">شهر:</label>
-                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.city} onChange={e => setNewSupplierData({...newSupplierData, city: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">نام رابط بازرگانی:</label>
-                      <input type="text" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.contactPerson} onChange={e => setNewSupplierData({...newSupplierData, contactPerson: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">شماره تلفن رابط:</label>
-                      <input type="text" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.phone} onChange={e => setNewSupplierData({...newSupplierData, phone: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">پست الکترونیکی (Email):</label>
-                      <input type="email" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.email} onChange={e => setNewSupplierData({...newSupplierData, email: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-foreground font-semibold block">وب‌سایت (Website):</label>
-                      <input type="url" dir="ltr" className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono" value={newSupplierData.website} onChange={e => setNewSupplierData({...newSupplierData, website: e.target.value})} placeholder="https://..." />
-                    </div>
                     <div className="space-y-1 md:col-span-2">
-                      <label className="text-foreground font-semibold block">وضعیت فعالیت شریک:</label>
-                      <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground" value={newSupplierData.status} onChange={e => setNewSupplierData({...newSupplierData, status: e.target.value as any})}>
-                        <option value="Active">فعال (Active)</option>
-                        <option value="Inactive">غیرفعال (Inactive)</option>
-                        <option value="Blacklisted">لیست سیاه (Blacklisted)</option>
-                      </select>
+                      <label className="font-semibold text-foreground block">
+                        {newPartnerType === 'Manufacturer' ? 'نام تولیدکننده' : 'نام فروشنده / Supplier'} <span className="text-rose-500">*</span>
+                      </label>
+                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.name}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })}
+                        placeholder={newPartnerType === 'Manufacturer' ? 'مثلاً: BASF SE' : 'مثلاً: Biesterfeld Spezialchemie GmbH'} />
                     </div>
-                    <div className="md:col-span-2 space-y-1">
-                      <label className="text-foreground font-semibold block">نشانی دقیق {newPartnerType === 'Supplier' ? 'دفتر فروشنده' : 'کارخانه'}:</label>
-                      <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground h-16" value={newSupplierData.address} onChange={e => setNewSupplierData({...newSupplierData, address: e.target.value})} />
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">کشور <span className="text-rose-500">*</span></label>
+                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.country}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, country: e.target.value })}
+                        placeholder="مثلاً: آلمان، چین، هند..." />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">شهر</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.city}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, city: e.target.value })}
+                        placeholder="مثلاً: لودویگزهافن" />
+                    </div>
+
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="font-semibold text-foreground block">آدرس کامل</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.address}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })}
+                        placeholder="آدرس دقیق..." />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">نام رابط / مسئول تماس</label>
+                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.contactPerson}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, contactPerson: e.target.value })}
+                        placeholder="مثلاً: Dr. Klaus Weber" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">شماره تماس</label>
+                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.phone}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })}
+                        placeholder="+49 621 60-0" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">ایمیل رسمی</label>
+                      <input type="email" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.email}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })}
+                        placeholder="contact@company.com" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-foreground block">وبسایت</label>
+                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.website}
+                        onChange={e => setNewSupplierData({ ...newSupplierData, website: e.target.value })}
+                        placeholder="https://www.company.com" />
+                    </div>
+
+                    {/* Active/Inactive only, as in the partner module: blacklisting
+                        is a separate action there and requires a written reason. */}
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="font-semibold text-foreground block">وضعیت فعالیت در سیستم</label>
+                      <div className="flex items-center gap-4 pt-1">
+                        <label className="flex items-center gap-2 text-foreground cursor-pointer font-bold">
+                          <input type="radio" name="new-partner-status"
+                            checked={newSupplierData.status === 'Active'}
+                            onChange={() => setNewSupplierData({ ...newSupplierData, status: 'Active' })}
+                            className="text-blue-600 focus:ring-blue-500" />
+                          <span>فعال (Active)</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-foreground cursor-pointer font-bold">
+                          <input type="radio" name="new-partner-status"
+                            checked={newSupplierData.status === 'Inactive'}
+                            onChange={() => setNewSupplierData({ ...newSupplierData, status: 'Inactive' })}
+                            className="text-rose-600 focus:ring-rose-500" />
+                          <span>غیرفعال (Inactive)</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="bg-muted p-3 rounded-xl border border-border flex items-center justify-between">
                       <div className="text-xs font-bold text-foreground">
-                        نتیجه محاسبه ارزیابی SOP: <span className="text-[#0071E3]">{computeNewSupplierEval().status}</span>
+                        نتیجه محاسبه ارزیابی SOP: <span className="text-primary">{computeNewSupplierEval().status}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">امتیاز کل: <strong>{computeNewSupplierEval().totalScore} / 100</strong></span>
@@ -584,10 +680,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                         <div key={doc.key} className="flex items-center justify-between p-2.5 bg-card border border-border rounded-xl">
                           <span className="font-semibold text-foreground">{doc.label}</span>
                           <select
-                            value={(newSupplierSopDocs as any)[doc.key]}
-                            onChange={(e) => setNewSupplierSopDocs({ ...newSupplierSopDocs, [doc.key]: e.target.value as SOPDocumentStatus })}
-                            className="bg-muted border border-border rounded-lg px-2 py-1 text-xs font-bold text-foreground focus:outline-none focus:border-[#0071E3]"
+                            value={(newSupplierSopDocs as any)[doc.key] ?? ''}
+                            onChange={(e) => setNewSupplierSopDocs({ ...newSupplierSopDocs, [doc.key]: (e.target.value || null) as SOPDocumentStatus | null })}
+                            className="bg-muted border border-border rounded-lg px-2 py-1 text-xs font-bold text-foreground focus:outline-none focus:border-ring"
                           >
+                            <option value="">ارزیابی نشده</option>
                             <option value="Approved">تایید شده (۲۰ امتیاز)</option>
                             <option value="Permit Approval">تایید با مجوز (۱۰ امتیاز)</option>
                             <option value="Expired">منقضی شده (۵ امتیاز)</option>
@@ -601,7 +698,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
                   <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-[#0071E3] text-white rounded-lg font-semibold hover:bg-[#0025D2] transition-colors">
+                  <button type="submit" className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary-hover transition-colors">
                     {newPartnerType === 'Supplier' ? 'ثبت و انتخاب فروشنده' : 'ثبت و انتخاب تولیدکننده'}
                   </button>
                 </div>
@@ -619,15 +716,23 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
         </Button>
       </div>
 
-      <div className="p-6 space-y-6 text-sm overflow-y-auto max-h-[80vh]">
+      {/* One scroller, not two. The body used to carry `max-h-[80vh]
+          overflow-y-auto`, which put a second scrollbar inside the page's own:
+          measured 921px of content in a 760px panel, itself inside an 887px
+          page viewport. The wheel then moved whichever of the two happened to
+          be under the pointer. This is a page, not a modal (project rule 8b),
+          so the page scrolls it. */}
+      <div className="p-6 space-y-6 text-sm">
           {/* SECTION 1: MATERIAL MASTER SELECTION */}
           <div className="space-y-3 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-[11px] font-bold">۱</span>
-              <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش اول: انتخاب ماده اولیه از مخزن مرجع (Material Master)</h3>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-[11px] font-bold shrink-0">۱</span>
+              {/* The badge already numbers the section, so the title no longer
+                  repeats it, and the English gloss is gone. */}
+              <h3 className="text-xs font-black text-foreground">انتخاب ماده اولیه از مخزن مرجع</h3>
             </div>
             
-            <div>
+            <div ref={materialFieldRef}>
               <MaterialSelector 
                 materials={materials} 
                 onAddMaterial={onAddMaterial}
@@ -646,21 +751,27 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   }));
                 }}
               />
+              {fieldError === 'material' && (
+                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                  انتخاب ماده اولیه الزامی است.
+                </p>
+              )}
             </div>
           </div>
 
           {/* SECTION 2: SUPPLY CHAIN & PARTNERS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold">۲</span>
-              <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش دوم: اطلاعات زنجیره تأمین، کارخانه سازنده و فروشنده</h3>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold shrink-0">۲</span>
+              <h3 className="text-xs font-black text-foreground">زنجیرهٔ تأمین: تولیدکننده و فروشنده</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-foreground font-semibold text-xs">نوع دسته بندی (Source Type) <span className="text-rose-500">*</span></label>
-                <select 
-                  className={`w-full bg-[#0071E3]/5 border border-[#0071E3]/20 rounded-lg px-3 py-2 text-[#0071E3] font-bold focus:outline-none focus:ring-1 focus:ring-[#0071E3] ${isSample ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                <label htmlFor="vf-source-type" className="text-foreground font-semibold text-xs">نوع دسته‌بندی <span className="text-rose-500">*</span></label>
+                <select
+                  id="vf-source-type"
+                  className={`w-full bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 text-primary font-bold focus:outline-none focus:ring-1 focus:ring-ring ${isSample ? 'opacity-50 cursor-not-allowed' : ''}`} 
                   value={sourceType} 
                   onChange={e => setSourceType(e.target.value)}
                   disabled={isSample}
@@ -679,22 +790,23 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="checkbox" 
                     checked={isSample} 
                     onChange={e => setIsSample(e.target.checked)}
-                    className="w-4 h-4 text-[#0071E3] rounded border-border focus:ring-[#0071E3]"
+                    className="w-4 h-4 accent-primary rounded border-border focus:ring-ring"
                   />
                   <span className="text-xs font-bold text-foreground">این تامین‌کننده به عنوان یک «نمونه» ثبت می‌شود</span>
                 </label>
 
                 {isSample && (
                   <div className="space-y-1 fade-in">
-                    <label className="text-foreground font-semibold text-xs">وضعیت اولیه نمونه (Initial Sample Status)</label>
-                    <select 
-                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-[#0071E3]" 
+                    <label htmlFor="vf-sample-status" className="text-foreground font-semibold text-xs">وضعیت اولیهٔ نمونه</label>
+                    <select
+                      id="vf-sample-status"
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring" 
                       value={sampleStatus} 
                       onChange={e => setSampleStatus(e.target.value)}
                     >
-                      <option value="approved">Approved (تایید شده)</option>
-                      <option value="not_approved">Approved conditional (تایید مشروط)</option>
-                      <option value="rejected">Reject (رد شده)</option>
+                      <option value="approved">تایید شده</option>
+                      <option value="not_approved">تایید مشروط</option>
+                      <option value="rejected">رد شده</option>
                     </select>
 
                     {existingVendor && hasQcReject(existingVendor) && (
@@ -707,8 +819,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               </div>
             </div>
 
-            {/* PARTNER REPOSITORY INTEGRATION — single supplier/manufacturer selector */}
-            <div className="bg-card border border-border p-4 rounded-xl shadow-2xs">
+            {/* PARTNER REPOSITORY INTEGRATION - single supplier/manufacturer selector */}
+            <div ref={partnerFieldRef} className="bg-card border border-border p-4 rounded-xl shadow-2xs">
               <PartnerSelector
                 partners={partners}
                 type="Supplier"
@@ -748,95 +860,111 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               />
               <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-muted-foreground" />
-                تأمین‌کنندهٔ این سورس را انتخاب کنید — می‌تواند یک تولیدکننده یا یک فروشنده باشد.
+                تأمین‌کنندهٔ این سورس می‌تواند یک تولیدکننده یا یک فروشنده باشد.
               </p>
+              {fieldError === 'partner' && (
+                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                  انتخاب تأمین‌کننده الزامی است. یکی را از مخزن شرکای تجاری انتخاب کنید یا تأمین‌کنندهٔ جدید ثبت کنید.
+                </p>
+              )}
             </div>
 
-            {/* Supplier or Manufacturer Direct Summary Card */}
-            {selectedSupplier ? (
-              <div className="bg-emerald-50/60 border border-emerald-500/20 rounded-xl p-4 fade-in">
-                <h4 className="text-emerald-800 font-bold text-xs mb-3 flex items-center gap-1.5">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
-                  جزئیات تاییدیه و صلاحیت فنی شریک تجاری (SOP Evaluation Summary)
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-xs">
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">نام فروشنده:</span>
-                    <span className="font-bold text-foreground">{selectedSupplier.name}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی کیفی:</span>
-                    <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation?.totalScore || 0} / ۱۰۰</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">رتبه کیفی (Grade):</span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800">
-                      Grade {selectedSupplier.evaluation?.grade || 'A'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-0.5 font-medium">وضعیت صلاحیت:</span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/10 text-emerald-700">
-                      {selectedSupplier.evaluation?.status || 'تایید شده'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : selectedManufacturer ? (
-              <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-4 fade-in">
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <h4 className="text-emerald-900 font-bold text-xs flex items-center gap-1.5">
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    تأمین مستقیم و بی‌واسطه از کارخانه سازنده (Direct Manufacturer Sourcing)
-                  </h4>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
-                    خرید بی‌واسطه
+            {/* The selected partner, shown the same way whichever kind it is.
+                Manufacturers and suppliers are independent records now, so
+                picking a manufacturer is an ordinary choice rather than the
+                "direct purchase" shortcut it used to be. This block used to
+                announce that in three places at once (a green panel, a badge
+                above it, and a second badge on the contact card) and to tell
+                the user no supplier evaluation was needed, which only makes
+                sense if a supplier were otherwise expected. */}
+            {(selectedSupplier || selectedManufacturer) && (
+              <div className="bg-muted/60 border border-border rounded-xl p-4 fade-in">
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${
+                    selectedSupplier
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800'
+                  }`}>
+                    {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}
                   </span>
+                  <EntityName
+                    name={(selectedSupplier || selectedManufacturer)!.name}
+                    lines={1}
+                    className="text-xs font-bold text-foreground"
+                  />
                 </div>
-                <p className="text-xs text-emerald-800 leading-relaxed">
-                  این سورس به صورت <strong className="font-bold">خرید بی‌واسطه</strong> مستقیماً از کارخانه سازنده مرجع (<strong className="text-emerald-950 font-bold">{selectedManufacturer.name}</strong>) تأمین می‌گردد و نیازی به ارزیابی فروشنده واسطه ندارد.
-                </p>
+
+                {/* Only suppliers carry an SOP evaluation (project rule 4). */}
+                {selectedSupplier && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی SOP:</span>
+                      {sopEvaluated ? (
+                        <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation!.totalScore} / ۱۰۰</span>
+                      ) : (
+                        <span className="font-bold text-muted-foreground">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">گرید:</span>
+                      {/* Was `grade || 'A'` and `status || 'تایید شده'`: an
+                          unevaluated supplier appeared here as an approved
+                          Grade A while nobody had assessed a single document. */}
+                      {sopEvaluated ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                          گرید {selectedSupplier.evaluation!.grade}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-muted text-muted-foreground border border-border">
+                          ارزیابی نشده
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">وضعیت صلاحیت:</span>
+                      <span className={`font-bold ${sopEvaluated ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {sopEvaluated ? selectedSupplier.evaluation!.status : 'هنوز ارزیابی نشده است'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            )}
 
             {/* Auto-filled read-only fields for selected partner */}
             {(selectedSupplier || selectedManufacturer) && (
               <div className="bg-card border border-border/80 rounded-xl p-4 space-y-3 shadow-2xs">
                 <div className="text-foreground font-bold text-xs border-b border-border pb-2 mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Building className="w-4 h-4 text-[#0071E3]" />
-                    <span>اطلاعات تماس و نشانی {selectedSupplier ? 'فروشنده واسطه' : 'تولیدکننده مرجع'} (تکمیل خودکار - Read-Only)</span>
+                    <Building className="w-4 h-4 text-primary" />
+                    <span>اطلاعات تماس {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}</span>
                   </div>
-                  {!selectedSupplier && (
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                      خرید بی‌واسطه از تولیدکننده
-                    </span>
-                  )}
+                  <span className="text-[10px] font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs leading-relaxed">
                   <div>
                     <span className="text-muted-foreground block mb-1 font-medium">کشور مبدا:</span>
-                    <input type="text" readOnly className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed" value={(selectedSupplier?.country || selectedManufacturer?.country) || 'نامشخص'} />
+                    <span className="block text-foreground font-bold ">{(selectedSupplier?.country || selectedManufacturer?.country) || 'نامشخص'}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block mb-1 font-medium">شهر دفتر/کارخانه:</span>
-                    <input type="text" readOnly className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed" value={(selectedSupplier?.city || selectedManufacturer?.city) || 'نامشخص'} />
+                    <span className="block text-foreground font-bold ">{(selectedSupplier?.city || selectedManufacturer?.city) || 'نامشخص'}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block mb-1 font-medium">نام رابط (Contact Person):</span>
-                    <input type="text" readOnly className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed" value={(selectedSupplier?.contactPerson || selectedManufacturer?.contactPerson) || 'نامشخص'} />
+                    <span className="text-muted-foreground block mb-1 font-medium">نام رابط:</span>
+                    <span className="block text-foreground font-bold ">{(selectedSupplier?.contactPerson || selectedManufacturer?.contactPerson) || 'نامشخص'}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block mb-1 font-medium">شماره تماس رابط:</span>
-                    <input type="text" readOnly dir="ltr" className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed text-left font-mono" value={(selectedSupplier?.phone || selectedManufacturer?.phone) || 'نامشخص'} />
+                    <span className="block text-foreground font-bold font-mono text-left" dir="ltr">{(selectedSupplier?.phone || selectedManufacturer?.phone) || 'نامشخص'}</span>
                   </div>
                   <div className="md:col-span-2">
-                    <span className="text-muted-foreground block mb-1 font-medium">پست الکترونیکی (Email):</span>
-                    <input type="text" readOnly dir="ltr" className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed text-left font-mono" value={(selectedSupplier?.email || selectedManufacturer?.email) || 'نامشخص'} />
+                    <span className="text-muted-foreground block mb-1 font-medium">پست الکترونیکی:</span>
+                    <span className="block text-foreground font-bold font-mono text-left" dir="ltr">{(selectedSupplier?.email || selectedManufacturer?.email) || 'نامشخص'}</span>
                   </div>
                   <div className="md:col-span-2">
                     <span className="text-muted-foreground block mb-1 font-medium">نشانی کامل پستی:</span>
-                    <input type="text" readOnly className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-foreground font-medium focus:outline-none cursor-not-allowed" value={(selectedSupplier?.address || selectedManufacturer?.address) || 'نامشخص'} />
+                    <span className="block text-foreground font-bold ">{(selectedSupplier?.address || selectedManufacturer?.address) || 'نامشخص'}</span>
                   </div>
                 </div>
               </div>
@@ -846,21 +974,64 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 3: REGULATORY, IRC & INITIAL STATUS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] font-bold">۳</span>
-              <h3 className="text-xs font-black text-foreground uppercase tracking-wide">بخش سوم: اطلاعات رگولاتوری، پروانه IRC و وضعیت اولیه سورس</h3>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] font-bold shrink-0">۳</span>
+              <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانهٔ IRC</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-foreground font-semibold text-xs">کد IRC / کد IVC / شناسه اختصاصی (اختیاری)</label>
-                <input 
-                  type="text" 
-                  dir="ltr" 
-                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] font-mono text-sm" 
-                  value={formData.irc} 
-                  onChange={e => setFormData({...formData, irc: e.target.value})} 
-                  placeholder="مثال: 1234567890"
+              <div className="space-y-1" ref={ircFieldRef}>
+                <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
+                  <span>کد IRC (اختیاری)</span>
+                  {ircDigits !== '' && (
+                    <span className={`text-[10px] font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                      {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
+                    </span>
+                  )}
+                </label>
+                <input
+                  id="vf-irc"
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  maxLength={IRC_LENGTH}
+                  aria-invalid={!isIrcValid}
+                  aria-describedby="vf-irc-hint"
+                  className={`w-full bg-background border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 font-mono text-sm tracking-wider ${
+                    !blocksSubmitOnIrc
+                      ? 'border-border focus:ring-ring focus:border-ring'
+                      : 'border-rose-500 focus:ring-rose-500 focus:border-rose-500'
+                  }`}
+                  value={formData.irc}
+                  onChange={e => {
+                    // Keep only digits so a pasted code with dashes/spaces still lands correctly.
+                    const cleaned = toLatinDigits(e.target.value).replace(/\D/g, '').slice(0, IRC_LENGTH);
+                    setFormData({ ...formData, irc: cleaned });
+                    if (fieldError === 'irc') setFieldError(null);
+                  }}
+                  // The input is dir="ltr", so a Persian placeholder renders with its
+                  // parts reordered; the ۱۶-digit rule lives in the hint line instead.
+                  placeholder="1228123456789012"
                 />
+                {isIrcValid ? (
+                  <p id="vf-irc-hint" className="text-[11px] text-muted-foreground">
+                    کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
+                  </p>
+                ) : (
+                  <p
+                    id="vf-irc-hint"
+                    role="alert"
+                    className={`flex items-start gap-1.5 text-[11px] font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      {!blocksSubmitOnIrc
+                        ? `کد IRC ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
+                        : ircTooShort
+                          ? `کد IRC باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
+                          : `کد IRC باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -886,13 +1057,13 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 />
               </div>
 
+              {/* Not a field: nothing here is editable, and dressing a
+                  sentence up as an input invites the user to type in it. */}
               {!existingVendor && (
-                <div className="space-y-1 md:col-span-3">
-                   <label className="text-foreground text-xs font-semibold select-none text-right">وضعیت و گرید اولیه سورس</label>
-                   <div className="w-full bg-[#0071E3]/5 border border-[#0071E3]/20 rounded-lg px-3 py-2 text-[#0071E3] font-medium text-center text-xs">
-                     ثبت جهت بررسی (ارزیابی در مرحله بعد انجام می‌شود)
-                   </div>
-                </div>
+                <p className="md:col-span-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Info className="w-3.5 h-3.5 shrink-0" />
+                  سورس با وضعیت «در انتظار بررسی» ثبت می‌شود؛ گرید کیفی در مرحلهٔ ارزیابی تعیین می‌گردد.
+                </p>
               )}
             </div>
 
@@ -931,8 +1102,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             })()}
 
             <div className="space-y-1">
-              <label className="text-foreground font-semibold text-xs">سوابق انحرافات (هر مورد در یک خط)</label>
-              <textarea className="w-full bg-card border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-[#0071E3] focus:border-[#0071E3] h-20 placeholder:text-muted-foreground text-xs" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})}></textarea>
+              <label htmlFor="vf-deviations" className="text-foreground font-semibold text-xs">سوابق انحرافات (هر مورد در یک خط)</label>
+              <textarea id="vf-deviations" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring h-20 placeholder:text-muted-foreground text-xs" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})}></textarea>
             </div>
           </div>
 
