@@ -1,4 +1,17 @@
-version: '3.8'
+# VLSE — Vendor List & Supplier Evaluation System
+#
+# Secrets are read from a `.env` file beside this one and are NOT committed.
+# This file used to carry them inline (POSTGRES_PASSWORD and JWT_SECRET), which
+# meant every clone of the repository held the production credentials.
+#
+# Before the first start:
+#   cp .env.example .env
+#   # then put real values in .env — generate the key with:
+#   openssl rand -base64 48
+#
+# Compose refuses to start if a required variable is missing (the `:?` form
+# below), so a half-configured deployment fails loudly instead of coming up with
+# a default nobody chose.
 
 services:
   pharma-app:
@@ -9,22 +22,35 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - PORT=3000
-      - DATABASE_URL=postgresql://pharma_admin:SecurePassword123@postgres_server:5432/pharma_regulatory_db?schema=public
-      - JWT_SECRET=PharmaRegRegulatorySecretKey2026Enterprise
+      # NOTE: the application listens on 3000 and does not read PORT; change the
+      # published port on the left of the mapping above instead.
+      - DATABASE_URL=postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_server:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}?schema=public
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
     depends_on:
-      - postgres_server
+      postgres_server:
+        # `depends_on` alone only waits for the container to exist, not for
+        # PostgreSQL to accept connections, so the app could start first and
+        # fail every query until someone restarted it.
+        condition: service_healthy
 
   postgres_server:
     image: postgres:15-alpine
     container_name: pharma_postgres_db
     restart: always
     environment:
-      POSTGRES_USER: pharma_admin
-      POSTGRES_PASSWORD: SecurePassword123
-      POSTGRES_DB: pharma_regulatory_db
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    # The database port is deliberately not published to the host: the
+    # application reaches it over the compose network. Uncomment only if you
+    # need to connect from outside, and then restrict it to localhost:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

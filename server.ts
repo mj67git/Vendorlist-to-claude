@@ -38,6 +38,7 @@ import {
 import {
   generateSalt,
   hashPassword,
+  needsRehash,
   verifyPassword,
 } from "./src/server/security/passwordService.js";
 
@@ -811,6 +812,63 @@ async function getVendorById(id: string): Promise<any> {
   return list[0] || null;
 }
 
+/**
+ * Serialise the mutating requests that touch one source.
+ *
+ * Every `PATCH /api/vendors/:id/*` route reads the whole vendor, changes one
+ * part of it and writes the whole thing back. Two of them in flight at once —
+ * two users, two tabs, or a retry arriving beside the original — both read the
+ * same starting state and the slower write puts back its own stale copy of
+ * everything the faster one had just changed. Verified before this existed: a
+ * contact update racing a score update lost the contact change 5 times out of
+ * 5, silently, with both requests answering 200.
+ *
+ * The client already queues its own writes (see the sync queue in App.tsx), but
+ * that only orders one browser tab against itself. This is the server-side half:
+ * requests for the same source id run one after another, requests for different
+ * sources still run in parallel.
+ *
+ * Scope worth knowing: this is an in-process lock, so it covers one Node
+ * process — the way this application is deployed (a single container, or PM2 in
+ * fork mode). Running several instances behind a load balancer would need a
+ * database-level lock instead, because each process would hold its own map.
+ */
+const vendorWriteChain = new Map<string, Promise<void>>();
+
+function lockVendorWrite(id: string): Promise<() => void> {
+  const previous = vendorWriteChain.get(id) ?? Promise.resolve();
+  let release!: () => void;
+  const mine = new Promise<void>(resolve => {
+    release = () => {
+      // Only clear the map when nobody queued behind us, so a later waiter does
+      // not find a deleted chain and start in parallel with the one after it.
+      if (vendorWriteChain.get(id) === mine) vendorWriteChain.delete(id);
+      resolve();
+    };
+  });
+  vendorWriteChain.set(id, previous.then(() => mine));
+  return previous.then(() => release);
+}
+
+/** Express middleware form: holds the lock until the response is done. */
+async function serializeVendorWrites(req: any, res: any, next: any) {
+  const id = req.params?.id;
+  if (!id) return next();
+
+  const release = await lockVendorWrite(id);
+  let released = false;
+  const done = () => {
+    if (released) return;
+    released = true;
+    release();
+  };
+  // 'close' covers a client that disconnects mid-request, which 'finish' does
+  // not — without it an aborted request would hold the lock for ever.
+  res.once("finish", done);
+  res.once("close", done);
+  next();
+}
+
 async function saveVendorToDb(v: any): Promise<boolean> {
   const prisma = requirePrisma();
   {
@@ -980,7 +1038,57 @@ async function deleteVendorFromDb(id: string): Promise<boolean> {
   }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "internal-regulatory-compliance-secret-key-321";
+/**
+ * The signing key for session tokens.
+ *
+ * There used to be a constant here as a fallback, which meant a server started
+ * without `JWT_SECRET` signed its tokens with a value published in this
+ * repository: anyone who had read the source could mint an administrator token
+ * and the server would accept it. Verified before this changed — a forged token
+ * built from that constant returned the full user list.
+ *
+ * So there is no fallback any more. In production a missing secret stops the
+ * process at boot with an actionable message, the same fail-fast rule
+ * `requirePrisma()` applies to the database URL: refusing to start is a problem
+ * IT can see, while starting with a known key is one nobody sees.
+ *
+ * Outside production a random key is generated per process, so development
+ * still works with no setup. Tokens do not survive a restart, which is correct
+ * — a development session is not something to preserve, and no shared constant
+ * exists to leak.
+ */
+function resolveJwtSecret(): string {
+  const fromEnv = process.env.JWT_SECRET?.trim();
+  if (fromEnv) {
+    if (fromEnv.length < 32 && process.env.NODE_ENV === "production") {
+      console.error(
+        "\n[FATAL] JWT_SECRET باید حداقل ۳۲ کاراکتر باشد.\n" +
+        "        یک کلید تصادفی بسازید:  openssl rand -base64 48\n"
+      );
+      process.exit(1);
+    }
+    return fromEnv;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "\n[FATAL] متغیر محیطی JWT_SECRET تعریف نشده است و سرور بدون آن بالا نمی‌آید.\n" +
+      "        بدون این کلید، توکن‌های ورود با یک مقدار قابل حدس امضا می‌شوند.\n" +
+      "        یک کلید تصادفی بسازید و در محیط سرور قرار دهید:\n" +
+      "            openssl rand -base64 48\n"
+    );
+    process.exit(1);
+  }
+
+  const generated = crypto.randomBytes(48).toString("base64");
+  console.warn(
+    "[auth] JWT_SECRET تعریف نشده؛ برای این اجرا یک کلید تصادفی ساخته شد " +
+    "(نشست‌ها با ری‌استارت باطل می‌شوند). برای استقرار واقعی حتماً آن را ست کنید."
+  );
+  return generated;
+}
+
+const JWT_SECRET = resolveJwtSecret();
 
 // Default users provisioned into PostgreSQL on first startup (empty users table).
 const DEFAULT_USERS: Array<{ username: string; password: string; role: string; name: string }> = [
@@ -1201,6 +1309,55 @@ function requireRole(...roles: string[]) {
 
 async function startServer() {
   const app = express();
+
+  /**
+   * Security response headers.
+   *
+   * Written out rather than pulled from helmet: this is the whole of what a
+   * same-origin internal application needs, every value is visible here next to
+   * the reason for it, and the deployment gains no new dependency to track.
+   *
+   * The CSP is the load-bearing one. Vite emits hashed script and style files
+   * and the app fetches nothing off-site, so everything can be pinned to 'self';
+   * `style-src` allows inline because Tailwind and the chart library set style
+   * attributes, and `img-src data:` because attachments are previewed as data
+   * URLs. `frame-ancestors 'none'` is what actually stops click-jacking in a
+   * modern browser — X-Frame-Options is kept beside it for older ones.
+   */
+  app.disable("x-powered-by");   // stop announcing the framework
+  app.use((req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+      ].join("; "),
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    // HSTS is only meaningful over TLS, and asserting it on a plain-HTTP
+    // internal host would pin browsers to a scheme the server does not serve.
+    // It is set when the request already arrived over HTTPS (directly or
+    // through a reverse proxy that says so).
+    const isHttps = req.secure || req.headers["x-forwarded-proto"] === "https";
+    if (isHttps) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '10mb' }));
 
   // PostgreSQL is the single source of truth. Verify connectivity and provision
@@ -1246,6 +1403,81 @@ async function startServer() {
   }
 
   // User Login (Authenticates users securely)
+/**
+ * Throttle repeated failed sign-ins.
+ *
+ * Measured before this existed: 30 wrong passwords went through in 343ms, about
+ * 87 guesses a second, with nothing slowing the next one down. Raising the hash
+ * cost helps, but a limiter is what turns "guess until it works" into something
+ * that cannot finish.
+ *
+ * Counted per username *and* per IP, because the two attacks look different: one
+ * machine working through passwords for one account, and a spread of attempts
+ * trying one common password against every account.
+ *
+ * The two thresholds are deliberately far apart. Everyone in this company
+ * reaches the server through the same internal network, so a strict per-IP
+ * count would let one colleague mistyping their password lock out the whole
+ * building — a self-inflicted outage worse than the attack it prevents. The
+ * per-username count is what stops guessing at one account; the per-IP count is
+ * loose enough that only a machine grinding through many accounts trips it.
+ *
+ * A successful sign-in clears both counters for that person, so someone who
+ * mistypes twice and then gets it right is never held back. Entries expire on
+ * their own, so the maps cannot grow without bound.
+ */
+const LOGIN_MAX_ATTEMPTS_PER_USER = 8;
+const LOGIN_MAX_ATTEMPTS_PER_IP = 60;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+
+/** The attempt ceiling for a key, by its kind. */
+function attemptCeiling(key: string): number {
+  return key.startsWith("ip:") ? LOGIN_MAX_ATTEMPTS_PER_IP : LOGIN_MAX_ATTEMPTS_PER_USER;
+}
+
+interface AttemptRecord { count: number; firstAt: number; blockedUntil: number }
+const loginAttempts = new Map<string, AttemptRecord>();
+
+function loginBlockRemainingMs(keys: string[], now = Date.now()): number {
+  let longest = 0;
+  for (const key of keys) {
+    const rec = loginAttempts.get(key);
+    if (!rec) continue;
+    if (rec.blockedUntil > now) longest = Math.max(longest, rec.blockedUntil - now);
+    else if (now - rec.firstAt > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  }
+  return longest;
+}
+
+function recordFailedLogin(keys: string[], now = Date.now()): void {
+  for (const key of keys) {
+    const rec = loginAttempts.get(key);
+    if (!rec || now - rec.firstAt > LOGIN_WINDOW_MS) {
+      loginAttempts.set(key, { count: 1, firstAt: now, blockedUntil: 0 });
+      continue;
+    }
+    rec.count += 1;
+    if (rec.count >= attemptCeiling(key)) {
+      rec.blockedUntil = now + LOGIN_BLOCK_MS;
+      rec.count = 0;
+      rec.firstAt = now;
+    }
+  }
+}
+
+function clearLoginAttempts(keys: string[]): void {
+  for (const key of keys) loginAttempts.delete(key);
+}
+
+/** Sweep expired entries so a long-running process does not accumulate them. */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, rec] of loginAttempts) {
+    if (rec.blockedUntil <= now && now - rec.firstAt > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  }
+}, 10 * 60 * 1000).unref();
+
   app.post("/api/auth/login", async (req, res) => {
     try {
     const { username, password } = req.body;
@@ -1253,6 +1485,36 @@ async function startServer() {
     const userAgent = getUserAgent(req);
     const now = new Date();
     const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const throttleKeys = [`ip:${ipAddress}`, `user:${String(username || "").toLowerCase()}`];
+
+    const blockedFor = loginBlockRemainingMs(throttleKeys);
+    if (blockedFor > 0) {
+      const minutes = Math.max(1, Math.ceil(blockedFor / 60000));
+      AuditService.createAuditRecord({
+        auditId,
+        userId: username || "unknown",
+        userName: username || "ناشناس",
+        role: "unknown",
+        module: "احراز هویت",
+        eventType: "Authentication",
+        ipAddress,
+        userAgent,
+        entityType: "Security Event",
+        entityId: username || "unknown",
+        entityName: username || "ناشناس",
+        action: "FAILED_LOGIN",
+        severity: "Critical",
+        description: `ورود به‌دلیل تلاش‌های ناموفق پیاپی موقتاً مسدود است (${username || "نامشخص"})`,
+        reasonForChange: "اعمال محدودیت نرخ پس از تلاش‌های ناموفق پیاپی",
+        beforeData: null,
+        afterData: { attemptedUsername: username || null, blockedMinutes: minutes },
+      }).catch(err => console.error("Audit logging failed on throttled login:", err));
+
+      res.setHeader("Retry-After", String(Math.ceil(blockedFor / 1000)));
+      return res.status(429).json({
+        error: `به‌دلیل تلاش‌های ناموفق پیاپی، ورود موقتاً مسدود شده است. لطفاً ${minutes} دقیقهٔ دیگر دوباره تلاش کنید.`,
+      });
+    }
 
     if (!username || !password) {
       AuditService.createAuditRecord({
@@ -1300,6 +1562,7 @@ async function startServer() {
         afterData: { attemptedUsername: username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
+      recordFailedLogin(throttleKeys);
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
     }
 
@@ -1326,6 +1589,7 @@ async function startServer() {
         afterData: { attemptedUsername: matchedUser.username }
       }).catch(err => console.error("Audit logging failed on failed login:", err));
 
+      recordFailedLogin(throttleKeys);
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
     }
 
@@ -1353,6 +1617,25 @@ async function startServer() {
       }).catch(err => console.error("Audit for inactive login failed:", err));
 
       return res.status(403).json({ error: "این حساب کاربری غیرفعال است. با مدیر سیستم تماس بگیرید." });
+    }
+
+    // The password was right and the account is open: this address and this
+    // account are evidently not an attack, so their failure counters go.
+    clearLoginAttempts(throttleKeys);
+
+    // Upgrade a hash written at the old work factor, now that the correct
+    // password is in hand to re-derive it from. Accounts migrate as people sign
+    // in, so nobody is locked out and no reset is needed. A failure here must
+    // not block the sign-in — the stored hash is still valid, just slower.
+    if (needsRehash(matchedUser.password)) {
+      const upgradedSalt = generateSalt();
+      requirePrisma().user
+        .update({
+          where: { username: matchedUser.username.toLowerCase() },
+          data: { passwordHash: hashPassword(password, upgradedSalt), passwordSalt: upgradedSalt },
+        })
+        .then(() => console.log(`[auth] password hash upgraded for ${matchedUser.username}`))
+        .catch(err => console.error("Password hash upgrade failed:", err?.message || err));
     }
 
     // Sign the JWT securely
@@ -1942,7 +2225,7 @@ async function startServer() {
   });
 
   // Update vendor profile (Unified Database)
-  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2047,7 +2330,7 @@ async function startServer() {
   });
 
   // Update vendor contact details (Unified Database)
-  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/contact", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2122,7 +2405,7 @@ async function startServer() {
   });
 
   // Update vendor scores & evaluations (Unified Database)
-  app.patch("/api/vendors/:id/scores", requireAuth, async (req: any, res) => {
+  app.patch("/api/vendors/:id/scores", requireAuth, serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2288,7 +2571,7 @@ async function startServer() {
   });
 
   // Update vendor activity logs (Unified Database)
-  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2342,7 +2625,7 @@ async function startServer() {
   });
 
   // Update vendor analysis records & logs (Unified Database)
-  app.patch("/api/vendors/:id/analysis", requireAuth, requirePermission("vendor.analysis"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/analysis", requireAuth, requirePermission("vendor.analysis"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2618,7 +2901,7 @@ async function startServer() {
   });
 
   // Update vendor risk assessment (Unified Database)
-  app.patch("/api/vendors/:id/risk", requireAuth, requirePermission("vendor.risk"), async (req: any, res) => {
+  app.patch("/api/vendors/:id/risk", requireAuth, requirePermission("vendor.risk"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -2755,7 +3038,7 @@ async function startServer() {
   });
 
   // Delete vendor (Unified Database)
-  app.delete("/api/vendors/:id", requireAuth, requirePermission("vendor.delete"), async (req: any, res) => {
+  app.delete("/api/vendors/:id", requireAuth, requirePermission("vendor.delete"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
