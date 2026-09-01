@@ -232,7 +232,7 @@ export function CategoryView({
           <div className="flex items-center gap-2 lg:mr-auto shrink-0 order-last lg:order-none">
             <Button 
               type="button" 
-              onClick={() => exportCategoryToExcel(db, categoryId, meta.fa, partners, materials)}
+              onClick={() => exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections)}
               className="flex items-center gap-2 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
               title={`دانلود خروجی اکسل دسته‌بندی ${meta.fa}`}
             >

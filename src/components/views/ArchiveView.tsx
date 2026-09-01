@@ -67,6 +67,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
     setCurrentPage(1);
   }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, perPage]);
 
+  /**
+   * The per-category button exports that category, so the on-screen filters do
+   * not apply to it and it says so by carrying no filter summary. The button
+   * beside it exports what is actually on screen.
+   */
   const handleExportCategory = (catId: string, catLabel: string) => {
     exportCategoryToExcel(db, catId, catLabel, partners, materials, selections);
   };
@@ -199,6 +204,24 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           >
             <ListChecks className="w-3.5 h-3.5 text-primary" />
             <span>چاپ فهرست (PDF)</span>
+          </button>
+
+          {/* The spreadsheet counterpart of the print button. Both other export
+              buttons ignore the filters on screen — deliberately, they are
+              "the whole archive" and "one category" — so someone who had
+              narrowed the list down had no way to export what they were
+              looking at. The sheet carries the same filter caption the printed
+              register carries, so an extract cannot be mistaken for the whole. */}
+          <button
+            type="button"
+            onClick={() => exportCategoryToExcel(
+              filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
+            )}
+            className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+            title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
+          >
+            <Download className="w-3.5 h-3.5 text-primary" />
+            <span>خروجی نمای فعلی ({filteredDb.length.toLocaleString('fa-IR')})</span>
           </button>
 
           {/* Secondary menu: one category at a time.

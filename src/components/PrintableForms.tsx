@@ -10,6 +10,7 @@ import { resolveVendorPartner } from '../utils/vendorPartner';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { selectionForVendor } from '../utils/sourceSelection';
+import { describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-ignore
@@ -186,11 +187,7 @@ export function PrintableArchiveList({
                 // a total of zero means nobody has scored this source — both
                 // used to print as "new (۰)" and "— (۰)", which read on paper
                 // like a real, failing evaluation.
-                const score = calculateOverallScore(v.scores, true);
-                const realGrade = ['A', 'B', 'C', 'D'].includes(String(v.grade || '')) ? String(v.grade) : '';
-                const gradeText = realGrade
-                  ? (score ? `${realGrade} (${score})` : realGrade)
-                  : (score ? String(score) : 'ارزیابی‌نشده');
+                const gradeText = describeVendorRank(v).label;
                 return (
                   <tr key={v.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{(i + 1).toLocaleString('fa-IR')}</td>
@@ -585,16 +582,18 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
    * grade on a document that gets signed and filed. Saying "not evaluated" is
    * the truth; saying D is a claim nobody made.
    */
-  const isEvaluated = overall !== null || ['A', 'B', 'C', 'D'].includes(String(vendor.grade || ''));
-
-  const getRankParams = (grade: Grade) => {
-    if (grade === 'A') return { label: 'A', score: '80 - 100', color: 'bg-emerald-600' };
-    if (grade === 'B') return { label: 'B', score: '60 - 79', color: 'bg-[#0071E3]' };
-    if (grade === 'C') return { label: 'C', score: '40 - 59', color: 'bg-amber-500' };
-    if (grade === 'D') return { label: 'D', score: '0 - 39', color: 'bg-red-500' };
-    return { label: '—', score: 'ارزیابی نشده', color: 'bg-slate-200' };
+  // The scale itself lives in vendorRank.ts, shared with the Excel export —
+  // the two had drifted onto different rubrics. Only the colour is local.
+  const ranked = describeVendorRank(vendor);
+  const isEvaluated = ranked.evaluated;
+  const GRADE_COLORS: Record<string, string> = {
+    A: 'bg-emerald-600', B: 'bg-[#0071E3]', C: 'bg-amber-500', D: 'bg-red-500',
   };
-  const rank = getRankParams(vendor.grade);
+  const rank = {
+    label: ranked.grade || '—',
+    score: ranked.range,
+    color: ranked.grade ? GRADE_COLORS[ranked.grade] : 'bg-slate-200',
+  };
 
   const getRiskColor = (level: string | undefined) => {
     if (level === 'Low') return 'bg-emerald-500 text-white';
