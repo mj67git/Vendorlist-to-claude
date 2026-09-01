@@ -12,12 +12,15 @@ import {
  * so a change to the policy that nobody meant shows up as a failing test rather
  * than as a role quietly gaining or losing an ability in production.
  */
-const READ_ALL: Permission[] = ['vendor.read', 'material.read', 'partner.read', 'partner.files'];
+const READ_ALL: Permission[] = ['vendor.read', 'material.read', 'partner.read'];
+
+/** Every read a stored override predating read permissions is credited with. */
+const LEGACY_READS: Permission[] = [...READ_ALL, 'partner.files'];
 
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
-  commercial: [...READ_ALL, 'vendor.create', 'vendor.edit', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
-  qa: [...READ_ALL, 'vendor.analysis', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
+  commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
+  qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
   planning: [...READ_ALL, 'score.planning'],
   finance: [...READ_ALL, 'score.finance'],
   lab: [],
@@ -141,7 +144,7 @@ test('a stored override predating read permissions keeps its reads', () => {
   // name only writes. Read literally they would leave an account able to edit a
   // repository it can no longer open.
   const legacy = { role: 'commercial', permissions: ['partner.edit'] };
-  for (const read of READ_ALL) {
+  for (const read of LEGACY_READS) {
     assert.equal(can(legacy, read), true, `legacy override lost ${read}`);
   }
   assert.equal(can(legacy, 'partner.edit'), true);
@@ -168,11 +171,19 @@ test('seeing a partner and taking its SOP papers are separate permissions', () =
   const withFiles = { role: 'finance', permissions: ['partner.read', 'partner.files'] };
   assert.equal(can(withFiles, 'partner.files'), true);
 
-  // Every working role keeps both by default, so the split takes nothing away.
-  for (const role of ['commercial', 'qa', 'planning', 'finance'] as Role[]) {
-    assert.equal(can(role, 'partner.files'), true, `${role} lost SOP downloads`);
+  // The papers go to the roles that handle them: commercial collects them, QA
+  // grades them. Planning and finance work from the list and the grade.
+  for (const role of ['commercial', 'qa'] as Role[]) {
+    assert.equal(can(role, 'partner.files'), true, `${role} should hold SOP downloads`);
+    assert.equal(can(role, 'partner.read'), true);
   }
-  assert.equal(can('lab', 'partner.files'), false);
+  for (const role of ['planning', 'finance', 'lab'] as Role[]) {
+    assert.equal(can(role, 'partner.files'), false, `${role} should NOT hold SOP downloads`);
+  }
+  // …but they still see the partners themselves.
+  for (const role of ['planning', 'finance'] as Role[]) {
+    assert.equal(can(role, 'partner.read'), true, `${role} lost the partner list`);
+  }
 });
 
 test('a user may be given more than one department to score', () => {

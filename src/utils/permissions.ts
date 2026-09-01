@@ -217,28 +217,38 @@ export const LOCKED_REASONS = {
 /**
  * The default set each role starts from.
  *
- * Reading is a permission now, not a given. Every working role still starts with
- * read on all three repositories — and with the SOP download that used to come
- * with them — so no account loses anything by default. The point is that an
- * admin can now take one away for one person (finance sees the partners but
- * cannot touch them, or sees their grades but cannot pull their licences).
+ * Reading is a permission now, not a given. Every working role starts with read
+ * on all three repositories, so no account loses the pages it works in; an admin
+ * can take one away for one person (finance sees the partners but cannot touch
+ * them, a contractor sees nothing but materials).
+ *
+ * `partner.files` is the exception to "everyone reads everything": the SOP
+ * papers are the partner's legal documents, so they go to the roles that handle
+ * them — commercial, who collects them, and QA, who grades them — and not to
+ * planning or finance, whose work needs the list and the grade. An admin can
+ * still grant it to one person.
  *
  * `lab` intentionally holds nothing, reads included. It exists in the database
  * enum, no account uses it, and it is left alone because removing it would mean
  * a schema migration for a role nobody has.
  */
-const READ_ALL = ['vendor.read', 'material.read', 'partner.read', 'partner.files'] as const;
+const READ_ALL = ['vendor.read', 'material.read', 'partner.read'] as const;
 
 const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
   commercial: [
     ...READ_ALL,
+    // Commercial owns the partner records and collects these papers, and QA
+    // reviews them against the SOP rubric. Planning and finance need the list
+    // and the grade to do their work, not the legal documents themselves.
+    'partner.files',
     'vendor.create', 'vendor.edit',
     'partner.create', 'partner.edit', 'partner.delete',
     'score.commercial',
   ],
   qa: [
     ...READ_ALL,
+    'partner.files',
     'vendor.analysis',
     'material.create', 'material.edit', 'material.delete',
     'score.qa',
