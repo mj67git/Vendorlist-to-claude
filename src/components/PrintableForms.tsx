@@ -2,11 +2,12 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, Printer, Shield, Warehouse, DollarSign, 
-  AlertTriangle, Microscope, Handshake, CheckCircle 
+  AlertTriangle, Microscope, Handshake, CheckCircle, Star 
 } from 'lucide-react';
 import { Vendor, Grade, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
 import { resolveVendorPartner } from '../utils/vendorPartner';
+import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-ignore
 import temadLogo from '../assets/logo.png';
@@ -379,9 +380,11 @@ interface PrintableEvaluationFormProps {
   onBack: () => void;
   partners?: BusinessPartner[];
   materials?: Material[];
+  /** The recorded decision this source is, when it is the chosen one. */
+  selection?: SourceSelectionRecord | null;
 }
 
-export function PrintableEvaluationForm({ vendor, onBack, partners = [], materials = [] }: PrintableEvaluationFormProps) {
+export function PrintableEvaluationForm({ vendor, onBack, partners = [], materials = [], selection = null }: PrintableEvaluationFormProps) {
   if (vendor.isSample) {
     return <PrintableSampleForm vendor={vendor} onBack={onBack} partners={partners} materials={materials} />;
   }
@@ -471,6 +474,36 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    </div>
                 </div>
              </div>
+
+             {/* The recorded decision, printed only when there is one.
+                 A form that said "chosen: no" on every other source would be
+                 noise on a document that is signed and filed; the absence of
+                 this band is the answer for those. Reason, who decided and when
+                 are all here, because on paper there is no tooltip to ask. */}
+             {selection && (
+               <div className="flex items-stretch border-2 border-amber-500 rounded-xl mb-6 overflow-hidden text-right bg-amber-50">
+                  <div className="px-4 py-3 bg-amber-500 text-white flex items-center gap-2 shrink-0">
+                     <Star className="w-5 h-5 fill-current" />
+                     <span className="font-bold text-sm whitespace-nowrap">سورس منتخب</span>
+                  </div>
+                  <div className="flex-1 p-3 text-[11px] text-slate-800 leading-relaxed">
+                     <div>
+                       این تأمین‌کننده به‌عنوان <strong>سورس منتخب</strong> برای
+                       {' '}«{vendor.material || vendor.materialEn}» ثبت شده است.
+                     </div>
+                     <div className="mt-1">
+                       <span className="text-slate-500">دلیل انتخاب: </span>
+                       <span className="font-semibold">{selection.reason}</span>
+                     </div>
+                     <div className="mt-0.5 text-slate-600">
+                       ثبت‌کننده: <span className="font-semibold">{selection.decidedBy}</span>
+                       {formatSelectionDate(selection.decidedAt) && (
+                         <> · تاریخ ثبت: <span className="font-mono">{formatSelectionDate(selection.decidedAt)}</span></>
+                       )}
+                     </div>
+                  </div>
+               </div>
+             )}
 
              {/* Meta Info Evaluation Form */}
              <div className="flex flex-col border-2 border-slate-300 rounded-xl mb-6 overflow-hidden text-sm bg-slate-50/50 text-right">

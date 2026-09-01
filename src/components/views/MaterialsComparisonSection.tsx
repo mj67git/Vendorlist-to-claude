@@ -5,6 +5,7 @@ import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
+import type { SourceSelectionRecord } from '../../utils/sourceSelection';
 
 // extracted from App.tsx
 
@@ -20,14 +21,10 @@ const normalizeDigits = (value: string): string =>
  */
 const DECISIVE_MARGIN = 3;
 
-export interface SourceSelectionRecord {
-  materialKey: string;
-  category: string;
-  vendorId: string;
-  reason: string;
-  decidedBy: string;
-  decidedAt: string;
-}
+// The record type moved to src/utils/sourceSelection.ts, where the rule for
+// matching a decision to a row lives too; re-exported so existing importers of
+// this module keep working.
+export type { SourceSelectionRecord };
 
 export const MaterialsComparisonSection: React.FC<{
   vendors: Vendor[];

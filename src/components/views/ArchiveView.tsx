@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, ChevronDown, Download, FileText, Printer, Search, X } from 'lucide-react';
+import { Archive, ChevronDown, Download, FileText, Printer, Search, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
 import { Pagination } from '../../components/Pagination';
 import { PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from '../../utils/excelExport';
+import { authFetch, isLocalMode } from '../../services/authFetch';
+import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
@@ -20,14 +22,35 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   
   const [printingVendor, setPrintingVendor] = useState<Vendor | null>(null);
 
+  /**
+   * The recorded "this is the source we chose" decisions.
+   *
+   * The archive is the register people read and export, so a decision that was
+   * made in the category view has to be visible here too — otherwise the
+   * document handed to an auditor shows nine equal-looking rows for a material
+   * where one of them is the one actually chosen.
+   */
+  const [selections, setSelections] = useState<SourceSelectionRecord[]>([]);
+  const [onlySelected, setOnlySelected] = useState(false);
+
+  useEffect(() => {
+    if (isLocalMode()) return;
+    let cancelled = false;
+    authFetch('/api/source-selections')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!cancelled && Array.isArray(data)) setSelections(data); })
+      .catch(() => { /* no recorded choices to show */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter]);
+  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected]);
 
   const handleExportCategory = (catId: string, catLabel: string) => {
-    exportCategoryToExcel(db, catId, catLabel, partners, materials);
+    exportCategoryToExcel(db, catId, catLabel, partners, materials, selections);
   };
 
   const filteredDb = useMemo(() => {
@@ -61,9 +84,16 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
         ? (riskFilter === 'None' ? (!v.riskAssessment) : riskLevel === riskFilter) 
         : true;
       
-      return matchSearch && matchGrade && matchRisk && matchCategory && matchStatus;
+      const matchSelected = onlySelected ? !!selectionForVendor(v, selections) : true;
+
+      return matchSearch && matchGrade && matchRisk && matchCategory && matchStatus && matchSelected;
     });
-  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter]);
+  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, selections]);
+
+  const selectedCount = useMemo(
+    () => db.filter(v => !!selectionForVendor(v, selections)).length,
+    [db, selections],
+  );
 
   const ITEMS_PER_PAGE = 20;
   const totalItems = filteredDb.length;
@@ -75,7 +105,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   }, [filteredDb, startIndex, endIndex]);
 
   if (printingVendor) {
-    return <PrintableEvaluationForm vendor={printingVendor} onBack={() => setPrintingVendor(null)} partners={partners} materials={materials} />;
+    return (
+      <PrintableEvaluationForm
+        vendor={printingVendor}
+        onBack={() => setPrintingVendor(null)}
+        partners={partners}
+        materials={materials}
+        selection={selectionForVendor(printingVendor, selections)}
+      />
+    );
   }
 
   return (
@@ -86,7 +124,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
           <button 
             type="button" 
-            onClick={() => exportFullArchiveMultiSheetExcel(db, partners, materials)}
+            onClick={() => exportFullArchiveMultiSheetExcel(db, partners, materials, selections)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-[0_2px_8px_rgba(5,150,105,0.25)] hover:shadow-[0_4px_14px_rgba(5,150,105,0.35)] transition-all cursor-pointer active:scale-95"
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
           >
@@ -177,6 +215,26 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               {filter.options.map(opt => <option key={opt.val} value={opt.val}>{opt.label}</option>)}
             </select>
           ))}
+          {/* A star invites the question "which ones are chosen?", so the answer
+              is one click away rather than a scroll through every page. Hidden
+              when nothing has been chosen yet, so it never offers an empty
+              result. */}
+          {selectedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setOnlySelected(v => !v)}
+              aria-pressed={onlySelected}
+              title="نمایش فقط سورس‌هایی که به‌عنوان منتخب ثبت شده‌اند"
+              className={`shrink-0 flex items-center gap-1.5 text-xs font-bold rounded-xl py-2 px-3 border transition-colors cursor-pointer ${
+                onlySelected
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800'
+                  : 'bg-transparent text-muted-foreground border-slate-900/10 hover:bg-accent'
+              }`}
+            >
+              <Star className={`w-3.5 h-3.5 ${onlySelected ? 'fill-current' : ''}`} />
+              <span>فقط منتخب‌ها ({selectedCount.toLocaleString('fa-IR')})</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -196,10 +254,28 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               <Search className="w-8 h-8 opacity-20 mb-3" />
               <span>هیچ نتیجه‌ای یافت نشد.</span>
             </div>
-          ) : paginatedDb.map((v, i) => (
+          ) : paginatedDb.map((v, i) => {
+            const chosen = selectionForVendor(v, selections);
+            return (
             <div key={v.id} className="grid grid-cols-12 gap-4 px-5 py-3.5 items-center hover:bg-accent transition-colors vendor-row" style={{ animationDelay: `${i * 20}ms` }}>
               <div className="col-span-6 sm:col-span-4 min-w-0">
-                <EntityName as="div" name={v.name} lines={2} className="font-semibold text-foreground text-sm" />
+                {/* The star marks the row, not the company: a supplier can be the
+                    chosen source for one material and not for another, so the
+                    mark belongs to this vendor+material pair. The title carries
+                    the reason and who signed for it, because a bare star only
+                    raises the question "chosen for what, by whom?". */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {chosen && (
+                    <span
+                      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-md"
+                      title={`سورس منتخب برای «${v.material || v.materialEn}» — ${describeSelection(chosen)}`}
+                    >
+                      <Star className="w-3 h-3 fill-current" />
+                      <span>منتخب</span>
+                    </span>
+                  )}
+                  <EntityName name={v.name} lines={2} className="font-semibold text-foreground text-sm" />
+                </div>
                 <EntityName as="div" name={v.nameEn} lines={1} dir="ltr" className="text-muted-foreground text-xs mt-0.5" />
               </div>
               <div className="col-span-4 sm:col-span-3 min-w-0">
@@ -231,7 +307,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

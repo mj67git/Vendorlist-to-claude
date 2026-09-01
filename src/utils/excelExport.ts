@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx-js-style';
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInBlacklistCategory } from './vendorState';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
+import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 
 /**
  * Calculates the overall evaluation score for a vendor.
@@ -120,7 +121,8 @@ export function buildCategoryWorksheet(
   vendors: Vendor[],
   categoryId: string | 'all',
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = []
 ): { ws: XLSX.WorkSheet, vendorCount: number } {
   // Filter appropriate vendors
   const filteredVendors = vendors.filter(v => {
@@ -155,7 +157,14 @@ export function buildCategoryWorksheet(
     'امتیاز ارزیابی کل (از ۱۰۰)',
     'سطح ریسک کیفی',
     'کد QC',
-    'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)'
+    'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)',
+    // Appended at the end on purpose: anything keyed to the existing column
+    // positions (a saved filter, a pivot, someone's macro) keeps working.
+    // "بله"/"—" rather than a star, because a spreadsheet is filtered and
+    // pivoted on its values and a glyph sorts as punctuation.
+    'سورس منتخب',
+    'دلیل انتخاب',
+    'ثبت‌کنندهٔ انتخاب'
   ];
 
   // Map to Excel rows (with 1-based indexing)
@@ -217,6 +226,9 @@ export function buildCategoryWorksheet(
     // Fill in the IRC/registration date from lastAudit (which holds IRC Issue Date) or registrationDate
     const registrationDateStr = v.lastAudit || v.registrationDate || 'ثبت‌نشده';
 
+    const chosen = selectionForVendor(v, selections);
+    const chosenWhen = chosen ? formatSelectionDate(chosen.decidedAt) : '';
+
     return [
       (index + 1).toString(),
       v.material || 'N/A',
@@ -234,13 +246,16 @@ export function buildCategoryWorksheet(
       scoreStr,
       riskText,
       qcCodesStr,
-      deviationSummary
+      deviationSummary,
+      chosen ? 'بله' : '—',
+      chosen ? chosen.reason : '',
+      chosen ? [chosen.decidedBy, chosenWhen].filter(Boolean).join(' — ') : ''
     ];
   });
 
   // If no data rows, add a placeholder row
   const rowsToRender = dataRows.length > 0 ? dataRows : [
-    ['-', 'موردی در این دسته‌بندی یافت نشد', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-']
+    ['-', 'موردی در این دسته‌بندی یافت نشد', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-']
   ];
 
   // Create workspace worksheet using array of arrays
@@ -341,7 +356,7 @@ export function buildCategoryWorksheet(
       }
 
       // Left-align long texts, right-align partner/supplier information/devs
-      if ((colIndex >= 10 && colIndex <= 13) || colIndex === 17) {
+      if ((colIndex >= 10 && colIndex <= 13) || colIndex === 16 || colIndex === 18) {
         cell.s.alignment.horizontal = 'right';
       }
 
@@ -364,6 +379,13 @@ export function buildCategoryWorksheet(
           cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
           cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'DC2626' } }; // Red-600
         }
+      }
+
+      // The chosen-source column: the whole point is to be findable in a long
+      // sheet, so the "بله" cell is filled rather than left as plain text.
+      if (colIndex === 17 && String(cell.v || '') === 'بله') {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };   // Amber-100
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'B45309' } }; // Amber-700
       }
 
       // Color quality risk levels (سطح ریسک کیفی)
@@ -410,6 +432,9 @@ export function buildCategoryWorksheet(
     { wch: 15 },  // Risk Level (14)
     { wch: 22 },  // QC Code Column width (15)
     { wch: 58 },  // Deviations summary (16)
+    { wch: 12 },  // Chosen source (17)
+    { wch: 45 },  // Reason for the choice (18)
+    { wch: 24 },  // Who recorded it and when (19)
   ];
 
   // Set page margins / right-to-left layout indicator in sheet view
@@ -439,9 +464,10 @@ export function exportCategoryToExcel(
   categoryId: string | 'all',
   categoryLabelFa: string,
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = []
 ) {
-  const { ws } = buildCategoryWorksheet(vendors, categoryId, partners, materials);
+  const { ws } = buildCategoryWorksheet(vendors, categoryId, partners, materials, selections);
   const wb = XLSX.utils.book_new();
   const sheetName = categoryLabelFa.slice(0, 31); // Sheets names are capped at 31 chars in Excel
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -459,17 +485,18 @@ export function exportCategoryToExcel(
 export function exportFullArchiveMultiSheetExcel(
   vendors: Vendor[],
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = []
 ) {
   const wb = XLSX.utils.book_new();
 
   // 1. First Sheet: All Categories (کل آرشیو)
-  const { ws: wsAll } = buildCategoryWorksheet(vendors, 'all', partners, materials);
+  const { ws: wsAll } = buildCategoryWorksheet(vendors, 'all', partners, materials, selections);
   XLSX.utils.book_append_sheet(wb, wsAll, 'کل آرشیو');
 
   // 2. Individual Category Sheets
   for (const cat of EXPORT_CATEGORIES) {
-    const { ws: wsCat } = buildCategoryWorksheet(vendors, cat.id, partners, materials);
+    const { ws: wsCat } = buildCategoryWorksheet(vendors, cat.id, partners, materials, selections);
     const sheetName = cat.labelFa.slice(0, 31);
     XLSX.utils.book_append_sheet(wb, wsCat, sheetName);
   }
