@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { categoryLabels } from '../../constants/categories';
+import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
@@ -96,6 +97,12 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
   useEffect(() => {
     if (!currentUser) return;
+    // The feed reads the audit trail, which `audit.read` gates. Asking for it
+    // without the permission produced a guaranteed 403 on every page load for
+    // every non-admin — harmless on screen, but it filled the browser console
+    // and the server's access log with failures that were never going to
+    // succeed. No permission, no feed, no request.
+    if (!can(currentUser, 'audit.read')) { setRecentAudit([]); return; }
     // Sign-ins are the highest-volume event in the log and say nothing about the
     // state of the supply base, so five of them filled this feed and pushed out
     // every actual data change. Ask for a wider slice and keep the changes.

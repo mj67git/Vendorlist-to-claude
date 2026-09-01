@@ -126,20 +126,31 @@ function mapMaterialToClient(m: any) {
 }
 
 // Build the persisted material columns from a client payload (nameFa -> name).
+/** Read a field as text whatever the client sent, so a number or an object in
+ *  `nameFa` becomes a validation failure rather than "…trim is not a function"
+ *  thrown deep in the handler and served as a 500. */
+function asText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';   // arrays and objects are not names
+}
+
 function materialDataFromBody(b: any) {
+  const body = b && typeof b === 'object' && !Array.isArray(b) ? b : {};
   return {
-    name: (b.nameFa ?? b.name ?? '').trim(),
-    nameEn: (b.nameEn ?? '').trim(),
-    cas: b.cas || 'N/A',
-    irc: b.irc || 'N/A',
-    iupac: b.iupac || null,
-    role: b.role || null,
-    finalProduct: b.finalProduct || null,
-    finalProductEn: b.finalProductEn || null,
-    pharmacopoeia: b.pharmacopoeia || null,
-    standardNameFa: b.standardNameFa || null,
-    standardNameEn: b.standardNameEn || null,
-    specificationFile: b.specificationFile || null,
+    name: asText(body.nameFa ?? body.name),
+    nameEn: asText(body.nameEn),
+    cas: asText(body.cas) || 'N/A',
+    irc: asText(body.irc) || 'N/A',
+    iupac: asText(body.iupac) || null,
+    role: asText(body.role) || null,
+    finalProduct: asText(body.finalProduct) || null,
+    finalProductEn: asText(body.finalProductEn) || null,
+    pharmacopoeia: asText(body.pharmacopoeia) || null,
+    standardNameFa: asText(body.standardNameFa) || null,
+    standardNameEn: asText(body.standardNameEn) || null,
+    specificationFile: asText(body.specificationFile) || null,
   };
 }
 
@@ -1360,6 +1371,15 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
+  // A request with a JSON content-type but no body leaves `req.body` undefined,
+  // and every handler that reads a field off it then threw — served as a 500
+  // carrying the TypeError's text. Defaulting it to an empty object turns that
+  // into the handler's own validation message, which is what the client needs.
+  app.use((req, _res, next) => {
+    if (req.body === undefined) req.body = {};
+    next();
+  });
+
   // PostgreSQL is the single source of truth. Verify connectivity and provision
   // the default users on first startup before serving any request.
   if (!isValidPostgresUrl(process.env.DATABASE_URL)) {
@@ -1382,10 +1402,38 @@ async function startServer() {
   // --- API Routes ---
 
   // Health check - Returns simple status of the server
+  /**
+   * Liveness *and* readiness.
+   *
+   * This used to answer `{"status":"ok"}` without touching anything, so with
+   * PostgreSQL stopped it still reported healthy while every data route
+   * returned 500 — a monitor wired to it would have called a total outage fine.
+   * It now runs the cheapest possible query and reports 503 when that fails, so
+   * Zabbix/PRTG can watch this one URL and be told the truth.
+   *
+   * The result is cached for a couple of seconds: a monitor polling every second
+   * must not turn into a query per second per monitor, and a database that just
+   * went down does not need to be asked again immediately.
+   */
+  let healthCache: { at: number; ok: boolean; detail: string } | null = null;
+  const HEALTH_CACHE_MS = 2000;
+
   app.get("/api/health", async (req, res) => {
-    res.json({ 
-      status: "ok", 
-      timestamp: new Date() 
+    const now = Date.now();
+    if (!healthCache || now - healthCache.at > HEALTH_CACHE_MS) {
+      try {
+        await requirePrisma().$queryRaw`SELECT 1`;
+        healthCache = { at: now, ok: true, detail: "connected" };
+      } catch (err: any) {
+        healthCache = { at: now, ok: false, detail: err?.message?.slice(0, 200) || "unreachable" };
+      }
+    }
+
+    res.status(healthCache.ok ? 200 : 503).json({
+      status: healthCache.ok ? "ok" : "degraded",
+      database: healthCache.ok ? "up" : "down",
+      detail: healthCache.ok ? undefined : healthCache.detail,
+      timestamp: new Date(),
     });
   });
 
@@ -3120,8 +3168,13 @@ setInterval(() => {
   app.get("/api/audit-logs", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
 
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+      // Clamped, not trusted. `page=-1` used to reach Prisma as a negative
+      // `skip` and come back as a 500 carrying the raw query-engine error, and
+      // `limit=999999999` was accepted — harmless with a few hundred rows, but
+      // one such request against a year of audit data would pull the whole
+      // table into memory.
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 200);
 
       const filters: any = {};
       // The filter form offers user *names* (that is what /filters returns),
@@ -3170,7 +3223,8 @@ setInterval(() => {
       res.json(result);
     } catch (err: any) {
       console.error("Failed to fetch audit logs:", err);
-      res.status(500).json({ error: "Internal Server Error: " + err.message });
+      console.error("[audit] request failed:", err);
+      res.status(500).json({ error: "خطای داخلی سرور. جزئیات در لاگ سرور ثبت شد." });
     }
   });
 
@@ -3201,7 +3255,8 @@ setInterval(() => {
       });
     } catch (err: any) {
       console.error("Failed to fetch audit stats:", err);
-      res.status(500).json({ error: "Internal Server Error: " + err.message });
+      console.error("[audit] request failed:", err);
+      res.status(500).json({ error: "خطای داخلی سرور. جزئیات در لاگ سرور ثبت شد." });
     }
   });
 
@@ -4294,6 +4349,44 @@ setInterval(() => {
     }
   });
 
+  /**
+   * Last-resort error handler.
+   *
+   * Handlers that catch their own errors still answered with the raw message —
+   * a malformed page number came back as the Prisma query-engine's own text,
+   * naming the call and its arguments. That is internal detail a client has no
+   * use for and an attacker does. Anything reaching here is logged in full on
+   * the server and answered with a plain message.
+   *
+   * Registered before the catch-alls so it wraps the API routes above.
+   */
+  app.use("/api", (err: any, req: any, res: any, _next: any) => {
+    console.error(`[api] unhandled error on ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) return;
+    // A body express-json could not parse is the client's mistake, not ours.
+    const status = err?.type === "entity.parse.failed" ? 400 : err?.status || 500;
+    res.status(status).json({
+      error: status === 400
+        ? "بدنهٔ درخواست معتبر نیست."
+        : "خطای داخلی سرور. جزئیات در لاگ سرور ثبت شد.",
+    });
+  });
+
+  /**
+   * An API path that matches no route is a 404, not the application shell.
+   *
+   * Both the static handler below and the Vite middleware answer anything they
+   * do not recognise with index.html, so a typo'd or retired endpoint returned
+   * 200 and a page of HTML. A client parsing that gets a JSON error at best, and
+   * a monitor watching for failures sees success. Registered before the two
+   * catch-alls so it only ever sees paths no API route claimed.
+   */
+  app.use("/api", (req, res) => {
+    res.status(404).json({
+      error: `مسیر مورد نظر وجود ندارد: ${req.method} /api${req.path}`,
+    });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -4316,7 +4409,15 @@ const appPromise = startServer();
 
 if (!process.env.VERCEL) {
   appPromise.then(app => {
-    const PORT = 3000;
+    // PORT was hardcoded, so the value set in the Dockerfile, compose file and
+    // ecosystem config did nothing and a second instance could not be started
+    // on another port. An unusable value falls back to 3000 rather than letting
+    // Node fail on a NaN port.
+    const parsed = Number.parseInt(process.env.PORT || "", 10);
+    const PORT = Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : 3000;
+    if (process.env.PORT && PORT !== Number(process.env.PORT)) {
+      console.warn(`[startup] PORT="${process.env.PORT}" معتبر نیست؛ از ${PORT} استفاده شد.`);
+    }
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
     });
