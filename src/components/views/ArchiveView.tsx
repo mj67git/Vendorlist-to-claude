@@ -5,7 +5,7 @@ import { Pagination } from '../../components/Pagination';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
-import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from '../../utils/excelExport';
+import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
@@ -63,6 +63,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   }, []);
 
   const [currentPage, setCurrentPage] = useState(1);
+  const excel = useExcelExport();
 
   useEffect(() => {
     setCurrentPage(1);
@@ -74,7 +75,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
    * beside it exports what is actually on screen.
    */
   const handleExportCategory = (catId: string, catLabel: string) => {
-    exportCategoryToExcel(db, catId, catLabel, partners, materials, selections);
+    void excel.run(xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections));
   };
 
   const filteredDb = useMemo(() => {
@@ -186,7 +187,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
           <button 
             type="button" 
-            onClick={() => exportFullArchiveMultiSheetExcel(db, partners, materials, selections)}
+            onClick={() => excel.run(xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections))}
+            disabled={excel.busy}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-[0_2px_8px_rgba(5,150,105,0.25)] hover:shadow-[0_4px_14px_rgba(5,150,105,0.35)] transition-all cursor-pointer active:scale-95"
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
           >
@@ -215,9 +217,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               register carries, so an extract cannot be mistaken for the whole. */}
           <button
             type="button"
-            onClick={() => exportCategoryToExcel(
+            onClick={() => excel.run(xl => xl.exportCategoryToExcel(
               filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
-            )}
+            ))}
+            disabled={excel.busy}
             className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
             title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
           >
@@ -270,6 +273,16 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               </div>
             </div>
           </div>
+
+          {/* The spreadsheet writer is fetched on demand, so a download can now
+              fail before it starts. Saying nothing would look like a dead
+              button. */}
+          {excel.busy && (
+            <span className="text-xs text-muted-foreground self-center">در حال آماده‌سازی خروجی…</span>
+          )}
+          {excel.error && (
+            <p className="text-xs text-rose-600 dark:text-rose-400 self-center max-w-sm">{excel.error}</p>
+          )}
         </div>
 
         {/* Right side: Title */}

@@ -131,20 +131,54 @@ export async function persistVendorRelations(prisma: PrismaClient, id: string, v
  * used to mean loading every vendor, every evaluation, every activity log and
  * every analysis result, then discarding all but one. The `where` clauses use
  * indexes that already exist on the schema.
+ *
+ * Pass `window` to build one page of the list. The page is taken from the
+ * vendor table first and every relation is then scoped to the ids on that page,
+ * so asking for 200 sources costs 200 sources' worth of work — not the whole
+ * table's, minus the rows thrown away afterwards.
+ *
+ * The order is fixed (name, then id as the tie-break) and applied whether or
+ * not a page was asked for. Without it Postgres may return rows in any order it
+ * likes, which is harmless for one response and fatal across several: pages
+ * would overlap and skip, so a client assembling them would show some sources
+ * twice and lose others entirely. The tie-break matters because names are not
+ * unique — two rows sharing a name have no defined order without it.
  */
-export async function getVendorsList(vendorId?: string): Promise<any[]> {
+export interface VendorPage {
+  skip: number;
+  take: number;
+}
+
+/** How many sources exist, so a paging client knows when it has them all. */
+export async function countVendors(): Promise<number> {
+  return requirePrisma().vendor.count();
+}
+
+export async function getVendorsList(vendorId?: string, window?: VendorPage): Promise<any[]> {
   const prisma = requirePrisma();
   {
-    // An empty `where` is a no-op, so the same code path serves both the full
-    // list and a single record.
-    const only: any = vendorId ? { vendorId } : {};
-    const vendors = await prisma.vendor.findMany({ where: vendorId ? { id: vendorId } : {} });
+    const vendors = await prisma.vendor.findMany({
+      where: vendorId ? { id: vendorId } : {},
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      ...(window ? { skip: window.skip, take: window.take } : {}),
+    });
+
+    // Scope every relation query to what this call is actually building. An
+    // empty `where` is a no-op, so the unpaged full list still reads each table
+    // once; a page reads only its own rows. `in` over a page of ids is what the
+    // primary-key index is for — over the whole table it would be worse than no
+    // filter at all, hence the three-way choice rather than always listing ids.
+    const only: any = vendorId
+      ? { vendorId }
+      : window
+        ? { vendorId: { in: vendors.map(v => v.id) } }
+        : {};
     const vendorMaterials = await prisma.vendorMaterial.findMany({ where: only });
     // Materials are reached through the links above, so when building a single
-    // vendor only the ones it actually references need loading.
+    // vendor — or one page — only the ones actually referenced need loading.
     const materialIds = [...new Set(vendorMaterials.map(vm => vm.materialId).filter(Boolean))] as string[];
     const materials = await prisma.material.findMany({
-      where: vendorId ? { id: { in: materialIds } } : {},
+      where: vendorId || window ? { id: { in: materialIds } } : {},
     });
     const evaluations = await prisma.evaluation.findMany({ where: only });
     const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });

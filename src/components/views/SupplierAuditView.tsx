@@ -10,7 +10,7 @@ import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
 import { canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
-import { exportSupplierDossierToExcel } from '../../utils/excelExport';
+import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { cleanPlaceholder, resolveVendorPartner } from '../../utils/vendorPartner';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
@@ -72,6 +72,7 @@ interface SourceSelection {
 }
 
   export function SupplierAuditView({ db, onSelectVendor, currentUser, partners = [], materials = [], onNavigate }: SupplierAuditViewProps) {
+    const excel = useExcelExport();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null);
 
@@ -652,19 +653,23 @@ interface SourceSelection {
 
                <button
                  type="button"
-                 onClick={() => exportSupplierDossierToExcel({
+                 disabled={excel.busy}
+                 onClick={() => excel.run(xl => xl.exportSupplierDossierToExcel({
                    supplierName: activeSupplier.name,
                    vendors: activeSupplier.vendors,
                    partners,
                    materials,
                    chosenMaterials: stats.chosenFor.map(v => v.material),
                    soleSourceMaterials: stats.soleSource.map(v => v.material),
-                 })}
+                 }))}
                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer"
                >
                  <Briefcase className="w-3.5 h-3.5" />
-                 خروجی پروندهٔ این تأمین‌کننده
+                 {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}
                </button>
+               {excel.error && (
+                 <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">{excel.error}</p>
+               )}
              </div>
            </div>
 

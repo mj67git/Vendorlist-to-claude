@@ -18,8 +18,9 @@ import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampInt } from "../http/query.js";
 import {
-  deleteVendorFromDb, getRankingSnapshot, getVendorById, getVendorRank,
+  countVendors, deleteVendorFromDb, getRankingSnapshot, getVendorById, getVendorRank,
   getVendorsList, saveVendorToDb, serializeVendorWrites,
 } from "../repositories/vendorRepository.js";
 
@@ -42,10 +43,38 @@ import {
 export function vendorRoutes(): express.Router {
   const router = express.Router();
 
+  /**
+   * The source list, whole or a page at a time.
+   *
+   * Without `page` this answers with the plain array it always has. Sixteen
+   * places in this file, the Excel export, the dashboard aggregates and the
+   * archive all read the complete set, and every one of them would have to
+   * become a server-side aggregate before the full list could be taken away —
+   * so it stays, and paging is something a caller opts into.
+   *
+   * With `page` the answer is an envelope carrying the total, which is how a
+   * caller knows whether to ask for another one. The client uses this to load
+   * the list progressively: the first page paints while the rest arrive, rather
+   * than the whole table being assembled, serialized and parsed before anything
+   * appears.
+   */
   router.get("/api/vendors", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
-      const list = await getVendorsList();
-      res.json(list);
+      const paged = req.query.page !== undefined || req.query.limit !== undefined;
+      if (!paged) {
+        res.json(await getVendorsList());
+        return;
+      }
+
+      // Clamped rather than rejected: a junk value should still answer with
+      // something usable, and an unbounded `limit` would hand a caller the very
+      // whole-table response paging exists to avoid.
+      const page = clampInt(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+      const limit = clampInt(req.query.limit, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+
+      const total = await countVendors();
+      const items = await getVendorsList(undefined, { skip: (page - 1) * limit, take: limit });
+      res.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
     } catch (error: any) {
       console.error("Failed to fetch vendors:", error);
       res.status(500).json({ error: "Failed to fetch vendors" });

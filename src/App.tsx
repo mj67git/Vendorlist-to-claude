@@ -7,9 +7,38 @@ import { Category, Scores, Vendor, User, Material, BusinessPartner } from './typ
 // @ts-ignore
 import temadLogo from './assets/logo.png';
 import { categoryLabels } from './constants/categories';
-import { SupplierAuditView } from './components/views/SupplierAuditView';
+
+/**
+ * Pages that are not the page you land on.
+ *
+ * Each of these is a whole module — the audit trail with its filters and diff
+ * view, the user administration screen, the partner repository — and a session
+ * may well never open one. Loading them with the application meant every user
+ * downloaded every module before seeing the dashboard.
+ *
+ * They are fetched when navigated to instead, behind the Suspense boundary in
+ * `renderContent`. The views that ARE the landing surface — the dashboard, a
+ * category list, a source's detail page and its form — stay in the main bundle
+ * on purpose: splitting the common path only trades one wait for another.
+ */
+const SupplierAuditView = React.lazy(() => import('./components/views/SupplierAuditView').then(m => ({ default: m.SupplierAuditView })));
+const ArchiveView = React.lazy(() => import('./components/views/ArchiveView').then(m => ({ default: m.ArchiveView })));
+const AuditTrailView = React.lazy(() => import('./components/AuditTrailView').then(m => ({ default: m.AuditTrailView })));
+const UsersView = React.lazy(() => import('./components/UsersView').then(m => ({ default: m.UsersView })));
+const MaterialRepositoryView = React.lazy(() => import('./components/MaterialRepositoryView').then(m => ({ default: m.MaterialRepositoryView })));
+const BusinessPartnerRepositoryView = React.lazy(() => import('./components/BusinessPartnerRepositoryView').then(m => ({ default: m.BusinessPartnerRepositoryView })));
+const WorklistView = React.lazy(() => import('./components/views/WorklistView').then(m => ({ default: m.WorklistView })));
+
+/** What a page looks like while its code is on the way. */
+function PageLoading() {
+  return (
+    <div className="w-full py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="w-8 h-8 rounded-full border-2 border-border border-t-primary animate-spin" aria-hidden />
+      <p className="text-xs">در حال بارگذاری…</p>
+    </div>
+  );
+}
 import { VendorDetail } from './components/vendor/VendorDetail';
-import { ArchiveView } from './components/views/ArchiveView';
 import { CategoryView } from './components/views/CategoryView';
 import { HomeView } from './components/views/HomeView';
 import { VendorForm } from './components/vendor/VendorForm';
@@ -19,19 +48,15 @@ import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
-import { AuditTrailView } from './components/AuditTrailView';
-import { UsersView } from './components/UsersView';
 import { can, effectivePermissions } from './utils/permissions';
 import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
-import { MaterialRepositoryView } from './components/MaterialRepositoryView';
-import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
-import { WorklistView } from './components/views/WorklistView';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { fetchAllVendors } from './services/vendorPages';
 import { useCachedCollection } from './hooks/useCachedCollection';
 import {
   HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
@@ -267,6 +292,10 @@ export default function App() {
     // and reload, which reloads straight back into this effect.
     if (!currentUser) return;
 
+    // A run that has been superseded — the account changed, or the component
+    // went away mid-load — stops writing to state instead of racing the run
+    // that replaced it.
+    let cancelled = false;
 
     // First fetch server calculation weights config dynamically to achieve high regulatory resilience
     authFetch('/api/config/evaluation')
@@ -289,27 +318,48 @@ export default function App() {
           return;
         }
         setIsSyncing(true);
-        authFetch('/api/vendors')
-          .then(res => {
+        // Paged, and painted as the pages land. The whole set is still needed —
+        // every aggregate in the application is computed over it — but nothing
+        // is gained by holding the first 200 sources back until the last one
+        // has been serialized.
+        // Each run accumulates into its own array and publishes that array —
+        // it never appends to whatever is already on screen. Appending looked
+        // equivalent and was not: React runs this effect twice on mount in
+        // development, and two concurrent runs each appending their pages put
+        // every source in the list twice. Publishing a run's own accumulation
+        // is idempotent, so a second run can only ever redraw the same list.
+        const loaded: Vendor[] = [];
+        fetchAllVendors<Vendor>({
+          fetchPage: async (page, limit) => {
+            const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
             if (!res.ok) throw new Error('API response failed');
             return res.json();
-          })
-          .then((data: Vendor[]) => {
-            if (Array.isArray(data) && data.length > 0) {
-              const filtered = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-              setDb(filtered);
-            }
-            setLoadError(null);
-          })
+          },
+          onPage: (rows) => {
+            loaded.push(...rows.filter(isAllowedVendor).map(normalizeAndCleanVendor));
+            if (!cancelled) setDb([...loaded]);
+          },
+        })
+          .then(() => { if (!cancelled) setLoadError(null); })
           .catch(err => {
             if (isLocalMode()) { setLoadError(null); return; }
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
-            setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
+            // A break part-way through paging is worse than a failure at the
+            // start: what is on screen came from the server, so it looks
+            // trustworthy, but it is a prefix of the register and every total,
+            // count and chart computed from it is wrong. Say so explicitly
+            // rather than reusing the offline wording.
+            if (cancelled) return;
+            setLoadError(loaded.length > 0
+              ? `فهرست سورس‌ها ناقص بارگذاری شد (${loaded.length.toLocaleString('fa-IR')} مورد). آمار و نمودارها کامل نیستند — صفحه را دوباره بارگذاری کنید.`
+              : 'اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
           })
           .finally(() => {
-            setIsSyncing(false);
+            if (!cancelled) setIsSyncing(false);
           });
       });
+
+    return () => { cancelled = true; };
   }, [currentUser]);
 
   const materialsCollection = useCachedCollection<Material>({
@@ -1033,11 +1083,18 @@ export default function App() {
   const resyncVendorsFromServer = async (focusVendorId?: string) => {
     if (isLocalMode()) return;
     try {
-      const res = await authFetch('/api/vendors');
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!Array.isArray(data)) return;
-      const fresh = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
+      const rows = await fetchAllVendors<Vendor>({
+        fetchPage: async (page, limit) => {
+          const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
+          if (!res.ok) throw new Error(`vendors page ${page} answered ${res.status}`);
+          return res.json();
+        },
+        // This path exists to correct a wrong local copy, so nothing is shown
+        // until the whole list is in hand: painting a prefix would replace one
+        // incorrect view with a differently incorrect one.
+        onPage: () => {},
+      });
+      const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
       setDb(fresh);
       const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
       if (focused) updateCurrentVendorInHistory(focused);
@@ -1473,7 +1530,13 @@ export default function App() {
           transition={{ duration: 0.25, ease: 'easeOut' }}
           className="w-full h-full"
         >
-          {content}
+          {/* The split-out pages arrive here. The fallback is deliberately
+              quiet and roughly page-shaped: on a fast internal network it is
+              one frame, and a spinner that flashes for one frame reads as a
+              glitch rather than as progress. */}
+          <React.Suspense fallback={<PageLoading />}>
+            {content}
+          </React.Suspense>
         </motion.div>
       </AnimatePresence>
     );

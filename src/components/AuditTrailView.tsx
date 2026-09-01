@@ -16,7 +16,6 @@ import {
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { EntityName } from './EntityName';
 import { readLocalAudit } from '../services/localAudit';
-import { exportAuditToExcel } from '../utils/excelExport';
 
 export interface AuditLog {
   id: string;
@@ -594,6 +593,11 @@ export const AuditTrailView: React.FC = () => {
         setExportNotice({ kind: 'empty', text: 'با فیلترهای فعلی رکوردی برای خروجی پیدا نشد.' });
         return;
       }
+      // Loaded here rather than at the top of the file: the spreadsheet
+      // writer is the largest dependency in the bundle and this view is not
+      // an export tool until the button is pressed. The surrounding try/catch
+      // already reports a failure under the button.
+      const { exportAuditToExcel } = await import('../utils/excelExport');
       exportAuditToExcel(rows);
       setExportNotice(null);
     } catch (err) {

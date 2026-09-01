@@ -3,7 +3,7 @@ import { FormModal } from './FormModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
 import { History } from 'lucide-react';
-import { exportBusinessPartnersToExcel } from '../utils/excelExport';
+import { useExcelExport } from '../hooks/useExcelExport';
 import { categoryLabels } from '../constants/categories';
 import { GradeBadge } from './GradeBadge';
 import { 
@@ -123,6 +123,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   isLoading = false
 }) => {
   // Search & Filters state
+  const excel = useExcelExport();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<BusinessPartnerType | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'Blacklisted' | 'All'>('All');
@@ -844,13 +845,17 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <button
-              onClick={() => exportBusinessPartnersToExcel(filteredPartners, db || [])}
+              disabled={excel.busy}
+              onClick={() => excel.run(xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []))}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-muted hover:bg-accent border border-border text-foreground px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0"
             >
               <Download className="w-4 h-4" />
-              <span>خروجی اکسل</span>
+              <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
             </button>
+            {excel.error && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 self-center">{excel.error}</p>
+            )}
 
             {can(currentUser, 'partner.create') && (
               <button

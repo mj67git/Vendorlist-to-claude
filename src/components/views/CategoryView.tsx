@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { exportCategoryToExcel } from '../../utils/excelExport';
+import { useExcelExport } from '../../hooks/useExcelExport';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
@@ -40,6 +40,7 @@ export function CategoryView({
   onAddMaterial: (m: Material) => void,
   partners?: BusinessPartner[]
 }) {
+  const excel = useExcelExport();
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
@@ -232,13 +233,17 @@ export function CategoryView({
           <div className="flex items-center gap-2 lg:mr-auto shrink-0 order-last lg:order-none">
             <Button 
               type="button" 
-              onClick={() => exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections)}
+              onClick={() => excel.run(xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections))}
+              disabled={excel.busy}
               className="flex items-center gap-2 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
               title={`دانلود خروجی اکسل دسته‌بندی ${meta.fa}`}
             >
               <Download className="w-4 h-4" />
-              <span>خروجی اکسل</span>
+              <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
             </Button>
+            {excel.error && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 max-w-xs">{excel.error}</p>
+            )}
           </div>
 
           <div className="relative w-full lg:w-80 shrink-0">
