@@ -38,6 +38,20 @@ function samePermissions(a: Permission[], b: Permission[]): boolean {
 }
 
 /**
+ * Short module names for the access column in the list. The dialog has room for
+ * «سورس‌ها (تأمین‌کنندگان)»; a table cell repeated once per module does not.
+ */
+const MODULE_SHORT: Record<string, string> = {
+  vendors: 'سورس',
+  materials: 'مواد',
+  partners: 'شرکا',
+  analysis: 'آزمایش',
+  risk: 'ریسک',
+  audit: 'ممیزی',
+  users: 'کاربران',
+};
+
+/**
  * The CRUD letters a draft currently grants on one module, e.g. `RCUD` or `R`.
  * An always-open cell counts as granted, since nothing can take it away.
  */
@@ -536,6 +550,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <SortHeader field="role" label="سمت سازمانی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="status" label="وضعیت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="lastLogin" label="آخرین ورود" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                {/* Deliberately not sortable: "RCUD" versus "R" has no order that
+                    means anything, and a header that claims one would be the same
+                    lie the audit table's severity column used to tell. */}
+                <th scope="col" className="py-3.5 px-4 font-bold">دسترسی ماژول‌ها</th>
                 <th scope="col" className="py-3.5 px-4 font-bold text-center">عملیات</th>
               </tr>
             </thead>
@@ -546,23 +564,23 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 // data lands.
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={`skeleton-${i}`} className="border-b border-border/60 last:border-0">
-                    {Array.from({ length: 6 }).map((__, c) => (
+                    {Array.from({ length: 7 }).map((__, c) => (
                       <td key={c} className="py-3.5 px-4">
-                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 5 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
+                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 6 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : loadError ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 text-rose-400" />
                     <span>{loadError}</span>
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <UsersIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
                     <span>{search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}</span>
                   </td>
@@ -610,6 +628,50 @@ export function UsersView({ currentUser }: UsersViewProps) {
                     </div>
                   </td>
                   <td className="py-3 px-4 text-muted-foreground">{formatLastLogin(u.lastLoginAt)}</td>
+                  {/* What this account actually holds, per module, in the same
+                      CRUD shorthand the dialog uses — so reviewing who can do
+                      what across the organisation does not mean opening seven
+                      dialogs one at a time. Read from `effectivePermissions`,
+                      which is the override when set and the role template
+                      otherwise, so it shows what is in force rather than what
+                      was ticked. */}
+                  <td className="py-3 px-4">
+                    <div className="flex flex-wrap items-center gap-1 max-w-[22rem]">
+                      {(() => {
+                        const held = PERMISSION_MODULES
+                          .map(m => ({ m, letters: moduleLetters(m, u.effectivePermissions) }))
+                          // A module that borrows another's read — lab results
+                          // and risk both open with `vendor.read` — would add a
+                          // bare "R" chip to every row that says nothing the
+                          // source chip did not already say. It earns its place
+                          // only once it grants a write of its own.
+                          .filter(({ m, letters }) => {
+                            if (!letters) return false;
+                            // The first module listed for a read permission owns
+                            // it; the later ones borrow it (lab results and risk
+                            // both open with `vendor.read`). A borrower with no
+                            // write of its own would add a bare "R" chip saying
+                            // nothing the owner's chip did not already say.
+                            const owner = PERMISSION_MODULES
+                              .find(other => other.actions.view === m.actions.view);
+                            return owner?.key === m.key || letters !== 'R';
+                          });
+                        if (held.length === 0) {
+                          return <span className="text-[10px] text-muted-foreground">بدون دسترسی</span>;
+                        }
+                        return held.map(({ m, letters }) => (
+                          <span
+                            key={m.key}
+                            title={`${m.title} — ${letters.split('').map(l => ACTION_COLUMNS.find(c => c.letter === l)?.label).join('، ')}`}
+                            className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border bg-muted text-[10px] font-bold text-foreground"
+                          >
+                            <span>{MODULE_SHORT[m.key] || m.title}</span>
+                            <span className="font-mono text-[9px] text-primary">{letters}</span>
+                          </span>
+                        ));
+                      })()}
+                    </div>
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-center gap-1">
                       <button type="button" title="ویرایش" onClick={() => openEdit(u)}
