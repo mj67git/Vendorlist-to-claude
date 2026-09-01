@@ -140,24 +140,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   // not mean anyone has assessed the documents.
   const sopEvaluated = !!selectedSupplier?.evaluation && selectedSupplier.evaluation.grade !== 'Not Evaluated';
 
-  // Helper Audit
-  const logSourceSelectionAudit = (action: string, details: string, beforeValue: any, afterValue: any) => {
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Source Evaluation Form',
-        action: action,
-        entityType: 'SourceSelection',
-        entityId: existingVendor?.id || 'new_source',
-        entityName: formData.material || 'سورس جدید',
-        severity: 'info',
-        description: details,
-        beforeValue,
-        afterValue
-      })
-    }).catch(err => console.error("Failed to sync selection audit log:", err));
-  };
+  /*
+   * There is no client-side audit writer here any more.
+   *
+   * It wrote two kinds of record and both were wrong. Creating a partner from
+   * inside this form is already audited by the server when POST
+   * /api/business-partners runs, so that entry was a duplicate. The
+   * "ChangeSupplier" entry was worse: it fired when the *form field* changed,
+   * before anything was saved, so abandoning the form still left a record in
+   * the trail claiming the supplier had been changed. An audit trail that
+   * records intentions is not evidence of anything (project rule 2 — the
+   * server is the only writer).
+   */
 
 
   // Scoring and grading live in utils/sopEvaluation — this form must not carry
@@ -232,12 +226,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       setSelectedSupplierId('');
     }
 
-    logSourceSelectionAudit(
-      isSupplier ? 'CreateSupplierInsideSource' : 'CreateManufacturerInsideSource',
-      `ایجاد ${isSupplier ? 'فروشنده' : 'تولیدکننده'} جدید از داخل فرم سورس: ${newSupplier.name}`,
-      null,
-      newSupplier
-    );
 
     setNewSupplierData({
       name: '',
@@ -899,12 +887,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     setSelectedManufacturerId('');
                   }
 
-                  logSourceSelectionAudit(
-                    'ChangeSupplier',
-                    `تغییر تأمین‌کننده از [${oldName}] به [${newName}]`,
-                    oldName,
-                    newName
-                  );
                 }}
                 onAddNew={() => {
                   setNewPartnerType('Manufacturer');

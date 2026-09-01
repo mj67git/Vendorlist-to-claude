@@ -31,7 +31,7 @@ import { WorklistView } from './components/views/WorklistView';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
-import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -98,6 +98,23 @@ const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void
   </div>
 );
 
+/**
+ * Sources the application will show at all.
+ *
+ * A batch of demo records with ids above vF128 was imported once and never
+ * belonged to the real register. Defined once here because three call sites
+ * need it — the seed load, the initial fetch, and the re-read after a refused
+ * write — and three copies of a filter is three chances to let one drift.
+ */
+const isAllowedVendor = (v: any) => {
+  if (!v || !v.id) return false;
+  if (typeof v.id === 'string' && v.id.startsWith('vF')) {
+    const numPart = parseInt(v.id.substring(2), 10);
+    if (!isNaN(numPart) && numPart > 128) return false;
+  }
+  return true;
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -155,14 +172,6 @@ export default function App() {
   };
 
   const [db, setDb] = useState<Vendor[]>(() => {
-    const isAllowedVendor = (v: any) => {
-      if (!v || !v.id) return false;
-      if (typeof v.id === 'string' && v.id.startsWith('vF')) {
-        const numPart = parseInt(v.id.substring(2), 10);
-        if (!isNaN(numPart) && numPart > 128) return false;
-      }
-      return true;
-    };
     const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
     try {
       const saved = localStorage.getItem('app_db');
@@ -253,14 +262,6 @@ export default function App() {
     // and reload, which reloads straight back into this effect.
     if (!currentUser) return;
 
-    const isAllowedVendor = (v: any) => {
-      if (!v || !v.id) return false;
-      if (typeof v.id === 'string' && v.id.startsWith('vF')) {
-        const numPart = parseInt(v.id.substring(2), 10);
-        if (!isNaN(numPart) && numPart > 128) return false;
-      }
-      return true;
-    };
 
     // First fetch server calculation weights config dynamically to achieve high regulatory resilience
     authFetch('/api/config/evaluation')
@@ -976,12 +977,17 @@ export default function App() {
 
     if (!original) {
       // Fallback to traditional monolithic POST if there is no previous record found to diff safely
-      authFetch('/api/vendors', {
+      authWrite('/api/vendors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalized)
-      }).catch(err => {
-        console.error("Failed to sync updated vendor to DB:", err);
+      }).catch((err: any) => {
+        console.error('Failed to sync updated vendor to DB:', err);
+        notify(
+          err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.',
+          'error', 8000,
+        );
+        resyncVendorsFromServer(normalized.id);
       });
       return;
     }
@@ -1016,7 +1022,7 @@ export default function App() {
     const syncQueue: Array<() => Promise<unknown>> = [];
 
     if (profileChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1034,11 +1040,11 @@ export default function App() {
           initialSampleStatus: normalized.initialSampleStatus,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Profile sync failed:", err)));
+      }));
     }
 
     if (contactChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1047,11 +1053,11 @@ export default function App() {
           ircExpiryDate: normalized.ircExpiryDate,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Contact sync failed:", err)));
+      }));
     }
 
     if (scoresChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1060,11 +1066,11 @@ export default function App() {
           rejectionReasons: normalized.rejectionReasons,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Scores sync failed:", err)));
+      }));
     }
 
     if (analysisChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1072,34 +1078,78 @@ export default function App() {
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Analysis sync failed:", err)));
+      }));
     } else if (logsChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Logs sync failed:", err)));
+      }));
     }
 
     if (riskChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Risk sync failed:", err)));
+      }));
     }
 
+    /*
+     * Drain the queue, and treat a refusal as a refusal.
+     *
+     * These run strictly one after another because every endpoint does a full
+     * read-modify-write of the vendor (project rule 12). If one of them is
+     * refused, the earlier ones in this queue have already been applied — so
+     * rolling the local copy back to `original` would replace one wrong state
+     * with another. The server is the only thing that knows what actually
+     * landed, so we ask it and take its answer.
+     */
     void (async () => {
-      for (const send of syncQueue) {
-        await send();
+      try {
+        for (const send of syncQueue) {
+          await send();
+        }
+      } catch (err: any) {
+        const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
+        console.error('Vendor sync failed:', err);
+        notify(reason, 'error', 8000, {
+          label: 'بارگذاری دوبارهٔ رکورد',
+          run: () => resyncVendorsFromServer(normalized.id),
+        });
+        resyncVendorsFromServer(normalized.id);
       }
     })();
+  };
+
+  /**
+   * Pull the sources back from the server and replace the local copy.
+   *
+   * Used after a write was refused: the optimistic update and its localStorage
+   * cache are both showing something the database did not accept, and the only
+   * honest way back is to re-read. There is no per-vendor GET, so this refetches
+   * the list — which only happens on a failure path.
+   */
+  const resyncVendorsFromServer = async (focusVendorId?: string) => {
+    if (isLocalMode()) return;
+    try {
+      const res = await authFetch('/api/vendors');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!Array.isArray(data)) return;
+      const fresh = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
+      setDb(fresh);
+      const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
+      if (focused) updateCurrentVendorInHistory(focused);
+    } catch (err) {
+      console.error('Could not re-read sources after a failed write:', err);
+    }
   };
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
@@ -1112,12 +1162,19 @@ export default function App() {
       const isSource = !!(removed?.isSample || removed?.category === 'sample');
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
     }
-    authFetch(`/api/vendors/${vendorId}`, {
+    // A refused delete has to put the record back: the row was already taken off
+    // the screen, so staying quiet would look exactly like a successful delete.
+    authWrite(`/api/vendors/${vendorId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reasonForChange })
-    }).catch(err => {
-      console.error("Failed to sync vendor deletion to DB:", err);
+    }).catch((err: any) => {
+      console.error('Failed to sync vendor deletion to DB:', err);
+      if (removed) setDb(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
+      notify(
+        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس حذف نشد.',
+        'error', 8000,
+      );
     });
   };
 
@@ -1151,12 +1208,23 @@ export default function App() {
         before: null, after: normalized, reason: 'ثبت سورس جدید',
       });
     }
-    authFetch('/api/vendors', {
+    /*
+     * A refused create used to leave the new source sitting in the list and in
+     * the localStorage cache while the database had never heard of it — the
+     * next person to open the register saw a source that did not exist. The
+     * optimistic row is withdrawn and the server's reason is shown instead.
+     */
+    authWrite('/api/vendors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalized)
-    }).catch(err => {
-      console.error("Failed to sync new vendor to DB:", err);
+    }).catch((err: any) => {
+      console.error('Failed to sync new vendor to DB:', err);
+      setDb(prev => prev.filter(v => v.id !== normalized.id));
+      notify(
+        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
+        'error', 8000,
+      );
     });
   };
 

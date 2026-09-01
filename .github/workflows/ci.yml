@@ -1,0 +1,66 @@
+# The gate that was missing.
+#
+# Until now `tsc`, the tests and the build ran only when a developer remembered
+# to run them. For a system that produces GxP records, "we usually check" is not
+# a control. Every push and every pull request now has to pass the same three
+# commands a developer runs locally, and they are listed here in the order that
+# fails fastest.
+#
+# No database is needed: the whole suite is unit tests over pure modules. When
+# API tests arrive they will need a postgres service container — add it then,
+# not speculatively.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · tests · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repository locks with bun.lock, so CI installs with bun to resolve
+      # the same dependency graph a developer gets. (The Dockerfile still uses
+      # npm without a lockfile — a known inconsistency, tracked separately.)
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `postinstall` already runs this, but it is cheap and the build depends
+      # on the generated client existing.
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Tests
+        run: bunx tsx --test tests/*.test.ts
+
+      # Frontend only. The full `npm run build` also runs a migration step that
+      # needs a live DATABASE_URL, which CI has no business holding.
+      - name: Build frontend
+        run: bunx vite build
+
+      # The server is bundled separately in the real build; compiling it here
+      # catches a server-side break that `vite build` alone would miss.
+      - name: Bundle server
+        run: >
+          bunx esbuild server.ts --bundle --platform=node --format=cjs
+          --packages=external --outfile=/tmp/server.cjs

@@ -83,6 +83,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   CREATE_SOURCE_SELECTION: 'ثبت سورس منتخب',
   UPDATE_SOURCE_SELECTION: 'تغییر سورس منتخب',
   Reject: 'رد کردن',
+  // Historical only: written by a client-side audit call that has been removed
+  // (it fired on a form field change, before any save). Kept so existing
+  // records still render with a label instead of the raw English word.
   ChangeSupplier: 'تغییر فروشندهٔ سورس',
 };
 

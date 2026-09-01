@@ -64,3 +64,55 @@ export function authFetch(url: string, options: RequestInit = {}): Promise<Respo
     return response;
   });
 }
+
+/** A write the server refused, carrying the reason it gave. */
+export class ApiWriteError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiWriteError';
+  }
+}
+
+/** What to say when the server refused without a message of its own. */
+function defaultMessage(status: number): string {
+  if (status === 400) return 'دادهٔ ارسالی معتبر نیست و ثبت نشد.';
+  if (status === 403) return 'سطح دسترسی شما اجازهٔ این تغییر را نمی‌دهد؛ تغییر ثبت نشد.';
+  if (status === 404) return 'این رکورد دیگر روی سرور وجود ندارد.';
+  if (status === 409) return 'این رکورد هم‌زمان توسط شخص دیگری تغییر کرده است.';
+  if (status === 422) return 'این تغییر با قواعد سامانه سازگار نیست و ثبت نشد.';
+  if (status >= 500) return 'سرور نتوانست تغییر را ثبت کند.';
+  return 'تغییر روی سرور ثبت نشد.';
+}
+
+/**
+ * Send a write and fail loudly when the server refuses.
+ *
+ * `fetch` resolves for 4xx and 5xx alike, so a `.catch()` on a bare
+ * `authFetch` only ever sees a network error. Every source, material and
+ * partner write took that shape: the UI updated optimistically, showed a
+ * success toast, wrote the value into the localStorage cache, and then ignored
+ * a 403, a 422 from the Grade-A rule, or a 500 entirely. The operator was left
+ * looking at data the database had rejected — which in a GxP register is a
+ * data-integrity defect, not a cosmetic one.
+ *
+ * Reads keep using `authFetch` directly: they have their own `res.ok` handling
+ * and a failed read falls back to the cache on purpose.
+ */
+export async function authWrite(url: string, options: RequestInit = {}): Promise<any> {
+  const res = await authFetch(url, options);
+  if (res.ok) {
+    try {
+      return await res.json();
+    } catch {
+      return null; // a 200 with an empty body is still a success
+    }
+  }
+  let serverMessage = '';
+  try {
+    const body = await res.json();
+    serverMessage = body?.error || body?.message || '';
+  } catch {
+    /* not JSON — fall back to the status */
+  }
+  throw new ApiWriteError(res.status, serverMessage || defaultMessage(res.status));
+}

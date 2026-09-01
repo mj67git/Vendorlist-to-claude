@@ -145,30 +145,6 @@ function saveJsonLogs(logs: any[]): void {
 
 export class AuditService {
   /**
-   * Alias for logging events with flexible payload
-   */
-  public static async logEvent(logData: any): Promise<any> {
-    return this.createAuditRecord({
-      auditId: logData.auditId || 'aud_' + Math.random().toString(36).substring(2, 10),
-      userId: logData.userId,
-      userName: logData.userName,
-      role: logData.role,
-      module: logData.module || 'System',
-      action: logData.action || 'Log',
-      entityType: logData.entityType,
-      entityId: logData.entityId,
-      entityName: logData.entityName,
-      severity: logData.severity === 'high' ? 'Critical' : logData.severity === 'medium' ? 'Warning' : 'Information',
-      description: logData.description,
-      reasonForChange: logData.reasonForChange,
-      beforeData: logData.beforeValue,
-      afterData: logData.afterValue,
-      ipAddress: logData.ipAddress,
-      userAgent: logData.userAgent
-    });
-  }
-
-  /**
    * Create a new audit log record
    */
   public static async createAuditRecord(input: CreateAuditInput): Promise<any> {

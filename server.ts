@@ -1307,14 +1307,38 @@ function requirePermission(permission: Permission) {
   };
 }
 
+/**
+ * Restrict a route to specific roles, reading the role from the DATABASE.
+ *
+ * It used to read `req.user.role` straight off the token. The token lives for
+ * seven days and carries the role it was issued with, so an admin who was
+ * demoted — or deactivated entirely — kept full access to every user-management
+ * endpoint for up to a week, with no way to cut them off short of rotating
+ * JWT_SECRET and signing everyone out. `requirePermission` already loads the
+ * account for exactly this reason; the two guards disagreeing was the bug.
+ *
+ * The cost is one primary-key lookup on the seven admin routes.
+ */
 function requireRole(...roles: string[]) {
-  return function (req: any, res: any, next: any) {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({
-        error: "عدم دسترسی: این عملیات فقط برای مدیران سیستم مجاز است.",
-      });
+  return async function (req: any, res: any, next: any) {
+    try {
+      const account = await getUserByUsername(req.user?.username || "");
+      if (!account || account.isActive === false) {
+        // 401, not 403: the identity itself is no longer valid, so the client
+        // should end the session rather than keep a signed-in user around.
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      if (!roles.includes(account.role)) {
+        return res.status(403).json({
+          error: "عدم دسترسی: این عملیات فقط برای مدیران سیستم مجاز است.",
+        });
+      }
+      req.account = account;
+      next();
+    } catch (err: any) {
+      console.error("Role check failed:", err);
+      return res.status(500).json({ error: "بررسی سطح دسترسی با خطا مواجه شد." });
     }
-    next();
   };
 }
 
@@ -3134,36 +3158,21 @@ setInterval(() => {
   // --- Audit Trail Endpoints ---
   // ==========================================
 
-  app.post("/api/audit-logs", requireAuth, async (req: any, res) => {
-    try {
-      const logData = req.body;
-      const { user } = req;
-      
-      const newLog = {
-        userId: user.username,
-        userName: user.name,
-        role: user.role,
-        module: logData.module || "System",
-        action: logData.action,
-        entityType: logData.entityType,
-        entityId: logData.entityId,
-        entityName: logData.entityName,
-        severity: logData.severity || "info",
-        description: logData.description,
-        reasonForChange: logData.reasonForChange || "",
-        ipAddress: req.ip || "127.0.0.1",
-        userAgent: req.headers["user-agent"] || "",
-        beforeValue: logData.beforeValue ? JSON.stringify(logData.beforeValue) : null,
-        afterValue: logData.afterValue ? JSON.stringify(logData.afterValue) : null,
-      };
-
-      await AuditService.logEvent(newLog);
-      return res.status(201).json({ success: true });
-    } catch (err: any) {
-      console.error("Failed to create audit log:", err);
-      return res.status(500).json({ error: "Failed to create audit log" });
-    }
-  });
+  /*
+   * POST /api/audit-logs is gone deliberately.
+   *
+   * It accepted an audit record from any signed-in client, with only
+   * requireAuth in front of it: the module, action, severity, description and
+   * both before/after payloads were whatever the caller sent. Reading the trail
+   * is gated by `audit.read`; writing to it was gated by nothing. An audit
+   * trail whose entries can be authored by the client is weaker evidence than
+   * one only the server writes, which is the whole point of having it
+   * (project rule 2).
+   *
+   * The only caller was VendorForm, and both records it wrote were wrong — see
+   * the note in that file. Every real change is already audited by the handler
+   * that performs it, through AuditService.
+   */
 
   app.get("/api/audit-logs", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
