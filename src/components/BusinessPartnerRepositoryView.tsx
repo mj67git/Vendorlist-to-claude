@@ -274,6 +274,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   });
 
   const [formError, setFormError] = useState<string | null>(null);
+  /** What this sitting has produced, for the "save and add next" flow. */
+  const [savedCount, setSavedCount] = useState(0);
+  const [recentlySaved, setRecentlySaved] = useState<string[]>([]);
 
   // Both halves of this form count: the profile fields and the SOP documents,
   // which can hold several megabytes of freshly attached files. A stray click
@@ -452,6 +455,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     setEditingPartner(null);
     setFormError(null);
     setActiveModalTab('general');
+    setSavedCount(0);
+    setRecentlySaved([]);
     setIsModalOpen(true);
   };
 
@@ -619,7 +624,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     document.body.removeChild(a);
   };
 
-  const handleSubmitForm = (e: React.FormEvent) => {
+  const handleSubmitForm = (e: React.FormEvent, keepGoing = false) => {
     e.preventDefault();
     setFormError(null);
 
@@ -720,6 +725,23 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         updatedAt: nowIso
       };
       onAddPartner(newPartner);
+
+      // "Save and add the next one": stays on the form with everything cleared,
+      // for the case this dialog is being filled from an existing list. The
+      // partner type is kept, since a batch entered together is usually all
+      // manufacturers or all suppliers, and the SOP documents are reset because
+      // they belong to the record that was just saved.
+      if (keepGoing) {
+        setSavedCount(n => n + 1);
+        setRecentlySaved(prev => [newPartner.name, ...prev].slice(0, 5));
+        setFormData(prev => ({
+          type: prev.type, name: '', country: '', city: '', address: '',
+          email: '', contactPerson: '', phone: '', website: '', status: 'Active',
+        }));
+        setEvalDocs(getDefaultSupplierEvaluation().documents);
+        setFormError(null);
+        return;
+      }
     }
 
     setIsSuccess(true);
@@ -1718,13 +1740,29 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <span>حذف شریک</span>
                       </button>
                     )}
+                    {savedCount > 0 && (
+                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[16rem]"
+                        title={recentlySaved.join('، ')}>
+                        {savedCount.toLocaleString('fa-IR')} شریک ثبت شد
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => setIsModalOpen(false)}
                       className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
                     >
-                      انصراف
+                      {savedCount > 0 ? 'پایان' : 'انصراف'}
                     </button>
+                    {!editingPartner && (
+                      <button
+                        type="button"
+                        onClick={e => handleSubmitForm(e, true)}
+                        title="ذخیره می‌کند، فرم را خالی می‌کند و همین‌جا می‌مانید"
+                        className="px-4 py-2 text-xs font-bold text-foreground bg-muted hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                      >
+                        ذخیره و ثبت بعدی
+                      </button>
+                    )}
                     <button
                       type="submit"
                       form="partner-form"

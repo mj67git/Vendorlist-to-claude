@@ -118,6 +118,9 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  /** What this sitting has produced, for the "save and add next" flow. */
+  const [savedCount, setSavedCount] = useState(0);
+  const [recentlySaved, setRecentlySaved] = useState<string[]>([]);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   
@@ -208,6 +211,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     setPendingSpecFile(null);
     setFormError(null);
     setEditingMaterial(null);
+    setSavedCount(0);
+    setRecentlySaved([]);
     setIsModalOpen(true);
   };
 
@@ -236,7 +241,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     setIsViewModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = (keepGoing = false) => {
     setFormError(null);
 
     if (!formData.nameFa?.trim() || !formData.nameEn?.trim() || !formData.cas?.trim() || !formData.role || !formData.finalProduct?.trim() || !formData.finalProductEn?.trim() || !formData.pharmacopoeia) {
@@ -284,6 +289,22 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       uploadSpecFile(newMaterial, pendingSpecFile);
     }
     setPendingSpecFile(null);
+
+    // "Save and add the next one": the record is stored and the form empties in
+    // place, so a repository being filled from an old list is entered without
+    // reopening the dialog once per row. The role and pharmacopoeia are kept —
+    // a batch of materials transcribed together is usually of one kind.
+    if (keepGoing && !editingMaterial) {
+      setSavedCount(n => n + 1);
+      setRecentlySaved(prev => [newMaterial.nameFa || newMaterial.nameEn, ...prev].slice(0, 5));
+      setFormData(prev => ({
+        nameFa: '', nameEn: '', iupac: '', cas: '',
+        role: prev.role, finalProduct: '', finalProductEn: '',
+        pharmacopoeia: prev.pharmacopoeia, specificationFile: undefined,
+      }));
+      setFormError(null);
+      return;
+    }
 
     setIsSuccess(true);
     setTimeout(() => {
@@ -1037,16 +1058,33 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 
                 {/* Sticky Bottom Footer */}
                 <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0 shadow-xs">
+                  {savedCount > 0 && (
+                    <span className="mr-auto text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[22rem]"
+                      title={recentlySaved.join('، ')}>
+                      {savedCount.toLocaleString('fa-IR')} ماده در این نشست ثبت شد
+                      {recentlySaved[0] ? ` — آخرین: ${recentlySaved[0]}` : ''}
+                    </span>
+                  )}
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
                     className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
                   >
-                    انصراف
+                    {savedCount > 0 ? 'پایان' : 'انصراف'}
                   </button>
+                  {!editingMaterial && (
+                    <button
+                      type="button"
+                      onClick={() => handleSave(true)}
+                      title="ذخیره می‌کند، فرم را خالی می‌کند و همین‌جا می‌مانید"
+                      className="px-4 py-2 text-xs font-bold text-foreground bg-muted hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                    >
+                      ذخیره و ثبت بعدی
+                    </button>
+                  )}
                   <button 
                     type="button"
-                    onClick={handleSave}
+                    onClick={() => handleSave()}
                     className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-95 border border-blue-400/30 cursor-pointer"
                   >
                     {editingMaterial ? 'ذخیره تغییرات ماده' : 'ثبت اطلاعات در مخزن'}

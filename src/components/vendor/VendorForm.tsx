@@ -265,6 +265,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   // so it registers the same unsaved-changes guard a detail page uses. It
   // reports dirty only once something actually changed, otherwise merely
   // opening and leaving the form would nag.
+  /** How many records this sitting has produced, shown next to the button. */
+  const [savedCount, setSavedCount] = useState(0);
+  const [recentlySaved, setRecentlySaved] = useState<Array<{ id: string; label: string }>>([]);
+
   const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
   const savedRef = useRef(false);
   useEffect(() => {
@@ -299,6 +303,41 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const isLegacyIrcUntouched = !!existingVendor && (existingVendor.irc || '') === formData.irc;
   const blocksSubmitOnIrc = !isIrcValid && !isLegacyIrcUntouched;
 
+  /**
+   * Empty the form for the next record without leaving the page.
+   *
+   * The category, the source type and the sample flag are kept on purpose: a
+   * pile of records transcribed in one sitting is almost always of one kind,
+   * and clearing them would mean re-picking the same two answers every time.
+   * Everything identifying the record itself is cleared, and the pristine
+   * snapshot is retaken so the unsaved-changes guard does not think the fresh
+   * empty form is a half-finished one.
+   */
+  const resetForNext = () => {
+    setFormData({
+      materialId: '', material: '', materialEn: '', cas: '', irc: '',
+      lastAudit: '', ircExpiryDate: '', name: '', nameEn: '', contactInfo: '',
+      grade: 'new', status: 'new', rejectionReasonList: '',
+    });
+    setSelectedManufacturerId('');
+    setSelectedSupplierId('');
+    setFieldError(null);
+    savedRef.current = false;
+    window.setTimeout(() => {
+      pristineRef.current = JSON.stringify({
+        formData: {
+          materialId: '', material: '', materialEn: '', cas: '', irc: '',
+          lastAudit: '', ircExpiryDate: '', name: '', nameEn: '', contactInfo: '',
+          grade: 'new', status: 'new', rejectionReasonList: '',
+        },
+        selectedManufacturerId: '', selectedSupplierId: '',
+        isSample, sourceType, sampleStatus,
+      });
+      materialFieldRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      materialFieldRef.current?.querySelector<HTMLElement>('button, input, select')?.focus();
+    }, 0);
+  };
+
   const focusMissingField = (which: 'material' | 'partner' | 'irc') => {
     setFieldError(which);
     const target =
@@ -309,7 +348,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     target?.querySelector<HTMLElement>('button, input, select')?.focus();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent, keepGoing = false) => {
     e.preventDefault();
 
     if (!formData.materialId) {
@@ -453,6 +492,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     savedRef.current = true;
     registerNavGuard?.(null);
     onSave(vendorContext, null);
+
+    // "Save and add the next one": the record is stored and the form empties in
+    // place, so someone transcribing a stack of sources from an old file never
+    // leaves this page. The category and the source type are kept, since the
+    // next record in the pile is almost always of the same kind, and the
+    // material field takes focus because that is where the entry starts.
+    if (keepGoing && !existingVendor) {
+      setSavedCount(n => n + 1);
+      setRecentlySaved(prev => [
+        { id: newId, label: `${formData.material || finalName}${finalPartnerDisplayName ? ` — ${finalPartnerDisplayName}` : ''}` },
+        ...prev,
+      ].slice(0, 5));
+      resetForNext();
+      return;
+    }
+
     setIsSuccess(true);
     setTimeout(() => {
       (onSaved ?? onClose)();
@@ -1107,11 +1162,42 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             </div>
           </div>
 
+          {/* What this sitting has produced so far. Without it, "save and add
+              next" would clear the screen with nothing to show for the work —
+              the operator has no way to tell the fifth save from the first, or
+              to reach a record they have just entered. */}
+          {recentlySaved.length > 0 && (
+            <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3">
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>{savedCount.toLocaleString('fa-IR')} سورس در این نشست ثبت شد</span>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {recentlySaved.map(r => (
+                  <li key={r.id} className="text-[11px] text-muted-foreground truncate" title={r.label}>
+                    • {r.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
             <Button type="button" variant="outline" onClick={onClose} className="px-4 text-xs font-semibold">
-              انصراف
+              {savedCount > 0 ? 'پایان و بازگشت به فهرست' : 'انصراف'}
             </Button>
-            <Button type="button" onClick={handleSubmit} className="px-5 text-xs font-bold">
+            {!existingVendor && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={e => handleSubmit(e, true)}
+                title="ذخیره می‌کند، فرم را خالی می‌کند و در همین صفحه می‌مانید"
+                className="px-4 text-xs font-semibold"
+              >
+                ذخیره و ثبت بعدی
+              </Button>
+            )}
+            <Button type="button" onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
               {existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
             </Button>
           </div>

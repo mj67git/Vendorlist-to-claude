@@ -667,12 +667,37 @@ export default function App() {
    * that know say so; the regex stays as the fallback for the rest.
    */
   const [toastKind, setToastKind] = useState<'success' | 'error' | null>(null);
+  /**
+   * An optional button on the toast.
+   *
+   * Saving no longer moves the user somewhere else, so the way to reach the
+   * record just created is offered rather than imposed: whoever wants the new
+   * source's page clicks once, and whoever is entering a stack of records from
+   * an old file is left where they are. Without this the rule "saving never
+   * changes the page" would simply cost that first person a navigation.
+   */
+  const [toastAction, setToastAction] = useState<{ label: string; run: () => void } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   /** Show a toast and, when the caller knows, say which kind it is. */
-  const notify = (message: string, kind: 'success' | 'error' = 'success', ms = kind === 'error' ? 6000 : 3000) => {
+  const notify = (
+    message: string,
+    kind: 'success' | 'error' = 'success',
+    ms = kind === 'error' ? 6000 : 3000,
+    action?: { label: string; run: () => void } | null,
+  ) => {
+    // A toast carrying a button stays long enough to be pressed; the previous
+    // timer is cleared so a second toast cannot dismiss the first one early.
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToastKind(kind);
     setToastMsg(message);
-    setTimeout(() => { setToastMsg(null); setToastKind(null); }, ms);
+    setToastAction(action ?? null);
+    const life = action ? Math.max(ms, 7000) : ms;
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMsg(null);
+      setToastKind(null);
+      setToastAction(null);
+    }, life);
   };
   const [isSyncing, setIsSyncing] = useState(true);
   /** True while the business-partner list is being fetched. */
@@ -1096,11 +1121,25 @@ export default function App() {
     });
   };
 
+  /**
+   * Register a new source.
+   *
+   * Saving deliberately does not move the user: this used to end by opening the
+   * new record's page, which suits someone registering one source in order to
+   * score it straight away, and works against someone transcribing a stack of
+   * them from an old file — every save landed them on a page they had to leave
+   * again. The record is offered on the toast instead, so reaching it is one
+   * click for whoever wants it and none for whoever does not.
+   */
   const handleAddVendor = (newVendor: Vendor) => {
     const normalized = normalizeAndCleanVendor(newVendor);
     setDb([normalized, ...db]);
-    setToastMsg('سورس جدید با موفقیت اضافه شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    notify(
+      `سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`,
+      'success',
+      3000,
+      { label: 'مشاهده و امتیازدهی', run: () => handleSelectVendor(normalized) },
+    );
     if (isLocalMode()) {
       const isSource = !!(normalized.isSample || normalized.category === 'sample');
       appendLocalAudit({
@@ -1119,7 +1158,6 @@ export default function App() {
     }).catch(err => {
       console.error("Failed to sync new vendor to DB:", err);
     });
-    handleSelectVendor(normalized);
   };
 
   // Material changes are persisted and audited server-side (module "مدیریت مواد"),
@@ -2092,6 +2130,20 @@ export default function App() {
                 ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
               <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+              {toastAction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const run = toastAction.run;
+                    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                    setToastMsg(null); setToastKind(null); setToastAction(null);
+                    run();
+                  }}
+                  className="shrink-0 mr-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  {toastAction.label}
+                </button>
+              )}
             </div>
           );
         })()}
