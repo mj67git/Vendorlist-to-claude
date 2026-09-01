@@ -3839,7 +3839,7 @@ async function startServer() {
 
   // Fetch a single SOP document's stored file on demand (kept out of the list
   // payload so the repository stays lightweight).
-  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, requirePermission("partner.read"), async (req: any, res) => {
+  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, requirePermission("partner.files"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const evaluation = await prisma.supplierEvaluation.findUnique({

@@ -590,6 +590,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     } catch { return null; }
   };
 
+  // Viewing and downloading both pull the same blob from the file endpoint, so
+  // both follow `partner.files` — seeing that a partner is graded B is a
+  // different thing from taking its business licence off the system.
+  const canFiles = can(currentUser, 'partner.files');
+
   const handleDocFileView = async (doc: SOPDocumentEval, partnerId?: string) => {
     const url = await ensureDocDataUrl(doc, partnerId);
     if (!url) return;
@@ -1538,22 +1543,26 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   </div>
 
                                   <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDocFileView(doc, editingPartner?.id)}
-                                      className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
-                                      title="مشاهده فایل"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDocFileDownload(doc, editingPartner?.id)}
-                                      className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
-                                      title="دانلود فایل"
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                    </button>
+                                    {canFiles && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDocFileView(doc, editingPartner?.id)}
+                                          className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
+                                          title="مشاهده فایل"
+                                        >
+                                          <Eye className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDocFileDownload(doc, editingPartner?.id)}
+                                          className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
+                                          title="دانلود فایل"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handleDocFileRemove(def.key)}
@@ -2099,20 +2108,31 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 <td className="py-2.5 px-3 text-center">
                                   {doc?.fileName ? (
                                     <div className="flex items-center justify-center gap-1">
-                                      <button
-                                        onClick={() => doc && handleDocFileView(doc, selectedPartner?.id)}
-                                        className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
-                                        title="مشاهده"
-                                      >
-                                        <Eye className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        onClick={() => doc && handleDocFileDownload(doc, selectedPartner?.id)}
-                                        className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
-                                        title="دانلود"
-                                      >
-                                        <Download className="w-3.5 h-3.5" />
-                                      </button>
+                                      {canFiles ? (
+                                        <>
+                                          <button
+                                            onClick={() => doc && handleDocFileView(doc, selectedPartner?.id)}
+                                            className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
+                                            title="مشاهده"
+                                          >
+                                            <Eye className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => doc && handleDocFileDownload(doc, selectedPartner?.id)}
+                                            className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
+                                            title="دانلود"
+                                          >
+                                            <Download className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span
+                                          className="text-[10px] text-muted-foreground"
+                                          title="حساب کاربری شما مجوز دریافت مدارک SOP را ندارد."
+                                        >
+                                          بدون مجوز دریافت
+                                        </span>
+                                      )}
                                       <span className="text-[10px] text-muted-foreground truncate max-w-[120px] font-mono" title={doc.fileName}>
                                         {doc.fileName}
                                       </span>

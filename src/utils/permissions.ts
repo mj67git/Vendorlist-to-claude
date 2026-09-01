@@ -56,6 +56,11 @@ export type Permission =
   | 'partner.edit'
   /** Remove a business partner. */
   | 'partner.delete'
+  /** Download the SOP documents attached to a partner. Separate from
+   *  `partner.read` because these are the legal papers themselves — business
+   *  licence, signatory authorisation, legalisation — and seeing that a partner
+   *  is graded B is a different thing from taking its licence off the system. */
+  | 'partner.files'
   /** Read the audit trail. */
   | 'audit.read'
   /** Administer user accounts, including their permissions. */
@@ -69,7 +74,7 @@ export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 export const ALL_PERMISSIONS: Permission[] = [
   'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete',
   'material.read', 'material.create', 'material.edit', 'material.delete',
-  'partner.read', 'partner.create', 'partner.edit', 'partner.delete',
+  'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files',
   'vendor.analysis', 'vendor.risk',
   'score.commercial', 'score.qa', 'score.planning', 'score.finance',
   'audit.read', 'users.manage',
@@ -110,6 +115,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'partner.create': 'ثبت شریک جدید',
   'partner.edit': 'ویرایش شریک',
   'partner.delete': 'حذف شریک',
+  'partner.files': 'دانلود مدارک SOP شریک',
   'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
   'vendor.risk': 'ارزیابی ریسک (FMEA)',
   'score.commercial': 'امتیازدهی بازرگانی و خرید',
@@ -140,6 +146,14 @@ export interface PermissionModule {
   actions: Record<ModuleAction, Permission | 'open' | null>;
   /** Shown under the module name to explain a locked or merged row. */
   note?: string;
+  /**
+   * Abilities of this module that are not one of the four CRUD actions, each
+   * with its own letter for the summary badge. Downloading a partner's SOP
+   * papers is the first: it is a read, but not the read that opens the list, so
+   * it needs a checkbox of its own rather than a fifth column that would be
+   * empty on every other row.
+   */
+  extras?: Array<{ permission: Permission; letter: string; label: string; note: string }>;
 }
 
 export const PERMISSION_MODULES: PermissionModule[] = [
@@ -157,6 +171,12 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     key: 'partners',
     title: 'شرکای تجاری',
     actions: { view: 'partner.read', create: 'partner.create', edit: 'partner.edit', delete: 'partner.delete' },
+    extras: [{
+      permission: 'partner.files',
+      letter: 'F',
+      label: 'دانلود مدارک SOP',
+      note: 'مشاهدهٔ فهرست و گرید شریک با «مشاهده» داده می‌شود؛ این گزینه اجازهٔ گرفتن خودِ مدارک (مجوز کسب‌وکار، معرفی‌نامه، ترجمهٔ رسمی) را می‌دهد.',
+    }],
   },
   {
     key: 'analysis',
@@ -198,15 +218,16 @@ export const LOCKED_REASONS = {
  * The default set each role starts from.
  *
  * Reading is a permission now, not a given. Every working role still starts with
- * read on all three repositories, so no account loses anything by default — the
- * point is that an admin can now take one away for one person (finance sees the
- * partners but cannot touch them; a contractor sees nothing but materials).
+ * read on all three repositories — and with the SOP download that used to come
+ * with them — so no account loses anything by default. The point is that an
+ * admin can now take one away for one person (finance sees the partners but
+ * cannot touch them, or sees their grades but cannot pull their licences).
  *
  * `lab` intentionally holds nothing, reads included. It exists in the database
  * enum, no account uses it, and it is left alone because removing it would mean
  * a schema migration for a role nobody has.
  */
-const READ_ALL = ['vendor.read', 'material.read', 'partner.read'] as const;
+const READ_ALL = ['vendor.read', 'material.read', 'partner.read', 'partner.files'] as const;
 
 const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
@@ -259,13 +280,14 @@ function expandStored(entry: unknown): Permission[] {
  * customise — they would keep `partner.edit` and lose the partner list it edits.
  *
  * A stored list that names no read at all is therefore treated as predating
- * them and given all three, the same "expand on read, migrate nothing" approach
- * that carried `material.write` through its split. Once an admin saves the
+ * them and given all of them — the SOP download included, since it was part of
+ * "everyone can read the partners" too — the same "expand on read, migrate
+ * nothing" approach that carried `material.write` through its split. Once an admin saves the
  * dialog again the list holds explicit reads and this no longer applies, which
  * is what makes a deliberate read-only account possible: it names at least one
  * read, so nothing is added to it.
  */
-const READ_PERMISSIONS: Permission[] = ['vendor.read', 'material.read', 'partner.read'];
+const READ_PERMISSIONS: Permission[] = ['vendor.read', 'material.read', 'partner.read', 'partner.files'];
 
 function withLegacyReads(list: Permission[]): Permission[] {
   if (list.length === 0) return list;

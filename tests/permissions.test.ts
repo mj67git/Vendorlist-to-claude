@@ -12,7 +12,7 @@ import {
  * so a change to the policy that nobody meant shows up as a failing test rather
  * than as a role quietly gaining or losing an ability in production.
  */
-const READ_ALL: Permission[] = ['vendor.read', 'material.read', 'partner.read'];
+const READ_ALL: Permission[] = ['vendor.read', 'material.read', 'partner.read', 'partner.files'];
 
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
@@ -132,7 +132,7 @@ test('overrides replace the template rather than adding to it', () => {
   // is that the admin template's writes are gone.
   const user = { role: 'admin', permissions: ['audit.read'] };
   assert.deepEqual(effectivePermissions(user),
-    ['vendor.read', 'material.read', 'partner.read', 'audit.read']);
+    ['vendor.read', 'material.read', 'partner.read', 'partner.files', 'audit.read']);
   assert.equal(can(user, 'users.manage'), false, 'an admin can be narrowed');
 });
 
@@ -158,6 +158,23 @@ test('an override naming any read is taken at its word', () => {
   assert.equal(can(readOnly, 'partner.edit'), false, 'read-only means read-only');
 });
 
+test('seeing a partner and taking its SOP papers are separate permissions', () => {
+  // The point of the split: the list and the grade are one thing, the business
+  // licence and the legalisation are another.
+  const listOnly = { role: 'finance', permissions: ['partner.read', 'score.finance'] };
+  assert.equal(can(listOnly, 'partner.read'), true);
+  assert.equal(can(listOnly, 'partner.files'), false, 'the split has no effect otherwise');
+
+  const withFiles = { role: 'finance', permissions: ['partner.read', 'partner.files'] };
+  assert.equal(can(withFiles, 'partner.files'), true);
+
+  // Every working role keeps both by default, so the split takes nothing away.
+  for (const role of ['commercial', 'qa', 'planning', 'finance'] as Role[]) {
+    assert.equal(can(role, 'partner.files'), true, `${role} lost SOP downloads`);
+  }
+  assert.equal(can('lab', 'partner.files'), false);
+});
+
 test('a user may be given more than one department to score', () => {
   const user = { role: 'finance', permissions: ['score.finance', 'score.planning'] };
   assert.deepEqual(scorableDepartments(user), ['planning', 'finance']);
@@ -174,7 +191,7 @@ test('unrecognised override entries do not lock a user out', () => {
   // mixed input keeps only what is real, expanding retired names
   const mixed = { role: 'qa', permissions: ['material.write', 'bogus'] };
   assert.deepEqual(effectivePermissions(mixed),
-    ['vendor.read', 'material.read', 'material.create', 'material.edit', 'material.delete', 'partner.read']);
+    ['vendor.read', 'material.read', 'material.create', 'material.edit', 'material.delete', 'partner.read', 'partner.files']);
 });
 
 test('a retired permission keeps exactly the access it used to grant', () => {
@@ -197,7 +214,7 @@ test('a retired permission keeps exactly the access it used to grant', () => {
   // because this list names none, so it predates read permissions.
   const partner = { role: 'finance', permissions: ['partner.write'] };
   assert.deepEqual(effectivePermissions(partner),
-    ['vendor.read', 'material.read', 'partner.read', 'partner.create', 'partner.edit', 'partner.delete']);
+    ['vendor.read', 'material.read', 'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files']);
 });
 
 test('an override naming only a dropped permission falls back to the role', () => {

@@ -56,15 +56,23 @@ const MODULE_SHORT: Record<string, string> = {
  * An always-open cell counts as granted, since nothing can take it away.
  */
 function moduleLetters(module: PermissionModule, draft: Permission[]): string {
-  return ACTION_COLUMNS
+  const crud = ACTION_COLUMNS
     .filter(col => {
       const cell = module.actions[col.key];
       if (cell === null) return false;
       if (cell === 'open') return true;
       return draft.includes(cell);
     })
-    .map(col => col.letter)
-    .join('');
+    .map(col => col.letter);
+  const extras = (module.extras || [])
+    .filter(x => draft.includes(x.permission))
+    .map(x => x.letter);
+  return [...crud, ...extras].join('');
+}
+
+/** Every permission a module can grant, its non-CRUD extras included. */
+function allModulePermissions(module: PermissionModule): Permission[] {
+  return [...new Set([...modulePermissions(module), ...(module.extras || []).map(x => x.permission)])];
 }
 
 /** The distinct permissions a module row can actually toggle. */
@@ -390,10 +398,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
    */
   const togglePermission = (permission: Permission) => {
     const module = PERMISSION_MODULES.find(m =>
-      ACTION_COLUMNS.some(c => m.actions[c.key] === permission) || m.single === permission);
+      ACTION_COLUMNS.some(c => m.actions[c.key] === permission)
+      || m.single === permission
+      || (m.extras || []).some(x => x.permission === permission));
     const read = module?.actions.view;
     const readPerm = read && read !== 'open' ? read : null;
-    const rowPerms = module ? modulePermissions(module) : [];
+    const rowPerms = module ? allModulePermissions(module) : [];
 
     setPermDraft(prev => {
       const on = prev.includes(permission);
@@ -412,7 +422,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
   /** The row's master tick: all of this module's actions on, or all off. */
   const toggleModule = (module: PermissionModule) => {
-    const owned = modulePermissions(module);
+    const owned = allModulePermissions(module);
     if (owned.length === 0) return;
     setPermDraft(prev => {
       const allOn = owned.every(p => prev.includes(p));
@@ -933,7 +943,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </thead>
                   <tbody>
                     {PERMISSION_MODULES.map(module => {
-                      const owned = modulePermissions(module);
+                      const owned = allModulePermissions(module);
                       const granted = owned.filter(p => permDraft.includes(p));
                       const allOn = owned.length > 0 && granted.length === owned.length;
                       const someOn = granted.length > 0 && !allOn;
@@ -966,6 +976,29 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                 {module.note}
                               </span>
                             )}
+                            {/* Abilities that are not one of the four columns get
+                                their own tick here rather than a fifth column
+                                that would be empty on every other row. */}
+                            {(module.extras || []).map(extra => (
+                              <label key={extra.permission}
+                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[26ch]">
+                                <input
+                                  type="checkbox"
+                                  checked={permDraft.includes(extra.permission)}
+                                  onChange={() => togglePermission(extra.permission)}
+                                  className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
+                                />
+                                <span>
+                                  <span className="text-[11px] font-bold text-foreground">
+                                    {extra.label}
+                                    <span className="font-mono text-[9px] text-muted-foreground"> ({extra.letter})</span>
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground leading-relaxed block">
+                                    {extra.note}
+                                  </span>
+                                </span>
+                              </label>
+                            ))}
                           </td>
 
                           {ACTION_COLUMNS.map(col => {
