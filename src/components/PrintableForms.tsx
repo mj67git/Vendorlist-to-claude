@@ -203,7 +203,9 @@ export function PrintableArchiveList({
                     <td className="border border-slate-300 px-2 py-1 text-center">{getDisplayCountry(v)}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center font-bold">{gradeText}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center">
-                      {v.riskAssessment?.riskLevel || 'ثبت‌نشده'}
+                      {['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
+                        ? v.riskAssessment!.riskLevel
+                        : 'ارزیابی نشده'}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{v.irc || '—'}</td>
                     <td className={`border border-slate-300 px-2 py-1 text-center font-bold ${chosen ? 'bg-amber-100 text-amber-800' : 'text-slate-400'}`}>
@@ -601,12 +603,17 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
     return 'bg-slate-100 text-slate-500 border border-slate-300';
   };
   
+  // «N/A» روی سندی که به ممیز می‌رود مبهم است — نمی‌گوید ریسک ارزیابی شده و
+  // نتیجه‌اش مصداق ندارد یا اصلاً ارزیابی نشده. مثل گرید، صریح می‌نویسیم.
   const getRiskLabel = (level: string | undefined) => {
     if (level === 'Low') return 'Low';
     if (level === 'Medium') return 'Medium';
     if (level === 'High') return 'High';
-    return 'N/A';
+    return 'ارزیابی نشده';
   };
+  const riskAssessed = ['Low', 'Medium', 'High'].includes(
+    String(vendor.riskAssessment?.riskLevel || ''),
+  );
 
   return document.body ? createPortal(
     <>
@@ -1102,7 +1109,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     {/* Middle Section: Risk Level */}
                     <div className="flex items-center gap-3">
                       <div className="text-[11px] text-slate-500 font-bold leading-tight text-right">سطح ریسک<br/>ارزیابی شده</div>
-                      <div className={`px-4 py-2 rounded-lg text-sm font-extrabold ${getRiskColor(vendor.riskAssessment?.riskLevel)}`}>
+                      <div className={`px-4 py-2 rounded-lg font-extrabold whitespace-nowrap ${riskAssessed ? 'text-sm' : 'text-xs'} ${getRiskColor(vendor.riskAssessment?.riskLevel)}`}>
                          {getRiskLabel(vendor.riskAssessment?.riskLevel)}
                       </div>
                     </div>
