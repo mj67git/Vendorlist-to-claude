@@ -32,6 +32,11 @@ import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './design-system/ThemeSwitcher';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { useCachedCollection } from './hooks/useCachedCollection';
+import {
+  HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
+  pushView, truncateTo, type ViewState,
+} from './utils/navStack';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -307,109 +312,37 @@ export default function App() {
       });
   }, [currentUser]);
 
-  const [materials, setMaterials] = useState<Material[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_materials');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+  const materialsCollection = useCachedCollection<Material>({
+    cacheKey: 'app_materials',
+    url: '/api/materials',
+    permission: 'material.read',
+    user: currentUser,
   });
+  const { items: materials, setItems: setMaterials } = materialsCollection;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_materials', JSON.stringify(materials));
-    } catch (err) {
-      console.error("Failed to save materials to localStorage:", err);
-    }
-  }, [materials]);
-
-  // Load the material catalogue from the backend (PostgreSQL) once authenticated.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!can(currentUser, 'material.read')) { setMaterials([]); return; }
-    authFetch('/api/materials')
-      .then(res => (res.ok ? res.json() : null))
-      .then((data: Material[] | null) => { if (Array.isArray(data)) setMaterials(data); })
-      .catch(err => console.error("Failed to load materials from backend. Using local cache.", err));
-  }, [currentUser]);
-
-  const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
-    /**
-     * The bundled partner list is demo data, so it only stands in for the
-     * database in local demo mode.
-     *
-     * With a real backend it used to be the fallback whenever the browser cache
-     * was empty, which meant a fresh browser showed invented partners — with
-     * grades and SOP results — as if they came from the server, and the list was
-     * never empty so the loading skeleton could not appear either. PostgreSQL is
-     * the single source of truth (project rule 1); an empty list until the fetch
-     * answers is the honest state. (The server still seeds these same partners
-     * into an empty database on first startup — that path writes real rows.)
-     */
-    try {
-      const saved = localStorage.getItem('app_business_partners');
-      const cached = saved ? JSON.parse(saved) : null;
-      // An empty cached array is not a cache: it is what normal mode writes
-      // before its first fetch answers, and honouring it would leave local demo
-      // mode — which has no backend to fill it — permanently empty.
-      if (Array.isArray(cached) && cached.length > 0) return cached.map(reconcileSupplierEvaluation);
-      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB.map(reconcileSupplierEvaluation) : [];
-    } catch {
-      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB : [];
-    }
+  /**
+   * The partner repository.
+   *
+   * `reconcileSupplierEvaluation` runs on every record on the way in, from the
+   * server and from the cache alike: a stored SOP score must not outlive the
+   * documents it was computed from, and the evaluation is re-derived rather
+   * than trusted (project rule 13).
+   *
+   * The bundled `INITIAL_BUSINESS_PARTNERS_DB` is demo data and only stands in
+   * for the database in local demo mode. With a real backend it used to be the
+   * fallback whenever the cache was empty, which meant a fresh browser showed
+   * invented partners — with grades and SOP results — as if the server had sent
+   * them.
+   */
+  const partnersCollection = useCachedCollection<BusinessPartner>({
+    cacheKey: 'app_business_partners',
+    url: '/api/business-partners',
+    permission: 'partner.read',
+    user: currentUser,
+    normalize: reconcileSupplierEvaluation,
   });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_business_partners', JSON.stringify(businessPartners));
-    } catch (err) {
-      console.error("Failed to save business partners to localStorage:", err);
-    }
-  }, [businessPartners]);
-
-  // Load business partners from the backend (PostgreSQL) as the source of truth.
-  // Guarded on an authenticated user: /api/business-partners requires auth, and
-  // an unauthenticated call would trigger authFetch's 401 session reload.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!can(currentUser, 'partner.read')) { setBusinessPartners([]); setPartnersLoading(false); return; }
-    // Its own flag: `isSyncing` tracks the vendors fetch, so borrowing it would
-    // have the partner table stop showing skeletons while its own request is
-    // still in flight.
-    setPartnersLoading(true);
-    authFetch('/api/business-partners')
-      .then(res => {
-        if (!res.ok) throw new Error('API response failed');
-        return res.json();
-      })
-      .then((data: BusinessPartner[]) => {
-        if (Array.isArray(data)) {
-          // Re-derive each stored SOP evaluation from its documents so a stale
-          // score/grade cannot outlive the documents it was computed from.
-          setBusinessPartners(data.map(reconcileSupplierEvaluation));
-        }
-      })
-      .catch(err => {
-        console.error("Failed to load business partners from backend. Using local cache.", err);
-      })
-      .finally(() => setPartnersLoading(false));
-  }, [currentUser]);
-
-  type ViewState = {
-    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users' | 'tasks';
-    categoryId: Category | null;
-    selectedVendor: Vendor | null;
-    /** Which backlog the worklist page is showing. */
-    taskKey?: TaskKey | null;
-    expandedMaterial?: string | null;
-    /** The source form is a page, not an overlay — this is which page. */
-    formMode?: 'create' | 'edit' | null;
-  };
-
-  // Cap the navigation stack so a long session cannot grow it without bound.
-  const MAX_VIEW_HISTORY = 25;
-  const capHistory = (h: ViewState[]) => (h.length > MAX_VIEW_HISTORY ? h.slice(h.length - MAX_VIEW_HISTORY) : h);
+  const { items: businessPartners, setItems: setBusinessPartners } = partnersCollection;
+  const partnersLoading = partnersCollection.loading;
 
   // A route carries only a vendor *id*; the full record is re-hydrated from `db`
   // (see `selectedVendor` below), which may still be loading on a deep link.
@@ -490,13 +423,7 @@ export default function App() {
   // real record so the breadcrumb shows the source name instead of a placeholder.
   useEffect(() => {
     if (!isVendorStub || !resolvedVendor) return;
-    setViewHistory(prev => {
-      const last = prev[prev.length - 1];
-      if (!last?.selectedVendor || last.selectedVendor.id !== resolvedVendor.id || last.selectedVendor.name) return prev;
-      const next = [...prev];
-      next[next.length - 1] = { ...last, selectedVendor: resolvedVendor, expandedMaterial: last.expandedMaterial ?? resolvedVendor.materialEn ?? null };
-      return next;
-    });
+    setViewHistory(prev => hydrateVendor(prev, resolvedVendor));
   }, [isVendorStub, resolvedVendor]);
 
   // Expanded material is scoped to the current view entry (persists across
@@ -701,8 +628,6 @@ export default function App() {
     }, life);
   };
   const [isSyncing, setIsSyncing] = useState(true);
-  /** True while the business-partner list is being fetched. */
-  const [partnersLoading, setPartnersLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
   // "connection failed" banner (the mount fetch runs before demo login is set).
@@ -801,23 +726,7 @@ export default function App() {
 
   const navigate = (newView: ViewState['view'], newCat: Category | null = null, taskKey: TaskKey | null = null) => {
     runGuarded(() => {
-      setViewHistory(prev => {
-        if (newView === 'home') {
-          return [{ view: 'home', categoryId: null, selectedVendor: null }];
-        }
-        // Top-level navigation behaves like switching tabs, not drilling down:
-        // if this destination is already on the stack, unwind back to it instead
-        // of pushing a duplicate (which previously made "back" re-enter a source
-        // detail the user had deliberately left).
-        const existing = prev.map((s, i) => ({ s, i }))
-          .filter(({ s }) => s.view === newView && s.categoryId === newCat
-            && (s.taskKey ?? null) === taskKey && s.selectedVendor === null)
-          .pop();
-        if (existing) {
-          return prev.slice(0, existing.i + 1);
-        }
-        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null, taskKey }]);
-      });
+      setViewHistory(prev => pushView(prev, newView, newCat, taskKey));
       setSidebarOpen(false);
     });
   };
@@ -825,23 +734,7 @@ export default function App() {
   const handleSelectVendor = (vendor: Vendor | null) => {
     if (vendor) {
       runGuarded(() => {
-        setViewHistory(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.selectedVendor?.id === vendor.id && !last.formMode) {
-            return prev;
-          }
-          // Mark the material as expanded on the underlying list entry so that
-          // returning (goBack) restores the same expanded material, then push
-          // the vendor-detail entry on top (carrying the same marker).
-          // A detail page is never a form page, so drop formMode — otherwise
-          // saving a new source (which lands on its record) would inherit
-          // 'create' and render the form again.
-          const base = { ...last, formMode: null, selectedVendor: null, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
-          // Arriving from the form page means that page is finished: the record
-          // replaces it, so Back goes to the list rather than back into the form.
-          const head = last?.formMode ? prev.slice(0, -1) : [...prev.slice(0, -1), base];
-          return capHistory([...head, { ...base, selectedVendor: vendor }]);
-        });
+        setViewHistory(prev => pushVendor(prev, vendor));
       });
     } else {
       goBack();
@@ -856,7 +749,7 @@ export default function App() {
     if (viewHistory.length <= 1) return;
     runGuarded(() => {
       if (canPopBrowserRef.current) window.history.back();
-      else setViewHistory(prev => (prev.length > 1 ? prev.slice(0, -1) : prev));
+      else setViewHistory(popView);
     });
   };
 
@@ -865,14 +758,7 @@ export default function App() {
   // "new partner" dialog from becoming a modal inside a modal.
   const openSourceForm = (mode: 'create' | 'edit', cat?: Category | null) => {
     runGuarded(() => {
-      setViewHistory(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.formMode === mode) return prev;
-        const base = mode === 'edit'
-          ? last
-          : { ...last, view: 'category' as const, categoryId: cat ?? last?.categoryId ?? 'domestic', selectedVendor: null };
-        return capHistory([...prev, { ...base, formMode: mode }]);
-      });
+      setViewHistory(prev => pushForm(prev, mode, cat));
       setSidebarOpen(false);
     });
   };
@@ -881,7 +767,7 @@ export default function App() {
   // so it pops the form entry from the stack rather than asking the browser to
   // go "back" — the entry behind it is not guaranteed to be the list.
   const closeSourceForm = () => {
-    setViewHistory(prev => (prev[prev.length - 1]?.formMode ? prev.slice(0, -1) : prev));
+    setViewHistory(popForm);
   };
 
   // Jump directly to a given depth of the navigation stack (breadcrumb click).
@@ -890,7 +776,7 @@ export default function App() {
     if (index < 0 || steps <= 0) return;
     runGuarded(() => {
       if (canPopBrowserRef.current) window.history.go(-steps);
-      else setViewHistory(prev => prev.slice(0, index + 1));
+      else setViewHistory(prev => truncateTo(prev, index));
     });
   };
 
