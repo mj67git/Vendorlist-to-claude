@@ -1012,7 +1012,13 @@ export default function App() {
                            original.grade !== normalized.grade ||
                            original.status !== normalized.status ||
                            original.isSample !== normalized.isSample ||
-                           original.initialSampleStatus !== normalized.initialSampleStatus;
+                           original.initialSampleStatus !== normalized.initialSampleStatus ||
+                           // The partner link was missing from both the change
+                           // check and the payload, so re-pointing a source at a
+                           // different company was never sent to the server: the
+                           // name changed and the link silently did not.
+                           (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
+                           (original.supplierId || null) !== (normalized.supplierId || null);
 
     // Dispatch precision requests based on modified data blocks.
     // These MUST run one after another: every endpoint does a full
@@ -1038,6 +1044,8 @@ export default function App() {
           status: normalized.status,
           isSample: normalized.isSample,
           initialSampleStatus: normalized.initialSampleStatus,
+          manufacturerId: normalized.manufacturerId ?? null,
+          supplierId: normalized.supplierId ?? null,
           reasonForChange: normalized.reasonForChange
         })
       }));

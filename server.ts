@@ -4,6 +4,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { createServer as createViteServer } from "vite";
 import { INITIAL_BUSINESS_PARTNERS_DB } from "./src/db_business_partners.js";
+import { resolvePartnerLink, stripPartnerMarker } from "./src/server/domain/partnerLink.js";
 import { PrismaClient } from "@prisma/client";
 import { AuditService } from "./src/utils/auditService.js";
 import { AUDIT_EVENT_GROUPS } from "./src/utils/auditTaxonomy.js";
@@ -716,20 +717,12 @@ async function getVendorsList(vendorId?: string): Promise<any[]> {
       const riskObj = riskByVendor.get(v.id) || null;
       const analysisArr: any[] = analysisByVendor.get(v.id) || [];
 
-      let manufacturerId = (v as any).manufacturerId || null;
-      let supplierId = (v as any).supplierId || null;
-      let contactInfo = v.contactInfo || "";
-
-      if (contactInfo && contactInfo.includes('__BP_METAUIUIUI_STUB__')) {
-        // legacy support if any
-      }
-      if (contactInfo && contactInfo.includes('__BP_METAUI__:')) {
-        const parts = contactInfo.split('\n__BP_METAUI__:');
-        contactInfo = parts[0];
-        const metaParts = (parts[1] || "").split(':');
-        manufacturerId = manufacturerId || metaParts[0] || null;
-        supplierId = supplierId || metaParts[1] || null;
-      }
+      // The column wins; the marker inside contact_info is only a fallback for
+      // rows written before the link had columns (see domain/partnerLink).
+      const { contactInfo, manufacturerId, supplierId } = resolvePartnerLink(
+        { manufacturerId: (v as any).manufacturerId, supplierId: (v as any).supplierId },
+        v.contactInfo,
+      );
 
       result.push({
         id: v.id,
@@ -891,9 +884,31 @@ async function saveVendorToDb(v: any): Promise<boolean> {
       manufacturerId, supplierId
     } = v;
 
-    const serializedContactInfo = contactInfo ? 
-      (contactInfo + (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '')) : 
-      (manufacturerId || supplierId ? `\n__BP_METAUI__:${manufacturerId || ''}:${supplierId || ''}` : '');
+    /*
+     * The partner link goes in its own columns.
+     *
+     * It used to be smuggled into `contact_info` as a `__BP_METAUI__:mfg:sup`
+     * marker while `manufacturer_id` and `supplier_id` — which exist, and are
+     * indexed — were never written at all. That produced three failures:
+     *
+     *   1. Reading prefers the column and falls back to the marker, so once a
+     *      column held anything, later changes to the link were invisible: the
+     *      write updated the marker and the read kept returning the stale
+     *      column. A source could show one company's name and stay linked to
+     *      another.
+     *   2. `DELETE /api/business-partners/:id` counts dependants with
+     *      `where: { supplierId: id }`. Against an always-NULL column that
+     *      count is always zero, so a partner in active use could be deleted
+     *      with the guard reporting nothing depends on it.
+     *   3. The marker sat inside a field the user edits by hand, so editing the
+     *      contact details could corrupt or drop the link.
+     *
+     * Old rows are migrated by 20260901120000_vendor_partner_columns; the read
+     * path keeps its marker fallback for anything that migration missed.
+     */
+    const serializedContactInfo = stripPartnerMarker(contactInfo);
+    const manufacturerLink = manufacturerId || null;
+    const supplierLink = supplierId || null;
 
     // risk assessment & analysis records are now stored in normalized tables
     // (see persistVendorRelations), not in the legacy vendor Text columns.
@@ -916,6 +931,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
         irc: irc || null,
+        manufacturerId: manufacturerLink,
+        supplierId: supplierLink,
         riskAssessment: null,
         analysisRecords: null,
       },
@@ -930,6 +947,8 @@ async function saveVendorToDb(v: any): Promise<boolean> {
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
         irc: irc || null,
+        manufacturerId: manufacturerLink,
+        supplierId: supplierLink,
         riskAssessment: null,
         analysisRecords: null,
       },
@@ -4310,15 +4329,31 @@ setInterval(() => {
       // Referential integrity: block deletion when the partner is still linked
       // to a source. Manufacturers and Suppliers are independent now, so there
       // is no partner-to-partner reference to check.
+      /*
+       * Counting on the column alone was not enough.
+       *
+       * Until the partner link was moved into its columns, the id lived inside
+       * `contact_info` as a marker and the column was always NULL — so this
+       * count was always zero and a partner in active use could be deleted
+       * without the guard noticing. The migration moves those markers across,
+       * but a database restored from an older backup, or one where the
+       * migration has not run yet, still holds rows in the old shape. A guard
+       * that is right only after a migration is not a guard, so the legacy
+       * shape is checked too. It is an unindexed LIKE, which is acceptable on a
+       * delete: one scan, on an operation a person performs by hand.
+       */
+      const legacyMarkerRefs = async () =>
+        prisma.vendor.count({ where: { contactInfo: { contains: `__BP_METAUI__:` } , AND: [{ contactInfo: { contains: id } }] } });
+
       let blockedReason: string | null = null;
       if (existing.type === "Manufacturer") {
         const vendorRefs = await prisma.vendor.count({ where: { manufacturerId: id } });
-        if (vendorRefs > 0) {
+        if (vendorRefs > 0 || (await legacyMarkerRefs()) > 0) {
           blockedReason = "امکان حذف این تولیدکننده وجود ندارد. به یک یا چند Source اختصاص داده شده است.";
         }
       } else if (existing.type === "Supplier") {
         const vendorRefs = await prisma.vendor.count({ where: { OR: [{ supplierId: id }, { id }] } });
-        if (vendorRefs > 0) {
+        if (vendorRefs > 0 || (await legacyMarkerRefs()) > 0) {
           blockedReason = "امکان حذف این فروشنده وجود ندارد. در یک یا چند Source استفاده شده است.";
         }
       }
