@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle, ShieldAlert, X } from 'lucide-react';
 import { RiskAssessmentData, User, Vendor } from '../../types';
 import { FmeaService } from '../../utils/fmeaService';
@@ -82,7 +82,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
   );
 }
 
-export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
+export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDirtyChange }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null, onDirtyChange?: (dirty: boolean) => void }) {
   const spsScore = calculateOverallScore(vendor.scores, true) || 0;
   
   // Calculate recommended probability based on SPS via the isolated FmeaService
@@ -92,6 +92,23 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
   const [detectability, setDetectability] = useState<number>(vendor.riskAssessment?.detectability || 1);
   const [probability, setProbability] = useState<number>(vendor.riskAssessment?.probability || recommendedProb);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Like the evaluation form, this is an inline section rather than a dialog, so
+  // it reports upward and the page carries the guard. The three sliders are
+  // compared against the stored assessment (or the defaults offered for a first
+  // one), so opening the form without moving anything asks no question.
+  useEffect(() => {
+    const initial = [
+      vendor.riskAssessment?.materialCriticality || 5,
+      vendor.riskAssessment?.detectability || 1,
+      vendor.riskAssessment?.probability || recommendedProb,
+    ];
+    const dirty = !isSuccess
+      && [criticality, detectability, probability].some((v, i) => v !== initial[i]);
+    onDirtyChange?.(dirty);
+  }, [criticality, detectability, probability, isSuccess, vendor.riskAssessment, recommendedProb, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   /**
    * A native alert() used to carry the permission refusal: it blocked the
    * interface, ignored the page's direction and theme, and left nothing behind

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AlertTriangle } from 'lucide-react';
 
 /**
  * The single overlay shell for every dialog in the app.
@@ -39,6 +40,26 @@ interface FormModalProps {
   size?: FormModalSize;
   /** Set false to require an explicit button press (destructive confirmations). */
   closeOnBackdrop?: boolean;
+  /**
+   * Whether closing right now would throw away typed input. Checked on Escape
+   * and on a backdrop click — the two ways a dialog closes without the user
+   * meaning "discard" — and when it returns true they raise the confirmation
+   * below instead of closing.
+   *
+   * It lives here rather than in each form because every dialog in the app
+   * comes through this component: wiring it once means a dialog added later is
+   * covered by default instead of quietly losing a half-filled form, which is
+   * exactly how the material, partner and user forms came to differ from the
+   * source form that did guard itself.
+   *
+   * Report dirty, not open: a form the user opened and left untouched must
+   * close without a question, or the warning becomes noise people click past.
+   * The explicit cancel/save buttons call `onClose` directly and are not
+   * affected — pressing "انصراف" is already an answer.
+   */
+  unsavedChanges?: () => boolean;
+  /** What is about to be lost, e.g. «اطلاعات مادهٔ جدید». */
+  unsavedLabel?: string;
   /** 'alertdialog' for a confirmation that interrupts a destructive path. */
   role?: 'dialog' | 'alertdialog';
   /** id of the element naming this dialog, for screen readers. */
@@ -53,6 +74,8 @@ export function FormModal({
   onClose,
   size = 'lg',
   closeOnBackdrop = true,
+  unsavedChanges,
+  unsavedLabel,
   role = 'dialog',
   labelledBy,
   ariaLabel,
@@ -62,6 +85,37 @@ export function FormModal({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const reduce = useReducedMotion();
+  const [confirming, setConfirming] = React.useState(false);
+
+  // Same treatment as onClose: read through a ref so a caller passing an inline
+  // arrow does not re-run the key handler effect on every keystroke.
+  const unsavedRef = useRef(unsavedChanges);
+  useEffect(() => {
+    unsavedRef.current = unsavedChanges;
+  });
+
+  // A dialog that reopens must not still be asking about the previous edit.
+  useEffect(() => {
+    if (!open) setConfirming(false);
+  }, [open]);
+
+  const confirmingRef = useRef(confirming);
+  useEffect(() => {
+    confirmingRef.current = confirming;
+  });
+
+  /** Close, unless there is typed input to warn about first. */
+  const requestClose = () => {
+    if (unsavedRef.current?.()) {
+      setConfirming(true);
+      return;
+    }
+    onCloseRef.current();
+  };
+  const requestCloseRef = useRef(requestClose);
+  useEffect(() => {
+    requestCloseRef.current = requestClose;
+  });
 
   // Callers pass an inline arrow for onClose, so its identity changes on every
   // render of the parent — and the parent re-renders on every keystroke,
@@ -83,7 +137,13 @@ export function FormModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onCloseRef.current();
+        // While the confirmation is up, Escape answers *it* — "keep editing" —
+        // rather than reaching past it to close the form it is protecting.
+        if (confirmingRef.current) {
+          setConfirming(false);
+          return;
+        }
+        requestCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
@@ -149,7 +209,7 @@ export function FormModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: reduce ? 0 : 0.2, ease: 'easeOut' }}
-            onClick={closeOnBackdrop ? onClose : undefined}
+            onClick={closeOnBackdrop ? requestClose : undefined}
             aria-hidden="true"
           />
 
@@ -180,6 +240,66 @@ export function FormModal({
           >
             {body}
           </motion.div>
+
+          {/* The unsaved-changes question, raised over the form it protects
+              rather than replacing it — the user can still see what they were
+              filling in while deciding. It lives inside this portal so it is
+              above the panel without a second overlay stack. */}
+          <AnimatePresence>
+            {confirming && (
+              <motion.div
+                className="absolute inset-0 z-20 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduce ? 0 : 0.15 }}
+                onClick={() => setConfirming(false)}
+              >
+                <motion.div
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-label="تغییرات ذخیره‌نشده"
+                  onClick={e => e.stopPropagation()}
+                  className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 text-right"
+                  initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+                  animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+                  transition={{ duration: reduce ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-foreground mb-1.5">تغییرات ذخیره‌نشده</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
+                        {unsavedLabel
+                          ? `${unsavedLabel} هنوز ذخیره نشده است. اگر این فرم را ببندید، از بین می‌رود.`
+                          : 'اطلاعات واردشده هنوز ذخیره نشده است. اگر این فرم را ببندید، از بین می‌رود.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-start gap-2.5 mt-6">
+                    <button
+                      type="button"
+                      autoFocus
+                      onClick={() => setConfirming(false)}
+                      className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                    >
+                      بازگشت به فرم
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setConfirming(false); onCloseRef.current(); }}
+                      className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      خروج بدون ذخیره
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
     </AnimatePresence>,

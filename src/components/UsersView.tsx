@@ -7,6 +7,7 @@ import {
 import { EntityName } from './EntityName';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
+import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { Role, User } from '../types';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
@@ -199,6 +200,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const userFormDirty = useDirtySnapshot(formOpen, draft);
+  // The permissions dialog compares against what is actually in force, so
+  // opening it and ticking nothing closes without a question — the same reason
+  // its save button is disabled in that state.
+  const permDirty = useDirtySnapshot(!!permTarget, permDraft);
+  const resetDirty = useDirtySnapshot(!!resetTarget, resetPassword);
 
   const flash = (message: string) => {
     setToast(message);
@@ -763,7 +771,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
       </div>
 
       {/* CREATE / EDIT */}
-      <FormModal open={formOpen} onClose={() => setFormOpen(false)} size="md" labelledBy="users-form-title">
+      <FormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        size="md"
+        labelledBy="users-form-title"
+        unsavedChanges={userFormDirty}
+        unsavedLabel={editing ? 'تغییرات این حساب کاربری' : 'اطلاعات کاربر جدید'}
+      >
         <form onSubmit={submitForm} className="flex flex-col max-h-full">
           <div className="px-6 py-4 border-b border-border bg-muted/50">
             <h3 id="users-form-title" className="text-sm font-black text-foreground">
@@ -863,7 +878,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
       </FormModal>
 
       {/* RESET PASSWORD */}
-      <FormModal open={!!resetTarget} onClose={() => setResetTarget(null)} size="sm" labelledBy="users-reset-title">
+      <FormModal
+        open={!!resetTarget}
+        onClose={() => setResetTarget(null)}
+        size="sm"
+        labelledBy="users-reset-title"
+        unsavedChanges={resetDirty}
+        unsavedLabel="کلمهٔ عبور موقتی که وارد کرده‌اید"
+      >
         {resetTarget && (
           <form onSubmit={submitReset}>
             <div className="px-6 py-4 border-b border-border bg-muted/50">
@@ -903,7 +925,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
       </FormModal>
 
       {/* PERMISSIONS */}
-      <FormModal open={!!permTarget} onClose={() => setPermTarget(null)} size="md" labelledBy="users-perm-title">
+      <FormModal
+        open={!!permTarget}
+        onClose={() => setPermTarget(null)}
+        size="md"
+        labelledBy="users-perm-title"
+        unsavedChanges={permDirty}
+        unsavedLabel="تغییرات سطح دسترسی"
+      >
         {permTarget && (
           <div className="flex flex-col max-h-full">
             <div className="px-6 py-4 border-b border-border bg-muted/50">

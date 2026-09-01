@@ -37,6 +37,7 @@ import { Pagination } from './Pagination';
 import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
+import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 
 interface Props {
   partners: BusinessPartner[];
@@ -273,6 +274,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   });
 
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Both halves of this form count: the profile fields and the SOP documents,
+  // which can hold several megabytes of freshly attached files. A stray click
+  // outside the panel used to throw the attachments away with no question and
+  // no way to get them back short of picking every file again.
+  const partnerFormDirty = useDirtySnapshot(isModalOpen, { formData, evalDocs });
 
   // Custom Deletion state
   const [partnerToDelete, setPartnerToDelete] = useState<BusinessPartner | null>(null);
@@ -1169,7 +1176,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* Add / Edit Partner Modal with Portal & Sticky Header/Footer */}
-      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم شریک تجاری">
+      <FormModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        size="lg"
+        ariaLabel="فرم شریک تجاری"
+        unsavedChanges={partnerFormDirty}
+        unsavedLabel={editingPartner ? 'تغییرات این شریک تجاری' : 'اطلاعات شریک تجاری جدید'}
+      >
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -2176,7 +2190,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* Blacklist Confirmation Modal (reason required) */}
-      <FormModal open={!!blacklistTarget} onClose={() => setBlacklistTarget(null)} size="sm" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید انتقال به لیست سیاه">
+      <FormModal open={!!blacklistTarget} onClose={() => setBlacklistTarget(null)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید انتقال به لیست سیاه">
         {blacklistTarget && (<>
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-600 text-white rounded-xl">
@@ -2223,7 +2238,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* Custom Deletion Confirmation Modal */}
-      <FormModal open={!!partnerToDelete} onClose={() => setPartnerToDelete(null)} size="sm" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید حذف شریک تجاری">
+      <FormModal open={!!partnerToDelete} onClose={() => setPartnerToDelete(null)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6 space-y-4" ariaLabel="تأیید حذف شریک تجاری">
         {partnerToDelete && (<>
             <div className="flex items-center gap-3 border-b border-border pb-3">
               <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">

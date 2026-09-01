@@ -21,13 +21,25 @@ import { can, canScoreDepartment, scorableDepartments } from '../../utils/permis
 // extracted from App.tsx
 
 export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
-  // Editing happens on its own page (#/…/vendor/<id>/edit), so this screen just
-  // navigates to it. The unsaved-changes guard lives in VendorForm now, where
-  // the form state it has to inspect actually is.
+  // Editing the source profile happens on its own page
+  // (#/…/vendor/<id>/edit), which carries its own guard. But two forms live
+  // *here* as inline sections — department scoring and the FMEA risk assessment
+  // — and leaving this page is what throws them away. `registerNavGuard` was
+  // accepted as a prop and never used, so half-finished scores vanished without
+  // a word; each form now reports whether it has been touched and the page
+  // registers the same guard the source form uses.
 
   const [showRiskAssessment, setShowRiskAssessment] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showAdminScoresEdit, setShowAdminScoresEdit] = useState(false);
+  const [scoresDirty, setScoresDirty] = useState(false);
+  const [riskDirty, setRiskDirty] = useState(false);
+
+  useEffect(() => {
+    if (!registerNavGuard) return;
+    registerNavGuard(() => scoresDirty || riskDirty);
+    return () => registerNavGuard(null);
+  }, [registerNavGuard, scoresDirty, riskDirty]);
 
   // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
   // Only the stages the current user is allowed to perform are shown.
@@ -962,7 +974,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <p className="text-xs opacity-90 mt-0.5">لطفاً ارزیابی مربوط به بخش خود را بر اساس مستندات ثبت کنید.</p>
                   </div>
                 </div>
-                <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} />
+                <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} onDirtyChange={setScoresDirty} />
               </div>
             ) : vendor.scores ? (
               <div className="space-y-6">
@@ -1149,11 +1161,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
           </div>
 
           {showRiskAssessment ? (
-            <RiskAssessmentForm 
-              vendor={vendor} 
-              onSave={onSave} 
-              onClose={() => setShowRiskAssessment(false)} 
-              currentUser={currentUser} 
+            <RiskAssessmentForm
+              vendor={vendor}
+              onSave={onSave}
+              onClose={() => setShowRiskAssessment(false)}
+              currentUser={currentUser}
+              onDirtyChange={setRiskDirty}
             />
           ) : vendor.riskAssessment ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">

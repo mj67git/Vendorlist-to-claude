@@ -9,6 +9,7 @@ import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { EntityName } from './EntityName';
 import { findDuplicateMaterial } from '../utils/materialDuplicates';
+import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
@@ -172,6 +173,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     pharmacopoeia: 'USP',
     specificationFile: undefined,
   });
+
+  // A picked Specification file lives outside `formData`, so it is reported
+  // separately — losing an attachment silently is the costlier half of losing
+  // this form.
+  const materialFormDirty = useDirtySnapshot(isModalOpen, formData, () => !!pendingSpecFile);
 
   const generateStandardNameFa = (data: Partial<Material>) => {
     const roleInfo = getMaterialRole(data.role);
@@ -749,7 +755,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* CREATE/EDIT MODAL - High Quality Responsive Enterprise Modal with Portal */}
-      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم ماده اولیه">
+      <FormModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        size="lg"
+        ariaLabel="فرم ماده اولیه"
+        unsavedChanges={materialFormDirty}
+        unsavedLabel={editingMaterial ? 'تغییرات این ماده' : 'اطلاعات مادهٔ جدید'}
+      >
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -1241,7 +1254,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* CUSTOM MATERIAL DELETE MODAL with Portal */}
-      <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm" className="p-6" ariaLabel="تأیید حذف ماده اولیه">
+      <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6" ariaLabel="تأیید حذف ماده اولیه">
         {materialToDelete && (<>
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
@@ -1305,7 +1319,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* CUSTOM SPEC FILE DELETE MODAL with Portal */}
-      <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm" className="p-6" ariaLabel="تأیید حذف فایل Specification">
+      <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6" ariaLabel="تأیید حذف فایل Specification">
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
                 <FileText className="w-5 h-5" />

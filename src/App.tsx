@@ -533,6 +533,23 @@ export default function App() {
     navGuardRef.current = fn;
   }, []);
 
+  // The guard above covers navigation *inside* the app. Closing the tab or
+  // pressing F5 goes around it entirely, so the same signal is handed to the
+  // browser's own prompt — the last way an open form could be lost in silence.
+  // The wording of that prompt belongs to the browser and cannot be set; only
+  // whether it appears is ours.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!navGuardRef.current?.()) return;
+      e.preventDefault();
+      // Legacy browsers key off the return value rather than preventDefault.
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
   // --- Hash routing / browser history ---------------------------------------
   // The URL hash is the shareable source of truth for the current location, and
   // each in-app push creates a real browser history entry — so Back, Forward
@@ -2012,22 +2029,27 @@ export default function App() {
                 <div className="text-right">
                   <h3 className="text-sm font-black text-foreground mb-1.5">تغییرات ذخیره‌نشده</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                    فرم ویرایش باز است و تغییرات شما هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این تغییرات از بین می‌روند.
+                    فرمی باز است و اطلاعات واردشده هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این اطلاعات از بین می‌روند.
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-start gap-2.5 mt-6">
+                {/* The safe answer leads and carries the primary style: this
+                    dialog interrupts someone who was mid-task, and the reflex
+                    click should keep their work, not discard it. Same order and
+                    wording as the confirmation inside FormModal. */}
                 <button
-                  onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                  autoFocus
+                  onClick={() => setPendingNav(null)}
+                  className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
                 >
-                  خروج بدون ذخیره
+                  بازگشت به فرم
                 </button>
                 <button
-                  onClick={() => setPendingNav(null)}
+                  onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
                   className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
                 >
-                  ماندن در صفحه
+                  خروج بدون ذخیره
                 </button>
               </div>
         </FormModal>

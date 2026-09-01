@@ -11,7 +11,7 @@ import { canScoreDepartment } from '../../utils/permissions';
 // extracted from App.tsx
 
 // --- View: Evaluation Form ---
-export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
+export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyChange }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null, onDirtyChange?: (dirty: boolean) => void }) {
   const [scores, setScores] = useState<Record<string, Record<string, number>>>(() => {
     const initialDepts = ['commercial', 'qa', 'planning', 'finance'];
     const res: Record<string, Record<string, number>> = {};
@@ -45,6 +45,20 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
   const [modifiedDepts, setModifiedDepts] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // This form is an inline section of the source page, not a dialog, so leaving
+  // the page is what loses it. It reports upward and the page registers the same
+  // unsaved-changes guard the source form uses. `modifiedDepts` is the honest
+  // signal: it is set when a score is actually moved, so merely opening the form
+  // to look at the questions does not raise a warning.
+  useEffect(() => {
+    const dirty = Object.values(modifiedDepts).some(Boolean) || comments.trim().length > 0;
+    onDirtyChange?.(dirty);
+  }, [modifiedDepts, comments, onDirtyChange]);
+
+  // Leaving the form must clear the guard, or the page keeps warning about a
+  // form that is no longer on screen.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Only the departments this user may score are rendered — admin gets all four.
