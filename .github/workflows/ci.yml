@@ -6,9 +6,10 @@
 # commands a developer runs locally, and they are listed here in the order that
 # fails fastest.
 #
-# No database is needed: the whole suite is unit tests over pure modules. When
-# API tests arrive they will need a postgres service container — add it then,
-# not speculatively.
+# A PostgreSQL service runs alongside because the API tests drive the real
+# Express app over HTTP against a real database. Without DATABASE_URL those
+# tests skip themselves rather than fail, so the suite still works on a machine
+# with no database — but CI is where they must actually run.
 
 name: CI
 
@@ -29,6 +30,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vlse_test
+        ports: ['5432:5432']
+        # Without the healthcheck the first migration races the server starting.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vlse_test?schema=public
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,14 +67,21 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      - name: Apply migrations to the test database
+        run: bunx prisma migrate deploy
+
       - name: Typecheck
         run: bunx tsc --noEmit
 
+      # Unit tests and API tests in one run. Serially, because the API files
+      # each reset the database: run in parallel they truncate the tables the
+      # other one is using and fail for reasons that have nothing to do with the
+      # code. The whole suite takes about twenty seconds.
       - name: Tests
-        run: bunx tsx --test tests/*.test.ts
+        run: bunx tsx --test --test-concurrency=1 tests/*.test.ts
 
-      # Frontend only. The full `npm run build` also runs a migration step that
-      # needs a live DATABASE_URL, which CI has no business holding.
+      # Frontend only: the full `npm run build` also runs the migration script,
+      # which has already run against the service container above.
       - name: Build frontend
         run: bunx vite build
 

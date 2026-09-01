@@ -2389,6 +2389,29 @@ setInterval(() => {
 
       const ircError = ircViolation((p as any).irc, (current as any).irc);
       if (ircError) {
+        // Recorded, like the SOP refusal below it. A blocked write is evidence
+        // too — it says someone tried to put an invalid licence number on a
+        // regulated record — and auditing one refusal but not the other made
+        // the trail inconsistent about what counts as an event.
+        AuditService.createAuditRecord({
+          auditId: `AUD-IRC-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Source Management",
+          eventType: "Data Change",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "Source",
+          entityId: id,
+          entityName: current.material || current.name || "سورس",
+          action: "Delete - Blocked",
+          severity: "Warning",
+          description: `ویرایش سورس به دلیل نامعتبر بودن کد IRC رد شد: ${ircError}`,
+          reasonForChange: "قاعدهٔ IRC: کد باید دقیقاً ۱۶ رقم عددی باشد",
+          beforeData: { irc: (current as any).irc ?? null },
+          afterData: { irc: (p as any).irc ?? null, refusal: ircError },
+        }).catch(err => console.error("Audit logging failed on IRC refusal:", err));
         return res.status(422).json({ error: ircError });
       }
 
