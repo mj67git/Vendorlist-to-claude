@@ -6,6 +6,9 @@ import { JWT_SECRET } from "./src/server/security/jwtSecret.js";
 import { securityHeaders } from "./src/server/http/securityHeaders.js";
 import { parseDateSafely } from "./src/server/db/coerce.js";
 import { generateMaterialId } from "./src/server/domain/materialId.js";
+import { getClientIp, getUserAgent } from "./src/server/http/requestInfo.js";
+import { sendHandlerError } from "./src/server/http/errors.js";
+import { ircViolation, sopSupplierViolation } from "./src/server/domain/sourceRules.js";
 import {
   checkAdminSafety, checkPermissionSafety, requireAuth, requirePermission, requireRole,
 } from "./src/server/http/auth.js";
@@ -168,62 +171,7 @@ async function rejectDuplicateMaterial(
   return { error: hit.reason, duplicateOf: hit.material.id };
 }
 
-function ircViolation(irc: unknown, previousIrc?: unknown): string | null {
-  const value = typeof irc === "string" ? irc.trim() : "";
-  const previous = typeof previousIrc === "string" ? previousIrc.trim() : "";
-  if (value === previous) return null;
-  if (value === "" || value === "N/A" || value === "NA" || value === "-") return null;
-  if (/^\d{16}$/.test(value)) return null;
-  return "کد IRC باید دقیقاً ۱۶ رقم عددی باشد.";
-}
 
-/**
- * Refuse a source whose supplier does not meet the SOP.
- *
- * The client greys these out, but that gate is cosmetic (project rule 14): the
- * record is only actually protected if the API refuses it too. Returns an error
- * message when the write must be rejected, or null when it may proceed.
- *
- * A supplier that is already attached to the record is left alone, so a source
- * saved before this rule existed stays editable rather than becoming
- * unsaveable.
- */
-async function sopSupplierViolation(
-  supplierId: string | null | undefined,
-  previousSupplierId?: string | null,
-): Promise<string | null> {
-  if (!supplierId || supplierId === previousSupplierId) return null;
-  const prisma = requirePrisma();
-  const row = await prisma.businessPartner.findUnique({
-    where: { id: supplierId },
-    include: { evaluation: true },
-  });
-  if (!row) return "فروشندهٔ انتخاب‌شده در مخزن شرکای تجاری یافت نشد.";
-
-  // Derive the grade from the score rather than trusting the stored grade
-  // column, which is what the client does on load (reconcileSupplierEvaluation).
-  // They disagree in the seeded data: bp_sup_2 is stored as grade B on a score
-  // of 80, which the rubric grades A. Reading the column here would have
-  // refused a supplier the form shows as selectable.
-  const derivedGrade = row.evaluation
-    ? calculateGradeAndStatus(row.evaluation.totalScore ?? 0, row.evaluation.grade !== "Not Evaluated").grade
-    : undefined;
-
-  const verdict = canSupplySources({
-    type: row.type as string,
-    status: row.status as string,
-    evaluation: derivedGrade ? { grade: derivedGrade } : null,
-  });
-  return verdict.allowed ? null : `${row.name}: ${verdict.reason}`;
-}
-
-
-function sendHandlerError(res: any, err: any) {
-  if (err instanceof VendorConflictError) {
-    return res.status(409).json({ error: err.message });
-  }
-  return res.status(500).json({ error: err?.message });
-}
 
 async function startServer() {
   const app = express();
@@ -298,18 +246,6 @@ async function startServer() {
     });
   });
 
-  function getClientIp(req: any): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      const ips = typeof forwarded === 'string' ? forwarded.split(',') : forwarded;
-      return ips[0].trim();
-    }
-    return req.ip || req.connection?.remoteAddress || '127.0.0.1';
-  }
-
-  function getUserAgent(req: any): string {
-    return req.headers['user-agent'] || 'Unknown Browser/Device';
-  }
 
   // User Login (Authenticates users securely)
 /**
