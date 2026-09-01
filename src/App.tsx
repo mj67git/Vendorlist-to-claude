@@ -72,6 +72,32 @@ function buildSystemTime(d: Date) {
   };
 }
 
+/**
+ * What a module shows to someone who may not read it.
+ *
+ * Reading became a permission, so "the page is empty" and "you are not allowed
+ * to see this" had to stop looking alike: an empty repository and a revoked one
+ * rendered the same blank table, and the failed request read as a network error.
+ */
+const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void }> = ({ title, detail, onHome }) => (
+  <div className="max-w-xl mx-auto my-12 p-8 bg-card border border-border rounded-2xl text-center space-y-4 shadow-xs" dir="rtl">
+    <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300 flex items-center justify-center mx-auto">
+      <ShieldAlert className="w-6 h-6" />
+    </div>
+    <h2 className="text-base font-black text-foreground">{title}</h2>
+    <p className="text-xs text-muted-foreground leading-relaxed font-medium">{detail}</p>
+    <p className="text-[11px] text-muted-foreground">
+      برای دریافت دسترسی با مدیر سیستم تماس بگیرید؛ سطح دسترسی هر کاربر در «مدیریت کاربران» تنظیم می‌شود.
+    </p>
+    <button
+      onClick={onHome}
+      className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+    >
+      بازگشت به صفحه اصلی
+    </button>
+  </div>
+);
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -247,6 +273,15 @@ export default function App() {
       })
       .catch(err => console.error("Error fetching dynamic configuration weights:", err))
       .finally(() => {
+        // Reading is a permission now. Without it the request would come back
+        // 403 and the catch below would blame the network ("اتصال برقرار نشد")
+        // for a deliberate policy decision — and the localStorage cache would
+        // keep showing the list the account just lost.
+        if (!can(currentUser, 'vendor.read')) {
+          setDb([]);
+          setLoadError(null);
+          return;
+        }
         setIsSyncing(true);
         authFetch('/api/vendors')
           .then(res => {
@@ -291,6 +326,7 @@ export default function App() {
   // Load the material catalogue from the backend (PostgreSQL) once authenticated.
   useEffect(() => {
     if (!currentUser) return;
+    if (!can(currentUser, 'material.read')) { setMaterials([]); return; }
     authFetch('/api/materials')
       .then(res => (res.ok ? res.json() : null))
       .then((data: Material[] | null) => { if (Array.isArray(data)) setMaterials(data); })
@@ -336,6 +372,7 @@ export default function App() {
   // an unauthenticated call would trigger authFetch's 401 session reload.
   useEffect(() => {
     if (!currentUser) return;
+    if (!can(currentUser, 'partner.read')) { setBusinessPartners([]); setPartnersLoading(false); return; }
     // Its own flag: `isSyncing` tracks the vendors fetch, so borrowing it would
     // have the partner table stop showing skeletons while its own request is
     // still in flight.
@@ -1229,6 +1266,16 @@ export default function App() {
     let content;
     let keyName = '';
 
+    // Every page built from the source list shows the same refusal, so it is
+    // written once here rather than repeated at each branch.
+    const DENY_SOURCES = (
+      <AccessDenied
+        title="عدم دسترسی به اطلاعات سورس‌ها"
+        detail="حساب کاربری شما مجوز مشاهدهٔ سورس‌ها و تأمین‌کنندگان را ندارد."
+        onHome={() => navigate('home')}
+      />
+    );
+
     if (formMode) {
       // The source form as a full page: it is the longest form in the app and
       // opens dialogs of its own, so it gets the content area rather than an
@@ -1285,16 +1332,18 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      // No permission gate: the archive is a view over vendor data every
-      // signed-in user can already read, so hiding the page protected nothing.
-      // The `archive.read` permission it used to check was never enforced on any
-      // endpoint — see the note on LEGACY_PERMISSIONS.
+      // The archive is a view over the source data, so it follows `vendor.read`
+      // — the permission the endpoint behind it enforces. (It used to check a
+      // separate `archive.read`, which no endpoint enforced; that name was
+      // retired rather than renamed — see LEGACY_PERMISSIONS.)
       keyName = 'archive';
-      content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
+        <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />
+      );
     } else if (view === 'tasks') {
       const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
       keyName = `tasks-${taskKey}`;
-      content = (
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
         <WorklistView
           taskKey={taskKey}
           db={db}
@@ -1307,10 +1356,16 @@ export default function App() {
       );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
-      content = (
+      content = !can(currentUser, 'material.read') ? (
+        <AccessDenied
+          title="عدم دسترسی به مخزن مواد اولیه"
+          detail="حساب کاربری شما مجوز مشاهدهٔ مخزن مواد اولیه را ندارد."
+          onHome={() => navigate('home')}
+        />
+      ) : (
         <MaterialRepositoryView 
           materials={materials}
           onAddMaterial={handleAddMaterial}
@@ -1323,7 +1378,13 @@ export default function App() {
       );
     } else if (view === 'business-partners') {
       keyName = 'business-partners';
-      content = (
+      content = !can(currentUser, 'partner.read') ? (
+        <AccessDenied
+          title="عدم دسترسی به مخزن شرکای تجاری"
+          detail="حساب کاربری شما مجوز مشاهدهٔ شرکای تجاری و ارزیابی فروشندگان را ندارد."
+          onHome={() => navigate('home')}
+        />
+      ) : (
         <BusinessPartnerRepositoryView
           partners={businessPartners}
           onAddPartner={handleAddBusinessPartner}
@@ -1370,26 +1431,16 @@ export default function App() {
       } else {
         keyName = 'users-denied';
         content = (
-          <div className="p-8 max-w-xl mx-auto my-12 bg-rose-50 border border-rose-200 rounded-2xl text-center space-y-4 shadow-sm" style={{ direction: 'rtl' }}>
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <h2 className="text-base font-black text-rose-900">عدم دسترسی به مدیریت کاربران</h2>
-            <p className="text-xs text-rose-700 leading-relaxed font-medium">
-              تعریف و تغییر دسترسی پرسنل تنها در اختیار مدیران ارشد سیستم (Administrator) است.
-            </p>
-            <button
-              onClick={() => navigate('home')}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
-              بازگشت به صفحه اصلی
-            </button>
-          </div>
+          <AccessDenied
+            title="عدم دسترسی به مدیریت کاربران"
+            detail="تعریف و تغییر دسترسی پرسنل تنها در اختیار دارندگان مجوز «مدیریت کاربران» است."
+            onHome={() => navigate('home')}
+          />
         );
       }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
-      content = <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
@@ -1508,10 +1559,12 @@ export default function App() {
               onClick={() => navigate('home')} 
             />
 
+            {can(currentUser, 'vendor.read') && (
             <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
             </div>
-            {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
+            )}
+            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
                 id === 'sample' ? (v.category === 'sample' || v.isSample) :
                 id === 'blacklist' ? isInBlacklistCategory(v) :
@@ -1532,20 +1585,24 @@ export default function App() {
             <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
             </div>
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Building2} label="مخزن شرکای تجاری"
-              badge={businessPartners?.length || 0}
-              variant="business-partners"
-              active={view === 'business-partners'} 
-              onClick={() => navigate('business-partners')} 
-            />
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Database} label="مخزن مواد اولیه"
-              badge={materials?.length || 0}
-              variant="materials"
-              active={view === 'materials'} 
-              onClick={() => navigate('materials')} 
-            />
+            {can(currentUser, 'partner.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Building2} label="مخزن شرکای تجاری"
+                badge={businessPartners?.length || 0}
+                variant="business-partners"
+                active={view === 'business-partners'}
+                onClick={() => navigate('business-partners')}
+              />
+            )}
+            {can(currentUser, 'material.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Database} label="مخزن مواد اولیه"
+                badge={materials?.length || 0}
+                variant="materials"
+                active={view === 'materials'}
+                onClick={() => navigate('materials')}
+              />
+            )}
 
             <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
@@ -1554,16 +1611,18 @@ export default function App() {
                 actually check, not by `role === 'admin'`. A raw role test here
                 diverged from the pages themselves: someone holding the
                 `users.manage` exception was allowed by the page but never saw
-                the link, and the archive — which every signed-in user may read,
-                see the note on the `archive` branch — was hidden from everyone
-                but admins (rule 14: one policy table, both sides). */}
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Archive} label="آرشیو کامل داده‌ها"
-              badge={db.length}
-              variant="archive"
-              active={view === 'archive'}
-              onClick={() => navigate('archive')}
-            />
+                the link, and the archive was hidden from everyone but admins even
+                though nothing restricted it (rule 14: one policy table, both
+                sides). */}
+            {can(currentUser, 'vendor.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Archive} label="آرشیو کامل داده‌ها"
+                badge={db.length}
+                variant="archive"
+                active={view === 'archive'}
+                onClick={() => navigate('archive')}
+              />
+            )}
             {can(currentUser, 'audit.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={History} label="ردیابی تغییرات"
@@ -1581,12 +1640,14 @@ export default function App() {
                 onClick={() => navigate('users')}
               />
             )}
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
-              variant="supplier-audit"
-              active={view === 'supplier-audit'} 
-              onClick={() => navigate('supplier-audit')} 
-            />
+            {can(currentUser, 'vendor.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
+                variant="supplier-audit"
+                active={view === 'supplier-audit'}
+                onClick={() => navigate('supplier-audit')}
+              />
+            )}
           </nav>
 
         </aside>

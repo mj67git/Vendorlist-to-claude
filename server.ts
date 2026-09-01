@@ -1588,7 +1588,7 @@ async function startServer() {
   // Source selection — the recorded purchasing decision per material
   // ==========================================
 
-  app.get("/api/source-selections", requireAuth, async (req: any, res) => {
+  app.get("/api/source-selections", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
       const rows = await requirePrisma().sourceSelection.findMany();
       res.json(rows.map(r => ({
@@ -1685,7 +1685,7 @@ async function startServer() {
   });
 
   // Get all vendors (Unified Database)
-  app.get("/api/vendors", requireAuth, async (req: any, res) => {
+  app.get("/api/vendors", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
       const list = await getVendorsList();
       res.json(list);
@@ -1698,7 +1698,7 @@ async function startServer() {
   // Score history for a single vendor, reconstructed from the audit trail
   // (each scoring writes an audit record with before/after SPS). Available to
   // any authenticated user so the trend shows on the vendor detail page.
-  app.get("/api/vendors/:id/score-history", requireAuth, async (req: any, res) => {
+  app.get("/api/vendors/:id/score-history", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const rows = await prisma.auditLog.findMany({
@@ -1726,7 +1726,7 @@ async function startServer() {
   });
 
   // Risk assessment history (reconstructed from audit trail)
-  app.get("/api/vendors/:id/risk-history", requireAuth, async (req: any, res) => {
+  app.get("/api/vendors/:id/risk-history", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const rows = await prisma.auditLog.findMany({
@@ -3398,7 +3398,7 @@ async function startServer() {
   // --- Material Master Endpoints ---
   // ==========================================
 
-  app.get("/api/materials", requireAuth, async (req: any, res) => {
+  app.get("/api/materials", requireAuth, requirePermission("material.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const list = await prisma.material.findMany({ orderBy: { createdAt: "desc" } });
@@ -3689,7 +3689,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/materials/:id/specification/file", requireAuth, async (req: any, res) => {
+  app.get("/api/materials/:id/specification/file", requireAuth, requirePermission("material.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const material = await prisma.material.findUnique({ where: { id: req.params.id } });
@@ -3794,7 +3794,7 @@ async function startServer() {
   // --- Business Partner Endpoints ---
   // ==========================================
 
-  app.get("/api/business-partners", requireAuth, async (req: any, res) => {
+  app.get("/api/business-partners", requireAuth, requirePermission("partner.read"), async (req: any, res) => {
     try {
       const list = await getBusinessPartnersList();
       res.json(list);
@@ -3806,7 +3806,7 @@ async function startServer() {
   // SOP evaluation history for a supplier, reconstructed from the audit trail
   // (each partner change records the full partner, incl. its evaluation, in
   // afterData). Returns only points where an evaluation with a score exists.
-  app.get("/api/business-partners/:id/evaluation-history", requireAuth, async (req: any, res) => {
+  app.get("/api/business-partners/:id/evaluation-history", requireAuth, requirePermission("partner.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const rows = await prisma.auditLog.findMany({
@@ -3839,7 +3839,7 @@ async function startServer() {
 
   // Fetch a single SOP document's stored file on demand (kept out of the list
   // payload so the repository stays lightweight).
-  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, async (req: any, res) => {
+  app.get("/api/business-partners/:id/documents/:key/file", requireAuth, requirePermission("partner.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const evaluation = await prisma.supplierEvaluation.findUnique({

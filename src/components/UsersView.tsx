@@ -13,12 +13,18 @@ import {
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
 
-/** The four columns of the module grid, right to left as the page reads. */
-const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string }> = [
-  { key: 'view', label: 'مشاهده' },
-  { key: 'create', label: 'ثبت' },
-  { key: 'edit', label: 'ویرایش' },
-  { key: 'delete', label: 'حذف' },
+/**
+ * The four columns of the module grid, right to left as the page reads.
+ *
+ * The CRUD letter is shown under the Persian label because that is the shape
+ * admins ask for the matrix in ("بازرگانی روی شرکای تجاری CRUD، مالی فقط R"),
+ * and it gives the row summary badge a vocabulary to be terse in.
+ */
+const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string; letter: string }> = [
+  { key: 'view', label: 'مشاهده', letter: 'R' },
+  { key: 'create', label: 'ثبت', letter: 'C' },
+  { key: 'edit', label: 'ویرایش', letter: 'U' },
+  { key: 'delete', label: 'حذف', letter: 'D' },
 ];
 
 /** Scoring is listed separately: it is per department, not per action. */
@@ -29,6 +35,22 @@ function samePermissions(a: Permission[], b: Permission[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(b);
   return a.every(p => set.has(p));
+}
+
+/**
+ * The CRUD letters a draft currently grants on one module, e.g. `RCUD` or `R`.
+ * An always-open cell counts as granted, since nothing can take it away.
+ */
+function moduleLetters(module: PermissionModule, draft: Permission[]): string {
+  return ACTION_COLUMNS
+    .filter(col => {
+      const cell = module.actions[col.key];
+      if (cell === null) return false;
+      if (cell === 'open') return true;
+      return draft.includes(cell);
+    })
+    .map(col => col.letter)
+    .join('');
 }
 
 /** The distinct permissions a module row can actually toggle. */
@@ -345,10 +367,33 @@ export function UsersView({ currentUser }: UsersViewProps) {
     setPermError(null);
   };
 
+  /**
+   * Read and write are not independent: "may edit partners but may not see
+   * them" is not a state the application can render, and "may see them" with
+   * every write still ticked would leave writes the server allows behind a
+   * page the reader cannot open. So ticking any action of a module turns its
+   * read on, and turning its read off clears the rest of the row.
+   */
   const togglePermission = (permission: Permission) => {
-    setPermDraft(prev => prev.includes(permission)
-      ? prev.filter(p => p !== permission)
-      : ALL_PERMISSIONS.filter(p => p === permission || prev.includes(p)));
+    const module = PERMISSION_MODULES.find(m =>
+      ACTION_COLUMNS.some(c => m.actions[c.key] === permission) || m.single === permission);
+    const read = module?.actions.view;
+    const readPerm = read && read !== 'open' ? read : null;
+    const rowPerms = module ? modulePermissions(module) : [];
+
+    setPermDraft(prev => {
+      const on = prev.includes(permission);
+      let next: Permission[];
+      if (on) {
+        next = permission === readPerm
+          ? prev.filter(p => !rowPerms.includes(p))   // read off ⇒ whole row off
+          : prev.filter(p => p !== permission);
+      } else {
+        next = [...prev, permission];
+        if (readPerm && !next.includes(readPerm)) next.push(readPerm);
+      }
+      return ALL_PERMISSIONS.filter(p => next.includes(p));
+    });
   };
 
   /** The row's master tick: all of this module's actions on, or all off. */
@@ -817,7 +862,8 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       <th className="text-right text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
                       {ACTION_COLUMNS.map(col => (
                         <th key={col.key} className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
-                          {col.label}
+                          <span className="block">{col.label}</span>
+                          <span className="block font-mono text-[9px] text-muted-foreground/70">{col.letter}</span>
                         </th>
                       ))}
                       <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
@@ -833,7 +879,26 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       return (
                         <tr key={module.key} className="align-top">
                           <td className="py-2.5 pr-1 border-t border-border/70">
-                            <span className="text-xs font-bold text-foreground block">{module.title}</span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-xs font-bold text-foreground">{module.title}</span>
+                              {/* What this row currently grants, in the CRUD
+                                  shorthand the columns are labelled with — so a
+                                  glance down the dialog answers "what does this
+                                  person have on partners?" without counting
+                                  ticks. */}
+                              <span
+                                className={`shrink-0 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                  moduleLetters(module, permDraft)
+                                    ? 'bg-primary/10 text-primary border-primary/20'
+                                    : 'bg-muted text-muted-foreground border-border'
+                                }`}
+                                title={moduleLetters(module, permDraft)
+                                  ? `دسترسی فعلی: ${moduleLetters(module, permDraft)}`
+                                  : 'هیچ دسترسی‌ای به این ماژول ندارد'}
+                              >
+                                {moduleLetters(module, permDraft) || '—'}
+                              </span>
+                            </div>
                             {module.note && (
                               <span className="text-[10px] text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
                                 {module.note}
