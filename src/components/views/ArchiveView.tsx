@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, ChevronDown, Download, FileText, Printer, Search, Star, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Archive, ChevronDown, Download, FileText, ListChecks, Printer, Search, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
 import { Pagination } from '../../components/Pagination';
-import { PrintableEvaluationForm } from '../../components/PrintableForms';
+import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from '../../utils/excelExport';
@@ -21,6 +21,24 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   const [statusFilter, setStatusFilter] = useState('');
   
   const [printingVendor, setPrintingVendor] = useState<Vendor | null>(null);
+  const [printingList, setPrintingList] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [perPage, setPerPage] = useState(20);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!exportMenuRef.current?.contains(e.target as Node)) setExportMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExportMenuOpen(false); };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportMenuOpen]);
 
   /**
    * The recorded "this is the source we chose" decisions.
@@ -47,7 +65,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected]);
+  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, perPage]);
 
   const handleExportCategory = (catId: string, catLabel: string) => {
     exportCategoryToExcel(db, catId, catLabel, partners, materials, selections);
@@ -63,7 +81,12 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
         v.materialEn.toLowerCase().includes(term) ||
         v.cas.toLowerCase().includes(term) ||
         (v.irc && v.irc.toLowerCase().includes(term)) ||
-        (v.country && getDisplayCountry(v).toLowerCase().includes(term));
+        (v.country && getDisplayCountry(v).toLowerCase().includes(term)) ||
+        // People look a source up by the company it is connected to, which the
+        // row does not print but the record knows.
+        partners.some(p =>
+          (p.id === v.manufacturerId || p.id === v.supplierId) &&
+          ((p.name || '').toLowerCase().includes(term) || (p.nameEn || '').toLowerCase().includes(term)));
         
       const matchGrade = gradeFilter ? v.grade === gradeFilter : true;
       const matchCategory = categoryFilter 
@@ -88,14 +111,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
 
       return matchSearch && matchGrade && matchRisk && matchCategory && matchStatus && matchSelected;
     });
-  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, selections]);
+  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, selections, partners]);
 
   const selectedCount = useMemo(
     () => db.filter(v => !!selectionForVendor(v, selections)).length,
     [db, selections],
   );
 
-  const ITEMS_PER_PAGE = 20;
+  // Rows per page, like the materials, partners and audit tables. The archive
+  // is the longest list in the application and was the only one still fixed at
+  // twenty.
+  const ITEMS_PER_PAGE = perPage;
   const totalItems = filteredDb.length;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -103,6 +129,36 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   const paginatedDb = useMemo(() => {
     return filteredDb.slice(startIndex, endIndex);
   }, [filteredDb, startIndex, endIndex]);
+
+  /**
+   * What the printed extract was filtered by.
+   *
+   * A printed register that does not say what it excluded is not evidence of
+   * anything — "these are our suppliers" reads very differently from "these are
+   * our Grade A foreign suppliers". Built from the controls that are actually
+   * set, so an unfiltered print says so plainly.
+   */
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (categoryFilter) parts.push(`دسته: ${categoryLabels[categoryFilter as keyof typeof categoryLabels]?.fa || categoryFilter}`);
+    if (gradeFilter) parts.push(`گرید: ${gradeFilter}`);
+    if (riskFilter) parts.push(`ریسک: ${riskFilter}`);
+    if (statusFilter) parts.push(`وضعیت: ${statusFilter}`);
+    if (onlySelected) parts.push('فقط سورس‌های منتخب');
+    if (searchTerm.trim()) parts.push(`جستجو: «${searchTerm.trim()}»`);
+    return parts.length ? parts.join(' · ') : 'بدون فیلتر — کل آرشیو';
+  }, [categoryFilter, gradeFilter, riskFilter, statusFilter, onlySelected, searchTerm]);
+
+  if (printingList) {
+    return (
+      <PrintableArchiveList
+        vendors={filteredDb}
+        filterSummary={filterSummary}
+        selections={selections}
+        onBack={() => setPrintingList(false)}
+      />
+    );
+  }
 
   if (printingVendor) {
     return (
@@ -132,26 +188,45 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
             <span>خروجی اکسل چند شیتی (Multi-Sheet XLSX)</span>
           </button>
 
-          {/* Secondary Dropdown: Specific single category export */}
-          <div className="relative group">
-            <button 
-              type="button" 
-              className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border/90 text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+          {/* Print the list itself. "PDF" in this module used to mean one
+              evaluation form for one source; the register as a whole could only
+              leave as a spreadsheet, which is not a document anyone signs. */}
+          <button
+            type="button"
+            onClick={() => setPrintingList(true)}
+            className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+            title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
+          >
+            <ListChecks className="w-3.5 h-3.5 text-primary" />
+            <span>چاپ فهرست (PDF)</span>
+          </button>
+
+          {/* Secondary menu: one category at a time.
+              It used to open on `group-hover` alone — unreachable from the
+              keyboard (Tab then Enter did nothing) and unusable on a tablet,
+              where there is no hover at all. It is a real menu now: a button
+              that toggles, Escape and an outside click to dismiss. */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen(o => !o)}
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
+              className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               <FileText className="w-3.5 h-3.5 text-primary" />
               <span>خروجی تک‌دسته‌ای</span>
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-            
-            {/* Custom dropdown menu */}
-            <div className="absolute left-0 mt-2 w-64 bg-card border border-border/80 rounded-2xl shadow-xl py-2 z-10 hidden group-hover:block hover:block divide-y divide-border text-right transition-all">
+
+            <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-xl py-2 z-20 divide-y divide-border text-right">
               <div className="px-3.5 py-2 text-[10px] font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
                 انتخاب دسته‌بندی جهت خروجی تک‌شیت
               </div>
               <div className="py-1">
                 <button
                   type="button"
-                  onClick={() => handleExportCategory('all', 'کل_آرشیو')}
+                  onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
                   className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                 >
                   <span className="font-mono text-[9px] text-muted-foreground">All</span>
@@ -161,7 +236,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                   <button
                     key={key}
                     type="button"
-                    onClick={() => handleExportCategory(key, labelData.fa)}
+                    onClick={() => { setExportMenuOpen(false); handleExportCategory(key, labelData.fa); }}
                     className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                   >
                     <span className="font-mono text-[9px] text-muted-foreground">{key}</span>
@@ -179,17 +254,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
             آرشیو کل تامین‌کنندگان
             <Archive className="w-6 h-6 text-muted-foreground" />
           </h2>
-          <p className="text-[#6E6E73] text-sm">لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)</p>
+          <p className="text-muted-foreground text-sm">لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)</p>
         </div>
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-card/75 backdrop-blur-md border border-slate-900/10 rounded-2xl p-4 shadow-[0_1px_4px_rgba(15,23,42,0.06)] flex flex-col md:flex-row gap-4 items-center mb-6 focus-within:ring-2 focus-within:ring-cyan-500/20 transition-all">
+      <div className="bg-card/75 backdrop-blur-md border border-border rounded-2xl p-4 shadow-xs flex flex-col md:flex-row gap-4 items-center mb-6 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
         <div className="flex-1 flex items-center gap-3 w-full">
           <Search className="w-4 h-4 text-muted-foreground shrink-0" />
           <input
             type="text"
-            className="flex-1 bg-transparent text-sm text-foreground placeholder-slate-400 focus:outline-none text-right"
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none text-right"
             placeholder="جستجو کلمه کلیدی، نام، ماده، CAS، کشور..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -204,11 +279,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           {[
             { value: categoryFilter, setValue: setCategoryFilter, options: [{val:'', label:'همه دسته‌ها'}, ...Object.entries(categoryLabels).map(([k,v])=>({val:k, label:v.fa}))] },
             { value: riskFilter, setValue: setRiskFilter, options: [{val:'', label:'همه سطوح ریسک (Risk Level)'}, {val:'Low', label:'ریسک پایین (Low)'}, {val:'Medium', label:'ریسک متوسط (Medium)'}, {val:'High', label:'ریسک بالا (High)'}] },
-            { value: gradeFilter, setValue: setGradeFilter, options: [{val:'', label:'همه گریدها'}, {val:'A', label:'Grade A'}, {val:'B', label:'Grade B'}, {val:'C', label:'Grade C'}, {val:'rejected', label:'Rejected'}] }
+            { value: gradeFilter, setValue: setGradeFilter, options: [{val:'', label:'همه گریدها'}, {val:'A', label:'Grade A'}, {val:'B', label:'Grade B'}, {val:'C', label:'Grade C'}, {val:'rejected', label:'Rejected'}] },
+            // `statusFilter` was already read by the filtering logic but no
+            // control ever rendered for it, so it could only ever be the empty
+            // default — dead state pretending to be a feature.
+            { value: statusFilter, setValue: setStatusFilter, options: [{val:'', label:'همه وضعیت‌ها'}, {val:'approved', label:'تأییدشده'}, {val:'conditional', label:'مشروط'}, {val:'new', label:'جدید / در انتظار'}, {val:'rejected', label:'مردود'}] }
           ].map((filter, idx) => (
             <select 
               key={idx}
-              className="bg-transparent border border-slate-900/10 text-muted-foreground text-xs rounded-xl py-2 px-3 focus:outline-none focus:border-cyan-500/30 flex-1 md:flex-none text-right min-w-[110px]"
+              className="bg-transparent border border-border text-muted-foreground text-xs rounded-xl py-2 px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 flex-1 md:flex-none text-right min-w-[110px]"
               value={filter.value}
               onChange={(e) => filter.setValue(e.target.value)}
             >
@@ -228,7 +307,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               className={`shrink-0 flex items-center gap-1.5 text-xs font-bold rounded-xl py-2 px-3 border transition-colors cursor-pointer ${
                 onlySelected
                   ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800'
-                  : 'bg-transparent text-muted-foreground border-slate-900/10 hover:bg-accent'
+                  : 'bg-transparent text-muted-foreground border-border hover:bg-accent'
               }`}
             >
               <Star className={`w-3.5 h-3.5 ${onlySelected ? 'fill-current' : ''}`} />
@@ -239,8 +318,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
       </div>
 
       {/* ARCHIVE TABLE */}
-      <div className="rounded-2xl overflow-hidden border border-slate-900/10 shadow-[0_1px_4px_rgba(15,23,42,0.06)] bg-card mb-8">
-        <div className="bg-muted border-b border-slate-900/10 grid grid-cols-12 gap-4 px-5 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+      <div className="rounded-2xl overflow-hidden border border-border shadow-xs bg-card mb-8">
+        <div className="bg-muted border-b border-border grid grid-cols-12 gap-4 px-5 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">
           <div className="col-span-6 sm:col-span-4">تامین‌کننده</div>
           <div className="col-span-4 sm:col-span-3">ماده</div>
           <div className="col-span-2 hidden sm:block">دسته</div>
@@ -248,7 +327,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           <div className="col-span-2 sm:col-span-1 text-center">جزئیات</div>
         </div>
 
-        <div className="divide-y divide-slate-900/5">
+        <div className="divide-y divide-border">
           {filteredDb.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
               <Search className="w-8 h-8 opacity-20 mb-3" />
@@ -283,7 +362,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                 <div className="font-mono text-muted-foreground text-xs truncate mt-0.5">{v.cas || 'N/A'}</div>
               </div>
               <div className="col-span-2 hidden sm:block min-w-0">
-                <span className="bg-slate-900/5 border border-slate-900/10 text-xs text-muted-foreground rounded px-2 py-0.5 inline-block truncate max-w-full font-medium">
+                <span className="bg-muted border border-border text-xs text-muted-foreground rounded px-2 py-0.5 inline-block truncate max-w-full font-medium">
                   {v.isSample 
                     ? (v.status === 'rejected' ? 'نمونه تایید نشده' : 'نمونه تایید شده')
                     : (categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category)
@@ -294,17 +373,19 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                 {getDisplayCountry(v).split(' ')[0]}
               </div>
               <div className="col-span-2 sm:col-span-1 text-center flex items-center justify-center gap-2">
-                {currentUser?.role === 'admin' ? (
-                  <button 
-                    onClick={() => setPrintingVendor(v)}
-                    className="p-1.5 text-muted-foreground hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors border border-transparent hover:border-cyan-200"
-                    title="چاپ فرم ارزیابی"
-                  >
-                    <Printer className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <span className="text-xs text-muted-foreground font-medium font-mono">-</span>
-                )}
+                {/* Printing follows `vendor.read`, the permission that already
+                    lets someone open this page and export the whole archive to
+                    Excel. Gating it on `role === 'admin'` protected nothing —
+                    the same data left the building through the export button
+                    next to it — while making QA ask an admin to print a form
+                    they are entitled to read. */}
+                <button
+                  onClick={() => setPrintingVendor(v)}
+                  className="p-1.5 text-muted-foreground hover:text-primary hover:bg-accent rounded-lg transition-colors border border-transparent hover:border-border"
+                  title="چاپ فرم ارزیابی"
+                >
+                  <Printer className="w-4 h-4" />
+                </button>
               </div>
             </div>
             );
@@ -312,14 +393,28 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
         </div>
       </div>
 
-      <Pagination 
-        currentPage={currentPage}
-        totalPages={totalPages}
-        totalItems={totalItems}
-        startIndex={startIndex}
-        endIndex={endIndex}
-        onPageChange={setCurrentPage}
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+          <span>تعداد در هر صفحه</span>
+          <select
+            value={perPage}
+            onChange={e => { setPerPage(Number(e.target.value)); setCurrentPage(1); }}
+            className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <div className="flex-1">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+      </div>
     </div>
   );
 }
