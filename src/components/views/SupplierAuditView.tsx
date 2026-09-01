@@ -12,7 +12,7 @@ import { canScoreDepartment, scorableDepartments } from '../../utils/permissions
 import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
 import { exportSupplierDossierToExcel } from '../../utils/excelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
-import { resolveVendorPartner } from '../../utils/vendorPartner';
+import { cleanPlaceholder, resolveVendorPartner } from '../../utils/vendorPartner';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 
 // --- View: Supplier Unified Audit & Analysis Module ---
@@ -107,8 +107,8 @@ interface SourceSelection {
           groups[key] = {
             key,
             name: v.name,
-            nameEn: v.nameEn || 'N/A',
-            country: getDisplayCountry(v) || 'مشخص نشده',
+            nameEn: cleanPlaceholder(v.nameEn) || '',
+            country: cleanPlaceholder(getDisplayCountry(v)) || '',
             contactInfo: v.contactInfo || '',
             registrationDate: v.registrationDate || '',
             vendors: []
@@ -173,17 +173,24 @@ interface SourceSelection {
       const suppliers = [...new Map(
         resolved.filter(r => r.role === 'supplier').map(r => [r.partner!.id, r])).values()];
 
-      // Falling back to the group's own name keeps the header populated for the
-      // majority of sources, which carry no partner link at all.
       const primaryMfg = manufacturers[0] ?? null;
       const primarySup = suppliers[0] ?? null;
 
       return {
-        mfgName: primaryMfg?.name ?? activeSupplier.name,
-        mfgCountry: primaryMfg?.country ?? activeSupplier.country ?? 'نامشخص',
+        /**
+         * Only a real manufacturer record. This used to fall back to the
+         * group's own name, so a company that is a *seller* — or one not in
+         * Business Partners at all — was labelled «تولید کننده» in the header.
+         * The role is a regulated fact about the company, not a place to put a
+         * name because the line would otherwise be empty (rule 4).
+         */
+        mfgPartner: primaryMfg?.partner ?? null,
+        mfgName: primaryMfg?.name ?? null,
+        mfgCountry: primaryMfg?.country ?? null,
         supName: primarySup?.name ?? null,
         supCountry: primarySup?.country ?? null,
-        supGrade: primarySup?.grade ?? 'نامشخص',
+        // «نامشخص» read as if the grade were lost; nobody has evaluated it.
+        supGrade: primarySup?.grade ?? 'ارزیابی نشده',
         supPartner: primarySup?.partner ?? null,
         /** More than one distinct partner behind one company name. */
         extraPartners: Math.max(0, manufacturers.length - 1) + Math.max(0, suppliers.length - 1),
@@ -380,21 +387,54 @@ interface SourceSelection {
                 <div>
                   {activePartnerDetails ? (
                     <>
-                      {/* Manufacturer display (Bold) */}
-                      <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
-                        <span>تولید کننده : {activePartnerDetails.mfgName}</span>
-                        <span className="mx-3 sm:mx-4 text-slate-300 font-normal">|</span>
-                        <span>کشور : {activePartnerDetails.mfgCountry}</span>
-                      </div>
+                      {/* The company's role, only when a partner record states
+                          it. A source links to exactly one partner — a seller
+                          or a manufacturer, never both (rule 4) — so for most
+                          companies only one of these two lines appears. */}
+                      {activePartnerDetails.mfgPartner ? (
+                        <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
+                          <span>تولیدکننده : {activePartnerDetails.mfgName}</span>
+                          {activePartnerDetails.mfgCountry && (
+                            <>
+                              <span className="mx-3 sm:mx-4 text-slate-300 font-normal">|</span>
+                              <span>کشور : {activePartnerDetails.mfgCountry}</span>
+                            </>
+                          )}
+                        </div>
+                      ) : !activePartnerDetails.supPartner && (
+                        /* No partner record at all: name the company without
+                           claiming what it does. Saying "تولید کننده" here was
+                           a guess printed as a fact. */
+                        <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>{activeSupplier.name}</span>
+                          {activeSupplier.country && (
+                            <span className="font-normal text-muted-foreground text-sm">کشور : {activeSupplier.country}</span>
+                          )}
+                          <span className="text-[10px] font-bold bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-md">
+                            نوع شریک ثبت نشده
+                          </span>
+                        </div>
+                      )}
 
                       {/* Supplier display (Regular) - Only if Source/Partner has a Supplier */}
                       {activePartnerDetails.supPartner && (
-                        <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1">
+                        /* When there is no manufacturer, the seller IS the
+                           company on this page, so it gets the heading weight
+                           instead of reading as a footnote to a missing line. */
+                        <div className={activePartnerDetails.mfgPartner
+                          ? 'font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1'
+                          : 'font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1'}>
                           <span>فروشنده : {activePartnerDetails.supName}</span>
-                          <span className="mx-3 text-slate-300">|</span>
-                          <span>کشور : {activePartnerDetails.supCountry}</span>
-                          <span className="mx-3 text-slate-300">|</span>
-                          <span>Grade : {activePartnerDetails.supGrade}</span>
+                          {activePartnerDetails.supCountry && (
+                            <>
+                              <span className="mx-3 text-slate-300 font-normal">|</span>
+                              <span>کشور : {activePartnerDetails.supCountry}</span>
+                            </>
+                          )}
+                          <span className="mx-3 text-slate-300 font-normal">|</span>
+                          <span className={activePartnerDetails.mfgPartner ? '' : 'text-sm font-semibold'}>
+                            گرید SOP : {activePartnerDetails.supGrade}
+                          </span>
                         </div>
                       )}
                     </>
@@ -408,7 +448,9 @@ interface SourceSelection {
                       )}
                     </div>
                   )}
-                  <div className="text-muted-foreground text-xs font-mono mt-1" dir="ltr" style={{ textAlign: 'right' }}>{activeSupplier.nameEn}</div>
+                  {activeSupplier.nameEn && (
+                    <div className="text-muted-foreground text-xs font-mono mt-1" dir="ltr" style={{ textAlign: 'right' }}>{activeSupplier.nameEn}</div>
+                  )}
                   {activeSupplier.contactInfo && (
                     <p className="text-muted-foreground text-xs mt-2 font-mono" dir="rtl">{activeSupplier.contactInfo}</p>
                   )}
@@ -832,15 +874,19 @@ interface SourceSelection {
                          <div className="bg-teal-50 border border-teal-100 text-teal-600 p-2.5 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-colors">
                            <Building className="w-5 h-5" />
                          </div>
-                         <div className="text-left font-mono text-[10px] text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border max-w-[150px] truncate" title={supplier.country}>
-                           {supplier.country}
-                         </div>
+                         {supplier.country && (
+                           <div className="text-left font-mono text-[10px] text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border max-w-[150px] truncate" title={supplier.country}>
+                             {supplier.country}
+                           </div>
+                         )}
                        </div>
  
                        <h3 className="font-bold text-foreground text-base leading-snug tracking-tight group-hover:text-teal-600 transition-colors">
                          {supplier.name}
                        </h3>
-                       <div className="text-muted-foreground text-xs font-mono mt-1" dir="ltr" style={{ textAlign: 'right' }}>{supplier.nameEn}</div>
+                       {supplier.nameEn && (
+                         <div className="text-muted-foreground text-xs font-mono mt-1" dir="ltr" style={{ textAlign: 'right' }}>{supplier.nameEn}</div>
+                       )}
  
                        {/* List of drugs supplied */}
                        <div className="mt-4 pt-3 border-t border-border">

@@ -8,6 +8,7 @@ import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { exportCategoryToExcel, exportFullArchiveMultiSheetExcel } from '../../utils/excelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
+import { cleanPlaceholder } from '../../utils/vendorPartner';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
@@ -378,7 +379,12 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                   )}
                   <EntityName name={v.name} lines={2} className="font-semibold text-foreground text-sm" />
                 </div>
-                <EntityName as="div" name={v.nameEn} lines={1} dir="ltr" className="text-muted-foreground text-xs mt-0.5" />
+                {/* Imported rows carry a literal "Unknown"/"N/A" as the Latin
+                    name; printed under the company it read like the company's
+                    actual English name. Nothing is clearer than a wrong name. */}
+                {cleanPlaceholder(v.nameEn) && (
+                  <EntityName as="div" name={v.nameEn} lines={1} dir="ltr" className="text-muted-foreground text-xs mt-0.5" />
+                )}
               </div>
               <div className="col-span-4 sm:col-span-3 min-w-0">
                 <EntityName as="div" name={v.material} lines={2} className="text-muted-foreground text-sm" />
