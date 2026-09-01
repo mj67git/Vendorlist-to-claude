@@ -158,6 +158,11 @@ model BusinessPartner {
   // classified by `type` only; suppliers no longer reference a manufacturer.
   evaluation SupplierEvaluation?
 
+  // The sources that name this partner. Needed for the relation to exist at
+  // all; the API still counts dependants explicitly before allowing a delete.
+  manufacturedSources Vendor[] @relation("VendorManufacturer")
+  suppliedSources     Vendor[] @relation("VendorSupplier")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -223,14 +228,32 @@ model Vendor {
   irc                 String? @map("irc")
   ircExpiryDate       String? @map("irc_expiry_date")
 
-  // Optional links to normalized business partners
+  // Links to the business partners, enforced by the database.
+  //
+  // These were plain indexed strings with no relation for a long time, and
+  // nothing wrote them at all — the ids were hidden in `contact_info` as a
+  // marker (see server/domain/partnerLink.ts). With the write path fixed and
+  // the old markers migrated across, the reference can finally be a real one.
+  //
+  // SetNull on delete rather than Cascade: losing the partner record must not
+  // delete the source, which carries its own evaluations, laboratory results
+  // and risk assessment. The delete guard in the API refuses the deletion while
+  // a source still points here, so SetNull is the backstop, not the usual path.
   manufacturerId String? @map("manufacturer_id") @db.VarChar(50)
   supplierId     String? @map("supplier_id") @db.VarChar(50)
+  manufacturer   BusinessPartner? @relation("VendorManufacturer", fields: [manufacturerId], references: [id], onDelete: SetNull)
+  supplier       BusinessPartner? @relation("VendorSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
 
   // Legacy embedded JSON (kept for backward compatibility; superseded by the
   // normalized riskAssessments / analysisRecordEntries relations below).
   riskAssessment  String? @map("risk_assessment") @db.Text
   analysisRecords String? @map("analysis_records") @db.Text
+
+  // The central table had neither of these while almost every other table did,
+  // so there was no way to tell that a row had changed underneath a writer.
+  // `updatedAt` is what the optimistic-concurrency check compares against.
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   materials             VendorMaterial[]
   evaluations           Evaluation[]

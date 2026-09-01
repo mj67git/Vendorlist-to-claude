@@ -733,6 +733,9 @@ async function getVendorsList(vendorId?: string): Promise<any[]> {
         manufacturerId,
         supplierId,
         registrationDate: v.registrationDate || "",
+        // Carried so a handler can hand it back as the precondition for its
+        // write; the client never needs to look at it.
+        updatedAt: (v as any).updatedAt ?? null,
         status: v.status,
         grade: v.grade,
         initialSampleStatus: (v as any).initialSampleStatus || "",
@@ -873,7 +876,32 @@ async function serializeVendorWrites(req: any, res: any, next: any) {
   next();
 }
 
-async function saveVendorToDb(v: any): Promise<boolean> {
+/**
+ * Another writer changed this source between the read and the write.
+ *
+ * The endpoints all do a read-modify-write, so two overlapping requests make
+ * the slower one write back its stale copy — which is how a deleted laboratory
+ * result used to come back after a reload. The per-vendor in-process lock stops
+ * that inside one Node process; this is what stops it when there is more than
+ * one, which the serverless deployment always has and a second container would.
+ */
+export class VendorConflictError extends Error {
+  constructor() {
+    super('این رکورد هم‌زمان توسط شخص دیگری تغییر کرده است. صفحه را تازه کنید و دوباره تلاش کنید.');
+    this.name = 'VendorConflictError';
+  }
+}
+
+async function saveVendorToDb(
+  v: any,
+  /**
+   * The `updatedAt` the caller read before it started modifying. When given,
+   * the write only lands if the row still carries that value; otherwise it is
+   * refused rather than silently overwriting the other writer's work. Callers
+   * that legitimately write without a prior read (the create path) omit it.
+   */
+  expectedUpdatedAt?: Date | null,
+): Promise<boolean> {
   const prisma = requirePrisma();
   {
     const {
@@ -918,6 +946,17 @@ async function saveVendorToDb(v: any): Promise<boolean> {
 
     const scoreObj = scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
     const roundedTotal = calculateRoundedWeightedScore(scoreObj, CALCULATION_WEIGHTS);
+
+    if (expectedUpdatedAt) {
+      // updateMany takes a non-unique filter, so the timestamp can be part of
+      // the WHERE. A count of zero means the row moved under us — or vanished —
+      // and either way this write must not land.
+      const claimed = await prisma.vendor.updateMany({
+        where: { id, updatedAt: expectedUpdatedAt },
+        data: { updatedAt: new Date() },
+      });
+      if (claimed.count === 0) throw new VendorConflictError();
+    }
 
     await prisma.vendor.upsert({
       where: { id },
@@ -1359,6 +1398,21 @@ function requireRole(...roles: string[]) {
       return res.status(500).json({ error: "بررسی سطح دسترسی با خطا مواجه شد." });
     }
   };
+}
+
+/**
+ * The answer for an error that escaped a route handler.
+ *
+ * A lost-update conflict is not a server fault — it means someone else saved
+ * first — so it gets 409 and says so in words the operator can act on. The
+ * client treats any non-ok answer as a refusal now, so this reaches the screen
+ * instead of vanishing. Everything else keeps the behaviour it had.
+ */
+function sendHandlerError(res: any, err: any) {
+  if (err instanceof VendorConflictError) {
+    return res.status(409).json({ error: err.message });
+  }
+  return res.status(500).json({ error: err?.message });
 }
 
 async function startServer() {
@@ -2095,7 +2149,7 @@ setInterval(() => {
       });
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2127,7 +2181,7 @@ setInterval(() => {
       });
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2362,7 +2416,7 @@ setInterval(() => {
         return res.status(422).json({ error: sopError });
       }
 
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       // Audit Trail Integration
@@ -2416,7 +2470,7 @@ setInterval(() => {
       console.log(`[UnifiedDB] Saved fine-grained profile details for vendor: ${id}`);
       res.json({ success: true, part: "profile", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2439,7 +2493,7 @@ setInterval(() => {
         lastAudit: c.lastAudit ?? current.lastAudit,
         ircExpiryDate: c.ircExpiryDate ?? current.ircExpiryDate
       };
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       // Audit Trail Integration
@@ -2491,7 +2545,7 @@ setInterval(() => {
       console.log(`[UnifiedDB] Saved fine-grained contact details for vendor: ${id}`);
       res.json({ success: true, part: "contact", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2570,7 +2624,7 @@ setInterval(() => {
         }
       }
 
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       const allVendorsAfter = await getRankingSnapshot();
@@ -2657,7 +2711,7 @@ setInterval(() => {
       console.log(`[UnifiedDB] Saved fine-grained scores details & updated business calculations for vendor: ${id}`);
       res.json({ success: true, part: "scores", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2678,7 +2732,7 @@ setInterval(() => {
         ...current,
         activityLogs: l.activityLogs ?? current.activityLogs
       };
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       // This was the only write endpoint in the API that left no audit record,
@@ -2711,7 +2765,7 @@ setInterval(() => {
       }
       res.json({ success: true, part: "logs", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -2778,7 +2832,7 @@ setInterval(() => {
         analysisRecords: newRecords,
         activityLogs: a.activityLogs ?? current.activityLogs
       };
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       const userObj = req.user || {};
@@ -2987,7 +3041,7 @@ setInterval(() => {
       console.log(`[UnifiedDB] Saved fine-grained analysis record & Phase 5 Audit logged for vendor: ${id}`);
       res.json({ success: true, part: "analysis", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3008,7 +3062,7 @@ setInterval(() => {
         ...current,
         riskAssessment: r.riskAssessment ?? current.riskAssessment
       };
-      await saveVendorToDb(updatedVendor);
+      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
       // Audit Trail Integration
@@ -3124,7 +3178,7 @@ setInterval(() => {
       console.log(`[UnifiedDB] Saved fine-grained risk assessment & FMEA audit for vendor: ${id}`);
       res.json({ success: true, part: "risk", vendor: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3313,7 +3367,7 @@ setInterval(() => {
       }
       res.json(log);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3335,7 +3389,7 @@ setInterval(() => {
       }));
       res.json(usersList);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3525,7 +3579,7 @@ setInterval(() => {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3571,7 +3625,7 @@ setInterval(() => {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3638,7 +3692,7 @@ setInterval(() => {
 
       res.json({ success: true, role, permissionsReset: roleChanged && oldPermissions.length > 0 });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3756,7 +3810,7 @@ setInterval(() => {
 
       res.json({ success: true, permissions: cleaned });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3770,7 +3824,7 @@ setInterval(() => {
       const list = await prisma.material.findMany({ orderBy: { createdAt: "desc" } });
       res.json(list.map(mapMaterialToClient));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3910,7 +3964,7 @@ setInterval(() => {
 
       res.json({ success: true, material: updatedMaterial });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -3981,7 +4035,7 @@ setInterval(() => {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4051,7 +4105,7 @@ setInterval(() => {
 
       res.json({ success: true, material: mapMaterialToClient(updated) });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4068,7 +4122,7 @@ setInterval(() => {
         fileDataUrl: material.specificationFileData,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4110,7 +4164,7 @@ setInterval(() => {
 
       res.json({ success: true, material: mapMaterialToClient(updated) });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4152,7 +4206,7 @@ setInterval(() => {
 
       res.json({ success: true, status: newStatus });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4165,7 +4219,7 @@ setInterval(() => {
       const list = await getBusinessPartnersList();
       res.json(list);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4199,7 +4253,7 @@ setInterval(() => {
       }
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4218,7 +4272,7 @@ setInterval(() => {
       }
       res.json({ fileName: doc.fileName, fileSize: doc.fileSize, fileDataUrl: doc.fileDataUrl });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4299,7 +4353,7 @@ setInterval(() => {
 
       res.json({ success: true, partner: saved });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 
@@ -4389,7 +4443,7 @@ setInterval(() => {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendHandlerError(res, err);
     }
   });
 

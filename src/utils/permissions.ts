@@ -250,6 +250,13 @@ const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
     ...READ_ALL,
     'partner.files',
     'vendor.analysis',
+    // FMEA risk assessment is a quality activity and belongs with the rest of
+    // QA's work. It used to sit with `admin` alone while the UI still offered
+    // QA the risk form and a "ریسک ثبت‌نشده" backlog, so every quality user who
+    // opened that backlog was refused by the server — the screen and the
+    // endpoint disagreed, which is the exact failure this policy table exists
+    // to prevent (rule 14).
+    'vendor.risk',
     'material.create', 'material.edit', 'material.delete',
     'score.qa',
   ],

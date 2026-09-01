@@ -20,7 +20,7 @@ const LEGACY_READS: Permission[] = [...READ_ALL, 'partner.files'];
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
   commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
-  qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
+  qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'vendor.risk', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
   planning: [...READ_ALL, 'score.planning'],
   finance: [...READ_ALL, 'score.finance'],
   lab: [],
@@ -42,9 +42,13 @@ test('admin holds every permission there is', () => {
   }
 });
 
-test('risk assessment is admin-only', () => {
+test('risk assessment belongs to quality, and to nobody else by default', () => {
+  // It was admin-only while the UI still showed QA the risk form and a
+  // "ریسک ثبت‌نشده" backlog: the screen offered work the server refused. FMEA
+  // is a quality activity, so QA holds it alongside the laboratory results.
   assert.equal(can('admin', 'vendor.risk'), true);
-  for (const role of ['qa', 'lab', 'commercial', 'planning', 'finance'] as Role[]) {
+  assert.equal(can('qa', 'vendor.risk'), true);
+  for (const role of ['lab', 'commercial', 'planning', 'finance'] as Role[]) {
     assert.equal(can(role, 'vendor.risk'), false, `${role} must not assess risk`);
   }
 });
