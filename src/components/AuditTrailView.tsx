@@ -22,6 +22,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 export interface AuditLog {
   id: string;
@@ -841,15 +842,11 @@ export const AuditTrailView: React.FC = () => {
                 /* Skeletons rather than a blur over the previous page: the rows
                    underneath belonged to the last query and reading them as the
                    answer to the new one is exactly the confusion to avoid. */
-                [0, 1, 2, 3, 4, 5, 6].map(i => (
-                  <tr key={`skeleton-${i}`} aria-hidden="true">
-                    {Array.from({ length: 6 }).map((_, c) => (
-                      <td key={c} className="py-3.5 px-4">
-                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '70%' : c > 3 ? '4rem' : '55%' }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <TableSkeletonRows
+                  rows={7}
+                  columns={6}
+                  width={c => (c === 0 ? '70%' : c > 3 ? '4rem' : '55%')}
+                />
               ) : logs.length > 0 ? (
                 logs.map((log) => {
                   const actMeta = actionLabels[log.action] || { label: log.action, bg: 'bg-muted', text: 'text-foreground' };

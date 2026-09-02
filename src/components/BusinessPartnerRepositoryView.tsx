@@ -44,6 +44,8 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { TableSkeletonRows } from './ui/table-skeleton-rows';
+import { Textarea } from './ui/textarea';
 
 interface Props {
   partners: BusinessPartner[];
@@ -955,15 +957,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               {isLoading ? (
                 /* Until the first fetch lands there is nothing to show, and the
                    empty state below would claim the repository is empty. */
-                [0, 1, 2, 3, 4].map(i => (
-                  <tr key={`skeleton-${i}`} aria-hidden="true">
-                    {Array.from({ length: 7 }).map((_, c) => (
-                      <td key={c} className="py-3.5 px-4">
-                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '80%' : c > 4 ? '3rem' : '60%' }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <TableSkeletonRows
+                  rows={5}
+                  columns={7}
+                  width={c => (c === 0 ? '80%' : c > 4 ? '3rem' : '60%')}
+                />
               ) : paginatedPartners.length === 0 ? (
                 hasActiveFilters ? (
                   <TableEmptyRow
@@ -2248,13 +2246,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </p>
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">دلیل قرارگیری در لیست سیاه <span className="text-rose-500">*</span></label>
-              <textarea
-               
+              <Textarea
                 rows={3}
                 value={blacklistReason}
                 onChange={e => setBlacklistReason(e.target.value)}
                 placeholder="مثلاً: عدم انطباق مکرر کیفی، تخلف قراردادی، مشکلات رگولاتوری..."
-                className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-rose-500 focus:bg-card resize-none"
+                className="resize-none"
               />
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">

@@ -20,6 +20,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 interface Props {
   materials: Material[];
@@ -675,15 +676,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
               ) : isLoading ? (
                 /* Until the first fetch lands there is nothing to show, and the
                    empty state below would claim the repository is empty. */
-                [0, 1, 2, 3, 4].map(i => (
-                  <tr key={`skeleton-${i}`} aria-hidden="true">
-                    {Array.from({ length: 8 }).map((_, c) => (
-                      <td key={c} className="py-3.5 px-4">
-                        <div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: c === 0 ? '80%' : c > 5 ? '2.5rem' : '60%' }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <TableSkeletonRows
+                  rows={5}
+                  columns={8}
+                  width={c => (c === 0 ? '80%' : c > 5 ? '2.5rem' : '60%')}
+                />
               ) : (
                 hasFilters ? (
                   <TableEmptyRow

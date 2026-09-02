@@ -16,6 +16,7 @@ import { hasQcReject } from '../../utils/vendorState';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
+import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
@@ -1142,7 +1143,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
             <div className="space-y-1">
               <label htmlFor="vf-deviations" className="text-foreground font-semibold text-xs">سوابق انحرافات (هر مورد در یک خط)</label>
-              <textarea id="vf-deviations" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring h-20 placeholder:text-muted-foreground text-xs" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})}></textarea>
+              <Textarea id="vf-deviations" className="min-h-0 h-20" value={formData.rejectionReasonList} onChange={e => setFormData({...formData, rejectionReasonList: e.target.value})} />
             </div>
           </div>
 
