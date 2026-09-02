@@ -102,7 +102,7 @@ export function ChangePasswordModal({
   // Render a full-page force reset screen
   if (isForceChange) {
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans" dir="rtl">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans">
         <div className="bg-card border border-border rounded-3xl p-8 max-w-md w-full shadow-[0_12px_40px_rgba(0,0,0,0.06)] fade-in">
           <div className="text-center mb-6">
             <div className="flex items-center justify-center mx-auto mb-4 bg-amber-500/10 border border-amber-500/20 w-16 h-16 rounded-2xl">

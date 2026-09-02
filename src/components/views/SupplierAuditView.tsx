@@ -454,7 +454,7 @@ interface SourceSelection {
                     <div className="text-muted-foreground text-xs font-mono mt-1" dir="ltr" style={{ textAlign: 'right' }}>{activeSupplier.nameEn}</div>
                   )}
                   {activeSupplier.contactInfo && (
-                    <p className="text-muted-foreground text-xs mt-2 font-mono" dir="rtl">{activeSupplier.contactInfo}</p>
+                    <p className="text-muted-foreground text-xs mt-2 font-mono">{activeSupplier.contactInfo}</p>
                   )}
                 </div>
               </div>
@@ -463,7 +463,7 @@ interface SourceSelection {
                <div className="bg-muted border border-border rounded-2xl p-4 flex items-center gap-4 self-stretch md:self-auto justify-between">
                  <div className="text-left">
                    <div className="text-2xs uppercase font-bold text-muted-foreground">{stats.showsOwnDepartment ? 'Departmental Average Rating' : 'Integrated SPS Rating'}</div>
-                   <div className="text-xs text-muted-foreground font-medium font-sans mt-0.5" dir="rtl">{stats.showsOwnDepartment ? 'شاخص میانگین عملکرد واحد شما' : 'شاخص کل عملکرد تامین‌کننده'}</div>
+                   <div className="text-xs text-muted-foreground font-medium font-sans mt-0.5">{stats.showsOwnDepartment ? 'شاخص میانگین عملکرد واحد شما' : 'شاخص کل عملکرد تامین‌کننده'}</div>
                  </div>
                  <div className={`text-3xl font-black font-mono leading-none ${getScoreColorClass(stats.avgPerformance)} bg-card px-4 py-3 rounded-xl border border-border shadow-sm`}>
                    {Math.round(stats.avgPerformance || 0).toLocaleString('en-US')}

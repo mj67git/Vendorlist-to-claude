@@ -52,7 +52,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     if (!this.state.error) return this.props.children;
 
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans" dir="rtl">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans">
         <div className="bg-card border border-border rounded-3xl p-8 max-w-lg w-full shadow-xl text-right space-y-5">
           <div className="flex items-center gap-3">
             <div className="bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-2xl shrink-0">

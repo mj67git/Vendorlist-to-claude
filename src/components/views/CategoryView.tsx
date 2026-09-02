@@ -254,7 +254,7 @@ export function CategoryView({
               className="pl-9 pr-9 text-sm bg-background"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              dir="rtl"
+             
             />
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
             {query && (
@@ -278,7 +278,7 @@ export function CategoryView({
               id="category-sort"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              dir="rtl"
+             
               className="text-xs bg-background border border-border rounded-lg px-2.5 py-2 text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
               title="مرتب‌سازی گروه‌های ماده"
             >

@@ -2249,7 +2249,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-foreground block">دلیل قرارگیری در لیست سیاه <span className="text-rose-500">*</span></label>
               <textarea
-                dir="rtl"
+               
                 rows={3}
                 value={blacklistReason}
                 onChange={e => setBlacklistReason(e.target.value)}

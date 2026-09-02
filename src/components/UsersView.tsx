@@ -463,7 +463,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const isSelf = (u: ManagedUser) => u.username.toLowerCase() === currentUser.username.toLowerCase();
 
   return (
-    <div className="space-y-5 fade-in" dir="rtl">
+    <div className="space-y-5 fade-in">
       {/* HEADER */}
       <div className="bg-card border border-border rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <PageTitle

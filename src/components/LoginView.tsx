@@ -110,7 +110,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
   const fieldClass = 'w-full text-left disabled:opacity-50';
 
   return (
-    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 font-sans" dir="rtl">
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 font-sans">
       <div className="bg-card border border-border rounded-2xl p-8 max-w-sm w-full shadow-[0_8px_30px_rgba(15,23,42,0.06)] fade-in">
         <div className="text-center mb-7">
           {/* The logo is dark navy on transparent, so on the dark card it all but

@@ -110,7 +110,7 @@ function buildSystemTime(d: Date) {
  * rendered the same blank table, and the failed request read as a network error.
  */
 const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void }> = ({ title, detail, onHome }) => (
-  <div className="max-w-xl mx-auto my-12 p-8 bg-card border border-border rounded-2xl text-center space-y-4 shadow-xs" dir="rtl">
+  <div className="max-w-xl mx-auto my-12 p-8 bg-card border border-border rounded-2xl text-center space-y-4 shadow-xs">
     <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300 flex items-center justify-center mx-auto">
       <ShieldAlert className="w-6 h-6" />
     </div>
@@ -1375,12 +1375,12 @@ export default function App() {
       const stillLoading = isSyncing || db.length === 0;
       keyName = `vendor-pending-${pendingVendor!.id}`;
       content = stillLoading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground" dir="rtl">
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
           <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
           <p className="text-xs font-semibold">در حال بازیابی اطلاعات سورس…</p>
         </div>
       ) : (
-        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm" dir="rtl">
+        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm">
           <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
             <AlertTriangle className="w-6 h-6" />
           </div>
@@ -1548,7 +1548,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
       `}</style>
 
-      <div dir="rtl" className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
+      <div className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
         
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -1829,7 +1829,7 @@ export default function App() {
                       className="fixed inset-0 z-40" 
                       onClick={() => setShowNotificationPanel(false)} 
                     />
-                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans" dir="rtl">
+                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans">
                       <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -1913,7 +1913,7 @@ export default function App() {
               )}
 
               {/* Live clock, in the top-left beside the account box. */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
+              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
                 <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
@@ -1956,7 +1956,7 @@ export default function App() {
                   {showUserMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
+                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right">
                         <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
                           <Avatar className="h-9 w-9 border border-border">
                             <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
@@ -2139,7 +2139,7 @@ export default function App() {
 
         {/* Data load error banner (server unreachable) */}
         {loadError && (
-          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg" dir="rtl">
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg">
             <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
             <span className="font-medium text-xs font-sans text-right">{loadError}</span>
             <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
@@ -2156,7 +2156,7 @@ export default function App() {
               {isError
                 ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
-              <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+              <span className="font-medium text-xs font-sans text-right">{toastMsg}</span>
               {toastAction && (
                 <Button
                   type="button"

@@ -588,7 +588,7 @@ export const AuditTrailView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 text-right pb-12 w-full" dir="rtl">
+    <div className="space-y-6 text-right pb-12 w-full">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-5">
         <PageTitle

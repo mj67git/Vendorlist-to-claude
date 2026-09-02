@@ -203,7 +203,7 @@ export function FormModal({
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 overflow-hidden" dir="rtl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 md:p-6 overflow-hidden">
           <motion.div
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
             initial={{ opacity: 0 }}

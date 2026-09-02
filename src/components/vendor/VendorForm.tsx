@@ -506,7 +506,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
   if (isSuccess) {
     return (
-      <Card className="p-12 text-center flex flex-col items-center justify-center mt-6 fade-in shadow-sm border-border bg-card" dir="rtl">
+      <Card className="p-12 text-center flex flex-col items-center justify-center mt-6 fade-in shadow-sm border-border bg-card">
         <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
           <CheckCircle className="w-14 h-14 text-emerald-500 bounce-in" />
         </div>
@@ -517,7 +517,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   }
 
   return (
-    <Card className="w-full shadow-sm text-right mt-6 fade-in relative border-border bg-card overflow-hidden" dir="rtl">
+    <Card className="w-full shadow-sm text-right mt-6 fade-in relative border-border bg-card overflow-hidden">
       
       {/* Modals inside form */}
       <AnimatePresence>

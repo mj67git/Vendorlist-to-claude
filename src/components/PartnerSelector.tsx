@@ -129,7 +129,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     : 'فروشنده';
 
   return (
-    <div className="space-y-1 relative font-sans" dir="rtl" ref={dropdownRef}>
+    <div className="space-y-1 relative font-sans" ref={dropdownRef}>
       {/* Label and Quick Add Button */}
       <div className="flex items-center justify-between">
         <label className="text-foreground font-semibold text-xs flex items-center gap-1.5">

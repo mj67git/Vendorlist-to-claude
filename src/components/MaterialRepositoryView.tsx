@@ -497,7 +497,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   }, [materials]);
 
   return (
-    <div className="w-full flex flex-col gap-6 fade-in pb-10" dir="rtl">
+    <div className="w-full flex flex-col gap-6 fade-in pb-10">
       {/* STATS CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">

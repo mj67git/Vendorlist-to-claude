@@ -255,7 +255,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
        <div className="mb-8">
          <label className="block text-sm font-bold text-foreground mb-2">توضیحات و توجیه ارزیابی</label>
          <textarea
-           dir="rtl"
+          
            rows={4}
            className="w-full bg-card border border-slate-900/10 rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
            placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."

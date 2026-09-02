@@ -22,7 +22,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
   };
   return (
     <div className="bg-muted border border-border rounded-xl p-4" dir="ltr">
-      <div className="text-foreground font-bold text-sm mb-3 text-center" dir="rtl">
+      <div className="text-foreground font-bold text-sm mb-3 text-center">
         ماتریس ریسک (اهمیت × احتمال)
       </div>
       <div className="flex items-stretch gap-2">
@@ -64,7 +64,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
         </div>
       </div>
       {/* Detectability factor → full 3D RPN */}
-      <div className="flex items-center justify-center gap-2 mt-3 text-xs" dir="rtl">
+      <div className="flex items-center justify-center gap-2 mt-3 text-xs">
         <span className="text-muted-foreground font-mono" dir="ltr">
           {criticality} × {probability} = <span className="text-amber-600 dark:text-amber-400 font-bold">{criticality * probability}</span>
         </span>
@@ -76,7 +76,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
         </span>
       </div>
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 mt-3 text-2xs text-muted-foreground" dir="rtl">
+      <div className="flex items-center justify-center gap-4 mt-3 text-2xs text-muted-foreground">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> پایین</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/40" /> متوسط</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/30 border border-red-500/40" /> بالا</span>
@@ -167,7 +167,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
 
   if (isSuccess) {
     return (
-      <div className="bg-card border border-emerald-500/20 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-sm fade-in" dir="rtl">
+      <div className="bg-card border border-emerald-500/20 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-sm fade-in">
         <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
           <CheckCircle className="w-16 h-16 text-emerald-500 bounce-in" />
         </div>

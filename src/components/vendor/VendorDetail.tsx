@@ -392,7 +392,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
 
   return (
-    <div className="space-y-6 fade-in relative pb-10 text-right" dir="rtl">
+    <div className="space-y-6 fade-in relative pb-10 text-right">
       
       {/* Back Button */}
       <button 
