@@ -15,6 +15,7 @@ import { FormModal } from '../../components/FormModal';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { can } from '../../utils/permissions';
 import { cn } from '../../lib/utils';
+import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
@@ -465,12 +466,12 @@ export function CategoryView({
                 <label htmlFor="select-reason" className="block text-xs font-bold text-foreground">
                   دلیل انتخاب <span className="text-rose-600">*</span>
                 </label>
-                <textarea
+                <Textarea
                   id="select-reason"
                   value={selectReason}
                   onChange={e => setSelectReason(e.target.value)}
                   rows={4}
-                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  className="resize-none"
                   placeholder="مثلاً: بالاترین امتیاز کیفی، سابقهٔ آزمایشگاهی بدون انحراف، و تأمین پایدار در دو سال گذشته."
                 />
                 <p className="text-2xs text-muted-foreground">حداقل ۱۰ کاراکتر.</p>

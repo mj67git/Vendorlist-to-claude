@@ -261,19 +261,22 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
 
-  /* Scrollbar override */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: var(--border-hover-color);
-    border-radius: 999px;
-  }
+/* The slim scrollbar, which has nothing to do with motion.
+   It used to live inside the reduced-motion query above, so the only people
+   who ever saw it were the ones who had asked the system to reduce animation;
+   everyone else got the default platform scrollbar. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hover-color);
+  border-radius: 999px;
 }
 
 @keyframes fadeIn {

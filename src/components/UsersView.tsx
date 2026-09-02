@@ -15,6 +15,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
@@ -552,22 +553,20 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 // Skeleton rows in the shape of the real table, rather than a
                 // spinner on an empty page — the layout does not jump when the
                 // data lands.
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={`skeleton-${i}`} className="border-b border-border/60 last:border-0">
-                    {Array.from({ length: 7 }).map((__, c) => (
-                      <td key={c} className="py-3.5 px-4">
-                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 6 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <TableSkeletonRows
+                  rows={5}
+                  columns={7}
+                  barClassName="h-3"
+                  rowClassName="border-b border-border/60 last:border-0"
+                  width={(c, i) => (c === 6 ? '5rem' : `${55 + ((i + c) % 3) * 15}%`)}
+                />
               ) : loadError ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <AlertCircle className="w-8 h-8 mx-auto mb-2 text-rose-400" />
-                    <span>{loadError}</span>
-                  </td>
-                </tr>
+                <TableEmptyRow
+                  colSpan={7}
+                  icon={AlertCircle}
+                  iconClassName="text-rose-400"
+                  message={loadError}
+                />
               ) : visible.length === 0 ? (
                 <TableEmptyRow
                   colSpan={7}

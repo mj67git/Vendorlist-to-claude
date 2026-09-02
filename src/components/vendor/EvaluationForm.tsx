@@ -8,6 +8,7 @@ import { calculateOverallScore } from '../../utils/vendorUtils';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { calculateDeptAverage, getRawScoreValue, deconstructScores } from '../../utils/scoreUtils';
 import { canScoreDepartment } from '../../utils/permissions';
+import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
@@ -254,14 +255,13 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
 
        <div className="mb-8">
          <label className="block text-sm font-bold text-foreground mb-2">توضیحات و توجیه ارزیابی</label>
-         <textarea
-          
+         <Textarea
            rows={4}
-           className="w-full bg-card border border-border rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
+           className="p-4 bg-card resize-none"
            placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."
            value={comments}
            onChange={(e) => setComments(e.target.value)}
-         ></textarea>
+         />
        </div>
 
        <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-border pt-6">

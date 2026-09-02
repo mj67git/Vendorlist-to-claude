@@ -20,6 +20,7 @@ import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner'
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
+import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
@@ -1413,12 +1414,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   {/* Comments */}
                   <div>
                     <label className="block text-muted-foreground font-semibold text-xs mb-1.5">توضیحات و گزارش آنالیز (Comments)</label>
-                    <textarea
+                    <Textarea
                       id="new-comments-textarea"
                       value={newAnalysis.comments}
                       onChange={e => setNewAnalysis({ ...newAnalysis, comments: e.target.value })}
                       rows={3}
-                      className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      className="bg-card"
                       placeholder="گزارش دقیق آنالیز، درصد خلوص، ناخالصی‌ها، تطابق آزمون‌های فیزیکوشیمیایی یا میکروبیولوژی با مراجع فارماکوپه..."
                     />
                   </div>
@@ -1541,11 +1542,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     )}
                     {showRejectBox ? (
                       <div className="space-y-2">
-                        <textarea
+                        <Textarea
                           value={rejectDecisionReason}
                           onChange={e => setRejectDecisionReason(e.target.value)}
                           rows={2}
-                          className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="min-h-0 bg-card"
                           placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
                         />
                         {rejectError && (
@@ -1687,11 +1688,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           {/* Comments */}
                           <td className="py-3 px-3 max-w-sm">
                             {isEditingThis ? (
-                              <textarea
+                              <Textarea
                                 rows={2}
                                 value={editingAnalysis?.comments || ''}
                                 onChange={e => setEditingAnalysis({ ...editingAnalysis!, comments: e.target.value })}
-                                className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring leading-normal"
+                                className="min-h-0 px-2 py-1 text-xs bg-card leading-normal"
                                 placeholder="توضیحات..."
                               />
                             ) : (
