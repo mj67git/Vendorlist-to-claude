@@ -1773,7 +1773,15 @@ export default function App() {
                           ) : (
                             <button
                               onClick={() => goToHistoryIndex(idx)}
-                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[130px] transition-colors cursor-pointer"
+                              // `shrink-0`, because these are short fixed labels
+                              // («صفحه اصلی», «خرید خارجی») and the flex row was
+                              // squeezing them below their own width — at 13.5px
+                              // even those two clipped, and a breadcrumb whose
+                              // own labels are cut tells the reader nothing
+                              // about where they are. The squeeze belongs on the
+                              // last crumb, which is the entity name and carries
+                              // a tooltip when it truncates (rule 15).
+                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[160px] shrink-0 transition-colors cursor-pointer"
                               title={`رفتن به ${label}`}
                             >
                               {label}
