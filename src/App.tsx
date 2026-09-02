@@ -1569,22 +1569,31 @@ export default function App() {
               English one is a subtitle. It used to be the other way round: a
               three-line English headline at 14px above a 10px Persian line in
               a mono face, in an application whose entire interface is Persian. */}
-          <div className={`py-3.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
-            <div className="flex items-center gap-3 min-w-0">
+          {/* The mark sits above the name, both centred, rather than in a row
+              beside it: the two controls that used to share this row pushed the
+              brand off-centre and squeezed the name into a 15px line that read
+              as small print at the top of the screen. Those controls are pinned
+              to the corner now, so the brand owns the full width. */}
+          <div className={`relative py-4 border-b border-border/80 ${sidebarCollapsed ? 'md:px-2 px-5' : 'px-5'}`}>
+            <div className="flex flex-col items-center gap-2 text-center">
               {/* Dark navy mark on a dark card is all but invisible, so it gets
                   a light plate in dark mode — same fix as the login screen. */}
               <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
-                <img src={temadLogo} alt="تماد" className="h-10 w-auto object-contain" />
+                <img
+                  src={temadLogo}
+                  alt="تماد"
+                  className={`w-auto object-contain ${sidebarCollapsed ? 'h-10 md:h-9' : 'h-12'}`}
+                />
               </span>
-              <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-2xs mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
+              <div className={`flex-col items-center min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
+                <span className="font-extrabold text-foreground text-base leading-snug tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
+                <span className="text-muted-foreground text-xs mt-0.5 tracking-widest" dir="ltr">VLSE</span>
               </div>
             </div>
             <Button
               variant="ghost"
               size="icon-xs"
-              className="md:hidden text-muted-foreground"
+              className="md:hidden text-muted-foreground absolute left-3 top-3"
               onClick={() => setSidebarOpen(false)}
             >
               <X />
@@ -1593,7 +1602,7 @@ export default function App() {
             <Button
               variant="outline"
               size="icon-sm"
-              className={`hidden md:inline-flex text-muted-foreground ${sidebarCollapsed ? 'md:hidden' : ''}`}
+              className={`hidden md:inline-flex text-muted-foreground absolute left-3 top-3 ${sidebarCollapsed ? 'md:hidden' : ''}`}
               onClick={() => setSidebarCollapsed(true)}
               title="جمع کردن نوار کناری"
             >
