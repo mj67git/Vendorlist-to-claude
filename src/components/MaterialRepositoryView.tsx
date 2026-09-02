@@ -19,6 +19,7 @@ import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 
 interface Props {
   materials: Material[];
@@ -528,14 +529,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* HEADER & FILTER BAR */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-mono text-xs uppercase tracking-wider">
-            <Database className="w-4 h-4" />
-            <span>Material Master Registry</span>
-          </div>
-          <h1 className="text-xl font-black text-foreground tracking-tight">مخزن مرجع مواد اولیه</h1>
-          <p className="text-xs text-muted-foreground">مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام</p>
-        </div>
+        <PageTitle
+          eyebrow="Material Master Registry"
+          eyebrowIcon={Database}
+          title="مخزن مرجع مواد اولیه"
+          subtitle="مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام"
+        />
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
           <div className="relative w-full sm:w-64">

@@ -43,6 +43,7 @@ import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 
 interface Props {
   partners: BusinessPartner[];
@@ -794,14 +795,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       {/* Title + toolbar, in the materials-repository layout */}
       <div className="bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-mono text-xs uppercase tracking-wider">
-              <Building2 className="w-4 h-4" />
-              <span>Business Partner & Supplier Quality Evaluation</span>
-            </div>
-            <h1 className="text-xl font-black text-foreground tracking-tight">مخزن شرکای تجاری و ارزیابی فروشنده</h1>
-            <p className="text-xs text-muted-foreground">ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP</p>
-          </div>
+          <PageTitle
+            eyebrow="Business Partner & Supplier Quality Evaluation"
+            eyebrowIcon={Building2}
+            title="مخزن شرکای تجاری و ارزیابی فروشنده"
+            subtitle="ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP"
+          />
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
             <div className="relative w-full sm:w-72">

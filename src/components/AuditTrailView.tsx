@@ -21,6 +21,7 @@ import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 
 export interface AuditLog {
   id: string;
@@ -590,15 +591,11 @@ export const AuditTrailView: React.FC = () => {
     <div className="space-y-6 text-right pb-12 w-full" dir="rtl">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-5">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-muted border border-border rounded-xl text-foreground">
-              <ClipboardList className="w-5 h-5" />
-            </div>
-            <h1 className="text-xl font-extrabold text-foreground tracking-tight">ردیابی تغییرات</h1>
-          </div>
-          <p className="text-muted-foreground text-xs">سامانه مانیتورینگ فعالیت‌های سیستم و تاریخچه تغییرات فرآیندی (GMP Compliance)</p>
-        </div>
+        <PageTitle
+          icon={ClipboardList}
+          title="ردیابی تغییرات"
+          subtitle="سامانه مانیتورینگ فعالیت‌های سیستم و تاریخچه تغییرات فرآیندی (GMP Compliance)"
+        />
 
         {/* TOP METRIC CHIPS */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">

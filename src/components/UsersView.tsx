@@ -14,6 +14,7 @@ import { Role, User } from '../types';
 import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
@@ -465,17 +466,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
     <div className="space-y-5 fade-in" dir="rtl">
       {/* HEADER */}
       <div className="bg-card border border-border rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
-            <UserCog className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-base font-black text-foreground">مدیریت کاربران سامانه</h2>
-            <p className="text-2xs text-muted-foreground mt-0.5">
-              تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود.
-            </p>
-          </div>
-        </div>
+        <PageTitle
+          icon={UserCog}
+          title="مدیریت کاربران سامانه"
+          subtitle="تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود."
+        />
 
         <div className="flex items-center gap-2">
           <div className="relative">
