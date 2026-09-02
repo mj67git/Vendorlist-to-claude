@@ -197,9 +197,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
             standing in as a page title, so a screen reader heard a different
             document outline here than on every other page. */}
         <PageTitle
-          icon={Archive}
+          eyebrow="Vendor Archive Data"
+          eyebrowIcon={Archive}
           title="آرشیو کل تامین‌کنندگان"
-          subtitle="لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)"
+          subtitle="لیست جامع تمامی تامین‌کنندگان ارزیابی شده"
         />
 
         {/* Exports, on the left. */}
