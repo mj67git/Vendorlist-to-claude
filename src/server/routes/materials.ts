@@ -4,7 +4,7 @@ import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/mater
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
 import {
-  asText, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
+  asText, listMaterials, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
 } from "../repositories/materialRepository.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
@@ -26,9 +26,7 @@ export function materialRoutes(): express.Router {
 
   router.get("/api/materials", requireAuth, requirePermission("material.read"), async (req: any, res) => {
     try {
-      const prisma = requirePrisma();
-      const list = await prisma.material.findMany({ orderBy: { createdAt: "desc" } });
-      res.json(list.map(mapMaterialToClient));
+      res.json(await listMaterials());
     } catch (err: any) {
       sendHandlerError(res, err);
     }

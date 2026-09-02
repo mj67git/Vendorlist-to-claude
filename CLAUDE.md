@@ -23,7 +23,8 @@
 4. **Business Partners مدل تخت:** تولیدکننده و فروشنده مستقل‌اند — فروشنده به تولیدکننده وابسته نیست (`manufacturerId` self-relation حذف شد). فقط **فروشنده** ارزیابی SOP می‌شود.
 5. **فایل‌های SOP تنبل (lazy):** لیست شرکا base64 حمل نمی‌کند؛ فقط `hasFile`. blob از `GET /api/business-partners/:id/documents/:key/file` گرفته می‌شود. هنگام ذخیره، فایل موجود حفظ می‌شود مگر صریحاً حذف شود.
 6. **سازگاری به‌عقب:** `Vendor.status`/`grade` رشتهٔ آزادند (نه enum) تا ~۳۰ endpoint نشکند. مدل‌های موجود را فقط افزایشی تغییر بده.
-7. **Theme tokens:** برای UI جدید از توکن‌ها استفاده کن (`bg-card`, `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`, `bg-background`)، نه رنگ hardcode (`bg-white`, `bg-slate-*`, `text-slate-*`, hex روشن). dark mode با کلاس `.dark` روی `documentElement`؛ سوییچر تم در هدر (`useTheme`).
+7. **Theme tokens:** برای UI جدید از توکن‌ها استفاده کن (`bg-card`, `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`, `bg-background`)، نه رنگ hardcode (`bg-white`, `bg-slate-*`, `text-slate-*`, hex روشن). dark mode با کلاس `.dark` روی `documentElement`؛ سوییچر تم در هدر (`src/hooks/useTheme.ts`).
+   - **یک کتابخانهٔ کامپوننت داریم، نه دو تا:** `src/components/ui/` (shadcn/Radix). پوشهٔ `src/design-system/` حذف شد — ده فایل از یازده فایلش هیچ‌جا import نمی‌شد و `cn` تکراری داشت. کامپوننت تازه در `src/components/ui/` بساز.
 8. **هر لایهٔ روی صفحه از `FormModal` می‌آید (`src/components/FormModal.tsx`).** backdrop، Esc، کلیک بیرون، قفل اسکرول، focus trap و انیمیشن **متقارن** ورود/خروج آنجاست — مودال دستی نساز. سه اندازه: `sm` تأییدیه، `md` فرم تک‌منظوره، `lg` فرم کامل رکورد.
    - کالر باید `<FormModal open={...}>` را **بدون شرط** رندر کند (نه `{cond && <FormModal/>}`)، وگرنه `AnimatePresence` انیمیشن خروج را نمی‌بیند.
    - **children حتی وقتی بسته است ارزیابی می‌شوند.** اگر محتوا به رکوردی وابسته است که ممکن است null باشد، داخل children گاردش کن (`{entity && (<>…</>)}`) وگرنه صفحه crash می‌کند.

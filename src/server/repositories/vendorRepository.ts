@@ -177,8 +177,14 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     // Materials are reached through the links above, so when building a single
     // vendor — or one page — only the ones actually referenced need loading.
     const materialIds = [...new Set(vendorMaterials.map(vm => vm.materialId).filter(Boolean))] as string[];
+    // Only the five fields a source needs from the catalogue. Selecting the
+    // whole row also fetched `specification_file_data` — the base64 of every
+    // material's specification PDF — for every material referenced by the list,
+    // read out of the database and across the wire on every single request, to
+    // build a payload that has never carried it.
     const materials = await prisma.material.findMany({
       where: vendorId || window ? { id: { in: materialIds } } : {},
+      select: { id: true, name: true, nameEn: true, cas: true, irc: true },
     });
     const evaluations = await prisma.evaluation.findMany({ where: only });
     const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });

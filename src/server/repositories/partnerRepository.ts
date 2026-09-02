@@ -44,7 +44,12 @@ export function toDbSopStatus(s: any): any {
 
 // Reconstruct the frontend BusinessPartner shape from a partner row that has
 // its evaluation and SOP documents included.
-export function mapPartnerRow(row: any): any {
+/**
+ * `withFile` names the documents that have a stored file. It is passed in
+ * rather than read off the row, because the row deliberately no longer carries
+ * the blob that would answer the question.
+ */
+export function mapPartnerRow(row: any, withFile?: Set<string>): any {
   const base: any = {
     id: row.id,
     type: row.type,
@@ -74,7 +79,7 @@ export function mapPartnerRow(row: any): any {
         fileName: doc.fileName || undefined,
         // The heavy base64 blob is fetched lazily via the per-document file
         // endpoint; the list/detail payload only signals that a file exists.
-        hasFile: !!doc.fileDataUrl,
+        hasFile: withFile ? withFile.has(doc.id) : !!doc.fileDataUrl,
         fileSize: doc.fileSize ?? undefined,
         uploadedAt: doc.uploadedAt?.toISOString?.() || doc.uploadedAt || undefined,
       };
@@ -114,57 +119,82 @@ export async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promi
     create: { id: p.id, ...data },
   });
 
-  // Since the list/detail payload no longer carries the base64 blob, capture
-  // the existing document files before replacing the evaluation so an edit
-  // that doesn't re-upload keeps the stored file instead of wiping it.
-  const existingFiles = new Map<string, { fileDataUrl: string | null; fileName: string | null; fileSize: number | null }>();
-  const prevEval = await prisma.supplierEvaluation.findUnique({
-    where: { partnerId: p.id },
-    include: { documents: true },
-  });
-  if (prevEval) {
-    for (const d of prevEval.documents) {
-      existingFiles.set(d.key, { fileDataUrl: d.fileDataUrl, fileName: d.fileName, fileSize: d.fileSize });
-    }
+  // The evaluation and its documents are updated in place rather than deleted
+  // and recreated.
+  //
+  // Recreating them meant every stored SOP file had to be read out of the
+  // database, carried through this function and written back, on every edit of
+  // any field of the partner — a name correction moved every PDF the supplier
+  // had ever uploaded. Updating in place means a document whose file did not
+  // change is never told about its file at all, so the blob stays where it is.
+  if (p.type !== "Supplier" || !p.evaluation) {
+    await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
+    return;
   }
 
-  // Replace the supplier evaluation (+ documents) if present.
-  await prisma.supplierEvaluation.deleteMany({ where: { partnerId: p.id } });
-  if (p.type === "Supplier" && p.evaluation) {
-    const ev = p.evaluation;
-    const created = await prisma.supplierEvaluation.create({
-      data: {
-        partnerId: p.id,
-        totalScore: Number(ev.totalScore) || 0,
-        grade: ev.grade || "Not Evaluated",
-        status: ev.status || "Not Evaluated",
-        updatedBy: ev.updatedBy || null,
+  const ev = p.evaluation;
+  const evaluation = await prisma.supplierEvaluation.upsert({
+    where: { partnerId: p.id },
+    update: {
+      totalScore: Number(ev.totalScore) || 0,
+      grade: ev.grade || "Not Evaluated",
+      status: ev.status || "Not Evaluated",
+      updatedBy: ev.updatedBy || null,
+    },
+    create: {
+      partnerId: p.id,
+      totalScore: Number(ev.totalScore) || 0,
+      grade: ev.grade || "Not Evaluated",
+      status: ev.status || "Not Evaluated",
+      updatedBy: ev.updatedBy || null,
+    },
+  });
+
+  const docs = (ev.documents ? Object.values(ev.documents) : []) as any[];
+
+  // A document the payload no longer mentions has been removed.
+  //
+  // `key` is an enum, so a payload carrying a key that is not one refuses here,
+  // before anything is written. The previous shape deleted every document
+  // first and only then discovered the bad key, which left the supplier with
+  // no documents at all.
+  await prisma.sopDocument.deleteMany({
+    where: { evaluationId: evaluation.id, key: { notIn: docs.map(d => d.key) as any } },
+  });
+
+  for (const doc of docs) {
+    const common = {
+      nameFa: doc.nameFa || "",
+      nameEn: doc.nameEn || "",
+      status: toDbSopStatus(doc.status),
+      score: Number(doc.score) || 0,
+      uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
+    };
+
+    // Three cases, and only the first two touch the file.
+    //   a fresh blob      → store it
+    //   no fileName       → the user removed the file, so clear it
+    //   fileName, no blob → an unchanged reference; say nothing about the file
+    const fileFields = doc.fileDataUrl
+      ? { fileName: doc.fileName || null, fileSize: doc.fileSize ?? null, fileDataUrl: doc.fileDataUrl }
+      : !doc.fileName
+        ? { fileName: null, fileSize: null, fileDataUrl: null }
+        : {};
+
+    await prisma.sopDocument.upsert({
+      where: { evaluationId_key: { evaluationId: evaluation.id, key: doc.key } },
+      update: { ...common, ...fileFields },
+      // On create there is no stored file to preserve, so an unchanged
+      // reference has nothing behind it and the name is all there is.
+      create: {
+        evaluationId: evaluation.id,
+        key: doc.key,
+        ...common,
+        fileName: doc.fileName || null,
+        fileSize: doc.fileSize ?? null,
+        fileDataUrl: doc.fileDataUrl || null,
       },
     });
-    const docs = ev.documents ? Object.values(ev.documents) : [];
-    for (const doc of docs as any[]) {
-      const prior = existingFiles.get(doc.key);
-      // fileName present but no fresh blob => unchanged reference, keep the
-      // stored blob. fileName absent => the user removed the file, so drop it.
-      const stillReferencesFile = !!doc.fileName;
-      const fileName = doc.fileName || null;
-      const fileDataUrl = doc.fileDataUrl || (stillReferencesFile ? prior?.fileDataUrl : null) || null;
-      const fileSize = doc.fileSize ?? (stillReferencesFile && !doc.fileDataUrl ? prior?.fileSize : null) ?? null;
-      await prisma.sopDocument.create({
-        data: {
-          evaluationId: created.id,
-          key: doc.key,
-          nameFa: doc.nameFa || "",
-          nameEn: doc.nameEn || "",
-          status: toDbSopStatus(doc.status),
-          score: Number(doc.score) || 0,
-          fileName,
-          fileSize,
-          fileDataUrl,
-          uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
-        },
-      });
-    }
   }
 }
 
@@ -188,13 +218,40 @@ export function buildPartnerAuditDescription(action: string, partner: any, befor
   return description;
 }
 
+/**
+ * Every SOP document field except the file itself.
+ *
+ * `include: { documents: true }` selects every column, and one of those columns
+ * is the base64 of the uploaded PDF. Listing the partners therefore read every
+ * stored SOP file out of the database and carried it into Node — to compute a
+ * boolean saying a file exists. Postgres already keeps oversized text out of
+ * the row (TOAST) and never touches it unless it is selected, so naming the
+ * columns is the whole fix; there is nothing to move to another table.
+ */
+const DOCUMENT_FIELDS = {
+  id: true, key: true, nameFa: true, nameEn: true, status: true,
+  score: true, fileName: true, fileSize: true, uploadedAt: true,
+} as const;
+
+/** Which of those documents actually has a file, asked without reading one. */
+async function documentIdsWithFile(prisma: any, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await prisma.sopDocument.findMany({
+    where: { id: { in: ids }, NOT: { fileDataUrl: null } },
+    select: { id: true },
+  });
+  return new Set(rows.map((r: any) => r.id));
+}
+
 export async function getBusinessPartnersList(): Promise<any[]> {
   const prisma = requirePrisma();
   const rows = await prisma.businessPartner.findMany({
     orderBy: { createdAt: "desc" },
-    include: { evaluation: { include: { documents: true } } },
+    include: { evaluation: { include: { documents: { select: DOCUMENT_FIELDS } } } },
   });
-  return rows.map(mapPartnerRow);
+  const docIds = rows.flatMap(r => (r.evaluation?.documents || []).map((d: any) => d.id));
+  const withFile = await documentIdsWithFile(prisma, docIds);
+  return rows.map(row => mapPartnerRow(row, withFile));
 }
 
 /**

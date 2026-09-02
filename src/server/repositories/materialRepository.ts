@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { AuditService } from "../../utils/auditService.js";
 import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
+import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
 
 /**
@@ -14,7 +15,11 @@ import { generateMaterialId } from "../domain/materialId.js";
  * blocked write is evidence too.
  */
 
-export function mapMaterialToClient(m: any) {
+/**
+ * `hasFile` overrides the row when given, so a caller that deliberately did not
+ * select the blob can still answer the question honestly.
+ */
+export function mapMaterialToClient(m: any, hasFile?: boolean) {
   return {
     id: m.id,
     nameFa: m.name,
@@ -32,7 +37,7 @@ export function mapMaterialToClient(m: any) {
     // GET /api/materials/:id/specification/file (project rule 5).
     specificationFile: m.specificationFile || undefined,
     specificationFileSize: m.specificationFileSize ?? undefined,
-    hasSpecificationFile: !!m.specificationFileData,
+    hasSpecificationFile: hasFile ?? !!m.specificationFileData,
     specificationUploadedAt: m.specificationUploadedAt
       ? (m.specificationUploadedAt.toISOString?.() || m.specificationUploadedAt)
       : undefined,
@@ -116,4 +121,40 @@ export async function rejectDuplicateMaterial(
   });
 
   return { error: hit.reason, duplicateOf: hit.material.id };
+}
+
+/**
+ * Every material field except the specification blob.
+ *
+ * The list endpoint used to select whole rows, so every stored specification
+ * PDF was read out of the database and carried into Node on every load of the
+ * materials page — for a payload that has never included one (project rule 5).
+ * Postgres keeps oversized text out of the row already and does not touch it
+ * unless it is named, so leaving it out of the SELECT is the entire fix.
+ *
+ * The single-record handlers still read whole rows. That is one blob for the
+ * one material being worked on, which is bounded; this is about the list, where
+ * the cost multiplies by the size of the catalogue.
+ */
+const MATERIAL_FIELDS = {
+  id: true, name: true, nameEn: true, cas: true, irc: true, iupac: true,
+  role: true, finalProduct: true, finalProductEn: true, pharmacopoeia: true,
+  standardNameFa: true, standardNameEn: true, specificationFile: true,
+  specificationFileSize: true, specificationUploadedAt: true, createdAt: true,
+} as const;
+
+export async function listMaterials(): Promise<any[]> {
+  const prisma = requirePrisma();
+  const rows = await prisma.material.findMany({
+    orderBy: { createdAt: "desc" },
+    select: MATERIAL_FIELDS,
+  });
+  // Which of them has a file, asked without reading one.
+  const withFile = new Set(
+    (await prisma.material.findMany({
+      where: { NOT: { specificationFileData: null } },
+      select: { id: true },
+    })).map(r => r.id),
+  );
+  return rows.map(m => mapMaterialToClient(m, withFile.has(m.id)));
 }

@@ -54,7 +54,7 @@ import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton
 import { CommandPalette } from './components/CommandPalette';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
-import { useTheme } from './design-system/ThemeSwitcher';
+import { useTheme } from './hooks/useTheme';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
 import { useCachedCollection } from './hooks/useCachedCollection';
