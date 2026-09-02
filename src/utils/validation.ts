@@ -12,24 +12,41 @@ export const vendorSchema = z.object({
   status: z.string().optional(),
 }).passthrough();
 
+/**
+ * A field a source may simply not have.
+ *
+ * `.optional()` alone accepts `undefined` and rejects `null`, and the client
+ * sends `null` — the vendor object carries these as null when nothing was ever
+ * entered. That mismatch made every score change on a source with no IRC expiry
+ * date fail: saving scores also recomputes grade and status, which queues a
+ * profile PATCH carrying `ircExpiryDate: null`, the profile call 400'd on it,
+ * and because the write queue is sequential and stops at the first failure
+ * (rule 12), the scores call behind it never ran. The user saw "Validation
+ * failed" and lost the edit.
+ *
+ * `.nullish()` is `.nullable().optional()`: absent and "explicitly empty" are
+ * both accepted, which is what an optional field means here.
+ */
+const optionalText = () => z.string().nullish();
+
 export const vendorProfileSchema = z.object({
-  material: z.string().optional(),
-  materialEn: z.string().optional(),
-  cas: z.string().regex(/^\d+-\d{2}-\d+$/, "Invalid CAS format. Expected format: xxx-xx-x").or(z.literal("N/A")).or(z.literal("")),
-  irc: z.string().regex(/^\d*$|^$/, "IRC must be numeric").or(z.literal("N/A")).or(z.literal("")),
-  ircExpiryDate: z.string().optional(),
-  name: z.string().optional(),
-  nameEn: z.string().optional(),
-  country: z.string().optional(),
-  grade: z.string().nullable().optional(),
-  status: z.string().optional(),
-  isSample: z.boolean().optional(),
+  material: optionalText(),
+  materialEn: optionalText(),
+  cas: z.string().regex(/^\d+-\d{2}-\d+$/, "Invalid CAS format. Expected format: xxx-xx-x").or(z.literal("N/A")).or(z.literal("")).nullish(),
+  irc: z.string().regex(/^\d*$|^$/, "IRC must be numeric").or(z.literal("N/A")).or(z.literal("")).nullish(),
+  ircExpiryDate: optionalText(),
+  name: optionalText(),
+  nameEn: optionalText(),
+  country: optionalText(),
+  grade: optionalText(),
+  status: optionalText(),
+  isSample: z.boolean().nullish(),
 }).passthrough();
 
 export const vendorContactSchema = z.object({
-  contactInfo: z.string().optional(),
-  lastAudit: z.string().optional(),
-  ircExpiryDate: z.string().optional(),
+  contactInfo: optionalText(),
+  lastAudit: optionalText(),
+  ircExpiryDate: optionalText(),
 }).passthrough();
 
 export const vendorScoreSchema = z.object({

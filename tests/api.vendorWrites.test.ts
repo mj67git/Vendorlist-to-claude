@@ -254,3 +254,39 @@ test('reading is a permission too', SKIP, async () => {
   assert.equal((await api('/api/business-partners', { token })).status, 403);
   assert.equal((await api('/api/vendors', { token })).status, 200, 'the others still work');
 });
+
+test('a profile field the source never had is null, not missing', SKIP, async () => {
+  // The client sends the whole profile, and a source that never had an IRC
+  // expiry date carries `null` there — `.optional()` alone accepts `undefined`
+  // and rejects `null`, so this call used to come back 400 "Validation failed".
+  const token = await login('admin');
+  const res = await api(`/api/vendors/${FIXTURE.vendorId}/profile`, {
+    method: 'PATCH', token,
+    body: profileBody({ ircExpiryDate: null, contactInfo: null, country: null }),
+  });
+  assert.equal(res.status, 200, 'null means "this source has none", not a malformed request');
+});
+
+test('saving scores on a source with no IRC expiry date actually saves them', SKIP, async () => {
+  // The real report: changing a department score also recomputes grade and
+  // status, which queues a profile PATCH carrying `ircExpiryDate: null`. That
+  // call failed validation, and because the write queue is sequential and stops
+  // at the first failure, the scores call behind it never ran — the operator
+  // saw a red banner and lost the edit.
+  const token = await login('admin');
+
+  const profile = await api(`/api/vendors/${FIXTURE.vendorId}/profile`, {
+    method: 'PATCH', token,
+    body: profileBody({ ircExpiryDate: null, grade: 'B', status: 'new' }),
+  });
+  assert.equal(profile.status, 200);
+
+  const scores = await api(`/api/vendors/${FIXTURE.vendorId}/scores`, {
+    method: 'PATCH', token,
+    body: { scores: { commercial: 70, qa: 80, planning: 60, finance: 90 } },
+  });
+  assert.equal(scores.status, 200);
+
+  const stored = await db().evaluation.findFirst({ where: { vendorId: FIXTURE.vendorId } });
+  assert.equal(stored.qaScore, 80, 'the department score reached the database');
+});
