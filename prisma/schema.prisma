@@ -244,11 +244,6 @@ model Vendor {
   manufacturer   BusinessPartner? @relation("VendorManufacturer", fields: [manufacturerId], references: [id], onDelete: SetNull)
   supplier       BusinessPartner? @relation("VendorSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
 
-  // Legacy embedded JSON (kept for backward compatibility; superseded by the
-  // normalized riskAssessments / analysisRecordEntries relations below).
-  riskAssessment  String? @map("risk_assessment") @db.Text
-  analysisRecords String? @map("analysis_records") @db.Text
-
   // The central table had neither of these while almost every other table did,
   // so there was no way to tell that a row had changed underneath a writer.
   // `updatedAt` is what the optimistic-concurrency check compares against.

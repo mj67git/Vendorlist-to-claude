@@ -85,11 +85,12 @@ async function main() {
   const riskAssessments = parsed.risk_assessments || {};
   const analysisRecords = parsed.analysis_records || {};
   
+  const RISK_LEVELS = ['Low', 'Medium', 'High'];
+  const DEVIATIONS = ['None', 'NCR', 'Deviation', 'OOS', 'CAPA', 'OOT', 'Complaint', 'Other'];
+
   for (const [id, v] of Object.entries(vendorsMap)) {
     const val: any = v;
-    const risk = riskAssessments[id] ? JSON.stringify(riskAssessments[id]) : null;
-    const analysis = analysisRecords[id] ? JSON.stringify(analysisRecords[id]) : null;
-    
+
     await prisma.vendor.create({
       data: {
         id: val.id,
@@ -98,10 +99,48 @@ async function main() {
         country: val.country || 'نامشخص',
         contactInfo: val.contactInfo || null,
         registrationDate: val.registrationDate || null,
-        riskAssessment: risk,
-        analysisRecords: analysis,
       }
     });
+
+    // Risk and laboratory data go into their own tables.
+    //
+    // They used to be written as JSON onto two columns of `vendors` that the
+    // application does not read, so a seeded risk assessment or test result was
+    // invisible from the moment it was loaded. Those columns are gone; this is
+    // where the API reads these facts from.
+    const risk: any = riskAssessments[id];
+    if (risk) {
+      await prisma.riskAssessment.create({
+        data: {
+          vendorId: val.id,
+          materialCriticality: Number(risk.materialCriticality) || 0,
+          detectability: Number(risk.detectability) || 0,
+          probability: Number(risk.probability) || 0,
+          sps: Number(risk.sps) || 0,
+          riskScore: Number(risk.riskScore) || 0,
+          sri: Number(risk.sri) || 0,
+          riskLevel: RISK_LEVELS.includes(risk.riskLevel) ? risk.riskLevel : 'Low',
+          evaluationDate: risk.date || null,
+          evaluator: risk.evaluator || null,
+        }
+      });
+    }
+
+    for (const rec of (Array.isArray(analysisRecords[id]) ? analysisRecords[id] : []) as any[]) {
+      await prisma.analysisRecord.create({
+        data: {
+          vendorId: val.id,
+          recordDate: rec.date || null,
+          qcCode: rec.qcCode || null,
+          decision: rec.decision === 'Reject' ? 'Reject'
+            : (rec.decision === 'Approved Conditional' || rec.decision === 'ApprovedConditional')
+              ? 'ApprovedConditional' : 'Pass',
+          deviationReason: DEVIATIONS.includes(rec.deviationReason) ? rec.deviationReason : 'None',
+          comments: rec.comments || null,
+          recordedBy: rec.recordedBy || null,
+        }
+      });
+    }
   }
   
   console.log('🌱 Inserting Materials...');

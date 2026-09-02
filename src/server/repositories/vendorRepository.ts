@@ -521,8 +521,6 @@ export async function saveVendorToDb(
         irc: irc || null,
         manufacturerId: manufacturerLink,
         supplierId: supplierLink,
-        riskAssessment: null,
-        analysisRecords: null,
       },
       create: {
         id,
@@ -537,8 +535,6 @@ export async function saveVendorToDb(
         irc: irc || null,
         manufacturerId: manufacturerLink,
         supplierId: supplierLink,
-        riskAssessment: null,
-        analysisRecords: null,
       },
     });
 
