@@ -173,7 +173,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
               ? 'border-ring ring-2 ring-ring/20 shadow-xs'
-              : 'border-border hover:border-slate-400'
+              : 'border-border hover:border-muted-foreground'
           }`}
         >
           <div className="flex items-center gap-2.5 overflow-hidden w-full">
@@ -204,7 +204,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     )}
                     {selectedPartner.country && (
                       <>
-                        <span className="text-slate-300">•</span>
+                        <span className="text-muted-foreground/50">•</span>
                         <span className="flex items-center gap-0.5">
                           <Globe className="w-2.5 h-2.5 text-muted-foreground" />
                           <span>{selectedPartner.country}</span>
@@ -372,14 +372,14 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                             )}
                             {p.country && (
                               <>
-                                <span className="text-slate-300">•</span>
+                                <span className="text-muted-foreground/50">•</span>
                                 <span>{p.country}</span>
                               </>
                             )}
                             {p.city && <span>({p.city})</span>}
                             {p.contactPerson && (
                               <>
-                                <span className="text-slate-300">•</span>
+                                <span className="text-muted-foreground/50">•</span>
                                 <span>رابط: {p.contactPerson}</span>
                               </>
                             )}

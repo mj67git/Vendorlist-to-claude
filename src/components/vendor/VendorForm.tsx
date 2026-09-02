@@ -581,7 +581,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('general')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
                     ۱. مشخصات عمومی
@@ -590,7 +590,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('evaluation')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
                     ۲. ارزیابی مدارک SOP

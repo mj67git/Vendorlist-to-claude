@@ -174,7 +174,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
     <div className="space-y-6">
       <ScoringGuide currentUser={currentUser} />
 
-      <div className="bg-card border border-slate-900/10 rounded-xl p-6 md:p-8 fade-in shadow-sm">
+      <div className="bg-card border border-border rounded-xl p-6 md:p-8 fade-in shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           {visibleFormLayout.map(dept => {
              const Icon = dept.icon;
@@ -183,11 +183,11 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
              const avg = isModified ? calculateDeptAverage(dept.id, scores[dept.id]) : prevDeptScore;
 
              return (
-               <div key={dept.id} className="bg-muted border border-slate-900/10 rounded-xl p-5 relative overflow-hidden group">
+               <div key={dept.id} className="bg-muted border border-border rounded-xl p-5 relative overflow-hidden group">
                   <div className={`absolute top-0 right-0 w-full h-[3px] opacity-80 ${getScoreColorClass(avg, true)}`} />
                   <div className="flex justify-between items-center mb-6">
                      <div className="flex items-center gap-3">
-                       <div className="bg-card p-2 rounded-lg border border-slate-900/10 shadow-sm">
+                       <div className="bg-card p-2 rounded-lg border border-border shadow-sm">
                          <Icon className="w-5 h-5 text-muted-foreground" />
                        </div>
                        <div>
@@ -257,22 +257,22 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
          <textarea
           
            rows={4}
-           className="w-full bg-card border border-slate-900/10 rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
+           className="w-full bg-card border border-border rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
            placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."
            value={comments}
            onChange={(e) => setComments(e.target.value)}
          ></textarea>
        </div>
 
-       <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-slate-900/10 pt-6">
+       <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-border pt-6">
          <Button
            size="lg"
            onClick={handleSave}
            disabled={isSaving}
-           className="w-full md:w-auto flex-row-reverse bg-slate-900 hover:bg-slate-800 text-white"
+           className="w-full md:w-auto flex-row-reverse bg-foreground text-background hover:bg-foreground/90"
          >
            {isSaving ? (
-             <span className="inline-block w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
+             <span className="inline-block w-5 h-5 border-2 border-muted-foreground border-t-background rounded-full animate-spin" />
            ) : (
              <Archive className="w-5 h-5" />
            )}

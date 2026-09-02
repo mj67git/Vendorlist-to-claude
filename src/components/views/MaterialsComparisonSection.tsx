@@ -198,7 +198,7 @@ export const MaterialsComparisonSection: React.FC<{
                       </div>
                       <span className="font-mono font-bold text-foreground shrink-0">
                         {item.engineScore.toFixed(1)}
-                        <span className="text-gray-400 font-normal text-2xs"> (پایه {item.score})</span>
+                        <span className="text-muted-foreground font-normal text-2xs"> (پایه {item.score})</span>
                       </span>
                     </div>
                     <div className="h-5 w-full bg-muted rounded-full overflow-hidden flex items-center relative">
@@ -208,7 +208,7 @@ export const MaterialsComparisonSection: React.FC<{
                         }`}
                         style={{ width: `${scorePercent}%` }}
                       />
-                      <div className="absolute left-3 text-2xs text-gray-500 font-sans pointer-events-none">
+                      <div className="absolute left-3 text-2xs text-muted-foreground font-sans pointer-events-none">
                         {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'}
                       </div>
                     </div>

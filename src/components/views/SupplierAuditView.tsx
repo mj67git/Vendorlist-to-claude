@@ -380,7 +380,7 @@ interface SourceSelection {
        {activeSupplier && stats ? (
          <div className="space-y-6">
            {/* Supplier Profile Banner Card */}
-           <div className="bg-card border border-slate-900/10 rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
              <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-teal-600" />
              <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-right">
                <div className="bg-teal-50 border border-teal-100 text-teal-600 p-3 rounded-xl shrink-0 self-start sm:self-center">
@@ -398,7 +398,7 @@ interface SourceSelection {
                           <span>تولیدکننده : {activePartnerDetails.mfgName}</span>
                           {activePartnerDetails.mfgCountry && (
                             <>
-                              <span className="mx-3 sm:mx-4 text-slate-300 font-normal">|</span>
+                              <span className="mx-3 sm:mx-4 text-muted-foreground/50 font-normal">|</span>
                               <span>کشور : {activePartnerDetails.mfgCountry}</span>
                             </>
                           )}
@@ -429,11 +429,11 @@ interface SourceSelection {
                           <span>فروشنده : {activePartnerDetails.supName}</span>
                           {activePartnerDetails.supCountry && (
                             <>
-                              <span className="mx-3 text-slate-300 font-normal">|</span>
+                              <span className="mx-3 text-muted-foreground/50 font-normal">|</span>
                               <span>کشور : {activePartnerDetails.supCountry}</span>
                             </>
                           )}
-                          <span className="mx-3 text-slate-300 font-normal">|</span>
+                          <span className="mx-3 text-muted-foreground/50 font-normal">|</span>
                           <span className={activePartnerDetails.mfgPartner ? '' : 'text-sm font-semibold'}>
                             گرید SOP : {activePartnerDetails.supGrade}
                           </span>
@@ -703,8 +703,8 @@ interface SourceSelection {
                 </div>
               </div>
             </div>
-            <div className="bg-card border border-slate-900/10 rounded-2xl shadow-sm overflow-hidden mb-6">
-             <div className="bg-muted px-6 py-4 border-b border-slate-900/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden mb-6">
+             <div className="bg-muted px-6 py-4 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                <div className="w-full sm:w-auto uppercase font-bold text-muted-foreground text-xs tracking-wider text-right">
                  جدول مقایسه نمرات مواد تامین شده (Materials Performance Matrix)
                </div>
@@ -780,7 +780,7 @@ interface SourceSelection {
            </div>
  
            {/* Multi-Dimensional Audit Score Breakdown (CSS Infographics Column Charts) */}
-           <div className="bg-card border border-slate-900/10 rounded-2xl p-6 shadow-sm">
+           <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
              <h3 className="text-base text-foreground font-bold mb-6 flex items-center justify-start gap-2.5">
                <span>شاخص میانگین عملکرد تفکیک شده دپارتمانی (Departmental Performance)</span>
                <div className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-ping" />
@@ -805,7 +805,7 @@ interface SourceSelection {
                    </div>
 
                    <div>
-                     <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+                     <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
                        <div className={`${getScoreColorClass(dept.avg, true)} h-full rounded-full transition-all`} style={{ width: `${dept.avg}%` }} />
                      </div>
                    </div>
@@ -821,7 +821,7 @@ interface SourceSelection {
          /* GLOBAL SEARCH & DISCOVERY DIRECTORY OF ALL UNIQUE SUPPLIERS */
          <div className="space-y-6">
            {/* Large Elegant Search Panel */}
-           <div className="bg-card/75 backdrop-blur-md border border-slate-900/10 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row gap-4 items-center focus-within:ring-2 focus-within:ring-teal-500/20 transition-all">
+           <div className="bg-card/75 backdrop-blur-md border border-border rounded-2xl p-6 shadow-sm flex flex-col md:flex-row gap-4 items-center focus-within:ring-2 focus-within:ring-teal-500/20 transition-all">
              <div className="flex-1 flex items-center gap-3 w-full">
                <Search className="w-5 h-5 text-muted-foreground shrink-0" />
                <input
@@ -876,7 +876,7 @@ interface SourceSelection {
                          setSelectedSupplierKey(supplier.key);
                        }
                      }}
-                     className="bg-card border border-slate-900/10 rounded-2xl p-5 hover:shadow-md hover:border-teal-500/20 transition-all cursor-pointer group flex flex-col justify-between text-right"
+                     className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-teal-500/20 transition-all cursor-pointer group flex flex-col justify-between text-right"
                    >
                      <div>
                        <div className="flex items-start justify-between gap-3 mb-4">
@@ -910,7 +910,7 @@ interface SourceSelection {
                              />
                            ))}
                            {supplier.vendors.length > 3 && (
-                             <span className="text-2xs bg-slate-900 text-white px-1.5 py-1 rounded font-bold font-mono">
+                             <span className="text-2xs bg-foreground text-background px-1.5 py-1 rounded font-bold font-mono">
                                +{supplier.vendors.length - 3} مورد دیگر
                              </span>
                            )}
