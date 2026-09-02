@@ -388,30 +388,27 @@ interface SourceSelection {
              and `PageTitle` so this page contributes the same single `h1` to
              the document outline as every other one. */}
          <PageTitle
-           eyebrow="Supplier Core"
-           eyebrowIcon={Handshake}
+           eyebrow="Supplier Monitoring & Audit"
+           eyebrowIcon={Activity}
            title={activeSupplier ? 'کارنامه جامع ممیزی و تامین' : 'بررسی یکپارچه تامین‌کنندگان'}
            subtitle={activeSupplier
              ? 'تجمیع اطلاعات تامین کالا، پایداری کیفیت و سوابق ممیزی اقلام'
              : 'مشاهده و مانیتورینگ متمرکز تامین‌کنندگان، تعداد مواد عرضه شده و گرید کیفی میانگین'}
          />
 
-         <div>
-           {activeSupplier ? (
-             <Button
-               variant="outline"
-               onClick={() => setSelectedSupplierKey(null)}
-             >
-               <ChevronLeft className="rotate-180 text-muted-foreground" />
-               <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
-             </Button>
-           ) : (
-             <div className="flex items-center gap-2 bg-teal-50 text-teal-600 border border-teal-200/50 px-3 py-1 rounded-lg text-xs font-bold font-mono">
-               <Activity className="w-3.5 h-3.5 animate-pulse" />
-               <span>PROACTIVE ACTIVE DISCOVERY MODULE</span>
-             </div>
-           )}
-         </div>
+         {/* Only the way back out of a dossier lives here. The banner that
+             used to sit in this corner announced the module as a "proactive
+             active discovery module", which named nothing a reader could act
+             on and left an empty box on the list view. */}
+         {activeSupplier && (
+           <Button
+             variant="outline"
+             onClick={() => setSelectedSupplierKey(null)}
+           >
+             <ChevronLeft className="rotate-180 text-muted-foreground" />
+             <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
+           </Button>
+         )}
  
        </div>
 
