@@ -9,7 +9,7 @@ import { categoryLabels } from '../constants/categories';
 import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
-  CheckCircle, CheckCircle2, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
+  CheckCircle, CheckCircle2, XCircle, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
   FileText, Upload, Download, FileCheck, Award, ShieldCheck, AlertCircle, Paperclip,
   RefreshCw, AlertTriangle, Package
 } from 'lucide-react';
@@ -41,6 +41,8 @@ import { can } from '../utils/permissions';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
 
 interface Props {
   partners: BusinessPartner[];
@@ -75,40 +77,6 @@ type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' |
 /** Persian has its own alphabet order; a plain `<` sorts by code point. */
 const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
 
-/**
- * A sortable column header that says which column is sorted and which way.
- *
- * These were clickable `<th>`s with the same neutral glyph on every column: not
- * reachable by keyboard, not announced as controls, and no way to tell what the
- * table was ordered by.
- */
-const SortHeader: React.FC<{
-  field: SortField;
-  label: string;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  onSort: (f: SortField) => void;
-}> = ({ field, label, sortField, sortOrder, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      className={`p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className="w-full py-3 px-4 flex items-center gap-1 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 /** Worst first when descending: the order a quality reviewer reads in. */
 const GRADE_RANK: Record<string, number> = {
@@ -998,41 +966,32 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </tr>
                 ))
               ) : paginatedPartners.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-14 text-center">
-                    <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
-                    {hasActiveFilters ? (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">هیچ شریکی با این جستجو یا فیلترها پیدا نشد.</p>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={handleResetFilters}
-                          className="text-xs font-bold"
-                        >
-                          <RefreshCw />
-                          پاک‌کردن جستجو و فیلترها
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">هنوز شریک تجاری‌ای ثبت نشده است.</p>
-                        {can(currentUser, 'partner.create') ? (
-                          <Button
-                            type="button"
-                            onClick={handleOpenAdd}
-                            className="text-xs font-bold"
-                          >
-                            <Plus />
-                            ثبت اولین شریک تجاری
-                          </Button>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">ثبت شریک تجاری در دسترس نقش شما نیست.</p>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                hasActiveFilters ? (
+                  <TableEmptyRow
+                    colSpan={7}
+                    icon={Building2}
+                    message="هیچ شریکی با این جستجو یا فیلترها پیدا نشد."
+                    action={
+                      <Button type="button" variant="secondary" onClick={handleResetFilters} className="text-xs font-bold">
+                        <RefreshCw />
+                        پاک‌کردن جستجو و فیلترها
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <TableEmptyRow
+                    colSpan={7}
+                    icon={Building2}
+                    message="هنوز شریک تجاری‌ای ثبت نشده است."
+                    action={can(currentUser, 'partner.create') ? (
+                      <Button type="button" onClick={handleOpenAdd} className="text-xs font-bold">
+                        <Plus />
+                        ثبت اولین شریک تجاری
+                      </Button>
+                    ) : undefined}
+                    note={can(currentUser, 'partner.create') ? undefined : 'ثبت شریک تجاری در دسترس نقش شما نیست.'}
+                  />
+                )
               ) : (
                 paginatedPartners.map(partner => {
                   return (

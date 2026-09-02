@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Search, Filter, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, X, Eye, 
+  Search, Filter, SlidersHorizontal, ChevronLeft, X, Eye, 
   Clock, ShieldAlert, CheckCircle, AlertTriangle, FileText, 
   Activity, User as UserIcon, HelpCircle, Layers, ClipboardList,
   RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
@@ -19,6 +19,8 @@ import { EntityName } from './EntityName';
 import { readLocalAudit } from '../services/localAudit';
 import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
 
 export interface AuditLog {
   id: string;
@@ -71,41 +73,6 @@ const actionLabels: Record<string, { label: string; bg: string; text: string }> 
   PERMISSION_CHANGE: { label: 'تغییر دسترسی', bg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900', text: 'text-amber-700' }
 };
 
-/**
- * A sortable column header: a real button, with the direction announced.
- *
- * The old headers were `<button>`s inside a plain `<th>` with no `aria-sort`,
- * and they set state the query never sent — see AuditService.orderFor.
- */
-const SortHeader: React.FC<{
-  field: 'date' | 'user';
-  label: string;
-  width: string;
-  sortField: 'date' | 'user';
-  sortDirection: 'asc' | 'desc';
-  onSort: (f: 'date' | 'user') => void;
-}> = ({ field, label, width, sortField, sortDirection, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      style={{ width }}
-      className={`p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className="w-full py-3 px-4 flex items-center gap-1.5 font-bold hover:bg-accent hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 const severityLabels: Record<string, { label: string; bg: string; text: string; icon: any }> = {
   Info: { label: 'عادی (Info)', bg: 'bg-muted text-foreground border-border', text: 'text-foreground', icon: InfoIcon },
@@ -859,8 +826,8 @@ export const AuditTrailView: React.FC = () => {
             <caption className="sr-only">فهرست رویدادهای ثبت‌شده در ردیابی تغییرات</caption>
             <thead>
               <tr className="bg-muted text-muted-foreground text-xs font-bold border-b border-border">
-                <SortHeader field="date" label="تاریخ و ساعت" width="16%" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-                <SortHeader field="user" label="کاربر" width="18%" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortHeader field="date" label="تاریخ و ساعت" width="16%" sortField={sortField} sortOrder={sortDirection} onSort={handleSort} />
+                <SortHeader field="user" label="کاربر" width="18%" sortField={sortField} sortOrder={sortDirection} onSort={handleSort} />
                 <th className="py-3 px-4 w-[15%]">ماژول</th>
                 <th className="py-3 px-4 w-[10%]">عملیات</th>
                 <th className="py-3 px-4 w-[15%]">رکورد هدف</th>
@@ -936,36 +903,25 @@ export const AuditTrailView: React.FC = () => {
                   );
                 })
               ) : (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground font-medium">
-                    {/* "No records at all" and "no records matching your
-                        filters" are different situations; offering to clear
-                        filters that are not set only confuses. */}
-                    <div className="flex flex-col items-center gap-2">
-                      <AlertCircle className="w-8 h-8 text-muted-foreground/50" />
-                      {advancedFilterCount > 0 || searchQuery || quickSeverityFilter ? (
-                        <>
-                          <span>هیچ رکورد لاگی با مشخصات انتخابی یافت نشد.</span>
-                          <Button
-                            variant="link"
-                            size="sm"
-                            onClick={handleResetFilters}
-                            className="font-bold mt-1"
-                          >
-                            پاک کردن فیلترها
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <span>هنوز هیچ رویدادی در سامانه ثبت نشده است.</span>
-                          <span className="text-2xs text-muted-foreground">
-                            هر تغییری در سورس‌ها، مواد، شرکا و کاربران به‌صورت خودکار همین‌جا ثبت می‌شود.
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                advancedFilterCount > 0 || searchQuery || quickSeverityFilter ? (
+                  <TableEmptyRow
+                    colSpan={6}
+                    icon={AlertCircle}
+                    message="هیچ رکورد لاگی با مشخصات انتخابی یافت نشد."
+                    action={
+                      <Button variant="link" size="sm" onClick={handleResetFilters} className="font-bold mt-1">
+                        پاک کردن فیلترها
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <TableEmptyRow
+                    colSpan={6}
+                    icon={AlertCircle}
+                    message="هنوز هیچ رویدادی در سامانه ثبت نشده است."
+                    note="هر تغییری در سورس‌ها، مواد، شرکا و کاربران به‌صورت خودکار همین‌جا ثبت می‌شود."
+                  />
+                )
               )}
             </tbody>
           </table>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle, KeyRound, Loader2,
+  AlertCircle, CheckCircle, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -12,6 +12,8 @@ import { authFetch, isLocalMode } from '../services/authFetch';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { Role, User } from '../types';
 import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
@@ -134,35 +136,6 @@ function formatLastLogin(value: string | null): string {
 type SortField = 'name' | 'username' | 'role' | 'status' | 'lastLogin';
 type SortOrder = 'asc' | 'desc';
 
-/** Same sortable header as the materials, partners and audit tables. */
-const SortHeader: React.FC<{
-  field: SortField;
-  label: string;
-  center?: boolean;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  onSort: (f: SortField) => void;
-}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 /** Persian names sort by the Persian alphabet, not by code point. */
 const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
@@ -601,12 +574,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <UsersIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                    <span>{search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}</span>
-                  </td>
-                </tr>
+                <TableEmptyRow
+                  colSpan={7}
+                  icon={UsersIcon}
+                  message={search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}
+                />
               ) : pageRows.map(u => (
                 <tr key={u.username} className={`border-b border-border/60 last:border-0 hover:bg-accent/50 transition-colors ${u.isActive ? '' : 'opacity-60'}`}>
                   <td className="py-3 px-4 font-bold text-foreground">

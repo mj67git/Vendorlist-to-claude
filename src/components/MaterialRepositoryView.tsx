@@ -2,8 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import {
-  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, ArrowUp, ArrowDown,
-  FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
+  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
   Archive, CheckCircle, AlertCircle, Sparkles, Package, Tag, Factory
 } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
@@ -18,6 +17,8 @@ import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
 import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
 
 interface Props {
   materials: Material[];
@@ -65,41 +66,6 @@ const formatFileSize = (bytes?: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
 };
 
-/**
- * A sortable column header that says which column is sorted and in which
- * direction — the old headers showed the same neutral glyph on all six, so the
- * table could be sorted without the user being able to tell by what.
- */
-const SortHeader: React.FC<{
-  field: SortField;
-  label: string;
-  center?: boolean;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  onSort: (f: SortField) => void;
-}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      {/* A button, not a clickable <th>: the column has to be sortable from the
-          keyboard and announce itself as a control. */}
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 export const MaterialRepositoryView: React.FC<Props> = ({
   materials,
@@ -720,41 +686,32 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={8} className="py-14 text-center">
-                    <Archive className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
-                    {hasFilters ? (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد.</p>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={clearFilters}
-                          className="text-xs font-bold"
-                        >
-                          <X />
-                          پاک‌کردن جستجو و فیلترها
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">مخزن مرجع هنوز خالی است.</p>
-                        {can(currentUser, 'material.create') ? (
-                          <Button
-                            type="button"
-                            onClick={handleOpenAdd}
-                            className="text-xs font-bold"
-                          >
-                            <Plus />
-                            ثبت اولین ماده
-                          </Button>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">ثبت ماده در دسترس نقش شما نیست.</p>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                hasFilters ? (
+                  <TableEmptyRow
+                    colSpan={8}
+                    icon={Archive}
+                    message="هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد."
+                    action={
+                      <Button type="button" variant="secondary" onClick={clearFilters} className="text-xs font-bold">
+                        <X />
+                        پاک‌کردن جستجو و فیلترها
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <TableEmptyRow
+                    colSpan={8}
+                    icon={Archive}
+                    message="مخزن مرجع هنوز خالی است."
+                    action={can(currentUser, 'material.create') ? (
+                      <Button type="button" onClick={handleOpenAdd} className="text-xs font-bold">
+                        <Plus />
+                        ثبت اولین ماده
+                      </Button>
+                    ) : undefined}
+                    note={can(currentUser, 'material.create') ? undefined : 'ثبت ماده در دسترس نقش شما نیست.'}
+                  />
+                )
               )}
             </tbody>
           </table>
