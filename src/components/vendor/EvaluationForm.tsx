@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Button } from '../ui/button';
 import { Archive, CheckCircle } from 'lucide-react';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { ScoringGuide } from '../../components/ScoringGuide';
@@ -264,10 +265,11 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
        </div>
 
        <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-slate-900/10 pt-6">
-         <button
+         <Button
+           size="lg"
            onClick={handleSave}
            disabled={isSaving}
-           className="w-full md:w-auto flex flex-row-reverse items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-75"
+           className="w-full md:w-auto flex-row-reverse bg-slate-900 hover:bg-slate-800 text-white"
          >
            {isSaving ? (
              <span className="inline-block w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
@@ -275,7 +277,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
              <Archive className="w-5 h-5" />
            )}
             <span>ذخیره ارزیابی</span>
-          </button>
+          </Button>
         </div>
      </div>
      </div>

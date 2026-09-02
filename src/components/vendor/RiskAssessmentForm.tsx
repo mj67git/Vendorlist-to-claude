@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle, ShieldAlert, X } from 'lucide-react';
 import { RiskAssessmentData, User, Vendor } from '../../types';
+import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { can } from '../../utils/permissions';
@@ -181,9 +182,10 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
           <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400" />
           ارزیابی ریسک تامین کنندگان (Supplier Risk Assessment)
         </h3>
-        <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground hover:text-foreground cursor-pointer">
-          <X className="w-5 h-5" />
-        </button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose}
+          className="text-muted-foreground hover:text-foreground">
+          <X />
+        </Button>
       </div>
 
       <div className="space-y-6">
@@ -274,13 +276,9 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
                 {riskLevel === 'Low' ? 'پایین (Low)' : riskLevel === 'Medium' ? 'متوسط (Medium)' : 'بالا (High)'}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className="bg-primary text-primary-foreground font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
-            >
+            <Button type="button" onClick={handleSubmit}>
               ثبت نتیجه ارزیابی ریسک
-            </button>
+            </Button>
           </div>
         </div>
       </div>

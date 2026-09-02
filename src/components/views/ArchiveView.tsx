@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ChevronDown, Download, FileText, ListChecks, Printer, Search, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
 import { Pagination } from '../../components/Pagination';
+import { Button } from '../../components/ui/button';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
@@ -185,29 +186,29 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
         {/* Left side: Export Options */}
         <div className="flex items-center gap-2.5 flex-wrap order-2 md:order-1">
           {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
-          <button 
-            type="button" 
+          <Button
+            type="button"
+            variant="success"
             onClick={() => excel.run(xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections))}
             disabled={excel.busy}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-[0_2px_8px_rgba(5,150,105,0.25)] hover:shadow-[0_4px_14px_rgba(5,150,105,0.35)] transition-all cursor-pointer active:scale-95"
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
           >
-            <Download className="w-4 h-4" />
+            <Download />
             <span>خروجی اکسل چند شیتی (Multi-Sheet XLSX)</span>
-          </button>
+          </Button>
 
           {/* Print the list itself. "PDF" in this module used to mean one
               evaluation form for one source; the register as a whole could only
               leave as a spreadsheet, which is not a document anyone signs. */}
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => setPrintingList(true)}
-            className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
             title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
           >
-            <ListChecks className="w-3.5 h-3.5 text-primary" />
+            <ListChecks className="text-primary" />
             <span>چاپ فهرست (PDF)</span>
-          </button>
+          </Button>
 
           {/* The spreadsheet counterpart of the print button. Both other export
               buttons ignore the filters on screen — deliberately, they are
@@ -215,18 +216,18 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               narrowed the list down had no way to export what they were
               looking at. The sheet carries the same filter caption the printed
               register carries, so an extract cannot be mistaken for the whole. */}
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => excel.run(xl => xl.exportCategoryToExcel(
               filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
             ))}
             disabled={excel.busy}
-            className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
             title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
           >
-            <Download className="w-3.5 h-3.5 text-primary" />
+            <Download className="text-primary" />
             <span>خروجی نمای فعلی ({filteredDb.length.toLocaleString('fa-IR')})</span>
-          </button>
+          </Button>
 
           {/* Secondary menu: one category at a time.
               It used to open on `group-hover` alone — unreachable from the
@@ -234,17 +235,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
               where there is no hover at all. It is a real menu now: a button
               that toggles, Escape and an outside click to dismiss. */}
           <div className="relative" ref={exportMenuRef}>
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => setExportMenuOpen(o => !o)}
               aria-haspopup="menu"
               aria-expanded={exportMenuOpen}
-              className="flex items-center gap-2 bg-card hover:bg-accent text-foreground border border-border text-xs font-semibold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             >
-              <FileText className="w-3.5 h-3.5 text-primary" />
+              <FileText className="text-primary" />
               <span>خروجی تک‌دسته‌ای</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
+              <ChevronDown className={`text-muted-foreground transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            </Button>
 
             <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-xl py-2 z-20 divide-y divide-border text-right">
               <div className="px-3.5 py-2 text-2xs font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
@@ -421,13 +422,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                     the same data left the building through the export button
                     next to it — while making QA ask an admin to print a form
                     they are entitled to read. */}
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setPrintingVendor(v)}
-                  className="p-1.5 text-muted-foreground hover:text-primary hover:bg-accent rounded-lg transition-colors border border-transparent hover:border-border"
+                  className="text-muted-foreground hover:text-primary border border-transparent hover:border-border"
                   title="چاپ فرم ارزیابی"
                 >
-                  <Printer className="w-4 h-4" />
-                </button>
+                  <Printer />
+                </Button>
               </div>
             </div>
             );

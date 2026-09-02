@@ -396,13 +396,15 @@ export function CategoryView({
             {(query || activeFilter) && (
               <div className="mt-3">
                 <p className="text-sm text-muted-foreground">با فیلتر یا جست‌وجوی فعلی موردی پیدا نشد.</p>
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="sm"
                   onClick={() => { setQuery(''); setActiveFilter(null); }}
-                  className="mt-3 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                  className="mt-3"
                 >
                   پاک کردن فیلترها
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -475,14 +477,12 @@ export function CategoryView({
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setSelectDialog(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setSelectDialog(null)}>
                 انصراف
-              </button>
-              <button type="submit" disabled={selectSaving}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50">
+              </Button>
+              <Button type="submit" disabled={selectSaving}>
                 ثبت انتخاب
-              </button>
+              </Button>
             </div>
           </form>
         )}

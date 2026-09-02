@@ -4,6 +4,7 @@ import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
+import { Button } from '../ui/button';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
 import { isVendorRejected } from '../../utils/vendorState';
 import { getScoreColorClass } from '../../components/ScoreBar';
@@ -346,13 +347,13 @@ interface SourceSelection {
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
          <div>
            {activeSupplier ? (
-             <button 
+             <Button
+               variant="outline"
                onClick={() => setSelectedSupplierKey(null)}
-               className="flex items-center gap-2 text-muted-foreground hover:text-foreground text-xs font-bold border border-border bg-card rounded-xl px-4 py-2.5 shadow-sm transition-all cursor-pointer"
              >
-               <ChevronLeft className="w-4 h-4 rotate-180 text-muted-foreground" />
+               <ChevronLeft className="rotate-180 text-muted-foreground" />
                <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
-             </button>
+             </Button>
            ) : (
              <div className="flex items-center gap-2 bg-teal-50 text-teal-600 border border-teal-200/50 px-3 py-1 rounded-lg text-xs font-bold font-mono">
                <Activity className="w-3.5 h-3.5 animate-pulse" />
@@ -651,8 +652,10 @@ interface SourceSelection {
                  </p>
                </div>
 
-               <button
+               <Button
                  type="button"
+                 variant="success"
+                 className="w-full"
                  disabled={excel.busy}
                  onClick={() => excel.run(xl => xl.exportSupplierDossierToExcel({
                    supplierName: activeSupplier.name,
@@ -662,11 +665,10 @@ interface SourceSelection {
                    chosenMaterials: stats.chosenFor.map(v => v.material),
                    soleSourceMaterials: stats.soleSource.map(v => v.material),
                  }))}
-                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-2xs font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer"
                >
-                 <Briefcase className="w-3.5 h-3.5" />
+                 <Briefcase />
                  {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}
-               </button>
+               </Button>
                {excel.error && (
                  <p className="mt-2 text-2xs text-rose-600 dark:text-rose-400">{excel.error}</p>
                )}
@@ -758,14 +760,16 @@ interface SourceSelection {
                            <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center whitespace-nowrap">
-                           <button
+                           <Button
                              type="button"
+                             variant="ghost"
+                             size="sm"
                              onClick={() => onSelectVendor(v)}
-                             className="text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100/80 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-colors border border-teal-200/50 font-bold text-2xs sm:text-xs cursor-pointer inline-flex items-center gap-1"
+                             className="text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100/80 border border-teal-200/50 font-bold"
                            >
-                             <Pencil className="w-3 h-3" />
+                             <Pencil />
                              <span>پرونده ممیزی</span>
-                           </button>
+                           </Button>
                          </td>
                        </tr>
                      );

@@ -26,6 +26,13 @@ const buttonVariants = cva(
         sm: "h-8 rounded-lg px-3 text-xs",
         lg: "h-11 rounded-xl px-8 text-base",
         icon: "h-9 w-9 rounded-xl",
+        // Two smaller icon buttons, because 36px is too big for the places the
+        // application actually puts one. Hand-rolled `p-1.5` (18 sites) and
+        // `p-2` (15 sites) were sitting at roughly 28 and 32 pixels; without
+        // these, migrating a row action to `size="icon"` would visibly grow the
+        // table rows it lives in.
+        "icon-sm": "h-8 w-8 rounded-lg",
+        "icon-xs": "h-7 w-7 rounded-lg [&_svg]:size-3.5",
       },
     },
     defaultVariants: {

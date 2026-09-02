@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, CheckCircle, ChevronDown, Microscope, Star } f
 import { AnimatePresence, motion } from 'motion/react';
 import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
+import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import type { SourceSelectionRecord } from '../../utils/sourceSelection';
@@ -387,10 +388,11 @@ export const MaterialsComparisonSection: React.FC<{
                     سورس منتخب: {selectedEntry.name}
                   </span>
                   {onSelectSource && (
-                    <button type="button" onClick={() => onSelectSource(selection.vendorId)}
-                      className="text-2xs font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer shrink-0">
+                    <Button type="button" variant="link" size="sm"
+                      onClick={() => onSelectSource(selection.vendorId)}
+                      className="text-2xs text-emerald-800 dark:text-emerald-300 shrink-0 h-auto p-0">
                       تغییر انتخاب
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <p className="text-2xs text-muted-foreground leading-relaxed">
@@ -404,11 +406,11 @@ export const MaterialsComparisonSection: React.FC<{
                 </p>
               </div>
             ) : onSelectSource ? (
-              <button type="button" onClick={() => onSelectSource(bestVendor.vendor.id)}
-                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer">
-                <CheckCircle className="w-4 h-4" />
+              <Button type="button" onClick={() => onSelectSource(bestVendor.vendor.id)}
+                className="w-full">
+                <CheckCircle />
                 ثبت انتخاب سورس برای این ماده
-              </button>
+              </Button>
             ) : (
               <p className="text-2xs text-muted-foreground text-center">
                 هنوز سورسی برای این ماده به‌طور رسمی انتخاب نشده است.

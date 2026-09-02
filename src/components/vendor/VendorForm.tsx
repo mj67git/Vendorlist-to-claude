@@ -535,9 +535,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <Handshake className="w-5 h-5 text-primary" />
                   ثبت تأمین‌کننده جدید (New Business Partner)
                 </h3>
-                <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
+                <Button type="button" variant="ghost" size="icon-sm"
+                  onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X />
+                </Button>
               </div>
 
               {/* Partner kind — manufacturers and suppliers are independent records */}
@@ -740,10 +742,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 )}
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary-hover transition-colors">
+                  <Button type="button" variant="ghost" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}>انصراف</Button>
+                  <Button type="submit">
                     {newPartnerType === 'Supplier' ? 'ثبت و انتخاب فروشنده' : 'ثبت و انتخاب تولیدکننده'}
-                  </button>
+                  </Button>
                 </div>
               </form>
         </FormModal>
