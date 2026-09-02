@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import {
   Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, ArrowUp, ArrowDown,
@@ -601,13 +602,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
           </div>
 
           {can(currentUser, 'material.create') && (
-            <button
+            <Button
               onClick={handleOpenAdd}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
+              className="w-full sm:w-auto text-xs font-bold shrink-0"
             >
-              <Plus className="w-4 h-4" />
+              <Plus />
               <span>ثبت ماده جدید</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -668,30 +669,36 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button 
-                          onClick={() => handleOpenView(material)} 
-                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
+                        <Button
+                          variant="outline"
+                          size="icon-xs"
+                          onClick={() => handleOpenView(material)}
+                          className="text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-600 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900"
                           title="مشاهده شناسنامه"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
+                          <Eye />
+                        </Button>
                         {can(currentUser, 'material.edit') && (
-                          <button
+                          <Button
+                            variant="outline"
+                            size="icon-xs"
                             onClick={() => handleOpenEdit(material)}
-                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            className="text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-600 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900"
                             title="ویرایش"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                            <Edit2 />
+                          </Button>
                         )}
                         {can(currentUser, 'material.delete') && (
-                          <button 
-                            onClick={() => handleDelete(material)} 
-                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
+                          <Button
+                            variant="outline"
+                            size="icon-xs"
+                            onClick={() => handleDelete(material)}
+                            className="text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-600 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900"
                             title="حذف"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -717,27 +724,28 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     {hasFilters ? (
                       <div className="space-y-3">
                         <p className="text-muted-foreground">هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد.</p>
-                        <button
+                        <Button
                           type="button"
+                          variant="secondary"
                           onClick={clearFilters}
-                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                          className="text-xs font-bold"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X />
                           پاک‌کردن جستجو و فیلترها
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <p className="text-muted-foreground">مخزن مرجع هنوز خالی است.</p>
                         {can(currentUser, 'material.create') ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={handleOpenAdd}
-                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                            className="text-xs font-bold"
                           >
-                            <Plus className="w-4 h-4" />
+                            <Plus />
                             ثبت اولین ماده
-                          </button>
+                          </Button>
                         ) : (
                           <p className="text-xs text-muted-foreground">ثبت ماده در دسترس نقش شما نیست.</p>
                         )}
@@ -809,14 +817,16 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <p className="text-2xs text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
                     </div>
                   </div>
-                  <button 
+                  <Button
                     type="button"
-                    onClick={() => setIsModalOpen(false)} 
-                    className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setIsModalOpen(false)}
+                    className="text-muted-foreground"
                     title="بستن"
                   >
-                    <X className="w-5 h-5" />
-                  </button>
+                    <X />
+                  </Button>
                 </div>
                 
                 {/* Scrollable Form Body */}
@@ -1065,30 +1075,32 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       {recentlySaved[0] ? ` — آخرین: ${recentlySaved[0]}` : ''}
                     </span>
                   )}
-                  <button 
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                    className="text-xs font-bold text-muted-foreground"
                   >
                     {savedCount > 0 ? 'پایان' : 'انصراف'}
-                  </button>
+                  </Button>
                   {!editingMaterial && (
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       onClick={() => handleSave(true)}
                       title="ذخیره می‌کند، فرم را خالی می‌کند و همین‌جا می‌مانید"
-                      className="px-4 py-2 text-xs font-bold text-foreground bg-muted hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                      className="text-xs font-bold"
                     >
                       ذخیره و ثبت بعدی
-                    </button>
+                    </Button>
                   )}
-                  <button 
+                  <Button
                     type="button"
                     onClick={() => handleSave()}
-                    className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-95 border border-blue-400/30 cursor-pointer"
+                    className="px-6 text-xs font-bold"
                   >
                     {editingMaterial ? 'ذخیره تغییرات ماده' : 'ثبت اطلاعات در مخزن'}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -1107,13 +1119,15 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   <p className="text-2xs text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsViewModalOpen(false)} 
-                className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setIsViewModalOpen(false)}
+                className="text-muted-foreground"
                 title="بستن"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <X />
+              </Button>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
@@ -1223,20 +1237,24 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <div className="flex items-center gap-1 shrink-0">
                           {selectedMaterial.hasSpecificationFile && (
                             <>
-                              <button
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleViewSpec}
-                                className={`p-2 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-blue-600 dark:text-blue-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
                                 title="مشاهده"
                               >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
+                                <Eye />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleDownloadSpec}
-                                className={`p-2 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-emerald-600 dark:text-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                                 title="دانلود"
                               >
-                                <Download className="w-4 h-4" />
-                              </button>
+                                <Download />
+                              </Button>
                             </>
                           )}
                           {can(currentUser, 'material.edit') && (
@@ -1245,14 +1263,16 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                                 <Upload className="w-4 h-4" />
                                 <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
                               </label>
-                              <button
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleDeleteSpec}
                                 disabled={specBusy}
-                                className={`p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-rose-600 dark:text-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
                                 title="حذف"
                               >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                                <Trash2 />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -1281,12 +1301,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             </div>
 
             <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end shrink-0 shadow-xs">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-bold text-xs transition-colors cursor-pointer"
+                className="px-5 font-bold text-xs"
               >
                 بستن
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
@@ -1319,12 +1340,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     ))}
                   </div>
                   <div className="flex justify-end pt-2">
-                    <button 
-                      onClick={() => setMaterialToDelete(null)} 
-                      className="w-full sm:w-auto px-4 py-2 bg-muted hover:bg-accent border border-border text-foreground rounded-xl text-xs font-bold transition-all"
+                    <Button
+                      variant="secondary"
+                      onClick={() => setMaterialToDelete(null)}
+                      className="w-full sm:w-auto text-xs font-bold"
                     >
                       متوجه شدم
-                    </button>
+                    </Button>
                   </div>
                 </>
               ) : (
@@ -1334,21 +1356,23 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     این عمل غیرقابل بازگشت بوده و تمامی اطلاعات مربوط به این ماده از سیستم حذف خواهد شد.
                   </p>
                   <div className="flex items-center justify-end gap-2 pt-2">
-                    <button 
-                      onClick={() => setMaterialToDelete(null)} 
-                      className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                    <Button
+                      variant="secondary"
+                      onClick={() => setMaterialToDelete(null)}
+                      className="text-xs font-bold"
                     >
                       انصراف
-                    </button>
-                    <button 
+                    </Button>
+                    <Button
+                      variant="destructive"
                       onClick={() => {
                         onDeleteMaterial(materialToDelete.id);
                         setMaterialToDelete(null);
-                      }} 
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20"
+                      }}
+                      className="text-xs font-bold"
                     >
                       تایید و حذف نهایی
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1371,18 +1395,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 آیا از حذف فایل پیوست مشخصات فنی (Specification) این ماده اطمینان دارید؟
               </p>
               <div className="flex items-center justify-end gap-2 pt-2">
-                <button 
-                  onClick={() => setSpecToDelete(false)} 
-                  className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                <Button
+                  variant="secondary"
+                  onClick={() => setSpecToDelete(false)}
+                  className="text-xs font-bold"
                 >
                   انصراف
-                </button>
-                <button 
-                  onClick={handleConfirmDeleteSpec} 
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20"
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleConfirmDeleteSpec}
+                  className="text-xs font-bold"
                 >
                   تایید حذف فایل
-                </button>
+                </Button>
               </div>
             </div>
       </FormModal>

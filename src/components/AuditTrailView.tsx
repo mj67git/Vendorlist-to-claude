@@ -7,6 +7,7 @@ import {
   Calculator, Award, TrendingUp, Cpu
 } from 'lucide-react';
 import jalaali from 'jalaali-js';
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import { Pagination } from './Pagination';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
@@ -632,14 +633,16 @@ export const AuditTrailView: React.FC = () => {
 
         {/* TOP METRIC CHIPS */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
-          <button
+          <Button
+            variant="success"
+            size="sm"
             onClick={handleExport}
             disabled={isExporting || stats.total === 0}
-            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="font-bold"
           >
-            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {isExporting ? <Loader2 className="animate-spin" /> : <FileText />}
             خروجی Excel
-          </button>
+          </Button>
           <div className="bg-card border border-border px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
             <span className="text-2xs text-muted-foreground font-medium">کل لاگ‌ها:</span>
@@ -733,13 +736,15 @@ export const AuditTrailView: React.FC = () => {
                 <span className="bg-white/25 text-white rounded-full px-1.5 text-2xs font-black">{advancedFilterCount}</span>
               )}
             </button>
-            <button
+            <Button
+              variant="outline"
+              size="icon-sm"
               onClick={handleResetFilters}
               title="پاک کردن تمامی فیلترها"
-              className="p-2 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-xl transition-all cursor-pointer"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+              <RotateCcw />
+            </Button>
           </div>
         </div>
 
@@ -939,12 +944,14 @@ export const AuditTrailView: React.FC = () => {
                       {advancedFilterCount > 0 || searchQuery || quickSeverityFilter ? (
                         <>
                           <span>هیچ رکورد لاگی با مشخصات انتخابی یافت نشد.</span>
-                          <button
+                          <Button
+                            variant="link"
+                            size="sm"
                             onClick={handleResetFilters}
-                            className="text-primary font-bold text-xs hover:underline mt-1 cursor-pointer"
+                            className="font-bold mt-1"
                           >
                             پاک کردن فیلترها
-                          </button>
+                          </Button>
                         </>
                       ) : (
                         <>
@@ -1014,12 +1021,14 @@ export const AuditTrailView: React.FC = () => {
                 </span>
                 <h3 id="audit-detail-title" className="text-sm font-black text-foreground mt-1">جزئیات ثبت ردیابی تغییرات (Audit)</h3>
               </div>
-              <button 
+              <Button
+                variant="outline"
+                size="icon-sm"
                 onClick={() => setSelectedLog(null)}
-                className="p-1.5 rounded-lg bg-card border border-border text-muted-foreground hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                className="bg-card text-muted-foreground"
               >
-                <X className="w-4 h-4" />
-              </button>
+                <X />
+              </Button>
             </div>
 
             {/* Drawer Content */}

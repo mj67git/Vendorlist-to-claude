@@ -4,6 +4,7 @@ import {
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
+import { Button } from './ui/button';
 import { EntityName } from './EntityName';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
@@ -511,14 +512,15 @@ export function UsersView({ currentUser }: UsersViewProps) {
               className="bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-56"
             />
           </div>
-          <button
+          <Button
             type="button"
+            size="sm"
             onClick={openCreate}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-3.5 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+            className="font-bold shrink-0"
           >
-            <Plus className="w-4 h-4" />
+            <Plus />
             <span>کاربر جدید</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -692,32 +694,32 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-center gap-1">
-                      <button type="button" title="ویرایش" onClick={() => openEdit(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title="سطح دسترسی"
+                      <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
+                        className="text-muted-foreground hover:text-primary">
+                        <Pencil />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
                         onClick={() => openPermissions(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
-                        <SlidersHorizontal className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title="بازنشانی کلمه عبور"
+                        className="text-muted-foreground hover:text-primary">
+                        <SlidersHorizontal />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
                         onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-accent transition-colors cursor-pointer">
-                        <KeyRound className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                        className="text-muted-foreground hover:text-amber-600">
+                        <KeyRound />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
                         disabled={isSelf(u)}
                         onClick={() => setActive(u, !u.isActive)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-accent transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
-                        {u.isActive ? <UserX className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                      </button>
-                      <button type="button" title="حذف کامل"
+                        className="text-muted-foreground hover:text-rose-600">
+                        {u.isActive ? <UserX /> : <CheckCircle />}
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
                         disabled={isSelf(u)}
                         onClick={() => setDeleteTarget(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-accent transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        className="text-muted-foreground hover:text-rose-600">
+                        <Trash2 />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -747,17 +749,17 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 </span>
                 {totalPages > 1 && (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                      className="px-2.5 py-1 rounded-lg border border-border text-2xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                      className="h-7 px-2.5 text-2xs font-bold">
                       قبلی
-                    </button>
+                    </Button>
                     <span className="text-2xs font-mono text-muted-foreground px-1">
                       {page.toLocaleString('fa-IR')} / {totalPages.toLocaleString('fa-IR')}
                     </span>
-                    <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                      className="px-2.5 py-1 rounded-lg border border-border text-2xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                      className="h-7 px-2.5 text-2xs font-bold">
                       بعدی
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -864,15 +866,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
           </div>
 
           <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2 shrink-0">
-            <button type="button" onClick={() => setFormOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+            <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}
+              className="text-xs font-bold text-muted-foreground">
               انصراف
-            </button>
-            <button type="submit" disabled={saving}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 flex items-center gap-2">
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            </Button>
+            <Button type="submit" disabled={saving} className="text-xs font-bold">
+              {saving && <Loader2 className="animate-spin" />}
               {editing ? 'ذخیره تغییرات' : 'ایجاد کاربر'}
-            </button>
+            </Button>
           </div>
         </form>
       </FormModal>
@@ -911,14 +912,16 @@ export function UsersView({ currentUser }: UsersViewProps) {
               />
             </div>
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setResetTarget(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setResetTarget(null)}
+                className="text-xs font-bold text-muted-foreground">
                 انصراف
-              </button>
-              <button type="submit"
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:opacity-90 transition-opacity cursor-pointer">
+              </Button>
+              {/* Amber is a one-off here; a variant for a single site would be
+                  dead weight in the library, so it rides on `className`. */}
+              <Button type="submit"
+                className="text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 hover:shadow-amber-600/20">
                 بازنشانی
-              </button>
+              </Button>
             </div>
           </form>
         )}
@@ -1179,22 +1182,22 @@ export function UsersView({ currentUser }: UsersViewProps) {
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-between gap-2 shrink-0">
-              <button type="button" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
-                className="px-3 py-2 rounded-xl text-2xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
+                className="px-3 text-2xs font-bold text-muted-foreground">
                 بازگشت به پیش‌فرض سمت
-              </button>
+              </Button>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setPermTarget(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                <Button type="button" variant="ghost" onClick={() => setPermTarget(null)}
+                  className="text-xs font-bold text-muted-foreground">
                   انصراف
-                </button>
-                <button type="button" onClick={savePermissions}
+                </Button>
+                <Button type="button" onClick={savePermissions}
                   disabled={permSaving || samePermissions(permDraft, permTarget.effectivePermissions)}
                   title={samePermissions(permDraft, permTarget.effectivePermissions) ? 'تغییری نسبت به وضعیت فعلی داده نشده است.' : undefined}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                  {permSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  className="text-xs font-bold">
+                  {permSaving && <Loader2 className="animate-spin" />}
                   ذخیره سطح دسترسی
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1219,14 +1222,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
               </p>
             </div>
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}
+                className="text-xs font-bold text-muted-foreground">
                 انصراف
-              </button>
-              <button type="button" onClick={confirmDelete}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:opacity-90 transition-opacity cursor-pointer">
+              </Button>
+              <Button type="button" variant="destructive" onClick={confirmDelete}
+                className="text-xs font-bold">
                 حذف کامل
-              </button>
+              </Button>
             </div>
           </>
         )}

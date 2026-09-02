@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { authFetch } from '../services/authFetch';
@@ -844,27 +845,28 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               />
             </div>
 
-            <button
+            <Button
+              variant="secondary"
               disabled={excel.busy}
               onClick={() => excel.run(xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []))}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-muted hover:bg-accent border border-border text-foreground px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0"
+              className="w-full sm:w-auto text-xs font-bold shrink-0"
             >
-              <Download className="w-4 h-4" />
+              <Download />
               <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
-            </button>
+            </Button>
             {excel.error && (
               <p className="text-xs text-rose-600 dark:text-rose-400 self-center">{excel.error}</p>
             )}
 
             {can(currentUser, 'partner.create') && (
-              <button
+              <Button
                 onClick={handleOpenAdd}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
+                className="w-full sm:w-auto text-xs font-bold shrink-0"
               >
-                <Plus className="w-4 h-4" />
+                <Plus />
                 <span>ثبت شریک تجاری جدید</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -952,13 +954,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
           </div>
 
           {hasActiveFilters && (
-            <button
+            <Button
+              variant="outline"
               onClick={handleResetFilters}
-              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 border rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 shrink-0"
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 text-xs font-bold shrink-0"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw />
               <span>حذف فیلترها</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -999,27 +1002,28 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     {hasActiveFilters ? (
                       <div className="space-y-3">
                         <p className="text-muted-foreground">هیچ شریکی با این جستجو یا فیلترها پیدا نشد.</p>
-                        <button
+                        <Button
                           type="button"
+                          variant="secondary"
                           onClick={handleResetFilters}
-                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                          className="text-xs font-bold"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          <RefreshCw />
                           پاک‌کردن جستجو و فیلترها
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <p className="text-muted-foreground">هنوز شریک تجاری‌ای ثبت نشده است.</p>
                         {can(currentUser, 'partner.create') ? (
-                          <button
+                          <Button
                             type="button"
                             onClick={handleOpenAdd}
-                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                            className="text-xs font-bold"
                           >
-                            <Plus className="w-4 h-4" />
+                            <Plus />
                             ثبت اولین شریک تجاری
-                          </button>
+                          </Button>
                         ) : (
                           <p className="text-xs text-muted-foreground">ثبت شریک تجاری در دسترس نقش شما نیست.</p>
                         )}
@@ -1139,33 +1143,39 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {/* Actions */}
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => handleOpenView(partner)}
-                            className={`p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                            className="text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-300 dark:hover:bg-blue-950/50"
                             title="مشاهده جزئیات کامل"
                           >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                            <Eye />
+                          </Button>
                           {/* Delete was gated but edit was not, so a user without
                               `partner.edit` could fill in the whole form only for
                               the server to refuse the save. */}
                           {can(currentUser, 'partner.edit') && (
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => handleOpenEdit(partner)}
-                              className={`p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                              className="text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-950/50"
                               title="ویرایش اطلاعات"
                             >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
+                              <Edit2 />
+                            </Button>
                           )}
                           {can(currentUser, 'partner.delete') && (
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => handleDeletePartnerClick(partner)}
-                              className={`p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                              className="text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-950/50"
                               title="حذف"
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                              <Trash2 />
+                            </Button>
                           )}
                         </div>
                       </td>
@@ -1238,14 +1248,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </p>
                     </div>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => setIsModalOpen(false)}
-                    className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
+                    className="text-muted-foreground"
                     title="بستن"
                   >
-                    <X className="w-5 h-5" />
-                  </button>
+                    <X />
+                  </Button>
                 </div>
 
                 {/* Scrollable Form Body */}
@@ -1586,32 +1598,38 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   <div className="flex items-center gap-1 shrink-0">
                                     {canFiles && (
                                       <>
-                                        <button
+                                        <Button
                                           type="button"
+                                          variant="ghost"
+                                          size="icon-xs"
                                           onClick={() => handleDocFileView(doc, editingPartner?.id)}
-                                          className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
+                                          className="text-blue-600 dark:text-blue-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
                                           title="مشاهده فایل"
                                         >
-                                          <Eye className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
+                                          <Eye />
+                                        </Button>
+                                        <Button
                                           type="button"
+                                          variant="ghost"
+                                          size="icon-xs"
                                           onClick={() => handleDocFileDownload(doc, editingPartner?.id)}
-                                          className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
+                                          className="text-emerald-600 dark:text-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                                           title="دانلود فایل"
                                         >
-                                          <Download className="w-3.5 h-3.5" />
-                                        </button>
+                                          <Download />
+                                        </Button>
                                       </>
                                     )}
-                                    <button
+                                    <Button
                                       type="button"
+                                      variant="ghost"
+                                      size="icon-xs"
                                       onClick={() => handleDocFileRemove(def.key)}
-                                      className="p-1 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded"
+                                      className="text-rose-600 dark:text-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
                                       title="حذف فایل"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                      <Trash2 />
+                                    </Button>
                                   </div>
                                 </div>
                               ) : (
@@ -1710,40 +1728,43 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
                   <div>
                     {formData.type === 'Supplier' && activeModalTab === 'evaluation' && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
                         onClick={() => setActiveModalTab('general')}
-                        className="px-4 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:bg-muted font-bold transition-colors cursor-pointer"
+                        className="text-xs text-muted-foreground font-bold"
                       >
                         بازگشت به اطلاعات پایه
-                      </button>
+                      </Button>
                     )}
                     {formData.type === 'Supplier' && activeModalTab === 'general' && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
                         onClick={() => setActiveModalTab('evaluation')}
-                        className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 text-xs font-bold"
                       >
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <ShieldCheck className="text-emerald-600" />
                         <span>ادامه به ارزیابی SOP Supplier</span>
-                      </button>
+                      </Button>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2">
                     {editingPartner && can(currentUser, 'partner.edit') && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
                         onClick={() => {
                           setIsModalOpen(false);
                           handleDeletePartnerClick(editingPartner);
                         }}
-                        className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-600 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 text-xs font-bold"
                         title="حذف شریک تجاری"
                       >
                         <Trash2 className="w-4 h-4" />
                         <span>حذف شریک</span>
-                      </button>
+                      </Button>
                     )}
                     {savedCount > 0 && (
                       <span className="text-2xs font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[16rem]"
@@ -1751,30 +1772,32 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {savedCount.toLocaleString('fa-IR')} شریک ثبت شد
                       </span>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
                       onClick={() => setIsModalOpen(false)}
-                      className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                      className="text-xs font-bold text-muted-foreground"
                     >
                       {savedCount > 0 ? 'پایان' : 'انصراف'}
-                    </button>
+                    </Button>
                     {!editingPartner && (
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
                         onClick={e => handleSubmitForm(e, true)}
                         title="ذخیره می‌کند، فرم را خالی می‌کند و همین‌جا می‌مانید"
-                        className="px-4 py-2 text-xs font-bold text-foreground bg-muted hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                        className="text-xs font-bold"
                       >
                         ذخیره و ثبت بعدی
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
                       type="submit"
                       form="partner-form"
-                      className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-95 border border-blue-400/30 cursor-pointer"
+                      className="px-6 text-xs font-bold"
                     >
                       {editingPartner ? 'ذخیره تغییرات' : 'ثبت در مخزن'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </>
@@ -1815,54 +1838,64 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
               <div className="flex items-center gap-2">
                 {can(currentUser, 'partner.edit') && selectedPartner.status !== 'Blacklisted' && (
-                  <button
+                  <Button
                     type="button"
+                    variant="destructive"
+                    size="sm"
                     onClick={() => { setBlacklistTarget(selectedPartner); setBlacklistReason(''); }}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="font-bold"
                     title="افزودن به لیست سیاه"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <AlertTriangle />
                     <span>لیست سیاه</span>
-                  </button>
+                  </Button>
                 )}
                 {can(currentUser, 'partner.edit') && selectedPartner.status === 'Blacklisted' && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => handleRestoreFromBlacklist(selectedPartner)}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 border rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 font-bold"
                     title="خروج از لیست سیاه"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                    <RefreshCw />
                     <span>خروج از لیست سیاه</span>
-                  </button>
+                  </Button>
                 )}
                 {can(currentUser, 'partner.delete') && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => handleDeletePartnerClick(selectedPartner)}
-                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-200 dark:border-rose-900 font-bold"
                     title="حذف شریک تجاری"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 />
                     <span>حذف</span>
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleOpenEdit(selectedPartner)}
-                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:text-amber-200 dark:border-amber-900 font-bold"
                 >
-                  <Edit2 className="w-3.5 h-3.5" />
+                  <Edit2 />
                   <span>ویرایش</span>
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setIsViewModalOpen(false)}
-                  className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer"
+                  className="text-muted-foreground"
                   title="بستن"
                 >
-                  <X className="w-5 h-5" />
-                </button>
+                  <X />
+                </Button>
               </div>
             </div>
 
@@ -2167,20 +2200,24 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                     <div className="flex items-center justify-center gap-1">
                                       {canFiles ? (
                                         <>
-                                          <button
+                                          <Button
+                                            variant="ghost"
+                                            size="icon-xs"
                                             onClick={() => doc && handleDocFileView(doc, selectedPartner?.id)}
-                                            className="p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded"
+                                            className="text-blue-600 dark:text-blue-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
                                             title="مشاهده"
                                           >
-                                            <Eye className="w-3.5 h-3.5" />
-                                          </button>
-                                          <button
+                                            <Eye />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon-xs"
                                             onClick={() => doc && handleDocFileDownload(doc, selectedPartner?.id)}
-                                            className="p-1 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
+                                            className="text-emerald-600 dark:text-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                                             title="دانلود"
                                           >
-                                            <Download className="w-3.5 h-3.5" />
-                                          </button>
+                                            <Download />
+                                          </Button>
                                         </>
                                       ) : (
                                         <span
@@ -2221,13 +2258,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             {/* Sticky Bottom Footer */}
             <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs text-2xs text-muted-foreground font-mono">
               <div>تاریخ ایجاد: {formatDate(selectedPartner.createdAt)}</div>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-6 py-2.5 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-sans font-bold text-xs transition-colors cursor-pointer"
+                className="px-6 font-sans font-bold text-xs"
               >
                 بستن
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
@@ -2260,22 +2298,24 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               />
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => { setBlacklistTarget(null); setBlacklistReason(''); }}
-                className="px-4 py-2 bg-muted hover:bg-accent border border-border text-foreground rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                className="text-xs font-bold"
               >
                 انصراف
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
                 disabled={!blacklistReason.trim()}
                 onClick={confirmBlacklist}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                className="text-xs font-bold"
               >
-                <AlertTriangle className="w-3.5 h-3.5" />
+                <AlertTriangle />
                 <span>تأیید و افزودن به لیست سیاه</span>
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
@@ -2310,20 +2350,22 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <div className="flex justify-end gap-2.5 pt-2 border-t border-border">
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setPartnerToDelete(null)}
-                className="px-4 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:bg-muted font-bold transition-colors cursor-pointer"
+                className="text-xs text-muted-foreground font-bold"
               >
                 انصراف
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition-colors cursor-pointer"
+                className="text-xs font-bold"
               >
                 بله، حذف شود
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
@@ -2381,13 +2423,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <div className="flex justify-end pt-2 border-t border-border">
-              <button
+              <Button
                 type="button"
                 onClick={() => setDeleteConstraintError(null)}
-                className="px-5 py-2 rounded-xl bg-foreground text-background hover:opacity-90 text-xs font-bold shadow-md transition-opacity cursor-pointer"
+                className="px-5 bg-foreground text-background hover:bg-foreground/90 text-xs font-bold"
               >
                 متوجه شدم
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
