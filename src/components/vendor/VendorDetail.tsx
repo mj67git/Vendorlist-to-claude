@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
+import { Button } from '../../components/ui/button';
 import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
@@ -17,17 +18,31 @@ import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
+import { Input, inputBaseClass } from '../../components/ui/input';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
 export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
-  // Editing happens on its own page (#/…/vendor/<id>/edit), so this screen just
-  // navigates to it. The unsaved-changes guard lives in VendorForm now, where
-  // the form state it has to inspect actually is.
+  // Editing the source profile happens on its own page
+  // (#/…/vendor/<id>/edit), which carries its own guard. But two forms live
+  // *here* as inline sections — department scoring and the FMEA risk assessment
+  // — and leaving this page is what throws them away. `registerNavGuard` was
+  // accepted as a prop and never used, so half-finished scores vanished without
+  // a word; each form now reports whether it has been touched and the page
+  // registers the same guard the source form uses.
 
   const [showRiskAssessment, setShowRiskAssessment] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showAdminScoresEdit, setShowAdminScoresEdit] = useState(false);
+  const [scoresDirty, setScoresDirty] = useState(false);
+  const [riskDirty, setRiskDirty] = useState(false);
+
+  useEffect(() => {
+    if (!registerNavGuard) return;
+    registerNavGuard(() => scoresDirty || riskDirty);
+    return () => registerNavGuard(null);
+  }, [registerNavGuard, scoresDirty, riskDirty]);
 
   // Guided evaluation wizard: department scoring -> risk assessment -> lab results.
   // Only the stages the current user is allowed to perform are shown.
@@ -377,7 +392,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
 
   return (
-    <div className="space-y-6 fade-in relative pb-10 text-right" dir="rtl">
+    <div className="space-y-6 fade-in relative pb-10 text-right">
       
       {/* Back Button */}
       <button 
@@ -394,18 +409,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
            <h3 className="text-xl font-bold text-foreground mb-1">آیا از حذف این فایل مطمئن هستید؟</h3>
            <p className="text-red-700 dark:text-red-300 mb-6 font-medium text-sm">این عملیات غیر قابل بازگشت است و سورس به همراه تمامی ارزیابی‌های آن از سیستم حذف خواهد شد.</p>
            <div className="flex justify-center gap-4">
-              <button 
+              <Button
+                variant="outline"
                 onClick={() => setShowConfirmDelete(false)}
-                className="px-6 py-2 rounded-xl bg-card border border-border text-foreground hover:bg-accent font-bold text-sm"
+                className="px-6 bg-card font-bold text-sm"
               >
                 انصراف
-              </button>
-              <button 
+              </Button>
+              <Button
+                variant="destructive"
                 onClick={() => onDelete(vendor.id)}
-                className="px-6 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold text-sm shadow-[0_4px_14px_rgba(220,38,38,0.25)]"
+                className="px-6 font-bold text-sm"
               >
                 بله، حذف شود
-              </button>
+              </Button>
            </div>
         </div>
       )}
@@ -425,7 +442,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   {displayedScore !== null ? displayedScore : '-'}
                 </span>
               </div>
-              <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">
+              <span className="text-2xs text-muted-foreground font-medium whitespace-nowrap">
                 {displayedScore === null
                   ? 'بدون امتیاز'
                   : isDepartmentScore
@@ -463,22 +480,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               {/* Editing and deleting are separate permissions: commercial may
                   register and correct a source, but only an admin removes one. */}
               {canEditVendor && (
-                <button 
+                <Button
+                  variant="outline"
                   onClick={() => onEditVendor?.()}
-                  className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                  className="h-10 text-sm font-bold bg-card shadow-sm"
                 >
-                  <Pencil className="w-4 h-4" />
+                  <Pencil />
                   <span>ویرایش اطلاعات</span>
-                </button>
+                </Button>
               )}
               {canDeleteVendor && (
-                <button 
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => setShowConfirmDelete(true)}
-                  className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/40 dark:bg-red-950/30 hover:text-red-600 dark:text-red-400 shadow-sm"
+                  className="h-10 w-10 bg-card text-muted-foreground hover:border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/40 dark:bg-red-950/30 hover:text-red-600 dark:text-red-400 shadow-sm"
                   title="حذف"
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                  <Trash2 />
+                </Button>
               )}
             </div>
 
@@ -615,17 +635,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             {vendor.ircExpiryDate}
                           </span>
                           {check.status === 'expired' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
                               منقضی
                             </span>
                           )}
                           {check.status === 'expiring_soon' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
                               {check.daysLeft} روز
                             </span>
                           )}
                           {check.status === 'valid' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
                               معتبر
                             </span>
                           )}
@@ -718,7 +738,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                   {sourcePartner.website && (
                     <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-[11px]">
+                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-2xs">
                         {sourcePartner.website}
                       </a>
                     </div>
@@ -802,7 +822,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {r.deviationReason && r.deviationReason !== 'None' && (
-                                      <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                                      <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-2xs font-bold">
                                         <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                         انحراف: {
                                           r.deviationReason === 'OOS' ? 'خارج از حدود مشخصات (OOS)' :
@@ -814,7 +834,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                         }
                                       </span>
                                     )}
-                                    <span className="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                                    <span className="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-2xs font-bold">
                                       تصمیم: مردود (Reject)
                                     </span>
                                   </div>
@@ -828,7 +848,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 )}
 
                                 {r.recordedBy && (
-                                  <div className="text-[11px] text-muted-foreground font-medium text-left">
+                                  <div className="text-2xs text-muted-foreground font-medium text-left">
                                     ثبت‌شده توسط: <span className="text-muted-foreground font-bold">{r.recordedBy}</span>
                                   </div>
                                 )}
@@ -844,7 +864,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             <ul className="space-y-1.5">
                               {nonQcRejectionReasons.map((reason, idx) => (
                                 <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-3.5 py-2.5 rounded-xl text-rose-800 dark:text-rose-300 text-xs flex gap-2.5 items-start font-medium shadow-xs">
-                                  <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-[10px] w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                                  <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-2xs w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
                                   <span>{reason}</span>
                                 </li>
                               ))}
@@ -912,7 +932,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     }`}>
                       {done ? <CheckCircle className="w-4 h-4" /> : <Ic className="w-4 h-4" />}
                     </span>
-                    <span className={`text-[10px] sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.title}</span>
+                    <span className={`text-2xs sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.title}</span>
                   </button>
                   {i < evalStages.length - 1 && (
                     <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-muted overflow-hidden">
@@ -935,20 +955,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <h3 className="font-bold text-foreground text-sm">ارزیابی عملکرد تامین‌کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Evaluation)</span></h3>
             </div>
             {currentUser && currentUser.role !== 'lab' && !showAdminScoresEdit && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowAdminScoresEdit(true)}
-                className="px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-800 transition-colors text-xs font-bold flex items-center gap-1.5"
+                className="bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:text-cyan-700 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 border-cyan-200 dark:border-cyan-800 font-bold"
               >
                 {vendor.scores && Object.values(vendor.scores).some(v => v > 0) ? 'تغییر امتیازات' : 'ثبت امتیاز ارزیابی'}
-              </button>
+              </Button>
             )}
             {showAdminScoresEdit && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowAdminScoresEdit(false)}
-                className="flex items-center justify-center gap-1.5 text-xs transition-colors w-fit px-4 py-1.5 rounded-lg border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                className="px-4 font-bold bg-card shadow-sm"
               >
                 <span>انصراف</span>
-              </button>
+              </Button>
             )}
           </div>
 
@@ -962,7 +986,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <p className="text-xs opacity-90 mt-0.5">لطفاً ارزیابی مربوط به بخش خود را بر اساس مستندات ثبت کنید.</p>
                   </div>
                 </div>
-                <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} />
+                <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} onDirtyChange={setScoresDirty} />
               </div>
             ) : vendor.scores ? (
               <div className="space-y-6">
@@ -972,7 +996,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <div className="text-center bg-muted border border-border p-5 rounded-2xl flex flex-col items-center justify-center min-w-[240px] shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 right-0 left-0 h-[3px] bg-cyan-600" />
                       <span className="text-muted-foreground text-xs font-bold mb-1">امتیاز کل (میانگین وزنی)</span>
-                      <span className="text-[10px] text-muted-foreground font-mono mb-2">Weighted Average Score</span>
+                      <span className="text-2xs text-muted-foreground font-mono mb-2">Weighted Average Score</span>
                       <span id="weighted-average-score-badge" className={`text-3xl font-extrabold font-mono tracking-tighter ${getScoreColorClass(overall)}`}>
                         {overall !== null ? overall : '-'}
                       </span>
@@ -1065,7 +1089,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <History className="w-4 h-4 text-primary" />
               <h3 className="font-bold text-foreground text-sm">تاریخچه و روند نمرات <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Score History)</span></h3>
             </div>
-            <Badge variant="outline" className="text-[11px] px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
+            <Badge variant="outline" className="text-2xs px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
           </div>
 
           {scoreHistory.length >= 2 && (
@@ -1118,7 +1142,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         )}
                       </td>
                       <td className="py-2 px-2 text-center">
-                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-[10px] px-2 py-0">{h.grade}</Badge> : <span className="text-muted-foreground">—</span>}
+                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-2xs px-2 py-0">{h.grade}</Badge> : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2 px-2 text-muted-foreground">{h.user}</td>
                     </tr>
@@ -1139,21 +1163,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <h3 className="font-bold text-foreground text-sm">ارزیابی ریسک تامین کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk Assessment)</span></h3>
             </div>
             {canRisk && !showRiskAssessment && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowRiskAssessment(true)}
-                className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 transition-colors text-xs font-bold"
+                className="px-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50 border-amber-200 dark:border-amber-800 font-bold"
               >
                 {vendor.riskAssessment ? 'بروزرسانی ارزیابی ریسک' : 'ثبت ارزیابی ریسک'}
-              </button>
+              </Button>
             )}
           </div>
 
           {showRiskAssessment ? (
-            <RiskAssessmentForm 
-              vendor={vendor} 
-              onSave={onSave} 
-              onClose={() => setShowRiskAssessment(false)} 
-              currentUser={currentUser} 
+            <RiskAssessmentForm
+              vendor={vendor}
+              onSave={onSave}
+              onClose={() => setShowRiskAssessment(false)}
+              currentUser={currentUser}
+              onDirtyChange={setRiskDirty}
             />
           ) : vendor.riskAssessment ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
@@ -1172,7 +1199,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <div className="font-black text-foreground text-base">
                       سطح ریسک: {vendor.riskAssessment.riskLevel === 'Low' ? 'پایین' : vendor.riskAssessment.riskLevel === 'Medium' ? 'متوسط' : 'بالا'}
                     </div>
-                    <div className="text-muted-foreground text-[10px] uppercase font-mono tracking-wide mt-0.5">Supplier Risk Index</div>
+                    <div className="text-muted-foreground text-2xs uppercase font-mono tracking-wide mt-0.5">Supplier Risk Index</div>
                   </div>
                 </div>
                 <div className={`text-3xl font-black font-mono shrink-0 leading-none ${
@@ -1198,11 +1225,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
                 <div className="bg-muted/50 p-4 rounded-xl border border-border col-span-2 flex justify-between items-center px-5">
                   <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground uppercase font-mono mb-0.5">Evaluator</div>
+                    <div className="text-2xs text-muted-foreground uppercase font-mono mb-0.5">Evaluator</div>
                     <div className="text-xs font-bold text-foreground">{vendor.riskAssessment.evaluator}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground uppercase font-mono mb-0.5">Evaluation Date</div>
+                    <div className="text-2xs text-muted-foreground uppercase font-mono mb-0.5">Evaluation Date</div>
                     <div className="text-xs font-bold text-foreground font-mono" dir="ltr">{vendor.riskAssessment.date}</div>
                   </div>
                 </div>
@@ -1222,7 +1249,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   <History className="w-4 h-4 text-primary" />
                   <h3 className="font-bold text-foreground text-sm">تاریخچه و روند ریسک <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk History)</span></h3>
                 </div>
-                <Badge variant="outline" className="text-[11px] px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
+                <Badge variant="outline" className="text-2xs px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
               </div>
 
               {riskHistory.length >= 2 && (
@@ -1263,7 +1290,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <tr key={h.id} className="border-b border-border hover:bg-accent/60">
                         <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                         <td className="py-2 px-2 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-2xs font-bold border ${
                             h.riskLevel === 'Low' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
                             h.riskLevel === 'Medium' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' :
                             h.riskLevel === 'High' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'bg-muted text-muted-foreground border-border'
@@ -1295,14 +1322,15 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <p className="text-xs text-muted-foreground mt-1">مدیریت و ثبت اطلاعات آزمایش، کدهای آزمایشگاهی (QC)، وضعیت انحراف و تصمیم نهایی (صرفاً ادمین و واحد کیفیت)</p>
               </div>
             </div>
-            <button
+            <Button
               id="add-analysis-record-btn"
+              size="sm"
               onClick={() => setShowAddAnalysisForm(!showAddAnalysisForm)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg transition-all shadow-sm"
+              className="bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
             >
-              <Plus className="w-4 h-4" />
+              <Plus />
               <span>ثبت نتیجه آزمایش جدید</span>
-            </button>
+            </Button>
           </div>
 
           {/* Inline Form to add laboratory record */}
@@ -1334,13 +1362,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     {/* QC Code */}
                     <div>
                       <label className="block text-muted-foreground font-semibold text-xs mb-1.5">کد آزمایشگاهی / QC Code <span className="text-red-500 dark:text-red-400">*</span></label>
-                      <input
+                      <Input
                         id="new-qc-code-input"
                         type="text"
                         required
                         value={newAnalysis.qcCode}
                         onChange={e => setNewAnalysis({ ...newAnalysis, qcCode: e.target.value })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono text-left"
+                        className="w-full font-mono text-left"
                         placeholder="مثال: QC-1405-102"
                         dir="ltr"
                       />
@@ -1353,7 +1381,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         id="new-decision-select"
                         value={newAnalysis.decision}
                         onChange={e => setNewAnalysis({ ...newAnalysis, decision: e.target.value as any })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                        className={cn(inputBaseClass, 'w-full font-medium')}
                       >
                         <option value="Pass">Pass</option>
                         <option value="Approved Conditional">Approved Conditional</option>
@@ -1368,7 +1396,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         id="new-deviation-select"
                         value={newAnalysis.deviationReason}
                         onChange={e => setNewAnalysis({ ...newAnalysis, deviationReason: e.target.value as any })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                        className={cn(inputBaseClass, 'w-full font-medium')}
                       >
                         <option value="None">None</option>
                         <option value="NCR">NCR</option>
@@ -1404,26 +1432,29 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                   {/* Action buttons */}
                   <div className="flex justify-end gap-3 pt-2">
-                    <button
+                    <Button
                       id="cancel-analysis-btn"
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => {
                         setAddAnalysisError(null);
                         setShowAddAnalysisForm(false);
                         setNewAnalysis({ date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]), qcCode: '', decision: 'Pass', deviationReason: 'None', comments: '' });
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent active:bg-border rounded-lg transition-all"
+                      className="font-bold text-muted-foreground"
                     >
                       انصراف
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       id="submit-analysis-btn"
                       type="button"
+                      size="sm"
                       onClick={handleAddAnalysisSubmit}
-                      className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg transition-all shadow-sm"
+                      className="px-4 bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
                     >
                       ثبت آزمایش در سابقه سورس
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1445,19 +1476,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-300">{pass}</div>
-                    <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">قبول (Pass)</div>
+                    <div className="text-2xs font-bold text-emerald-600 dark:text-emerald-400">قبول (Pass)</div>
                   </div>
                   <div className="bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-blue-700 dark:text-blue-300">{cond}</div>
-                    <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400">قبول مشروط</div>
+                    <div className="text-2xs font-bold text-blue-600 dark:text-blue-400">قبول مشروط</div>
                   </div>
                   <div className="bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-rose-700 dark:text-rose-300">{rej}</div>
-                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400">مردود (Reject)</div>
+                    <div className="text-2xs font-bold text-rose-600 dark:text-rose-400">مردود (Reject)</div>
                   </div>
                   <div className="bg-muted border border-border rounded-xl p-3 text-center">
                     <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700 dark:text-emerald-300' : passRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-700 dark:text-rose-300'}`}>{passRate}%</div>
-                    <div className="text-[11px] font-bold text-muted-foreground">نرخ قبولی</div>
+                    <div className="text-2xs font-bold text-muted-foreground">نرخ قبولی</div>
                   </div>
                 </div>
 
@@ -1502,9 +1533,9 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <h4 className="font-bold text-foreground text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-muted-foreground font-normal font-mono">(QA Decision)</span></h4>
                     </div>
                     {vendor.status === 'rejected' ? (
-                      <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                      <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+                      <p className="text-2xs text-muted-foreground leading-relaxed mb-3">
                         وجود {rej > 0 ? <strong className="text-rose-600 dark:text-rose-400">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
                       </p>
                     )}
@@ -1518,24 +1549,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
                         />
                         {rejectError && (
-                          <div role="alert" className="flex items-start gap-2 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                          <div role="alert" className="flex items-start gap-2 text-2xs font-bold text-rose-600 dark:text-rose-400">
                             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                             <span>{rejectError}</span>
                           </div>
                         )}
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent rounded-lg">انصراف</button>
+                          <Button type="button" variant="secondary" size="sm" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="font-bold text-muted-foreground">انصراف</Button>
                           {vendor.status === 'rejected' ? (
-                            <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
+                            <Button type="button" variant="success" size="sm" onClick={handleAdminRestoreSource} className="px-4 font-bold">تأیید بازگردانی</Button>
                           ) : (
-                            <button type="button" onClick={handleAdminRejectSource} className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg">تأیید رد و انتقال به لیست سیاه</button>
+                            <Button type="button" variant="destructive" size="sm" onClick={handleAdminRejectSource} className="px-4 font-bold">تأیید رد و انتقال به لیست سیاه</Button>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setShowRejectBox(true)} className={`px-4 py-1.5 text-xs font-bold text-white rounded-lg ${vendor.status === 'rejected' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                      <Button type="button" variant={vendor.status === 'rejected' ? 'success' : 'destructive'} size="sm" onClick={() => setShowRejectBox(true)} className="px-4 font-bold">
                         {vendor.status === 'rejected' ? 'بازگردانی سورس از لیست سیاه' : 'رد سورس و انتقال به لیست سیاه'}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
@@ -1585,11 +1616,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {/* QC Code */}
                         <td className="py-3 px-3">
                           {isEditingThis ? (
-                            <input
+                            <Input
                               type="text"
                               value={editingAnalysis?.qcCode || ''}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, qcCode: e.target.value })}
-                              className="px-2 py-1 rounded-lg border border-border font-mono text-center text-xs w-full bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                              className="font-mono text-center w-full"
                               dir="ltr"
                             />
                           ) : (
@@ -1603,14 +1634,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             <select
                               value={editingAnalysis?.decision || 'Pass'}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, decision: e.target.value as any })}
-                              className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
+                              className={cn(inputBaseClass, 'w-full text-right font-medium')}
                             >
                               <option value="Pass">Pass</option>
                               <option value="Approved Conditional">Approved Conditional</option>
                               <option value="Reject">Reject</option>
                             </select>
                           ) : (
-                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-bold ${
                               record.decision === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
                               record.decision === 'Approved Conditional' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-[#3b82f6] border border-blue-200 dark:border-blue-800' :
                               'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
@@ -1627,7 +1658,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <select
                                 value={editingAnalysis?.deviationReason || 'None'}
                                 onChange={e => setEditingAnalysis({ ...editingAnalysis!, deviationReason: e.target.value as any })}
-                                className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
+                                className={cn(inputBaseClass, 'w-full text-right font-medium')}
                               >
                                 <option value="None">None</option>
                                 <option value="NCR">NCR</option>
@@ -1639,7 +1670,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 <option value="Other">Other</option>
                               </select>
                             ) : (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
+                              <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-bold tracking-wide ${
                                 record.deviationReason === 'None' ? 'bg-muted text-muted-foreground' :
                                 record.deviationReason === 'NCR' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800' :
                                 record.deviationReason === 'Deviation' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
@@ -1676,60 +1707,72 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           {/* Actions */}
                           <td className="py-3 px-3 text-center">
                             {isEditingThis && editAnalysisError && (
-                              <div role="alert" className="mb-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
+                              <div role="alert" className="mb-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
                                 {editAnalysisError}
                               </div>
                             )}
                             {isEditingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <button
+                                <Button
+                                  variant="success"
+                                  size="sm"
                                   onClick={() => handleEditAnalysisSave(record.id)}
-                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded transition-all"
+                                  className="h-7 px-2 font-bold text-2xs"
                                   title="ذخیره"
                                 >
                                   ذخیره
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={handleEditAnalysisCancel}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
                                   title="انصراف"
                                 >
                                   انصراف
-                                </button>
+                                </Button>
                               </div>
                             ) : isDeletingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <button
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
                                   onClick={() => handleDeleteAnalysis(record.id)}
-                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] rounded transition-all"
+                                  className="h-7 px-2 font-bold text-2xs"
                                   title="تایید حذف"
                                 >
                                   حذف قطعی
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={() => setConfirmDeleteAnalysisId(null)}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
                                   title="لغو"
                                 >
                                   لغو
-                                </button>
+                                </Button>
                               </div>
                             ) : (
                               <div className="flex items-center justify-center gap-1" dir="ltr">
-                                <button
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
                                   onClick={() => handleEditAnalysisStart(record)}
-                                  className="p-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 dark:bg-indigo-950/30 rounded transition-all"
+                                  className="text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40"
                                   title="ویرایش"
                                 >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
+                                  <Pencil />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
                                   onClick={() => setConfirmDeleteAnalysisId(record.id)}
-                                  className="p-1 text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/40 dark:bg-rose-950/30 rounded transition-all"
+                                  className="text-rose-600 dark:text-rose-300 hover:text-rose-800 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-900/40"
                                   title="حذف"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  <Trash2 />
+                                </Button>
                               </div>
                             )}
                           </td>
@@ -1750,16 +1793,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         {/* Evaluation wizard navigation */}
         {showEvalWizard && (
           <div className="flex items-center justify-between gap-3 bg-card border border-border/60 rounded-2xl px-5 py-4 shadow-sm">
-            <button type="button" onClick={() => setEvalStage(evalStages[Math.max(0, evalStageIdx - 1)].id)} disabled={evalStageIdx === 0}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-muted-foreground border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-              <ChevronRight className="w-4 h-4" /> مرحله قبل
-            </button>
+            <Button type="button" variant="outline" onClick={() => setEvalStage(evalStages[Math.max(0, evalStageIdx - 1)].id)} disabled={evalStageIdx === 0}
+              className="h-11 px-5 font-bold text-sm text-muted-foreground">
+              <ChevronRight /> مرحله قبل
+            </Button>
             <span className="text-xs text-muted-foreground font-medium">مرحله {evalStageIdx + 1} از {evalStages.length}</span>
             {evalStageIdx < evalStages.length - 1 ? (
-              <button type="button" onClick={() => setEvalStage(evalStages[Math.min(evalStages.length - 1, evalStageIdx + 1)].id)}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                مرحله بعد <ChevronLeft className="w-4 h-4" />
-              </button>
+              <Button type="button" onClick={() => setEvalStage(evalStages[Math.min(evalStages.length - 1, evalStageIdx + 1)].id)}
+                className="h-11 px-6 font-bold text-sm">
+                مرحله بعد <ChevronLeft />
+              </Button>
             ) : (
               <span className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle className="w-4 h-4" /> آخرین مرحله

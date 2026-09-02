@@ -4,12 +4,41 @@ import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
 import { Category, Scores, Vendor, User, Material, BusinessPartner } from './types';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from './assets/logo.png';
 import { categoryLabels } from './constants/categories';
-import { SupplierAuditView } from './components/views/SupplierAuditView';
+
+/**
+ * Pages that are not the page you land on.
+ *
+ * Each of these is a whole module — the audit trail with its filters and diff
+ * view, the user administration screen, the partner repository — and a session
+ * may well never open one. Loading them with the application meant every user
+ * downloaded every module before seeing the dashboard.
+ *
+ * They are fetched when navigated to instead, behind the Suspense boundary in
+ * `renderContent`. The views that ARE the landing surface — the dashboard, a
+ * category list, a source's detail page and its form — stay in the main bundle
+ * on purpose: splitting the common path only trades one wait for another.
+ */
+const SupplierAuditView = React.lazy(() => import('./components/views/SupplierAuditView').then(m => ({ default: m.SupplierAuditView })));
+const ArchiveView = React.lazy(() => import('./components/views/ArchiveView').then(m => ({ default: m.ArchiveView })));
+const AuditTrailView = React.lazy(() => import('./components/AuditTrailView').then(m => ({ default: m.AuditTrailView })));
+const UsersView = React.lazy(() => import('./components/UsersView').then(m => ({ default: m.UsersView })));
+const MaterialRepositoryView = React.lazy(() => import('./components/MaterialRepositoryView').then(m => ({ default: m.MaterialRepositoryView })));
+const BusinessPartnerRepositoryView = React.lazy(() => import('./components/BusinessPartnerRepositoryView').then(m => ({ default: m.BusinessPartnerRepositoryView })));
+const WorklistView = React.lazy(() => import('./components/views/WorklistView').then(m => ({ default: m.WorklistView })));
+
+/** What a page looks like while its code is on the way. */
+function PageLoading() {
+  return (
+    <div className="w-full py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="w-8 h-8 rounded-full border-2 border-border border-t-primary animate-spin" aria-hidden />
+      <p className="text-xs">در حال بارگذاری…</p>
+    </div>
+  );
+}
 import { VendorDetail } from './components/vendor/VendorDetail';
-import { ArchiveView } from './components/views/ArchiveView';
 import { CategoryView } from './components/views/CategoryView';
 import { HomeView } from './components/views/HomeView';
 import { VendorForm } from './components/vendor/VendorForm';
@@ -19,19 +48,20 @@ import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
-import { AuditTrailView } from './components/AuditTrailView';
-import { UsersView } from './components/UsersView';
 import { can, effectivePermissions } from './utils/permissions';
 import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
-import { MaterialRepositoryView } from './components/MaterialRepositoryView';
-import { BusinessPartnerRepositoryView } from './components/BusinessPartnerRepositoryView';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
-import { WorklistView } from './components/views/WorklistView';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
-import { useTheme } from './design-system/ThemeSwitcher';
-import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { useTheme } from './hooks/useTheme';
+import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { fetchAllVendors } from './services/vendorPages';
+import { useCachedCollection } from './hooks/useCachedCollection';
+import {
+  HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
+  pushView, truncateTo, type ViewState,
+} from './utils/navStack';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -71,6 +101,46 @@ function buildSystemTime(d: Date) {
     isoDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
   };
 }
+
+/**
+ * What a module shows to someone who may not read it.
+ *
+ * Reading became a permission, so "the page is empty" and "you are not allowed
+ * to see this" had to stop looking alike: an empty repository and a revoked one
+ * rendered the same blank table, and the failed request read as a network error.
+ */
+const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void }> = ({ title, detail, onHome }) => (
+  <div className="max-w-xl mx-auto my-12 p-8 bg-card border border-border rounded-2xl text-center space-y-4 shadow-xs">
+    <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300 flex items-center justify-center mx-auto">
+      <ShieldAlert className="w-6 h-6" />
+    </div>
+    <h2 className="text-base font-black text-foreground">{title}</h2>
+    <p className="text-xs text-muted-foreground leading-relaxed font-medium">{detail}</p>
+    <p className="text-2xs text-muted-foreground">
+      برای دریافت دسترسی با مدیر سیستم تماس بگیرید؛ سطح دسترسی هر کاربر در «مدیریت کاربران» تنظیم می‌شود.
+    </p>
+    <Button onClick={onHome} className="text-xs font-bold">
+      بازگشت به صفحه اصلی
+    </Button>
+  </div>
+);
+
+/**
+ * Sources the application will show at all.
+ *
+ * A batch of demo records with ids above vF128 was imported once and never
+ * belonged to the real register. Defined once here because three call sites
+ * need it — the seed load, the initial fetch, and the re-read after a refused
+ * write — and three copies of a filter is three chances to let one drift.
+ */
+const isAllowedVendor = (v: any) => {
+  if (!v || !v.id) return false;
+  if (typeof v.id === 'string' && v.id.startsWith('vF')) {
+    const numPart = parseInt(v.id.substring(2), 10);
+    if (!isNaN(numPart) && numPart > 128) return false;
+  }
+  return true;
+};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -129,14 +199,6 @@ export default function App() {
   };
 
   const [db, setDb] = useState<Vendor[]>(() => {
-    const isAllowedVendor = (v: any) => {
-      if (!v || !v.id) return false;
-      if (typeof v.id === 'string' && v.id.startsWith('vF')) {
-        const numPart = parseInt(v.id.substring(2), 10);
-        if (!isNaN(numPart) && numPart > 128) return false;
-      }
-      return true;
-    };
     const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
     try {
       const saved = localStorage.getItem('app_db');
@@ -227,14 +289,10 @@ export default function App() {
     // and reload, which reloads straight back into this effect.
     if (!currentUser) return;
 
-    const isAllowedVendor = (v: any) => {
-      if (!v || !v.id) return false;
-      if (typeof v.id === 'string' && v.id.startsWith('vF')) {
-        const numPart = parseInt(v.id.substring(2), 10);
-        if (!isNaN(numPart) && numPart > 128) return false;
-      }
-      return true;
-    };
+    // A run that has been superseded — the account changed, or the component
+    // went away mid-load — stops writing to state instead of racing the run
+    // that replaced it.
+    let cancelled = false;
 
     // First fetch server calculation weights config dynamically to achieve high regulatory resilience
     authFetch('/api/config/evaluation')
@@ -247,131 +305,91 @@ export default function App() {
       })
       .catch(err => console.error("Error fetching dynamic configuration weights:", err))
       .finally(() => {
+        // Reading is a permission now. Without it the request would come back
+        // 403 and the catch below would blame the network ("اتصال برقرار نشد")
+        // for a deliberate policy decision — and the localStorage cache would
+        // keep showing the list the account just lost.
+        if (!can(currentUser, 'vendor.read')) {
+          setDb([]);
+          setLoadError(null);
+          return;
+        }
         setIsSyncing(true);
-        authFetch('/api/vendors')
-          .then(res => {
+        // Paged, and painted as the pages land. The whole set is still needed —
+        // every aggregate in the application is computed over it — but nothing
+        // is gained by holding the first 200 sources back until the last one
+        // has been serialized.
+        // Each run accumulates into its own array and publishes that array —
+        // it never appends to whatever is already on screen. Appending looked
+        // equivalent and was not: React runs this effect twice on mount in
+        // development, and two concurrent runs each appending their pages put
+        // every source in the list twice. Publishing a run's own accumulation
+        // is idempotent, so a second run can only ever redraw the same list.
+        const loaded: Vendor[] = [];
+        fetchAllVendors<Vendor>({
+          fetchPage: async (page, limit) => {
+            const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
             if (!res.ok) throw new Error('API response failed');
             return res.json();
-          })
-          .then((data: Vendor[]) => {
-            if (Array.isArray(data) && data.length > 0) {
-              const filtered = data.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-              setDb(filtered);
-            }
-            setLoadError(null);
-          })
+          },
+          onPage: (rows) => {
+            loaded.push(...rows.filter(isAllowedVendor).map(normalizeAndCleanVendor));
+            if (!cancelled) setDb([...loaded]);
+          },
+        })
+          .then(() => { if (!cancelled) setLoadError(null); })
           .catch(err => {
             if (isLocalMode()) { setLoadError(null); return; }
             console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
-            setLoadError('اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
+            // A break part-way through paging is worse than a failure at the
+            // start: what is on screen came from the server, so it looks
+            // trustworthy, but it is a prefix of the register and every total,
+            // count and chart computed from it is wrong. Say so explicitly
+            // rather than reusing the offline wording.
+            if (cancelled) return;
+            setLoadError(loaded.length > 0
+              ? `فهرست سورس‌ها ناقص بارگذاری شد (${loaded.length.toLocaleString('fa-IR')} مورد). آمار و نمودارها کامل نیستند — صفحه را دوباره بارگذاری کنید.`
+              : 'اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
           })
           .finally(() => {
-            setIsSyncing(false);
+            if (!cancelled) setIsSyncing(false);
           });
       });
+
+    return () => { cancelled = true; };
   }, [currentUser]);
 
-  const [materials, setMaterials] = useState<Material[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_materials');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+  const materialsCollection = useCachedCollection<Material>({
+    cacheKey: 'app_materials',
+    url: '/api/materials',
+    permission: 'material.read',
+    user: currentUser,
   });
+  const { items: materials, setItems: setMaterials } = materialsCollection;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_materials', JSON.stringify(materials));
-    } catch (err) {
-      console.error("Failed to save materials to localStorage:", err);
-    }
-  }, [materials]);
-
-  // Load the material catalogue from the backend (PostgreSQL) once authenticated.
-  useEffect(() => {
-    if (!currentUser) return;
-    authFetch('/api/materials')
-      .then(res => (res.ok ? res.json() : null))
-      .then((data: Material[] | null) => { if (Array.isArray(data)) setMaterials(data); })
-      .catch(err => console.error("Failed to load materials from backend. Using local cache.", err));
-  }, [currentUser]);
-
-  const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>(() => {
-    /**
-     * The bundled partner list is demo data, so it only stands in for the
-     * database in local demo mode.
-     *
-     * With a real backend it used to be the fallback whenever the browser cache
-     * was empty, which meant a fresh browser showed invented partners — with
-     * grades and SOP results — as if they came from the server, and the list was
-     * never empty so the loading skeleton could not appear either. PostgreSQL is
-     * the single source of truth (project rule 1); an empty list until the fetch
-     * answers is the honest state. (The server still seeds these same partners
-     * into an empty database on first startup — that path writes real rows.)
-     */
-    try {
-      const saved = localStorage.getItem('app_business_partners');
-      const cached = saved ? JSON.parse(saved) : null;
-      // An empty cached array is not a cache: it is what normal mode writes
-      // before its first fetch answers, and honouring it would leave local demo
-      // mode — which has no backend to fill it — permanently empty.
-      if (Array.isArray(cached) && cached.length > 0) return cached.map(reconcileSupplierEvaluation);
-      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB.map(reconcileSupplierEvaluation) : [];
-    } catch {
-      return isLocalMode() ? INITIAL_BUSINESS_PARTNERS_DB : [];
-    }
+  /**
+   * The partner repository.
+   *
+   * `reconcileSupplierEvaluation` runs on every record on the way in, from the
+   * server and from the cache alike: a stored SOP score must not outlive the
+   * documents it was computed from, and the evaluation is re-derived rather
+   * than trusted (project rule 13).
+   *
+   * The bundled `INITIAL_BUSINESS_PARTNERS_DB` is demo data and only stands in
+   * for the database in local demo mode. With a real backend it used to be the
+   * fallback whenever the cache was empty, which meant a fresh browser showed
+   * invented partners — with grades and SOP results — as if the server had sent
+   * them.
+   */
+  const partnersCollection = useCachedCollection<BusinessPartner>({
+    cacheKey: 'app_business_partners',
+    url: '/api/business-partners',
+    permission: 'partner.read',
+    user: currentUser,
+    normalize: reconcileSupplierEvaluation,
   });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_business_partners', JSON.stringify(businessPartners));
-    } catch (err) {
-      console.error("Failed to save business partners to localStorage:", err);
-    }
-  }, [businessPartners]);
-
-  // Load business partners from the backend (PostgreSQL) as the source of truth.
-  // Guarded on an authenticated user: /api/business-partners requires auth, and
-  // an unauthenticated call would trigger authFetch's 401 session reload.
-  useEffect(() => {
-    if (!currentUser) return;
-    // Its own flag: `isSyncing` tracks the vendors fetch, so borrowing it would
-    // have the partner table stop showing skeletons while its own request is
-    // still in flight.
-    setPartnersLoading(true);
-    authFetch('/api/business-partners')
-      .then(res => {
-        if (!res.ok) throw new Error('API response failed');
-        return res.json();
-      })
-      .then((data: BusinessPartner[]) => {
-        if (Array.isArray(data)) {
-          // Re-derive each stored SOP evaluation from its documents so a stale
-          // score/grade cannot outlive the documents it was computed from.
-          setBusinessPartners(data.map(reconcileSupplierEvaluation));
-        }
-      })
-      .catch(err => {
-        console.error("Failed to load business partners from backend. Using local cache.", err);
-      })
-      .finally(() => setPartnersLoading(false));
-  }, [currentUser]);
-
-  type ViewState = {
-    view: 'home' | 'category' | 'archive' | 'supplier-audit' | 'audit-trail' | 'materials' | 'business-partners' | 'users' | 'tasks';
-    categoryId: Category | null;
-    selectedVendor: Vendor | null;
-    /** Which backlog the worklist page is showing. */
-    taskKey?: TaskKey | null;
-    expandedMaterial?: string | null;
-    /** The source form is a page, not an overlay — this is which page. */
-    formMode?: 'create' | 'edit' | null;
-  };
-
-  // Cap the navigation stack so a long session cannot grow it without bound.
-  const MAX_VIEW_HISTORY = 25;
-  const capHistory = (h: ViewState[]) => (h.length > MAX_VIEW_HISTORY ? h.slice(h.length - MAX_VIEW_HISTORY) : h);
+  const { items: businessPartners, setItems: setBusinessPartners } = partnersCollection;
+  const partnersLoading = partnersCollection.loading;
 
   // A route carries only a vendor *id*; the full record is re-hydrated from `db`
   // (see `selectedVendor` below), which may still be loading on a deep link.
@@ -452,13 +470,7 @@ export default function App() {
   // real record so the breadcrumb shows the source name instead of a placeholder.
   useEffect(() => {
     if (!isVendorStub || !resolvedVendor) return;
-    setViewHistory(prev => {
-      const last = prev[prev.length - 1];
-      if (!last?.selectedVendor || last.selectedVendor.id !== resolvedVendor.id || last.selectedVendor.name) return prev;
-      const next = [...prev];
-      next[next.length - 1] = { ...last, selectedVendor: resolvedVendor, expandedMaterial: last.expandedMaterial ?? resolvedVendor.materialEn ?? null };
-      return next;
-    });
+    setViewHistory(prev => hydrateVendor(prev, resolvedVendor));
   }, [isVendorStub, resolvedVendor]);
 
   // Expanded material is scoped to the current view entry (persists across
@@ -494,6 +506,23 @@ export default function App() {
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   const registerNavGuard = React.useCallback((fn: (() => boolean) | null) => {
     navGuardRef.current = fn;
+  }, []);
+
+  // The guard above covers navigation *inside* the app. Closing the tab or
+  // pressing F5 goes around it entirely, so the same signal is handed to the
+  // browser's own prompt — the last way an open form could be lost in silence.
+  // The wording of that prompt belongs to the browser and cannot be set; only
+  // whether it appears is ours.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!navGuardRef.current?.()) return;
+      e.preventDefault();
+      // Legacy browsers key off the return value rather than preventDefault.
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
   // --- Hash routing / browser history ---------------------------------------
@@ -613,16 +642,39 @@ export default function App() {
    * that know say so; the regex stays as the fallback for the rest.
    */
   const [toastKind, setToastKind] = useState<'success' | 'error' | null>(null);
+  /**
+   * An optional button on the toast.
+   *
+   * Saving no longer moves the user somewhere else, so the way to reach the
+   * record just created is offered rather than imposed: whoever wants the new
+   * source's page clicks once, and whoever is entering a stack of records from
+   * an old file is left where they are. Without this the rule "saving never
+   * changes the page" would simply cost that first person a navigation.
+   */
+  const [toastAction, setToastAction] = useState<{ label: string; run: () => void } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   /** Show a toast and, when the caller knows, say which kind it is. */
-  const notify = (message: string, kind: 'success' | 'error' = 'success', ms = kind === 'error' ? 6000 : 3000) => {
+  const notify = (
+    message: string,
+    kind: 'success' | 'error' = 'success',
+    ms = kind === 'error' ? 6000 : 3000,
+    action?: { label: string; run: () => void } | null,
+  ) => {
+    // A toast carrying a button stays long enough to be pressed; the previous
+    // timer is cleared so a second toast cannot dismiss the first one early.
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToastKind(kind);
     setToastMsg(message);
-    setTimeout(() => { setToastMsg(null); setToastKind(null); }, ms);
+    setToastAction(action ?? null);
+    const life = action ? Math.max(ms, 7000) : ms;
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMsg(null);
+      setToastKind(null);
+      setToastAction(null);
+    }, life);
   };
   const [isSyncing, setIsSyncing] = useState(true);
-  /** True while the business-partner list is being fetched. */
-  const [partnersLoading, setPartnersLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
   // "connection failed" banner (the mount fetch runs before demo login is set).
@@ -721,23 +773,7 @@ export default function App() {
 
   const navigate = (newView: ViewState['view'], newCat: Category | null = null, taskKey: TaskKey | null = null) => {
     runGuarded(() => {
-      setViewHistory(prev => {
-        if (newView === 'home') {
-          return [{ view: 'home', categoryId: null, selectedVendor: null }];
-        }
-        // Top-level navigation behaves like switching tabs, not drilling down:
-        // if this destination is already on the stack, unwind back to it instead
-        // of pushing a duplicate (which previously made "back" re-enter a source
-        // detail the user had deliberately left).
-        const existing = prev.map((s, i) => ({ s, i }))
-          .filter(({ s }) => s.view === newView && s.categoryId === newCat
-            && (s.taskKey ?? null) === taskKey && s.selectedVendor === null)
-          .pop();
-        if (existing) {
-          return prev.slice(0, existing.i + 1);
-        }
-        return capHistory([...prev, { view: newView, categoryId: newCat, selectedVendor: null, taskKey }]);
-      });
+      setViewHistory(prev => pushView(prev, newView, newCat, taskKey));
       setSidebarOpen(false);
     });
   };
@@ -745,23 +781,7 @@ export default function App() {
   const handleSelectVendor = (vendor: Vendor | null) => {
     if (vendor) {
       runGuarded(() => {
-        setViewHistory(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.selectedVendor?.id === vendor.id && !last.formMode) {
-            return prev;
-          }
-          // Mark the material as expanded on the underlying list entry so that
-          // returning (goBack) restores the same expanded material, then push
-          // the vendor-detail entry on top (carrying the same marker).
-          // A detail page is never a form page, so drop formMode — otherwise
-          // saving a new source (which lands on its record) would inherit
-          // 'create' and render the form again.
-          const base = { ...last, formMode: null, selectedVendor: null, expandedMaterial: vendor.materialEn || last?.expandedMaterial || null };
-          // Arriving from the form page means that page is finished: the record
-          // replaces it, so Back goes to the list rather than back into the form.
-          const head = last?.formMode ? prev.slice(0, -1) : [...prev.slice(0, -1), base];
-          return capHistory([...head, { ...base, selectedVendor: vendor }]);
-        });
+        setViewHistory(prev => pushVendor(prev, vendor));
       });
     } else {
       goBack();
@@ -776,7 +796,7 @@ export default function App() {
     if (viewHistory.length <= 1) return;
     runGuarded(() => {
       if (canPopBrowserRef.current) window.history.back();
-      else setViewHistory(prev => (prev.length > 1 ? prev.slice(0, -1) : prev));
+      else setViewHistory(popView);
     });
   };
 
@@ -785,14 +805,7 @@ export default function App() {
   // "new partner" dialog from becoming a modal inside a modal.
   const openSourceForm = (mode: 'create' | 'edit', cat?: Category | null) => {
     runGuarded(() => {
-      setViewHistory(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.formMode === mode) return prev;
-        const base = mode === 'edit'
-          ? last
-          : { ...last, view: 'category' as const, categoryId: cat ?? last?.categoryId ?? 'domestic', selectedVendor: null };
-        return capHistory([...prev, { ...base, formMode: mode }]);
-      });
+      setViewHistory(prev => pushForm(prev, mode, cat));
       setSidebarOpen(false);
     });
   };
@@ -801,7 +814,7 @@ export default function App() {
   // so it pops the form entry from the stack rather than asking the browser to
   // go "back" — the entry behind it is not guaranteed to be the list.
   const closeSourceForm = () => {
-    setViewHistory(prev => (prev[prev.length - 1]?.formMode ? prev.slice(0, -1) : prev));
+    setViewHistory(popForm);
   };
 
   // Jump directly to a given depth of the navigation stack (breadcrumb click).
@@ -810,7 +823,7 @@ export default function App() {
     if (index < 0 || steps <= 0) return;
     runGuarded(() => {
       if (canPopBrowserRef.current) window.history.go(-steps);
-      else setViewHistory(prev => prev.slice(0, index + 1));
+      else setViewHistory(prev => truncateTo(prev, index));
     });
   };
 
@@ -897,12 +910,17 @@ export default function App() {
 
     if (!original) {
       // Fallback to traditional monolithic POST if there is no previous record found to diff safely
-      authFetch('/api/vendors', {
+      authWrite('/api/vendors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalized)
-      }).catch(err => {
-        console.error("Failed to sync updated vendor to DB:", err);
+      }).catch((err: any) => {
+        console.error('Failed to sync updated vendor to DB:', err);
+        notify(
+          err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.',
+          'error', 8000,
+        );
+        resyncVendorsFromServer(normalized.id);
       });
       return;
     }
@@ -927,7 +945,13 @@ export default function App() {
                            original.grade !== normalized.grade ||
                            original.status !== normalized.status ||
                            original.isSample !== normalized.isSample ||
-                           original.initialSampleStatus !== normalized.initialSampleStatus;
+                           original.initialSampleStatus !== normalized.initialSampleStatus ||
+                           // The partner link was missing from both the change
+                           // check and the payload, so re-pointing a source at a
+                           // different company was never sent to the server: the
+                           // name changed and the link silently did not.
+                           (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
+                           (original.supplierId || null) !== (normalized.supplierId || null);
 
     // Dispatch precision requests based on modified data blocks.
     // These MUST run one after another: every endpoint does a full
@@ -937,7 +961,7 @@ export default function App() {
     const syncQueue: Array<() => Promise<unknown>> = [];
 
     if (profileChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -953,13 +977,15 @@ export default function App() {
           status: normalized.status,
           isSample: normalized.isSample,
           initialSampleStatus: normalized.initialSampleStatus,
+          manufacturerId: normalized.manufacturerId ?? null,
+          supplierId: normalized.supplierId ?? null,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Profile sync failed:", err)));
+      }));
     }
 
     if (contactChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -968,11 +994,11 @@ export default function App() {
           ircExpiryDate: normalized.ircExpiryDate,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Contact sync failed:", err)));
+      }));
     }
 
     if (scoresChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -981,11 +1007,11 @@ export default function App() {
           rejectionReasons: normalized.rejectionReasons,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Scores sync failed:", err)));
+      }));
     }
 
     if (analysisChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -993,34 +1019,85 @@ export default function App() {
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Analysis sync failed:", err)));
+      }));
     } else if (logsChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Logs sync failed:", err)));
+      }));
     }
 
     if (riskChanged) {
-      syncQueue.push(() => authFetch(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
           reasonForChange: normalized.reasonForChange
         })
-      }).catch(err => console.error("Risk sync failed:", err)));
+      }));
     }
 
+    /*
+     * Drain the queue, and treat a refusal as a refusal.
+     *
+     * These run strictly one after another because every endpoint does a full
+     * read-modify-write of the vendor (project rule 12). If one of them is
+     * refused, the earlier ones in this queue have already been applied — so
+     * rolling the local copy back to `original` would replace one wrong state
+     * with another. The server is the only thing that knows what actually
+     * landed, so we ask it and take its answer.
+     */
     void (async () => {
-      for (const send of syncQueue) {
-        await send();
+      try {
+        for (const send of syncQueue) {
+          await send();
+        }
+      } catch (err: any) {
+        const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
+        console.error('Vendor sync failed:', err);
+        notify(reason, 'error', 8000, {
+          label: 'بارگذاری دوبارهٔ رکورد',
+          run: () => resyncVendorsFromServer(normalized.id),
+        });
+        resyncVendorsFromServer(normalized.id);
       }
     })();
+  };
+
+  /**
+   * Pull the sources back from the server and replace the local copy.
+   *
+   * Used after a write was refused: the optimistic update and its localStorage
+   * cache are both showing something the database did not accept, and the only
+   * honest way back is to re-read. There is no per-vendor GET, so this refetches
+   * the list — which only happens on a failure path.
+   */
+  const resyncVendorsFromServer = async (focusVendorId?: string) => {
+    if (isLocalMode()) return;
+    try {
+      const rows = await fetchAllVendors<Vendor>({
+        fetchPage: async (page, limit) => {
+          const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
+          if (!res.ok) throw new Error(`vendors page ${page} answered ${res.status}`);
+          return res.json();
+        },
+        // This path exists to correct a wrong local copy, so nothing is shown
+        // until the whole list is in hand: painting a prefix would replace one
+        // incorrect view with a differently incorrect one.
+        onPage: () => {},
+      });
+      const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
+      setDb(fresh);
+      const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
+      if (focused) updateCurrentVendorInHistory(focused);
+    } catch (err) {
+      console.error('Could not re-read sources after a failed write:', err);
+    }
   };
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
@@ -1033,20 +1110,41 @@ export default function App() {
       const isSource = !!(removed?.isSample || removed?.category === 'sample');
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
     }
-    authFetch(`/api/vendors/${vendorId}`, {
+    // A refused delete has to put the record back: the row was already taken off
+    // the screen, so staying quiet would look exactly like a successful delete.
+    authWrite(`/api/vendors/${vendorId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reasonForChange })
-    }).catch(err => {
-      console.error("Failed to sync vendor deletion to DB:", err);
+    }).catch((err: any) => {
+      console.error('Failed to sync vendor deletion to DB:', err);
+      if (removed) setDb(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
+      notify(
+        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس حذف نشد.',
+        'error', 8000,
+      );
     });
   };
 
+  /**
+   * Register a new source.
+   *
+   * Saving deliberately does not move the user: this used to end by opening the
+   * new record's page, which suits someone registering one source in order to
+   * score it straight away, and works against someone transcribing a stack of
+   * them from an old file — every save landed them on a page they had to leave
+   * again. The record is offered on the toast instead, so reaching it is one
+   * click for whoever wants it and none for whoever does not.
+   */
   const handleAddVendor = (newVendor: Vendor) => {
     const normalized = normalizeAndCleanVendor(newVendor);
     setDb([normalized, ...db]);
-    setToastMsg('سورس جدید با موفقیت اضافه شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    notify(
+      `سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`,
+      'success',
+      3000,
+      { label: 'مشاهده و امتیازدهی', run: () => handleSelectVendor(normalized) },
+    );
     if (isLocalMode()) {
       const isSource = !!(normalized.isSample || normalized.category === 'sample');
       appendLocalAudit({
@@ -1058,14 +1156,24 @@ export default function App() {
         before: null, after: normalized, reason: 'ثبت سورس جدید',
       });
     }
-    authFetch('/api/vendors', {
+    /*
+     * A refused create used to leave the new source sitting in the list and in
+     * the localStorage cache while the database had never heard of it — the
+     * next person to open the register saw a source that did not exist. The
+     * optimistic row is withdrawn and the server's reason is shown instead.
+     */
+    authWrite('/api/vendors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalized)
-    }).catch(err => {
-      console.error("Failed to sync new vendor to DB:", err);
+    }).catch((err: any) => {
+      console.error('Failed to sync new vendor to DB:', err);
+      setDb(prev => prev.filter(v => v.id !== normalized.id));
+      notify(
+        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
+        'error', 8000,
+      );
     });
-    handleSelectVendor(normalized);
   };
 
   // Material changes are persisted and audited server-side (module "مدیریت مواد"),
@@ -1229,6 +1337,16 @@ export default function App() {
     let content;
     let keyName = '';
 
+    // Every page built from the source list shows the same refusal, so it is
+    // written once here rather than repeated at each branch.
+    const DENY_SOURCES = (
+      <AccessDenied
+        title="عدم دسترسی به اطلاعات سورس‌ها"
+        detail="حساب کاربری شما مجوز مشاهدهٔ سورس‌ها و تأمین‌کنندگان را ندارد."
+        onHome={() => navigate('home')}
+      />
+    );
+
     if (formMode) {
       // The source form as a full page: it is the longest form in the app and
       // opens dialogs of its own, so it gets the content area rather than an
@@ -1244,7 +1362,7 @@ export default function App() {
           existingVendor={editing}
           onClose={goBack}
           onSaved={closeSourceForm}
-          onSave={(v, msg) => { editing ? handleUpdateVendor(v, msg) : handleAddVendor(v); }}
+          onSave={(v, msg) => { if (editing) handleUpdateVendor(v, msg); else handleAddVendor(v); }}
           currentUser={currentUser}
           partners={businessPartners}
           onAddPartner={handleAddBusinessPartner}
@@ -1257,12 +1375,12 @@ export default function App() {
       const stillLoading = isSyncing || db.length === 0;
       keyName = `vendor-pending-${pendingVendor!.id}`;
       content = stillLoading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground" dir="rtl">
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
           <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
           <p className="text-xs font-semibold">در حال بازیابی اطلاعات سورس…</p>
         </div>
       ) : (
-        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm" dir="rtl">
+        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm">
           <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
             <AlertTriangle className="w-6 h-6" />
           </div>
@@ -1270,12 +1388,9 @@ export default function App() {
           <p className="text-xs text-muted-foreground leading-relaxed font-medium">
             لینکی که باز کرده‌اید به سورسی با شناسهٔ <span className="font-mono text-foreground">{pendingVendor!.id}</span> اشاره می‌کند که دیگر در سامانه وجود ندارد (احتمالاً حذف شده است).
           </p>
-          <button
-            onClick={() => navigate('home')}
-            className="px-4 py-2 bg-primary hover:opacity-90 text-white rounded-xl text-xs font-bold transition-opacity cursor-pointer"
-          >
+          <Button onClick={() => navigate('home')} className="text-xs font-bold">
             بازگشت به صفحه اصلی
-          </button>
+          </Button>
         </div>
       );
     } else if (selectedVendor) {
@@ -1285,16 +1400,18 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      // No permission gate: the archive is a view over vendor data every
-      // signed-in user can already read, so hiding the page protected nothing.
-      // The `archive.read` permission it used to check was never enforced on any
-      // endpoint — see the note on LEGACY_PERMISSIONS.
+      // The archive is a view over the source data, so it follows `vendor.read`
+      // — the permission the endpoint behind it enforces. (It used to check a
+      // separate `archive.read`, which no endpoint enforced; that name was
+      // retired rather than renamed — see LEGACY_PERMISSIONS.)
       keyName = 'archive';
-      content = <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
+        <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />
+      );
     } else if (view === 'tasks') {
       const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
       keyName = `tasks-${taskKey}`;
-      content = (
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
         <WorklistView
           taskKey={taskKey}
           db={db}
@@ -1307,10 +1424,16 @@ export default function App() {
       );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
-      content = (
+      content = !can(currentUser, 'material.read') ? (
+        <AccessDenied
+          title="عدم دسترسی به مخزن مواد اولیه"
+          detail="حساب کاربری شما مجوز مشاهدهٔ مخزن مواد اولیه را ندارد."
+          onHome={() => navigate('home')}
+        />
+      ) : (
         <MaterialRepositoryView 
           materials={materials}
           onAddMaterial={handleAddMaterial}
@@ -1323,7 +1446,13 @@ export default function App() {
       );
     } else if (view === 'business-partners') {
       keyName = 'business-partners';
-      content = (
+      content = !can(currentUser, 'partner.read') ? (
+        <AccessDenied
+          title="عدم دسترسی به مخزن شرکای تجاری"
+          detail="حساب کاربری شما مجوز مشاهدهٔ شرکای تجاری و ارزیابی فروشندگان را ندارد."
+          onHome={() => navigate('home')}
+        />
+      ) : (
         <BusinessPartnerRepositoryView
           partners={businessPartners}
           onAddPartner={handleAddBusinessPartner}
@@ -1354,12 +1483,9 @@ export default function App() {
             <p className="text-xs text-rose-700 leading-relaxed font-medium">
               مشاهده ردیابی تغییرات، لاگ‌های امنیتی و فعالیت‌های کاربران طبق سیاست‌های امنیتی و GMP تنها در انحصار مدیران ارشد سیستم (Administrator) می‌باشد.
             </p>
-            <button
-              onClick={() => navigate('home')}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
+            <Button variant="destructive" onClick={() => navigate('home')} className="text-xs font-bold">
               بازگشت به صفحه اصلی
-            </button>
+            </Button>
           </div>
         );
       }
@@ -1370,26 +1496,16 @@ export default function App() {
       } else {
         keyName = 'users-denied';
         content = (
-          <div className="p-8 max-w-xl mx-auto my-12 bg-rose-50 border border-rose-200 rounded-2xl text-center space-y-4 shadow-sm" style={{ direction: 'rtl' }}>
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <h2 className="text-base font-black text-rose-900">عدم دسترسی به مدیریت کاربران</h2>
-            <p className="text-xs text-rose-700 leading-relaxed font-medium">
-              تعریف و تغییر دسترسی پرسنل تنها در اختیار مدیران ارشد سیستم (Administrator) است.
-            </p>
-            <button
-              onClick={() => navigate('home')}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
-              بازگشت به صفحه اصلی
-            </button>
-          </div>
+          <AccessDenied
+            title="عدم دسترسی به مدیریت کاربران"
+            detail="تعریف و تغییر دسترسی پرسنل تنها در اختیار دارندگان مجوز «مدیریت کاربران» است."
+            onHome={() => navigate('home')}
+          />
         );
       }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
-      content = <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
@@ -1405,7 +1521,13 @@ export default function App() {
           transition={{ duration: 0.25, ease: 'easeOut' }}
           className="w-full h-full"
         >
-          {content}
+          {/* The split-out pages arrive here. The fallback is deliberately
+              quiet and roughly page-shaped: on a fast internal network it is
+              one frame, and a spinner that flashes for one frame reads as a
+              glitch rather than as progress. */}
+          <React.Suspense fallback={<PageLoading />}>
+            {content}
+          </React.Suspense>
         </motion.div>
       </AnimatePresence>
     );
@@ -1426,7 +1548,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
       `}</style>
 
-      <div dir="rtl" className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
+      <div className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
         
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -1456,34 +1578,38 @@ export default function App() {
               </span>
               <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
                 <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-[10px] mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
+                <span className="text-muted-foreground text-2xs mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
               </div>
             </div>
-            <button
-              className="md:hidden text-muted-foreground hover:text-foreground p-1 rounded-lg"
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="md:hidden text-muted-foreground"
               onClick={() => setSidebarOpen(false)}
             >
-              <X className="w-5 h-5" />
-            </button>
+              <X />
+            </Button>
             {/* Desktop collapse toggle */}
-            <button
-              className={`hidden md:flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border transition-all ${sidebarCollapsed ? 'md:hidden' : ''}`}
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className={`hidden md:inline-flex text-muted-foreground ${sidebarCollapsed ? 'md:hidden' : ''}`}
               onClick={() => setSidebarCollapsed(true)}
               title="جمع کردن نوار کناری"
             >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              <ChevronRight />
+            </Button>
           </div>
 
           {/* Collapsed: search + expand controls */}
           {sidebarCollapsed && (
             <div className="hidden md:flex flex-col items-center gap-1.5 py-2 border-b border-border/80">
-              <button onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent border border-border">
-                <Search className="w-4 h-4" />
-              </button>
-              <button onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
+              <Button variant="outline" size="icon-sm" onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="text-muted-foreground hover:text-primary">
+                <Search />
+              </Button>
+              <Button variant="outline" size="icon-sm" onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="text-muted-foreground">
+                <ChevronLeft />
+              </Button>
             </div>
           )}
 
@@ -1495,7 +1621,7 @@ export default function App() {
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-muted/40 hover:bg-accent text-muted-foreground transition-colors text-xs"
               >
                 <span className="flex items-center gap-2"><Search className="w-3.5 h-3.5" /> جستجوی سریع...</span>
-                <kbd className="font-mono text-[10px] bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+                <kbd className="font-mono text-2xs bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
               </button>
             </div>
           )}
@@ -1508,10 +1634,12 @@ export default function App() {
               onClick={() => navigate('home')} 
             />
 
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            {can(currentUser, 'vendor.read') && (
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
             </div>
-            {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
+            )}
+            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
               const count = db.filter(v =>
                 id === 'sample' ? (v.category === 'sample' || v.isSample) :
                 id === 'blacklist' ? isInBlacklistCategory(v) :
@@ -1529,41 +1657,47 @@ export default function App() {
               );
             })}
 
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
             </div>
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Building2} label="مخزن شرکای تجاری"
-              badge={businessPartners?.length || 0}
-              variant="business-partners"
-              active={view === 'business-partners'} 
-              onClick={() => navigate('business-partners')} 
-            />
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Database} label="مخزن مواد اولیه"
-              badge={materials?.length || 0}
-              variant="materials"
-              active={view === 'materials'} 
-              onClick={() => navigate('materials')} 
-            />
+            {can(currentUser, 'partner.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Building2} label="مخزن شرکای تجاری"
+                badge={businessPartners?.length || 0}
+                variant="business-partners"
+                active={view === 'business-partners'}
+                onClick={() => navigate('business-partners')}
+              />
+            )}
+            {can(currentUser, 'material.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Database} label="مخزن مواد اولیه"
+                badge={materials?.length || 0}
+                variant="materials"
+                active={view === 'materials'}
+                onClick={() => navigate('materials')}
+              />
+            )}
 
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
             </div>
             {/* Each entry is gated by the permission its page and endpoints
                 actually check, not by `role === 'admin'`. A raw role test here
                 diverged from the pages themselves: someone holding the
                 `users.manage` exception was allowed by the page but never saw
-                the link, and the archive — which every signed-in user may read,
-                see the note on the `archive` branch — was hidden from everyone
-                but admins (rule 14: one policy table, both sides). */}
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Archive} label="آرشیو کامل داده‌ها"
-              badge={db.length}
-              variant="archive"
-              active={view === 'archive'}
-              onClick={() => navigate('archive')}
-            />
+                the link, and the archive was hidden from everyone but admins even
+                though nothing restricted it (rule 14: one policy table, both
+                sides). */}
+            {can(currentUser, 'vendor.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Archive} label="آرشیو کامل داده‌ها"
+                badge={db.length}
+                variant="archive"
+                active={view === 'archive'}
+                onClick={() => navigate('archive')}
+              />
+            )}
             {can(currentUser, 'audit.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={History} label="ردیابی تغییرات"
@@ -1581,12 +1715,14 @@ export default function App() {
                 onClick={() => navigate('users')}
               />
             )}
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
-              variant="supplier-audit"
-              active={view === 'supplier-audit'} 
-              onClick={() => navigate('supplier-audit')} 
-            />
+            {can(currentUser, 'vendor.read') && (
+              <SidebarButton collapsed={sidebarCollapsed}
+                icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
+                variant="supplier-audit"
+                active={view === 'supplier-audit'}
+                onClick={() => navigate('supplier-audit')}
+              />
+            )}
           </nav>
 
         </aside>
@@ -1597,12 +1733,14 @@ export default function App() {
           {/* Sticky Topbar */}
           <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
             <div className="flex items-center gap-3 sm:gap-4">
-              <button 
-                className="md:hidden p-2 rounded-xl text-muted-foreground bg-transparent hover:bg-accent hover:text-foreground transition-colors focus:outline-none"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden text-muted-foreground"
                 onClick={() => setSidebarOpen(true)}
               >
-                <Menu className="w-5 h-5" />
-              </button>
+                <Menu />
+              </Button>
 
               {/* Navigation History & Back Handler */}
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1652,33 +1790,37 @@ export default function App() {
             
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Dark / light theme toggle */}
-              <button
+              <Button
+                variant="outline"
+                size="icon"
                 onClick={toggleTheme}
-                className="relative p-2 rounded-xl border border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-all active:scale-95 cursor-pointer"
+                className="text-muted-foreground"
                 title={isDark ? 'روشن کردن حالت روز' : 'فعال‌کردن حالت شب'}
                 aria-label="تغییر حالت روز/شب"
               >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
+                {isDark ? <Sun /> : <Moon />}
+              </Button>
 
               {/* Notification Center for License Expiry */}
               <div className="relative">
-                <button
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => setShowNotificationPanel(!showNotificationPanel)}
-                  className={`relative p-2 rounded-xl border transition-all active:scale-95 cursor-pointer flex items-center justify-center ${
+                  className={`relative ${
                     expiringVendors.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
-                      : 'bg-background hover:bg-accent border-border text-muted-foreground'
+                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 hover:text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
+                      : 'text-muted-foreground'
                   }`}
                   title={expiringVendors.length > 0 ? `${expiringVendors.length} مورد هشدار انقضای مجوز` : 'مرکز اعلان‌های سیستم'}
                 >
                   <Bell className="w-4 h-4" />
                   {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
+                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-2xs font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
                       {expiringVendors.length}
                     </span>
                   )}
-                </button>
+                </Button>
 
                 {/* Dropdown Popover */}
                 {showNotificationPanel && (
@@ -1687,13 +1829,13 @@ export default function App() {
                       className="fixed inset-0 z-40" 
                       onClick={() => setShowNotificationPanel(false)} 
                     />
-                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans" dir="rtl">
+                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans">
                       <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                           <span className="font-bold text-xs text-foreground">مرکز اعلان‌های انقضای مجوز (IRC / IVC)</span>
                         </div>
-                        <Badge variant="warning" className="text-[10px] font-mono font-bold">
+                        <Badge variant="warning" className="text-2xs font-mono font-bold">
                           {expiringVendors.length} مورد
                         </Badge>
                       </div>
@@ -1703,7 +1845,7 @@ export default function App() {
                           <div className="p-6 text-center text-muted-foreground text-xs">
                             <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
                             <div className="font-bold text-foreground">همه مجوزها معتبر هستند</div>
-                            <div className="text-[11px] mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
+                            <div className="text-2xs mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
                           </div>
                         ) : (
                           expiringVendors.map(({ vendor, check }) => (
@@ -1720,21 +1862,21 @@ export default function App() {
                                   {vendor.material || vendor.name}
                                 </div>
                                 {check.status === 'expired' ? (
-                                  <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                  <Badge variant="destructive" className="text-2xs px-1.5 py-0">
                                     منقضی
                                   </Badge>
                                 ) : (
-                                  <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                                  <Badge variant="warning" className="text-2xs px-1.5 py-0">
                                     {check.daysLeft} روز مانده
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-[11px] text-muted-foreground truncate">
+                              <div className="text-2xs text-muted-foreground truncate">
                                 تامین‌کننده: {vendor.name} {vendor.irc ? `(IRC: ${vendor.irc})` : ''}
                               </div>
-                              <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1">
+                              <div className="text-2xs text-muted-foreground flex items-center justify-between pt-1">
                                 <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                                <span className="text-primary font-bold text-[10px] group-hover:underline">مشاهده سورس ←</span>
+                                <span className="text-primary font-bold text-2xs group-hover:underline">مشاهده سورس ←</span>
                               </div>
                             </div>
                           ))
@@ -1771,12 +1913,12 @@ export default function App() {
               )}
 
               {/* Live clock, in the top-left beside the account box. */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans" dir="rtl">
+              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
                 <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
                 <span className="text-border">|</span>
-                <span className="font-mono text-[10px] text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
+                <span className="font-mono text-2xs text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
                   {systemTime.isoDate}
                 </span>
               </div>
@@ -1789,7 +1931,7 @@ export default function App() {
               {isLocalMode() && (
                 <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
                   <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
+                  <span className="text-2xs font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
                 </div>
               )}
 
@@ -1802,11 +1944,11 @@ export default function App() {
                     title={currentUser.name || currentUser.username}
                   >
                     <Avatar className="h-7 w-7 border border-border">
-                      <AvatarFallback className="text-[10px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
+                      <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
                     </Avatar>
                     <span className="hidden sm:flex flex-col text-right leading-tight max-w-[120px]">
-                      <span className="text-[11px] font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                      <span className="text-[9px] text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
+                      <span className="text-2xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
+                      <span className="text-2xs text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                     </span>
                     <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
                   </button>
@@ -1814,19 +1956,19 @@ export default function App() {
                   {showUserMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
+                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right">
                         <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
                           <Avatar className="h-9 w-9 border border-border">
-                            <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
+                            <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col min-w-0">
                             <span className="text-xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                            <span className="text-[10px] font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
+                            <span className="text-2xs font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                           </div>
                         </div>
                         {/* Session facts: when they were last here, how long this
                             session has left, and what they can do. */}
-                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-[10px] text-muted-foreground">
+                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-2xs text-muted-foreground">
                           <div className="flex items-center justify-between gap-2">
                             <span className="flex items-center gap-1.5">
                               <History className="w-3 h-3" />
@@ -1858,15 +2000,15 @@ export default function App() {
 
                         {/* My recent activity, straight from the audit trail. */}
                         <div className="px-3.5 py-2.5 border-b border-border">
-                          <span className="text-[10px] font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
+                          <span className="text-2xs font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
                           {myActivity === null ? (
-                            <span className="text-[10px] text-muted-foreground italic">در حال بارگذاری...</span>
+                            <span className="text-2xs text-muted-foreground italic">در حال بارگذاری...</span>
                           ) : myActivity.length === 0 ? (
-                            <span className="text-[10px] text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
+                            <span className="text-2xs text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
                           ) : (
                             <ul className="space-y-1">
                               {myActivity.map((a: any) => (
-                                <li key={a.id} className="flex items-start gap-1.5 text-[10px] leading-snug">
+                                <li key={a.id} className="flex items-start gap-1.5 text-2xs leading-snug">
                                   <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
                                   <span className="text-muted-foreground truncate" title={a.description}>
                                     {a.description || a.action}
@@ -1886,7 +2028,7 @@ export default function App() {
                               {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                               {isDark ? 'حالت روز (روشن)' : 'حالت شب (تیره)'}
                             </span>
-                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
+                            <span className={`text-2xs font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
                           </button>
                           {can(currentUser, 'users.manage') && (
                             <button
@@ -1951,23 +2093,29 @@ export default function App() {
                 <div className="text-right">
                   <h3 className="text-sm font-black text-foreground mb-1.5">تغییرات ذخیره‌نشده</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                    فرم ویرایش باز است و تغییرات شما هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این تغییرات از بین می‌روند.
+                    فرمی باز است و اطلاعات واردشده هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این اطلاعات از بین می‌روند.
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-start gap-2.5 mt-6">
-                <button
+                {/* The safe answer leads and carries the primary style: this
+                    dialog interrupts someone who was mid-task, and the reflex
+                    click should keep their work, not discard it. Same order and
+                    wording as the confirmation inside FormModal. */}
+                <Button
+                  autoFocus
+                  onClick={() => setPendingNav(null)}
+                  className="text-xs font-bold"
+                >
+                  بازگشت به فرم
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                  className="border border-border text-xs font-bold"
                 >
                   خروج بدون ذخیره
-                </button>
-                <button
-                  onClick={() => setPendingNav(null)}
-                  className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
-                >
-                  ماندن در صفحه
-                </button>
+                </Button>
               </div>
         </FormModal>
 
@@ -1991,7 +2139,7 @@ export default function App() {
 
         {/* Data load error banner (server unreachable) */}
         {loadError && (
-          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg" dir="rtl">
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-2 max-w-[92vw] bg-[var(--card)] border border-[var(--warning-main)]/40 text-[var(--card-foreground)] px-4 py-2.5 rounded-xl shadow-lg">
             <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
             <span className="font-medium text-xs font-sans text-right">{loadError}</span>
             <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
@@ -2008,7 +2156,22 @@ export default function App() {
               {isError
                 ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
-              <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
+              <span className="font-medium text-xs font-sans text-right">{toastMsg}</span>
+              {toastAction && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const run = toastAction.run;
+                    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+                    setToastMsg(null); setToastKind(null); setToastAction(null);
+                    run();
+                  }}
+                  className="shrink-0 mr-1 h-7 px-2.5 text-2xs font-bold"
+                >
+                  {toastAction.label}
+                </Button>
+              )}
             </div>
           );
         })()}

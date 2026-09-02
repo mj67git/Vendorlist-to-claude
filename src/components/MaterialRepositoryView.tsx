@@ -1,19 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import {
-  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, ArrowUpDown, ArrowUp, ArrowDown,
-  FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
+  Search, Plus, Edit2, Trash2, Eye, X, Upload, Download, FileText, Database, Layers, Pill, FlaskConical, Droplet, Beaker,
   Archive, CheckCircle, AlertCircle, Sparkles, Package, Tag, Factory
 } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { EntityName } from './EntityName';
 import { findDuplicateMaterial } from '../utils/materialDuplicates';
+import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
 import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 
 interface Props {
   materials: Material[];
@@ -61,41 +67,6 @@ const formatFileSize = (bytes?: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
 };
 
-/**
- * A sortable column header that says which column is sorted and in which
- * direction — the old headers showed the same neutral glyph on all six, so the
- * table could be sorted without the user being able to tell by what.
- */
-const SortHeader: React.FC<{
-  field: SortField;
-  label: string;
-  center?: boolean;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  onSort: (f: SortField) => void;
-}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      {/* A button, not a clickable <th>: the column has to be sortable from the
-          keyboard and announce itself as a control. */}
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 export const MaterialRepositoryView: React.FC<Props> = ({
   materials,
@@ -117,6 +88,9 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  /** What this sitting has produced, for the "save and add next" flow. */
+  const [savedCount, setSavedCount] = useState(0);
+  const [recentlySaved, setRecentlySaved] = useState<string[]>([]);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   
@@ -173,6 +147,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     specificationFile: undefined,
   });
 
+  // A picked Specification file lives outside `formData`, so it is reported
+  // separately — losing an attachment silently is the costlier half of losing
+  // this form.
+  const materialFormDirty = useDirtySnapshot(isModalOpen, formData, () => !!pendingSpecFile);
+
   const generateStandardNameFa = (data: Partial<Material>) => {
     const roleInfo = getMaterialRole(data.role);
     const nameFaStr = data.nameFa?.trim() || '---';
@@ -202,6 +181,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     setPendingSpecFile(null);
     setFormError(null);
     setEditingMaterial(null);
+    setSavedCount(0);
+    setRecentlySaved([]);
     setIsModalOpen(true);
   };
 
@@ -230,7 +211,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
     setIsViewModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = (keepGoing = false) => {
     setFormError(null);
 
     if (!formData.nameFa?.trim() || !formData.nameEn?.trim() || !formData.cas?.trim() || !formData.role || !formData.finalProduct?.trim() || !formData.finalProductEn?.trim() || !formData.pharmacopoeia) {
@@ -278,6 +259,22 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       uploadSpecFile(newMaterial, pendingSpecFile);
     }
     setPendingSpecFile(null);
+
+    // "Save and add the next one": the record is stored and the form empties in
+    // place, so a repository being filled from an old list is entered without
+    // reopening the dialog once per row. The role and pharmacopoeia are kept —
+    // a batch of materials transcribed together is usually of one kind.
+    if (keepGoing && !editingMaterial) {
+      setSavedCount(n => n + 1);
+      setRecentlySaved(prev => [newMaterial.nameFa || newMaterial.nameEn, ...prev].slice(0, 5));
+      setFormData(prev => ({
+        nameFa: '', nameEn: '', iupac: '', cas: '',
+        role: prev.role, finalProduct: '', finalProductEn: '',
+        pharmacopoeia: prev.pharmacopoeia, specificationFile: undefined,
+      }));
+      setFormError(null);
+      return;
+    }
 
     setIsSuccess(true);
     setTimeout(() => {
@@ -500,7 +497,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   }, [materials]);
 
   return (
-    <div className="w-full flex flex-col gap-6 fade-in pb-10" dir="rtl">
+    <div className="w-full flex flex-col gap-6 fade-in pb-10">
       {/* STATS CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
@@ -508,7 +505,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <Archive className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
+            <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
             <div className="text-xl font-black text-foreground font-mono mt-0.5">{materials.length}</div>
           </div>
         </div>
@@ -520,7 +517,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 <Icon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[11px] font-bold text-muted-foreground tracking-wider truncate">
+                <div className="text-2xs font-bold text-muted-foreground tracking-wider truncate">
                   {role.labelEn} <span className="font-normal">({role.labelFa})</span>
                 </div>
                 <div className="text-xl font-black text-foreground font-mono mt-0.5">{roleCounts.get(role.value) || 0}</div>
@@ -532,24 +529,22 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
       {/* HEADER & FILTER BAR */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-mono text-xs uppercase tracking-wider">
-            <Database className="w-4 h-4" />
-            <span>Material Master Registry</span>
-          </div>
-          <h1 className="text-xl font-black text-foreground tracking-tight">مخزن مرجع مواد اولیه</h1>
-          <p className="text-xs text-muted-foreground">مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام</p>
-        </div>
+        <PageTitle
+          eyebrow="Material Master Registry"
+          eyebrowIcon={Database}
+          title="مخزن مرجع مواد اولیه"
+          subtitle="مدیریت مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای اقلام"
+        />
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
+            <Input
               type="text"
               placeholder="جستجو (نام فارسی، لاتین، CAS، محصول)..."
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors"
+              className="w-full pr-9 pl-3"
             />
           </div>
           
@@ -557,7 +552,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={roleFilter} 
               onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-40 transition-colors"
+              className={cn(inputBaseClass, 'w-full sm:w-40')}
             >
               <option value="All">همه نقش‌ها</option>
               {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
@@ -566,7 +561,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={pharmFilter} 
               onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-36 transition-colors"
+              className={cn(inputBaseClass, 'font-mono w-full sm:w-36')}
             >
               <option value="All">همه فارماکوپه‌ها</option>
               {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -574,13 +569,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
           </div>
 
           {can(currentUser, 'material.create') && (
-            <button
+            <Button
               onClick={handleOpenAdd}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 shrink-0 border border-blue-400/30"
+              className="w-full sm:w-auto text-xs font-bold shrink-0"
             >
-              <Plus className="w-4 h-4" />
+              <Plus />
               <span>ثبت ماده جدید</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -616,7 +611,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <EntityName name={material.nameEn} lines={2} className="whitespace-normal" />
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${role.tone}`}>
+                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-2xs font-bold border ${role.tone}`}>
                         {role.labelEn} <span className="font-normal">· {role.labelFa}</span>
                       </span>
                     </td>
@@ -628,7 +623,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     <td className="py-3 px-4 text-center">
                       {/* The number that decides whether this row can be deleted. */}
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-bold border ${
                           sourceCount > 0
                             ? 'bg-muted text-foreground border-border'
                             : 'text-muted-foreground border-transparent'
@@ -641,30 +636,36 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button 
-                          onClick={() => handleOpenView(material)} 
-                          className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
+                        <Button
+                          variant="outline"
+                          size="icon-xs"
+                          onClick={() => handleOpenView(material)}
+                          className="text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-600 border-blue-100 dark:text-blue-300 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 dark:border-blue-900"
                           title="مشاهده شناسنامه"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
+                          <Eye />
+                        </Button>
                         {can(currentUser, 'material.edit') && (
-                          <button
+                          <Button
+                            variant="outline"
+                            size="icon-xs"
                             onClick={() => handleOpenEdit(material)}
-                            className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            className="text-amber-600 bg-amber-50 hover:bg-amber-100 hover:text-amber-600 border-amber-100 dark:text-amber-300 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 dark:border-amber-900"
                             title="ویرایش"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                            <Edit2 />
+                          </Button>
                         )}
                         {can(currentUser, 'material.delete') && (
-                          <button 
-                            onClick={() => handleDelete(material)} 
-                            className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900 rounded-lg transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" 
+                          <Button
+                            variant="outline"
+                            size="icon-xs"
+                            onClick={() => handleDelete(material)}
+                            className="text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-600 border-rose-100 dark:text-rose-300 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:border-rose-900"
                             title="حذف"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -684,40 +685,32 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={8} className="py-14 text-center">
-                    <Archive className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
-                    {hasFilters ? (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد.</p>
-                        <button
-                          type="button"
-                          onClick={clearFilters}
-                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-muted hover:bg-accent border border-border text-xs font-bold text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          پاک‌کردن جستجو و فیلترها
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <p className="text-muted-foreground">مخزن مرجع هنوز خالی است.</p>
-                        {can(currentUser, 'material.create') ? (
-                          <button
-                            type="button"
-                            onClick={handleOpenAdd}
-                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
-                          >
-                            <Plus className="w-4 h-4" />
-                            ثبت اولین ماده
-                          </button>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">ثبت ماده در دسترس نقش شما نیست.</p>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                hasFilters ? (
+                  <TableEmptyRow
+                    colSpan={8}
+                    icon={Archive}
+                    message="هیچ ماده‌ای با این جستجو یا فیلترها پیدا نشد."
+                    action={
+                      <Button type="button" variant="secondary" onClick={clearFilters} className="text-xs font-bold">
+                        <X />
+                        پاک‌کردن جستجو و فیلترها
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <TableEmptyRow
+                    colSpan={8}
+                    icon={Archive}
+                    message="مخزن مرجع هنوز خالی است."
+                    action={can(currentUser, 'material.create') ? (
+                      <Button type="button" onClick={handleOpenAdd} className="text-xs font-bold">
+                        <Plus />
+                        ثبت اولین ماده
+                      </Button>
+                    ) : undefined}
+                    note={can(currentUser, 'material.create') ? undefined : 'ثبت ماده در دسترس نقش شما نیست.'}
+                  />
+                )
               )}
             </tbody>
           </table>
@@ -725,7 +718,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         
         {/* PAGINATION */}
         <div className="px-6 py-3 border-t border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
             <span>تعداد در هر صفحه</span>
             <select
               value={itemsPerPage}
@@ -749,7 +742,14 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </div>
 
       {/* CREATE/EDIT MODAL - High Quality Responsive Enterprise Modal with Portal */}
-      <FormModal open={isModalOpen} onClose={() => setIsModalOpen(false)} size="lg" ariaLabel="فرم ماده اولیه">
+      <FormModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        size="lg"
+        ariaLabel="فرم ماده اولیه"
+        unsavedChanges={materialFormDirty}
+        unsavedLabel={editingMaterial ? 'تغییرات این ماده' : 'اطلاعات مادهٔ جدید'}
+      >
             {isSuccess ? (
               <div className="p-16 text-center flex flex-col items-center justify-center fade-in">
                 <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
@@ -772,17 +772,19 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <h2 className="text-base sm:text-lg font-black text-foreground">
                         {editingMaterial ? 'ویرایش ماده اولیه در مخزن مرجع' : 'ثبت ماده اولیه جدید در مخزن مرجع'}
                       </h2>
-                      <p className="text-[11px] text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
+                      <p className="text-2xs text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
                     </div>
                   </div>
-                  <button 
+                  <Button
                     type="button"
-                    onClick={() => setIsModalOpen(false)} 
-                    className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setIsModalOpen(false)}
+                    className="text-muted-foreground"
                     title="بستن"
                   >
-                    <X className="w-5 h-5" />
-                  </button>
+                    <X />
+                  </Button>
                 </div>
                 
                 {/* Scrollable Form Body */}
@@ -813,12 +815,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام فارسی ماده <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.nameFa || ''} 
                           onChange={e => setFormData({ ...formData, nameFa: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full"
                           placeholder="مثال: استامینوفن"
                         />
                       </div>
@@ -827,12 +829,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام لاتین / ژنریک <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.nameEn || ''} 
                           onChange={e => setFormData({ ...formData, nameEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="e.g. Paracetamol"
                           dir="ltr"
                         />
@@ -842,12 +844,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           شماره CAS <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.cas || ''} 
                           onChange={e => setFormData({ ...formData, cas: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="103-90-2"
                           dir="ltr"
                         />
@@ -857,11 +859,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام IUPAC (اختیاری)
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           value={formData.iupac || ''} 
                           onChange={e => setFormData({ ...formData, iupac: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="N-(4-hydroxyphenyl)ethanamide"
                           dir="ltr"
                         />
@@ -884,7 +886,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <select 
                           value={formData.role || 'API'} 
                           onChange={e => setFormData({ ...formData, role: e.target.value as MaterialRole })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className={cn(inputBaseClass, 'w-full')}
                         >
                           {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                         </select>
@@ -897,7 +899,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <select 
                           value={formData.pharmacopoeia || 'USP'} 
                           onChange={e => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className={cn(inputBaseClass, 'w-full font-mono')}
                         >
                           {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
@@ -917,12 +919,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (فارسی) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.finalProduct || ''} 
                           onChange={e => setFormData({ ...formData, finalProduct: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full"
                           placeholder="مثلاً: قرص استامینوفن ۵۰۰"
                         />
                       </div>
@@ -931,12 +933,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (لاتین) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.finalProductEn || ''} 
                           onChange={e => setFormData({ ...formData, finalProductEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="Paracetamol 500mg Tablet"
                           dir="ltr"
                         />
@@ -970,7 +972,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           {formData.specificationFile && (
                             <div className="flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-900 px-3 py-1.5 rounded-xl border">
                               <FileText className="w-4 h-4" />
-                              <span className="text-[11px] font-mono font-bold truncate max-w-[240px]" dir="ltr">
+                              <span className="text-2xs font-mono font-bold truncate max-w-[240px]" dir="ltr">
                                 {formData.specificationFile}
                               </span>
                               <button
@@ -984,7 +986,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             </div>
                           )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-2xs text-muted-foreground">
                           {pendingSpecFile
                             ? `فایل «${pendingSpecFile.name}» (${formatFileSize(pendingSpecFile.size)}) پس از ذخیرهٔ ماده بارگذاری می‌شود.`
                             : `فایل روی سرور ذخیره و در شناسنامهٔ ماده قابل دانلود است. حداکثر ${formatFileSize(MAX_SPEC_BYTES)}.`}
@@ -1006,13 +1008,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
                         <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-bold select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
+                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
                         <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-mono font-bold select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
@@ -1024,20 +1026,39 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 
                 {/* Sticky Bottom Footer */}
                 <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0 shadow-xs">
-                  <button 
+                  {savedCount > 0 && (
+                    <span className="mr-auto text-2xs font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[22rem]"
+                      title={recentlySaved.join('، ')}>
+                      {savedCount.toLocaleString('fa-IR')} ماده در این نشست ثبت شد
+                      {recentlySaved[0] ? ` — آخرین: ${recentlySaved[0]}` : ''}
+                    </span>
+                  )}
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent rounded-xl transition-colors border border-border cursor-pointer"
+                    className="text-xs font-bold text-muted-foreground"
                   >
-                    انصراف
-                  </button>
-                  <button 
+                    {savedCount > 0 ? 'پایان' : 'انصراف'}
+                  </Button>
+                  {!editingMaterial && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => handleSave(true)}
+                      title="ذخیره می‌کند، فرم را خالی می‌کند و همین‌جا می‌مانید"
+                      className="text-xs font-bold"
+                    >
+                      ذخیره و ثبت بعدی
+                    </Button>
+                  )}
+                  <Button
                     type="button"
-                    onClick={handleSave}
-                    className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-95 border border-blue-400/30 cursor-pointer"
+                    onClick={() => handleSave()}
+                    className="px-6 text-xs font-bold"
                   >
                     {editingMaterial ? 'ذخیره تغییرات ماده' : 'ثبت اطلاعات در مخزن'}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -1053,16 +1074,18 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-foreground">جزئیات شناسنامه ماده اولیه</h2>
-                  <p className="text-[11px] text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
+                  <p className="text-2xs text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsViewModalOpen(false)} 
-                className="p-2 text-muted-foreground hover:text-muted-foreground hover:bg-accent rounded-xl transition-colors cursor-pointer"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setIsViewModalOpen(false)}
+                className="text-muted-foreground"
                 title="بستن"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <X />
+              </Button>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 space-y-6 focus:outline-none">
@@ -1075,19 +1098,19 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام فارسی</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام فارسی</div>
                     <div className="text-sm font-bold text-foreground">{selectedMaterial.nameFa}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.nameEn}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام IUPAC</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام IUPAC</div>
                     <div className="text-xs font-mono text-foreground" dir="ltr">{selectedMaterial.iupac || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">CAS Number</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">CAS Number</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.cas}</div>
                   </div>
                 </div>
@@ -1101,21 +1124,21 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
                     <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold border ${getMaterialRole(selectedMaterial.role).tone}`}>
                       {getMaterialRole(selectedMaterial.role).labelEn} <span className="font-normal">· {getMaterialRole(selectedMaterial.role).labelFa}</span>
                     </span>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
                     <div className="text-sm font-bold font-mono text-foreground">{selectedMaterial.pharmacopoeia}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
                     <div className="text-sm font-bold text-foreground">{selectedMaterial.finalProduct}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.finalProductEn}</div>
                   </div>
                 </div>
@@ -1131,20 +1154,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 <div className="space-y-4">
                   <div className="p-4 bg-card border border-border rounded-xl space-y-3">
                     <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
+                      <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
                       <div className="text-xs font-bold text-foreground">{selectedMaterial.standardNameFa}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Standard English Name</div>
+                      <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Standard English Name</div>
                       <div className="text-xs font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.standardNameEn}</div>
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
 
                     {specError && (
-                      <div role="alert" className="mb-2 p-2.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-[11px] leading-relaxed fade-in">
+                      <div role="alert" className="mb-2 p-2.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-2xs leading-relaxed fade-in">
                         {specError}
                       </div>
                     )}
@@ -1162,7 +1185,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             {/* A name with no file behind it is exactly what this
                                 module used to record, so the record says which
                                 one this is. */}
-                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                            <div className="text-2xs text-muted-foreground mt-0.5">
                               {selectedMaterial.hasSpecificationFile
                                 ? [formatFileSize(selectedMaterial.specificationFileSize), 'ذخیره‌شده روی سرور'].filter(Boolean).join(' · ')
                                 : 'فقط نام فایل ثبت شده است — فایلی روی سرور نیست.'}
@@ -1172,20 +1195,24 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <div className="flex items-center gap-1 shrink-0">
                           {selectedMaterial.hasSpecificationFile && (
                             <>
-                              <button
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleViewSpec}
-                                className={`p-2 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-blue-600 dark:text-blue-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
                                 title="مشاهده"
                               >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
+                                <Eye />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleDownloadSpec}
-                                className={`p-2 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-emerald-600 dark:text-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
                                 title="دانلود"
                               >
-                                <Download className="w-4 h-4" />
-                              </button>
+                                <Download />
+                              </Button>
                             </>
                           )}
                           {can(currentUser, 'material.edit') && (
@@ -1194,14 +1221,16 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                                 <Upload className="w-4 h-4" />
                                 <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
                               </label>
-                              <button
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={handleDeleteSpec}
                                 disabled={specBusy}
-                                className={`p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+                                className="text-rose-600 dark:text-rose-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
                                 title="حذف"
                               >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                                <Trash2 />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -1216,10 +1245,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                               <span>{specBusy ? 'در حال بارگذاری…' : 'بارگذاری فایل'}</span>
                               <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
                             </label>
-                            <span className="text-[10px] text-muted-foreground">حداکثر {formatFileSize(MAX_SPEC_BYTES)}</span>
+                            <span className="text-2xs text-muted-foreground">حداکثر {formatFileSize(MAX_SPEC_BYTES)}</span>
                           </>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground">بارگذاری فایل در دسترس نقش شما نیست.</span>
+                          <span className="text-2xs text-muted-foreground">بارگذاری فایل در دسترس نقش شما نیست.</span>
                         )}
                       </div>
                     )}
@@ -1230,18 +1259,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             </div>
 
             <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end shrink-0 shadow-xs">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => setIsViewModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-bold text-xs transition-colors cursor-pointer"
+                className="px-5 font-bold text-xs"
               >
                 بستن
-              </button>
+              </Button>
             </div>
 </>)}
       </FormModal>
 
       {/* CUSTOM MATERIAL DELETE MODAL with Portal */}
-      <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm" className="p-6" ariaLabel="تأیید حذف ماده اولیه">
+      <FormModal open={!!materialToDelete} onClose={() => setMaterialToDelete(null)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6" ariaLabel="تأیید حذف ماده اولیه">
         {materialToDelete && (<>
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
@@ -1260,19 +1291,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     {connectedVendors.map(vendor => (
                       <div key={vendor.id} className="py-2 px-2 text-xs text-foreground flex justify-between items-center">
                         <span className="font-bold">{vendor.name}</span>
-                        <span className="font-mono bg-background border border-border px-2 py-0.5 rounded text-[10px] text-foreground">
+                        <span className="font-mono bg-background border border-border px-2 py-0.5 rounded text-2xs text-foreground">
                           {categoryLabels[vendor.category as keyof typeof categoryLabels]?.fa || vendor.category}
                         </span>
                       </div>
                     ))}
                   </div>
                   <div className="flex justify-end pt-2">
-                    <button 
-                      onClick={() => setMaterialToDelete(null)} 
-                      className="w-full sm:w-auto px-4 py-2 bg-muted hover:bg-accent border border-border text-foreground rounded-xl text-xs font-bold transition-all"
+                    <Button
+                      variant="secondary"
+                      onClick={() => setMaterialToDelete(null)}
+                      className="w-full sm:w-auto text-xs font-bold"
                     >
                       متوجه شدم
-                    </button>
+                    </Button>
                   </div>
                 </>
               ) : (
@@ -1282,21 +1314,23 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     این عمل غیرقابل بازگشت بوده و تمامی اطلاعات مربوط به این ماده از سیستم حذف خواهد شد.
                   </p>
                   <div className="flex items-center justify-end gap-2 pt-2">
-                    <button 
-                      onClick={() => setMaterialToDelete(null)} 
-                      className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                    <Button
+                      variant="secondary"
+                      onClick={() => setMaterialToDelete(null)}
+                      className="text-xs font-bold"
                     >
                       انصراف
-                    </button>
-                    <button 
+                    </Button>
+                    <Button
+                      variant="destructive"
                       onClick={() => {
                         onDeleteMaterial(materialToDelete.id);
                         setMaterialToDelete(null);
-                      }} 
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20"
+                      }}
+                      className="text-xs font-bold"
                     >
                       تایید و حذف نهایی
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1305,7 +1339,8 @@ export const MaterialRepositoryView: React.FC<Props> = ({
       </FormModal>
 
       {/* CUSTOM SPEC FILE DELETE MODAL with Portal */}
-      <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm" className="p-6" ariaLabel="تأیید حذف فایل Specification">
+      <FormModal open={!!specToDelete} onClose={() => setSpecToDelete(false)} size="sm"
+        role="alertdialog" closeOnBackdrop={false} className="p-6" ariaLabel="تأیید حذف فایل Specification">
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-300 mb-4">
               <div className="w-10 h-10 rounded-full bg-rose-50 border-rose-100 dark:bg-rose-950/50 dark:border-rose-900 flex items-center justify-center shrink-0 border">
                 <FileText className="w-5 h-5" />
@@ -1318,18 +1353,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 آیا از حذف فایل پیوست مشخصات فنی (Specification) این ماده اطمینان دارید؟
               </p>
               <div className="flex items-center justify-end gap-2 pt-2">
-                <button 
-                  onClick={() => setSpecToDelete(false)} 
-                  className="px-4 py-2 bg-muted hover:bg-accent text-foreground rounded-xl text-xs font-bold transition-all border border-border"
+                <Button
+                  variant="secondary"
+                  onClick={() => setSpecToDelete(false)}
+                  className="text-xs font-bold"
                 >
                   انصراف
-                </button>
-                <button 
-                  onClick={handleConfirmDeleteSpec} 
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20"
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleConfirmDeleteSpec}
+                  className="text-xs font-bold"
                 >
                   تایید حذف فایل
-                </button>
+                </Button>
               </div>
             </div>
       </FormModal>

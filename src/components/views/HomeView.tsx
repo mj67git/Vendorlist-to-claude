@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { categoryLabels } from '../../constants/categories';
+import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
@@ -96,6 +97,12 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
   useEffect(() => {
     if (!currentUser) return;
+    // The feed reads the audit trail, which `audit.read` gates. Asking for it
+    // without the permission produced a guaranteed 403 on every page load for
+    // every non-admin — harmless on screen, but it filled the browser console
+    // and the server's access log with failures that were never going to
+    // succeed. No permission, no feed, no request.
+    if (!can(currentUser, 'audit.read')) { setRecentAudit([]); return; }
     // Sign-ins are the highest-volume event in the log and say nothing about the
     // state of the supply base, so five of them filled this feed and pushed out
     // every actual data change. Ask for a wider slice and keep the changes.
@@ -143,7 +150,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         <div className="flex items-center gap-2 mb-3">
           <ClipboardList className="w-4 h-4 text-primary" />
           <h3 className="font-bold text-foreground text-sm">کارهای معوق</h3>
-          <span className="text-[11px] text-muted-foreground">— برای رسیدگی روی هر مورد کلیک کنید</span>
+          <span className="text-2xs text-muted-foreground">— برای رسیدگی روی هر مورد کلیک کنید</span>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {pendingActions.map(a => {
@@ -165,8 +172,8 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                   <a.icon className="w-4 h-4" />
                   <span className="text-2xl font-black font-mono tabular-nums">{a.count}</span>
                 </div>
-                <div className="text-[11px] font-bold leading-snug">{a.label}</div>
-                <div className="text-[10px] mt-1 opacity-80">{clickable ? 'رسیدگی ←' : 'موردی باقی نمانده'}</div>
+                <div className="text-2xs font-bold leading-snug">{a.label}</div>
+                <div className="text-2xs mt-1 opacity-80">{clickable ? 'رسیدگی ←' : 'موردی باقی نمانده'}</div>
               </button>
             );
           })}
@@ -186,7 +193,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           <Card key={s.label} className="p-4 space-y-2.5 bg-card border-border/80 hover:border-primary/30 transition-all">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold text-foreground">{s.label}</span>
-              <Badge variant={s.badgeVariant} className="text-[10px] px-1.5 py-0 font-mono shrink-0">
+              <Badge variant={s.badgeVariant} className="text-2xs px-1.5 py-0 font-mono shrink-0">
                 {s.percent}%
               </Badge>
             </div>
@@ -197,7 +204,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
             <div className={`text-3xl font-black tabular-nums font-mono ${s.color}`}>
               {s.value}
             </div>
-            <div className="text-[11px] text-muted-foreground leading-snug">{s.sub}</div>
+            <div className="text-2xs text-muted-foreground leading-snug">{s.sub}</div>
           </Card>
         ))}
       </div>
@@ -251,7 +258,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
             <div className="flex flex-col sm:flex-row sm:items-center gap-5">
               <div className="shrink-0 text-center sm:text-right">
                 <div className={`text-4xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
+                <div className="text-2xs text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
               </div>
               <div className="flex-1 space-y-2">
                 <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
@@ -260,7 +267,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                   <div className="h-full bg-rose-500" style={{ width: `${(labStats.rej / labStats.total) * 100}%` }} />
                 </div>
                 {/* Was "Pass 4 / مشروط 2 / Reject 1": three labels, two languages. */}
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between text-2xs">
                   <span className="text-emerald-600 dark:text-emerald-400 font-bold">قبول {labStats.pass}</span>
                   <span className="text-blue-600 dark:text-blue-400 font-bold">مشروط {labStats.cond}</span>
                   <span className="text-rose-600 dark:text-rose-400 font-bold">مردود {labStats.rej}</span>
@@ -293,9 +300,9 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action}: ${l.entityName || ''}`}</div>
-                    <div className="text-[10px] text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
+                    <div className="text-2xs text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
+                  <span className="text-2xs text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
                 </div>
               );
             })}
@@ -340,14 +347,14 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                 
                 <div>
                   <h3 className="font-black text-foreground leading-tight text-base tracking-tight group-hover:text-primary transition-colors">{meta.fa}</h3>
-                  <div className="text-muted-foreground text-[11px] mt-0.5 font-mono uppercase tracking-wider">{meta.en}</div>
+                  <div className="text-muted-foreground text-2xs mt-0.5 font-mono uppercase tracking-wider">{meta.en}</div>
                 </div>
 
                 <div className="border-t border-border/70 pt-3 flex items-center justify-between">
                   <div className={`font-mono text-3xl font-black transition-all duration-300 group-hover:scale-105 origin-left ${catVendors.length === 0 ? 'text-muted-foreground' : style.statText}`}>{catVendors.length}</div>
                   <div className="text-right">
                     <div className="text-foreground font-bold text-xs">{verified} {verifiedLabel}</div>
-                    <div className="text-muted-foreground text-[10px] mt-0.5">{other} {otherLabel}</div>
+                    <div className="text-muted-foreground text-2xs mt-0.5">{other} {otherLabel}</div>
                   </div>
                 </div>
               </Card>

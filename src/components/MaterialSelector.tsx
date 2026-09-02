@@ -1,8 +1,11 @@
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, Package, X, Upload, FileText } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia } from '../types';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
 
 interface Props {
   value?: string;
@@ -104,7 +107,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
       <label className="text-foreground font-semibold text-xs flex items-center justify-between">
         <span>ماده اولیه (انتخاب از مخزن مرجع) <span className="text-rose-500">*</span></span>
         {selectedMaterial && (
-          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">
+          <span className="text-2xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">
             ID: {selectedMaterial.id}
           </span>
         )}
@@ -133,7 +136,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
           <div className="flex items-center gap-1 shrink-0">
             {selectedMaterial && (
-              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
+              <span className="text-2xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
                 {selectedMaterial.role}
               </span>
             )}
@@ -147,12 +150,12 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
             <div className="p-2 border-b border-border bg-muted/50">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2" />
-                <input
+                <Input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="جستجوی ماده، CAS یا نام انگلیسی..."
-                  className="w-full bg-card border border-border rounded-lg pr-8 pl-3 py-1.5 text-xs focus:outline-none focus:border-cyan-600"
+                  className="w-full pr-8 pl-3"
                 />
               </div>
             </div>
@@ -181,10 +184,10 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                         <span className="font-bold text-foreground text-xs flex items-center gap-1.5">
                           {mat.nameFa}
                           {mat.standardNameFa && mat.standardNameFa !== mat.nameFa && (
-                            <span className="text-[10px] text-muted-foreground font-normal">({mat.standardNameFa})</span>
+                            <span className="text-2xs text-muted-foreground font-normal">({mat.standardNameFa})</span>
                           )}
                         </span>
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono mt-0.5" dir="ltr">
+                        <div className="flex items-center gap-2 text-2xs text-muted-foreground font-mono mt-0.5" dir="ltr">
                           <span>{mat.nameEn}</span>
                           {mat.cas && mat.cas !== 'N/A' && (
                             <>
@@ -196,7 +199,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
+                        <span className="text-2xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
                           {mat.role}
                         </span>
                         {isSelected && <Check className="w-4 h-4 text-cyan-600" />}
@@ -209,14 +212,15 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
             {onAddMaterial && (
               <div className="p-2 border-t border-border bg-muted">
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   onClick={() => setShowCreateModal(true)}
-                  className="w-full py-1.5 px-3 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  className="w-full bg-fuchsia-600 text-white hover:bg-fuchsia-700 hover:shadow-fuchsia-600/20 font-bold"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus />
                   تعریف ماده اولیه جدید در مخزن (فرم کامل)
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -233,16 +237,18 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                 </div>
                 <div>
                   <h3 className="font-bold text-foreground text-base">ثبت ماده اولیه جدید در مخزن</h3>
-                  <p className="text-[11px] text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
+                  <p className="text-2xs text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowCreateModal(false)}
-                className="text-muted-foreground hover:text-muted-foreground p-2 rounded-xl hover:bg-slate-200/50 transition-colors"
+                className="text-muted-foreground"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <X />
+              </Button>
             </div>
 
             {/* Modal Form Content */}
@@ -253,13 +259,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     نام فارسی ماده <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.nameFa || ''}
                     onChange={(e) => setFormData({ ...formData, nameFa: e.target.value })}
                     placeholder="مثلاً: استامینوفن"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full"
                   />
                 </div>
 
@@ -268,14 +274,14 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     نام لاتین / ژنریک <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.nameEn || ''}
                     onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
                     placeholder="e.g. Paracetamol"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 
@@ -284,13 +290,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     کد CAS
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.cas || ''}
                     onChange={(e) => setFormData({ ...formData, cas: e.target.value })}
                     placeholder="103-90-2"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 
@@ -302,7 +308,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <select
                     value={formData.role || 'API'}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as MaterialRole })}
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className={cn(inputBaseClass, 'w-full')}
                   >
                     {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                   </select>
@@ -316,7 +322,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <select
                     value={formData.pharmacopoeia || 'USP'}
                     onChange={(e) => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })}
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className={cn(inputBaseClass, 'w-full font-mono')}
                   >
                     {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
@@ -327,13 +333,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (فارسی) <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.finalProduct || ''}
                     onChange={(e) => setFormData({ ...formData, finalProduct: e.target.value })}
                     placeholder="مثلاً: قرص استامینوفن ۵۰۰"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full"
                   />
                 </div>
 
@@ -342,13 +348,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (لاتین)
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.finalProductEn || ''}
                     onChange={(e) => setFormData({ ...formData, finalProductEn: e.target.value })}
                     placeholder="Paracetamol 500mg Tablet"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 
@@ -372,7 +378,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     {formData.specificationFile && (
                       <div className="flex items-center gap-2 bg-fuchsia-50 text-fuchsia-700 px-3 py-1.5 rounded-lg border border-fuchsia-100">
                         <FileText className="w-4 h-4" />
-                        <span className="text-[11px] font-mono font-bold truncate max-w-[200px]" dir="ltr">
+                        <span className="text-2xs font-mono font-bold truncate max-w-[200px]" dir="ltr">
                           {formData.specificationFile}
                         </span>
                         <button type="button" onClick={() => setFormData({...formData, specificationFile: undefined})} className="text-rose-500 hover:text-rose-700 p-1">
@@ -387,13 +393,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
               {/* Standard Names Auto-generation Box */}
               <div className="bg-muted p-4 rounded-xl border border-border space-y-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
+                  <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
                   <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-bold select-all">
                     {generateStandardNameFa(formData)}
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
+                  <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
                   <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-mono font-bold select-all" dir="ltr">
                     {generateStandardNameEn(formData)}
                   </div>
@@ -402,19 +408,20 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
               {/* Footer Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-accent transition-colors"
+                  className="text-xs font-bold text-muted-foreground"
                 >
                   انصراف
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className="px-6 py-2 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-bold shadow-sm transition-all active:scale-95"
+                  className="px-6 bg-fuchsia-600 text-white hover:bg-fuchsia-700 hover:shadow-fuchsia-600/20 text-xs font-bold"
                 >
                   ذخیره ماده اولیه در مخزن
-                </button>
+                </Button>
               </div>
             </form>
       </FormModal>

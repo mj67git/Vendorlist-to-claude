@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Button } from '../ui/button';
 import { Archive, CheckCircle } from 'lucide-react';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { ScoringGuide } from '../../components/ScoringGuide';
@@ -11,7 +12,7 @@ import { canScoreDepartment } from '../../utils/permissions';
 // extracted from App.tsx
 
 // --- View: Evaluation Form ---
-export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
+export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyChange }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null, onDirtyChange?: (dirty: boolean) => void }) {
   const [scores, setScores] = useState<Record<string, Record<string, number>>>(() => {
     const initialDepts = ['commercial', 'qa', 'planning', 'finance'];
     const res: Record<string, Record<string, number>> = {};
@@ -45,6 +46,20 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
   const [modifiedDepts, setModifiedDepts] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // This form is an inline section of the source page, not a dialog, so leaving
+  // the page is what loses it. It reports upward and the page registers the same
+  // unsaved-changes guard the source form uses. `modifiedDepts` is the honest
+  // signal: it is set when a score is actually moved, so merely opening the form
+  // to look at the questions does not raise a warning.
+  useEffect(() => {
+    const dirty = Object.values(modifiedDepts).some(Boolean) || comments.trim().length > 0;
+    onDirtyChange?.(dirty);
+  }, [modifiedDepts, comments, onDirtyChange]);
+
+  // Leaving the form must clear the guard, or the page keeps warning about a
+  // form that is no longer on screen.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Only the departments this user may score are rendered — admin gets all four.
@@ -97,7 +112,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
       
       let grade = vendor.grade;
       let pStatus = vendor.status;
-      let pCategory = vendor.category;
+      const pCategory = vendor.category;
 
       if (isFullyScored) {
         const overall = calculateOverallScore(finalScores);
@@ -159,7 +174,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
     <div className="space-y-6">
       <ScoringGuide currentUser={currentUser} />
 
-      <div className="bg-card border border-slate-900/10 rounded-xl p-6 md:p-8 fade-in shadow-sm">
+      <div className="bg-card border border-border rounded-xl p-6 md:p-8 fade-in shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           {visibleFormLayout.map(dept => {
              const Icon = dept.icon;
@@ -168,22 +183,22 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
              const avg = isModified ? calculateDeptAverage(dept.id, scores[dept.id]) : prevDeptScore;
 
              return (
-               <div key={dept.id} className="bg-muted border border-slate-900/10 rounded-xl p-5 relative overflow-hidden group">
+               <div key={dept.id} className="bg-muted border border-border rounded-xl p-5 relative overflow-hidden group">
                   <div className={`absolute top-0 right-0 w-full h-[3px] opacity-80 ${getScoreColorClass(avg, true)}`} />
                   <div className="flex justify-between items-center mb-6">
                      <div className="flex items-center gap-3">
-                       <div className="bg-card p-2 rounded-lg border border-slate-900/10 shadow-sm">
+                       <div className="bg-card p-2 rounded-lg border border-border shadow-sm">
                          <Icon className="w-5 h-5 text-muted-foreground" />
                        </div>
                        <div>
                          <h4 className="font-bold text-foreground leading-none">{dept.title}</h4>
-                         <span className="text-[10px] text-muted-foreground font-medium block mt-1">
+                         <span className="text-2xs text-muted-foreground font-medium block mt-1">
                            <span className="text-muted-foreground">بخش ارزیابی دپارتمانی</span>
                          </span>
                        </div>
                      </div>
                      <div className="text-right">
-                       <div className="text-[10px] text-muted-foreground font-semibold mb-0.5">میانگین بخش</div>
+                       <div className="text-2xs text-muted-foreground font-semibold mb-0.5">میانگین بخش</div>
                        <div className={`text-2xl font-black font-mono tracking-tighter ${getScoreColorClass(avg)}`}>
                          {avg}
                        </div>
@@ -204,11 +219,11 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
                             <span className="text-foreground font-medium leading-relaxed max-w-[70%]">{crit.label} <span className="text-cyan-600 font-semibold ml-1">(وزن: {crit.weight})</span></span>
                             <div className="flex items-center gap-1.5 shrink-0 select-none">
                               {prevValue > 0 && (
-                                <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/60 font-medium">
+                                <span className="text-2xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/60 font-medium">
                                   قبلی: {prevValue}
                                 </span>
                               )}
-                              <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono font-bold ${
+                              <span className={`text-2xs px-1.5 py-0.5 rounded border font-mono font-bold ${
                                 isChanged
                                   ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse'
                                   : 'text-muted-foreground bg-muted border-border'
@@ -240,28 +255,29 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser }: { vendo
        <div className="mb-8">
          <label className="block text-sm font-bold text-foreground mb-2">توضیحات و توجیه ارزیابی</label>
          <textarea
-           dir="rtl"
+          
            rows={4}
-           className="w-full bg-card border border-slate-900/10 rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
+           className="w-full bg-card border border-border rounded-xl p-4 text-sm text-foreground focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 resize-none shadow-sm transition-shadow"
            placeholder="موارد کیفی مهم، تعهدات اخذ شده جهت بهبود، یا دلایل اعطای نمرات پایین..."
            value={comments}
            onChange={(e) => setComments(e.target.value)}
          ></textarea>
        </div>
 
-       <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-slate-900/10 pt-6">
-         <button
+       <div className="flex flex-col md:flex-row items-center justify-end gap-6 border-t border-border pt-6">
+         <Button
+           size="lg"
            onClick={handleSave}
            disabled={isSaving}
-           className="w-full md:w-auto flex flex-row-reverse items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-75"
+           className="w-full md:w-auto flex-row-reverse bg-foreground text-background hover:bg-foreground/90"
          >
            {isSaving ? (
-             <span className="inline-block w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
+             <span className="inline-block w-5 h-5 border-2 border-muted-foreground border-t-background rounded-full animate-spin" />
            ) : (
              <Archive className="w-5 h-5" />
            )}
             <span>ذخیره ارزیابی</span>
-          </button>
+          </Button>
         </div>
      </div>
      </div>

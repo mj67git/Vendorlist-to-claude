@@ -93,7 +93,7 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4" dir="rtl">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4">
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-xl bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden fade-in" onKeyDown={onKeyDown}>
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
@@ -114,7 +114,7 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
           ) : (
             groups.map(g => (
               <div key={g.name} className="mb-1.5">
-                <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wide">{g.name}</div>
+                <div className="px-2 py-1 text-2xs font-bold text-muted-foreground/70 uppercase tracking-wide">{g.name}</div>
                 {g.items.map(({ it, idx }) => (
                   <button
                     key={it.id}
@@ -129,7 +129,7 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
                     </div>
                     <div className="flex-1 min-w-0">
                       <EntityName as="div" name={it.title} lines={1} className="text-xs font-bold" />
-                      {it.subtitle && <EntityName as="div" name={it.subtitle} lines={1} className="text-[10px] text-muted-foreground" />}
+                      {it.subtitle && <EntityName as="div" name={it.subtitle} lines={1} className="text-2xs text-muted-foreground" />}
                     </div>
                     {idx === activeIndex && <CornerDownLeft className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </button>
@@ -139,7 +139,7 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-border bg-muted/40 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+        <div className="px-4 py-2 border-t border-border bg-muted/40 flex items-center justify-between text-2xs text-muted-foreground font-mono">
           <span>↑↓ حرکت · ↵ انتخاب · Esc بستن</span>
           <span>{filtered.length} نتیجه</span>
         </div>

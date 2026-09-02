@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
+import { Button } from './ui/button';
 import { BusinessPartner, BusinessPartnerType } from '../types';
 import { canSupplySources } from '../utils/sopEvaluation';
 import { EntityName } from './EntityName';
+import { Input } from './ui/input';
 
 interface PartnerSelectorProps {
   type: BusinessPartnerType;
@@ -127,7 +129,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
     : 'فروشنده';
 
   return (
-    <div className="space-y-1 relative font-sans" dir="rtl" ref={dropdownRef}>
+    <div className="space-y-1 relative font-sans" ref={dropdownRef}>
       {/* Label and Quick Add Button */}
       <div className="flex items-center justify-between">
         <label className="text-foreground font-semibold text-xs flex items-center gap-1.5">
@@ -171,7 +173,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
               ? 'border-ring ring-2 ring-ring/20 shadow-xs'
-              : 'border-border hover:border-slate-400'
+              : 'border-border hover:border-muted-foreground'
           }`}
         >
           <div className="flex items-center gap-2.5 overflow-hidden w-full">
@@ -194,15 +196,15 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     lines={2}
                     className="font-bold text-foreground text-xs sm:text-sm"
                   />
-                  <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
+                  <div className="text-2xs text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
                     {selectedPartner.nameEn && (
-                      <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">
+                      <span className="font-mono text-2xs text-muted-foreground" dir="ltr">
                         {selectedPartner.nameEn}
                       </span>
                     )}
                     {selectedPartner.country && (
                       <>
-                        <span className="text-slate-300">•</span>
+                        <span className="text-muted-foreground/50">•</span>
                         <span className="flex items-center gap-0.5">
                           <Globe className="w-2.5 h-2.5 text-muted-foreground" />
                           <span>{selectedPartner.country}</span>
@@ -214,13 +216,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
                 {!isManufacturer && (
                   selectedPartner.evaluation?.grade && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
-                    <span className={`mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${getSOPGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
+                    <span className={`mr-2 px-2 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${getSOPGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                       {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
                        selectedPartner.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
                        `Grade ${selectedPartner.evaluation.grade}`}
                     </span>
                   ) : (
-                    <span className="mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border shrink-0">
+                    <span className="mr-2 px-2 py-0.5 rounded-md text-2xs font-bold bg-muted text-muted-foreground border border-border shrink-0">
                       ارزیابی نشده
                     </span>
                   )
@@ -271,13 +273,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <div className="p-2.5 border-b border-border bg-muted/80">
               <div className="relative">
                 <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-2.5" />
-                <input
+                <Input
                   ref={searchInputRef}
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="جستجو بر اساس نام، کشور یا شهر..." 
-                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                  className="w-full pr-9 pl-8"
                 />
                 {searchTerm && (
                   <button
@@ -297,17 +299,19 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               {filteredPartners.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground text-xs">
                   <div>شریکی با این مشخصات یافت نشد.</div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setIsOpen(false);
                       triggerOpenCreate();
                     }}
-                    className="mt-3 inline-flex items-center gap-1 text-primary hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
+                    className="mt-3 text-primary bg-blue-50 dark:bg-blue-950/40 hover:text-primary font-bold"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus />
                     <span>ثبت شریک تجاری جدید</span>
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 filteredPartners.map(p => {
@@ -355,12 +359,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                           <div className="text-xs font-bold flex items-center gap-2 min-w-0">
                             <EntityName name={p.name} lines={1} />
                             {p.status === 'Blacklisted' && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold shrink-0">
+                              <span className="px-1.5 py-0.2 rounded text-2xs bg-rose-100 text-rose-800 font-bold shrink-0">
                                 بلک‌لیست
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate flex items-center gap-2 mt-0.5">
+                          <div className="text-2xs text-muted-foreground truncate flex items-center gap-2 mt-0.5">
                             {p.nameEn && (
                               <span className="font-mono text-muted-foreground" dir="ltr">
                                 {p.nameEn}
@@ -368,20 +372,20 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                             )}
                             {p.country && (
                               <>
-                                <span className="text-slate-300">•</span>
+                                <span className="text-muted-foreground/50">•</span>
                                 <span>{p.country}</span>
                               </>
                             )}
                             {p.city && <span>({p.city})</span>}
                             {p.contactPerson && (
                               <>
-                                <span className="text-slate-300">•</span>
+                                <span className="text-muted-foreground/50">•</span>
                                 <span>رابط: {p.contactPerson}</span>
                               </>
                             )}
                           </div>
                           {!allowed && (
-                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
+                            <div className="text-2xs font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
                               {reason}
                             </div>
                           )}
@@ -391,13 +395,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       <div className="flex items-center gap-2 shrink-0 mr-2">
                         {p.type === 'Supplier' && (
                           p.evaluation?.grade && p.evaluation.grade !== 'Not Evaluated' ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getSOPGradeBadgeClass(p.evaluation.grade)}`}>
+                            <span className={`px-2 py-0.5 rounded text-2xs font-bold border ${getSOPGradeBadgeClass(p.evaluation.grade)}`}>
                               {p.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
                                p.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
                                `Grade ${p.evaluation.grade}`}
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                            <span className="px-2 py-0.5 rounded text-2xs font-bold bg-muted text-muted-foreground border border-border">
                               ارزیابی نشده
                             </span>
                           )
@@ -412,7 +416,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
             {/* Quick Add Footer inside Dropdown */}
             <div className="p-2 border-t border-border bg-muted/50 flex items-center justify-between text-xs">
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {filteredPartners.length} مورد یافت شد
                 {blockedCount > 0 && (
                   <span className="text-amber-700 dark:text-amber-400 font-bold">

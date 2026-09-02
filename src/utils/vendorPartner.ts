@@ -36,14 +36,23 @@ export interface VendorPartnerInfo {
   grade: string | null;
 }
 
-const PLACEHOLDER_COUNTRIES = ['unknown', 'n/a', 'نامشخص', 'مشخص نشده'];
+/**
+ * Values that mean "not recorded" and must never be rendered as if they were
+ * the answer. Imported rows carry these as literal text — an English name of
+ * `Unknown` was printing under the company name in the archive as though the
+ * company were called Unknown.
+ */
+const PLACEHOLDERS = ['unknown', 'n/a', 'na', '-', '--', 'نامشخص', 'مشخص نشده', 'ثبت‌نشده', 'ثبت نشده'];
 
-/** Drop the "not recorded" placeholders that four call sites each re-tested for. */
-export function cleanCountry(raw: string | null | undefined): string | null {
+/** The value, or null when it is one of the "not recorded" placeholders. */
+export function cleanPlaceholder(raw: string | null | undefined): string | null {
   const v = (raw || '').trim();
   if (!v) return null;
-  return PLACEHOLDER_COUNTRIES.includes(v.toLowerCase()) ? null : v;
+  return PLACEHOLDERS.includes(v.toLowerCase()) ? null : v;
 }
+
+/** Drop the "not recorded" placeholders that four call sites each re-tested for. */
+export const cleanCountry = cleanPlaceholder;
 
 const ROLE_LABELS: Record<VendorPartnerRole, string> = {
   manufacturer: 'تولیدکننده',

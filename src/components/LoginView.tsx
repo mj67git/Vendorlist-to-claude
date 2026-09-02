@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, AlertTriangle } from 'lucide-react';
+import { Button } from './ui/button';
 import { User } from '../types';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
+import { Input } from './ui/input';
 
 interface LoginViewProps {
   onLogin: (user: User) => void;
@@ -103,13 +105,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
   // with English labels and English error text, which made the first screen of a
   // Persian system the only English one — and stranded the Persian demo button
   // inside an LTR container.
-  const fieldClass =
-    'w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground ' +
-    'placeholder:text-muted-foreground text-left focus:outline-none focus:ring-1 focus:ring-ring ' +
-    'focus:border-ring disabled:opacity-50 transition-colors';
+  // Only what the shared Input does not already give: direction and the
+  // disabled dimming the loading state relies on.
+  const fieldClass = 'w-full text-left disabled:opacity-50';
 
   return (
-    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 font-sans" dir="rtl">
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 font-sans">
       <div className="bg-card border border-border rounded-2xl p-8 max-w-sm w-full shadow-[0_8px_30px_rgba(15,23,42,0.06)] fade-in">
         <div className="text-center mb-7">
           {/* The logo is dark navy on transparent, so on the dark card it all but
@@ -120,7 +121,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
           <h1 className="text-base font-bold text-foreground mb-1 leading-snug tracking-tight">
             سامانهٔ ارزیابی و رتبه‌بندی تأمین‌کنندگان
           </h1>
-          <p className="text-primary text-[11px] font-semibold uppercase tracking-wider" dir="ltr">
+          <p className="text-primary text-2xs font-semibold uppercase tracking-wider" dir="ltr">
             Vendor List &amp; Supplier Evaluation System
           </p>
         </div>
@@ -141,7 +142,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
             <label htmlFor="username_input" className="block text-xs font-semibold text-foreground mb-1.5">
               نام کاربری
             </label>
-            <input
+            <Input
               id="username_input"
               type="text"
               autoComplete="username"
@@ -160,7 +161,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
               کلمهٔ عبور
             </label>
             <div className="relative">
-              <input
+              <Input
                 id="password_input"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
@@ -184,39 +185,40 @@ export function LoginView({ onLogin }: LoginViewProps) {
               </button>
             </div>
             {capsLock && (
-              <p className="mt-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+              <p className="mt-1.5 text-2xs font-semibold text-amber-700 dark:text-amber-400">
                 کلید Caps Lock روشن است.
               </p>
             )}
           </div>
 
-          <button
+          <Button
             id="login_submit_btn"
             type="submit"
             disabled={loading}
-            className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-2.5 rounded-lg transition-colors mt-6 text-sm cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full h-11 mt-6 font-semibold text-sm"
           >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading && <Loader2 className="animate-spin" />}
             <span>{loading ? 'در حال بررسی...' : 'ورود به سامانه'}</span>
-          </button>
+          </Button>
         </form>
 
         {/* Someone locked out of a system where only an admin can reset a password
             needs to be told that, on the screen where they are stuck. */}
-        <p className="mt-4 text-[11px] text-muted-foreground text-center leading-relaxed">
+        <p className="mt-4 text-2xs text-muted-foreground text-center leading-relaxed">
           کلمهٔ عبور را فراموش کرده‌اید؟ بازنشانی رمز فقط توسط مدیر سیستم انجام می‌شود.
         </p>
 
         {showDemoButton && (
           <div className="mt-5 pt-4 border-t border-border text-center">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={handleLocalDemoLogin}
-              className="w-full bg-card border border-primary text-primary hover:bg-primary/5 font-semibold py-2.5 rounded-lg transition-colors text-sm cursor-pointer"
+              className="w-full h-11 bg-card border-primary text-primary hover:bg-primary/5 hover:text-primary font-semibold text-sm"
             >
               ورود آزمایشی (بدون پایگاه‌داده)
-            </button>
-            <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+            </Button>
+            <p className="mt-2 text-2xs text-muted-foreground leading-relaxed">
               داده‌ها فقط در همین مرورگر ذخیره می‌شوند. برای نسخهٔ نهایی، ورود عادی با پایگاه‌داده استفاده می‌شود.
             </p>
           </div>

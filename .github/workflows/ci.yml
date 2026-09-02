@@ -1,0 +1,100 @@
+# The gate that was missing.
+#
+# Until now `tsc`, the tests and the build ran only when a developer remembered
+# to run them. For a system that produces GxP records, "we usually check" is not
+# a control. Every push and every pull request now has to pass the same three
+# commands a developer runs locally, and they are listed here in the order that
+# fails fastest.
+#
+# A PostgreSQL service runs alongside because the API tests drive the real
+# Express app over HTTP against a real database. Without DATABASE_URL those
+# tests skip themselves rather than fail, so the suite still works on a machine
+# with no database — but CI is where they must actually run.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · tests · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vlse_test
+        ports: ['5432:5432']
+        # Without the healthcheck the first migration races the server starting.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vlse_test?schema=public
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repository locks with bun.lock, so CI installs with bun to resolve
+      # the same dependency graph a developer gets. (The Dockerfile still uses
+      # npm without a lockfile — a known inconsistency, tracked separately.)
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `postinstall` already runs this, but it is cheap and the build depends
+      # on the generated client existing.
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Apply migrations to the test database
+        run: bunx prisma migrate deploy
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      # ESLint is a gate for defects, not for style: hook-order violations,
+      # unreachable branches, duplicated keys. Warnings do not fail the build —
+      # a gate everyone learns to ignore stops being a gate — so `--max-warnings`
+      # is deliberately not set.
+      - name: Lint
+        run: bunx eslint .
+
+      # Unit tests and API tests in one run. Serially, because the API files
+      # each reset the database: run in parallel they truncate the tables the
+      # other one is using and fail for reasons that have nothing to do with the
+      # code. The whole suite takes about twenty seconds.
+      - name: Tests
+        run: bunx tsx --test --test-concurrency=1 tests/*.test.ts
+
+      # Frontend only: the full `npm run build` also runs the migration script,
+      # which has already run against the service container above.
+      - name: Build frontend
+        run: bunx vite build
+
+      # The server is bundled separately in the real build; compiling it here
+      # catches a server-side break that `vite build` alone would miss.
+      - name: Bundle server
+        run: >
+          bunx esbuild server.ts --bundle --platform=node --format=cjs
+          --packages=external --outfile=/tmp/server.cjs

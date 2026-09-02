@@ -344,7 +344,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                     value={currentMonth}
                     aria-label="ماه"
                     onChange={(e) => setCurrentMonth(parseInt(e.target.value, 10))}
-                    className="bg-muted border border-border text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer text-foreground font-sans shadow-sm"
+                    className="bg-muted border border-border text-2xs font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer text-foreground font-sans shadow-sm"
                   >
                     {MONTH_NAMES.map((name, index) => (
                       <option key={index + 1} value={index + 1}>
@@ -358,7 +358,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                     value={currentYear}
                     aria-label="سال"
                     onChange={(e) => setCurrentYear(parseInt(e.target.value, 10))}
-                    className="bg-muted border border-border text-[11px] font-bold rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer text-foreground shadow-sm"
+                    className="bg-muted border border-border text-2xs font-bold rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer text-foreground shadow-sm"
                   >
                     {yearOptions.map((yr) => (
                       <option key={yr} value={yr}>
@@ -369,7 +369,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                 </div>
 
                 {/* Gregorian Month/Year range equivalent */}
-                <div className="text-[10px] text-muted-foreground font-sans font-medium tracking-wide mt-0.5" dir="ltr">
+                <div className="text-2xs text-muted-foreground font-sans font-medium tracking-wide mt-0.5" dir="ltr">
                   {getGregorianHeaderLabel(currentYear, currentMonth)}
                 </div>
               </div>
@@ -387,7 +387,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
             {/* Weekdays */}
             <div className="grid grid-cols-7 gap-1 mb-2">
               {WEEK_DAYS.map(day => (
-                <div key={day} className="text-center text-[10px] font-bold text-muted-foreground pb-2">
+                <div key={day} className="text-center text-2xs font-bold text-muted-foreground pb-2">
                   {day}
                 </div>
               ))}
@@ -432,7 +432,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
             </div>
 
             {/* Today Action */}
-            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-end text-[10px] font-sans px-1">
+            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-end text-2xs font-sans px-1">
               <button
                 type="button"
                 onClick={() => {
@@ -477,7 +477,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
               {value || placeholder}
             </span>
             {value && (
-              <span className="text-[10px] text-muted-foreground font-sans mt-1" dir="ltr" style={{ textAlign: 'right' }}>
+              <span className="text-2xs text-muted-foreground font-sans mt-1" dir="ltr" style={{ textAlign: 'right' }}>
                 {getGregorianEquivalent(value)}
               </span>
             )}

@@ -14,6 +14,8 @@ import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, S
 import { SOP_DOCUMENTS_DEF, computeSupplierEvaluation } from '../../utils/sopEvaluation';
 import { hasQcReject } from '../../utils/vendorState';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
+import { Input, inputBaseClass } from '../../components/ui/input';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
@@ -140,24 +142,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   // not mean anyone has assessed the documents.
   const sopEvaluated = !!selectedSupplier?.evaluation && selectedSupplier.evaluation.grade !== 'Not Evaluated';
 
-  // Helper Audit
-  const logSourceSelectionAudit = (action: string, details: string, beforeValue: any, afterValue: any) => {
-    authFetch('/api/audit-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        module: 'Source Evaluation Form',
-        action: action,
-        entityType: 'SourceSelection',
-        entityId: existingVendor?.id || 'new_source',
-        entityName: formData.material || 'سورس جدید',
-        severity: 'info',
-        description: details,
-        beforeValue,
-        afterValue
-      })
-    }).catch(err => console.error("Failed to sync selection audit log:", err));
-  };
+  /*
+   * There is no client-side audit writer here any more.
+   *
+   * It wrote two kinds of record and both were wrong. Creating a partner from
+   * inside this form is already audited by the server when POST
+   * /api/business-partners runs, so that entry was a duplicate. The
+   * "ChangeSupplier" entry was worse: it fired when the *form field* changed,
+   * before anything was saved, so abandoning the form still left a record in
+   * the trail claiming the supplier had been changed. An audit trail that
+   * records intentions is not evidence of anything (project rule 2 — the
+   * server is the only writer).
+   */
 
 
   // Scoring and grading live in utils/sopEvaluation — this form must not carry
@@ -232,12 +228,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       setSelectedSupplierId('');
     }
 
-    logSourceSelectionAudit(
-      isSupplier ? 'CreateSupplierInsideSource' : 'CreateManufacturerInsideSource',
-      `ایجاد ${isSupplier ? 'فروشنده' : 'تولیدکننده'} جدید از داخل فرم سورس: ${newSupplier.name}`,
-      null,
-      newSupplier
-    );
 
     setNewSupplierData({
       name: '',
@@ -265,6 +255,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   // so it registers the same unsaved-changes guard a detail page uses. It
   // reports dirty only once something actually changed, otherwise merely
   // opening and leaving the form would nag.
+  /** How many records this sitting has produced, shown next to the button. */
+  const [savedCount, setSavedCount] = useState(0);
+  const [recentlySaved, setRecentlySaved] = useState<Array<{ id: string; label: string }>>([]);
+
   const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
   const savedRef = useRef(false);
   useEffect(() => {
@@ -299,6 +293,41 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const isLegacyIrcUntouched = !!existingVendor && (existingVendor.irc || '') === formData.irc;
   const blocksSubmitOnIrc = !isIrcValid && !isLegacyIrcUntouched;
 
+  /**
+   * Empty the form for the next record without leaving the page.
+   *
+   * The category, the source type and the sample flag are kept on purpose: a
+   * pile of records transcribed in one sitting is almost always of one kind,
+   * and clearing them would mean re-picking the same two answers every time.
+   * Everything identifying the record itself is cleared, and the pristine
+   * snapshot is retaken so the unsaved-changes guard does not think the fresh
+   * empty form is a half-finished one.
+   */
+  const resetForNext = () => {
+    setFormData({
+      materialId: '', material: '', materialEn: '', cas: '', irc: '',
+      lastAudit: '', ircExpiryDate: '', name: '', nameEn: '', contactInfo: '',
+      grade: 'new', status: 'new', rejectionReasonList: '',
+    });
+    setSelectedManufacturerId('');
+    setSelectedSupplierId('');
+    setFieldError(null);
+    savedRef.current = false;
+    window.setTimeout(() => {
+      pristineRef.current = JSON.stringify({
+        formData: {
+          materialId: '', material: '', materialEn: '', cas: '', irc: '',
+          lastAudit: '', ircExpiryDate: '', name: '', nameEn: '', contactInfo: '',
+          grade: 'new', status: 'new', rejectionReasonList: '',
+        },
+        selectedManufacturerId: '', selectedSupplierId: '',
+        isSample, sourceType, sampleStatus,
+      });
+      materialFieldRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      materialFieldRef.current?.querySelector<HTMLElement>('button, input, select')?.focus();
+    }, 0);
+  };
+
   const focusMissingField = (which: 'material' | 'partner' | 'irc') => {
     setFieldError(which);
     const target =
@@ -309,7 +338,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     target?.querySelector<HTMLElement>('button, input, select')?.focus();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent, keepGoing = false) => {
     e.preventDefault();
 
     if (!formData.materialId) {
@@ -336,7 +365,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     // Process rejections
     const rejectLines = formData.rejectionReasonList.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
-    let finalIsSample = isSample;
+    const finalIsSample = isSample;
     let finalCategory = finalIsSample ? 'sample' as Category : sourceType as Category;
     let finalGrade = existingVendor ? existingVendor.grade : (finalIsSample ? null : 'new');
     let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'approved' : 'new');
@@ -453,6 +482,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     savedRef.current = true;
     registerNavGuard?.(null);
     onSave(vendorContext, null);
+
+    // "Save and add the next one": the record is stored and the form empties in
+    // place, so someone transcribing a stack of sources from an old file never
+    // leaves this page. The category and the source type are kept, since the
+    // next record in the pile is almost always of the same kind, and the
+    // material field takes focus because that is where the entry starts.
+    if (keepGoing && !existingVendor) {
+      setSavedCount(n => n + 1);
+      setRecentlySaved(prev => [
+        { id: newId, label: `${formData.material || finalName}${finalPartnerDisplayName ? ` — ${finalPartnerDisplayName}` : ''}` },
+        ...prev,
+      ].slice(0, 5));
+      resetForNext();
+      return;
+    }
+
     setIsSuccess(true);
     setTimeout(() => {
       (onSaved ?? onClose)();
@@ -461,7 +506,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
   if (isSuccess) {
     return (
-      <Card className="p-12 text-center flex flex-col items-center justify-center mt-6 fade-in shadow-sm border-border bg-card" dir="rtl">
+      <Card className="p-12 text-center flex flex-col items-center justify-center mt-6 fade-in shadow-sm border-border bg-card">
         <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
           <CheckCircle className="w-14 h-14 text-emerald-500 bounce-in" />
         </div>
@@ -472,7 +517,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   }
 
   return (
-    <Card className="w-full shadow-sm text-right mt-6 fade-in relative border-border bg-card overflow-hidden" dir="rtl">
+    <Card className="w-full shadow-sm text-right mt-6 fade-in relative border-border bg-card overflow-hidden">
       
       {/* Modals inside form */}
       <AnimatePresence>
@@ -492,9 +537,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <Handshake className="w-5 h-5 text-primary" />
                   ثبت تأمین‌کننده جدید (New Business Partner)
                 </h3>
-                <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground hover:text-foreground transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
+                <Button type="button" variant="ghost" size="icon-sm"
+                  onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X />
+                </Button>
               </div>
 
               {/* Partner kind — manufacturers and suppliers are independent records */}
@@ -520,7 +567,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5">
+                <p className="text-2xs text-muted-foreground mt-1.5">
                   {newPartnerType === 'Supplier'
                     ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
                     : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
@@ -534,7 +581,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('general')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
                     ۱. مشخصات عمومی
@@ -543,11 +590,11 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     type="button"
                     onClick={() => setNewSupplierTab('evaluation')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-slate-200'
+                      newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
                     ۲. ارزیابی مدارک SOP
-                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
+                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-2xs">
                       امتیاز: {computeNewSupplierEval().totalScore}
                     </span>
                   </button>
@@ -574,56 +621,56 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                       <label className="font-semibold text-foreground block">
                         {newPartnerType === 'Manufacturer' ? 'نام تولیدکننده' : 'نام فروشنده / Supplier'} <span className="text-rose-500">*</span>
                       </label>
-                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.name}
+                      <Input required type="text" className="w-full" value={newSupplierData.name}
                         onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })}
                         placeholder={newPartnerType === 'Manufacturer' ? 'مثلاً: BASF SE' : 'مثلاً: Biesterfeld Spezialchemie GmbH'} />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">کشور <span className="text-rose-500">*</span></label>
-                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.country}
+                      <Input required type="text" className="w-full" value={newSupplierData.country}
                         onChange={e => setNewSupplierData({ ...newSupplierData, country: e.target.value })}
                         placeholder="مثلاً: آلمان، چین، هند..." />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">شهر</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.city}
+                      <Input type="text" className="w-full" value={newSupplierData.city}
                         onChange={e => setNewSupplierData({ ...newSupplierData, city: e.target.value })}
                         placeholder="مثلاً: لودویگزهافن" />
                     </div>
 
                     <div className="space-y-1 md:col-span-2">
                       <label className="font-semibold text-foreground block">آدرس کامل</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.address}
+                      <Input type="text" className="w-full" value={newSupplierData.address}
                         onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })}
                         placeholder="آدرس دقیق..." />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">نام رابط / مسئول تماس</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.contactPerson}
+                      <Input type="text" className="w-full" value={newSupplierData.contactPerson}
                         onChange={e => setNewSupplierData({ ...newSupplierData, contactPerson: e.target.value })}
                         placeholder="مثلاً: Dr. Klaus Weber" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">شماره تماس</label>
-                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.phone}
+                      <Input type="text" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.phone}
                         onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })}
                         placeholder="+49 621 60-0" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">ایمیل رسمی</label>
-                      <input type="email" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.email}
+                      <Input type="email" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.email}
                         onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })}
                         placeholder="contact@company.com" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">وبسایت</label>
-                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.website}
+                      <Input type="text" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.website}
                         onChange={e => setNewSupplierData({ ...newSupplierData, website: e.target.value })}
                         placeholder="https://www.company.com" />
                     </div>
@@ -697,10 +744,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 )}
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-                  <button type="button" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }} className="px-4 py-2 hover:bg-accent text-muted-foreground rounded-lg font-semibold">انصراف</button>
-                  <button type="submit" className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary-hover transition-colors">
+                  <Button type="button" variant="ghost" onClick={() => { setShowNewSupplierModal(false); setNewPartnerError(null); }}>انصراف</Button>
+                  <Button type="submit">
                     {newPartnerType === 'Supplier' ? 'ثبت و انتخاب فروشنده' : 'ثبت و انتخاب تولیدکننده'}
-                  </button>
+                  </Button>
                 </div>
               </form>
         </FormModal>
@@ -726,7 +773,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 1: MATERIAL MASTER SELECTION */}
           <div className="space-y-3 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-[11px] font-bold shrink-0">۱</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-2xs font-bold shrink-0">۱</span>
               {/* The badge already numbers the section, so the title no longer
                   repeats it, and the English gloss is gone. */}
               <h3 className="text-xs font-black text-foreground">انتخاب ماده اولیه از مخزن مرجع</h3>
@@ -752,7 +799,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 }}
               />
               {fieldError === 'material' && (
-                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                <p role="alert" className="mt-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400">
                   انتخاب ماده اولیه الزامی است.
                 </p>
               )}
@@ -762,7 +809,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 2: SUPPLY CHAIN & PARTNERS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold shrink-0">۲</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-2xs font-bold shrink-0">۲</span>
               <h3 className="text-xs font-black text-foreground">زنجیرهٔ تأمین: تولیدکننده و فروشنده</h3>
             </div>
 
@@ -800,7 +847,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <label htmlFor="vf-sample-status" className="text-foreground font-semibold text-xs">وضعیت اولیهٔ نمونه</label>
                     <select
                       id="vf-sample-status"
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring" 
+                      className={cn(inputBaseClass, 'w-full')} 
                       value={sampleStatus} 
                       onChange={e => setSampleStatus(e.target.value)}
                     >
@@ -844,12 +891,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     setSelectedManufacturerId('');
                   }
 
-                  logSourceSelectionAudit(
-                    'ChangeSupplier',
-                    `تغییر تأمین‌کننده از [${oldName}] به [${newName}]`,
-                    oldName,
-                    newName
-                  );
                 }}
                 onAddNew={() => {
                   setNewPartnerType('Manufacturer');
@@ -858,12 +899,12 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   setShowNewSupplierModal(true);
                 }}
               />
-              <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
+              <p className="text-2xs text-muted-foreground mt-2 flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-muted-foreground" />
                 تأمین‌کنندهٔ این سورس می‌تواند یک تولیدکننده یا یک فروشنده باشد.
               </p>
               {fieldError === 'partner' && (
-                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                <p role="alert" className="mt-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400">
                   انتخاب تأمین‌کننده الزامی است. یکی را از مخزن شرکای تجاری انتخاب کنید یا تأمین‌کنندهٔ جدید ثبت کنید.
                 </p>
               )}
@@ -880,7 +921,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             {(selectedSupplier || selectedManufacturer) && (
               <div className="bg-muted/60 border border-border rounded-xl p-4 fade-in">
                 <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${
+                  <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${
                     selectedSupplier
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                       : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800'
@@ -939,7 +980,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <Building className="w-4 h-4 text-primary" />
                     <span>اطلاعات تماس {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}</span>
                   </div>
-                  <span className="text-[10px] font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
+                  <span className="text-2xs font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs leading-relaxed">
                   <div>
@@ -974,7 +1015,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 3: REGULATORY, IRC & INITIAL STATUS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] font-bold shrink-0">۳</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-2xs font-bold shrink-0">۳</span>
               <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانهٔ IRC</h3>
             </div>
 
@@ -983,12 +1024,12 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
                   <span>کد IRC (اختیاری)</span>
                   {ircDigits !== '' && (
-                    <span className={`text-[10px] font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                    <span className={`text-2xs font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                       {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
                     </span>
                   )}
                 </label>
-                <input
+                <Input
                   id="vf-irc"
                   type="text"
                   dir="ltr"
@@ -996,10 +1037,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   maxLength={IRC_LENGTH}
                   aria-invalid={!isIrcValid}
                   aria-describedby="vf-irc-hint"
-                  className={`w-full bg-background border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 font-mono text-sm tracking-wider ${
-                    !blocksSubmitOnIrc
-                      ? 'border-border focus:ring-ring focus:border-ring'
-                      : 'border-rose-500 focus:ring-rose-500 focus:border-rose-500'
+                  className={`w-full text-left font-mono tracking-wider ${
+                    blocksSubmitOnIrc ? 'border-rose-500 focus-visible:ring-rose-500' : ''
                   }`}
                   value={formData.irc}
                   onChange={e => {
@@ -1013,14 +1052,14 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   placeholder="1228123456789012"
                 />
                 {isIrcValid ? (
-                  <p id="vf-irc-hint" className="text-[11px] text-muted-foreground">
+                  <p id="vf-irc-hint" className="text-2xs text-muted-foreground">
                     کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
                   </p>
                 ) : (
                   <p
                     id="vf-irc-hint"
                     role="alert"
-                    className={`flex items-start gap-1.5 text-[11px] font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
+                    className={`flex items-start gap-1.5 text-2xs font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
                   >
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                     <span>
@@ -1047,7 +1086,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 <label className="text-foreground font-semibold text-xs flex items-center justify-between">
                   <span>تاریخ انقضای مجوز (اختیاری)</span>
                   {formData.ircExpiryDate && (
-                    <span className="text-[10px] text-muted-foreground font-mono">انقضا</span>
+                    <span className="text-2xs text-muted-foreground font-mono">انقضا</span>
                   )}
                 </label>
                 <ShamsiDatePicker
@@ -1060,7 +1099,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               {/* Not a field: nothing here is editable, and dressing a
                   sentence up as an input invites the user to type in it. */}
               {!existingVendor && (
-                <p className="md:col-span-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <p className="md:col-span-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
                   <Info className="w-3.5 h-3.5 shrink-0" />
                   سورس با وضعیت «در انتظار بررسی» ثبت می‌شود؛ گرید کیفی در مرحلهٔ ارزیابی تعیین می‌گردد.
                 </p>
@@ -1107,11 +1146,42 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             </div>
           </div>
 
+          {/* What this sitting has produced so far. Without it, "save and add
+              next" would clear the screen with nothing to show for the work —
+              the operator has no way to tell the fifth save from the first, or
+              to reach a record they have just entered. */}
+          {recentlySaved.length > 0 && (
+            <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3">
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>{savedCount.toLocaleString('fa-IR')} سورس در این نشست ثبت شد</span>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {recentlySaved.map(r => (
+                  <li key={r.id} className="text-2xs text-muted-foreground truncate" title={r.label}>
+                    • {r.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
             <Button type="button" variant="outline" onClick={onClose} className="px-4 text-xs font-semibold">
-              انصراف
+              {savedCount > 0 ? 'پایان و بازگشت به فهرست' : 'انصراف'}
             </Button>
-            <Button type="button" onClick={handleSubmit} className="px-5 text-xs font-bold">
+            {!existingVendor && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={e => handleSubmit(e, true)}
+                title="ذخیره می‌کند، فرم را خالی می‌کند و در همین صفحه می‌مانید"
+                className="px-4 text-xs font-semibold"
+              >
+                ذخیره و ثبت بعدی
+              </Button>
+            )}
+            <Button type="button" onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
               {existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
             </Button>
           </div>

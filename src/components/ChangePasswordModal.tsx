@@ -1,8 +1,10 @@
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Shield, Key, AlertCircle, CheckCircle, Eye, EyeOff, X } from 'lucide-react';
 import { User } from '../types';
 import { authFetch } from '../services/authFetch';
+import { Input } from './ui/input';
 
 interface ChangePasswordModalProps {
   currentUser: User;
@@ -100,7 +102,7 @@ export function ChangePasswordModal({
   // Render a full-page force reset screen
   if (isForceChange) {
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans" dir="rtl">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans">
         <div className="bg-card border border-border rounded-3xl p-8 max-w-md w-full shadow-[0_12px_40px_rgba(0,0,0,0.06)] fade-in">
           <div className="text-center mb-6">
             <div className="flex items-center justify-center mx-auto mb-4 bg-amber-500/10 border border-amber-500/20 w-16 h-16 rounded-2xl">
@@ -132,7 +134,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="current_password_input" className="block text-xs font-bold text-foreground">کلمه عبور فعلی (پیش‌فرض)</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="current_password_input"
                     autoComplete="current-password"
                     type={showCurrent ? 'text' : 'password'}
@@ -140,7 +142,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="کلمه عبور فعلی"
                   />
                   <button
@@ -157,7 +159,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="new_password_input" className="block text-xs font-bold text-foreground">کلمه عبور جدید</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="new_password_input"
                     autoComplete="new-password"
                     type={showNew ? 'text' : 'password'}
@@ -165,7 +167,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="رمز عبور حداقل ۶ کاراکتر"
                   />
                   <button
@@ -182,7 +184,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="confirm_password_input" className="block text-xs font-bold text-foreground">تکرار کلمه عبور جدید</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="confirm_password_input"
                     autoComplete="new-password"
                     type={showConfirm ? 'text' : 'password'}
@@ -190,7 +192,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="تکرار رمز عبور جدید"
                   />
                   <button
@@ -205,21 +207,22 @@ export function ChangePasswordModal({
               </div>
 
               <div className="pt-3 flex flex-col gap-2">
-                <button
+                <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-md active:scale-[0.98] cursor-pointer text-xs disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold text-xs"
                 >
                   {loading ? 'در حال ذخیره‌سازی...' : 'ثبت و ورود به سامانه'}
-                </button>
+                </Button>
                 {onLogout && (
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={onLogout}
-                    className="w-full bg-muted hover:bg-slate-200 text-muted-foreground font-bold py-2.5 rounded-xl transition-all cursor-pointer text-xs flex items-center justify-center"
+                    className="w-full text-muted-foreground font-bold text-xs"
                   >
                     خروج از حساب کاربری
-                  </button>
+                  </Button>
                 )}
               </div>
             </form>
@@ -239,15 +242,17 @@ export function ChangePasswordModal({
       labelledBy="change-password-title"
       className="p-6 font-sans"
     >
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon-sm"
           aria-label="بستن پنجره تغییر رمز عبور"
           onClick={onClose}
           disabled={loading}
-          className="absolute top-4 left-4 p-1.5 rounded-xl text-muted-foreground hover:text-muted-foreground hover:bg-accent border border-border transition-colors cursor-pointer"
+          className="absolute top-4 left-4 text-muted-foreground"
         >
-          <X className="w-4 h-4" />
-        </button>
+          <X />
+        </Button>
 
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-2xl">
@@ -255,7 +260,7 @@ export function ChangePasswordModal({
           </div>
           <div className="text-right">
             <h3 id="change-password-title" className="text-base font-extrabold text-foreground">تغییر رمز عبور</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">بروزرسانی اطلاعات امنیتی حساب کاربری</p>
+            <p className="text-2xs text-muted-foreground mt-0.5">بروزرسانی اطلاعات امنیتی حساب کاربری</p>
           </div>
         </div>
 
@@ -279,7 +284,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="current_password_input" className="block text-xs font-bold text-foreground">کلمه عبور فعلی</label>
               <div className="relative">
-                <input
+                <Input
                   id="current_password_input"
                   autoComplete="current-password"
                   type={showCurrent ? 'text' : 'password'}
@@ -287,7 +292,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="رمز عبور کنونی"
                 />
                 <button
@@ -304,7 +309,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="new_password_input" className="block text-xs font-bold text-foreground">کلمه عبور جدید</label>
               <div className="relative">
-                <input
+                <Input
                   id="new_password_input"
                   autoComplete="new-password"
                   type={showNew ? 'text' : 'password'}
@@ -312,7 +317,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="حداقل ۶ کاراکتر"
                 />
                 <button
@@ -329,7 +334,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="confirm_password_input" className="block text-xs font-bold text-foreground">تکرار کلمه عبور جدید</label>
               <div className="relative">
-                <input
+                <Input
                   id="confirm_password_input"
                   autoComplete="new-password"
                   type={showConfirm ? 'text' : 'password'}
@@ -337,7 +342,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="تکرار رمز عبور جدید"
                 />
                 <button
@@ -352,21 +357,22 @@ export function ChangePasswordModal({
             </div>
 
             <div className="pt-3 flex gap-3">
-              <button
+              <Button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-md active:scale-[0.98] cursor-pointer text-xs disabled:opacity-50"
+                className="flex-1 bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold text-xs"
               >
                 {loading ? 'در حال ثبت...' : 'ذخیره کلمه عبور'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={onClose}
                 disabled={loading}
-                className="px-4 py-2.5 bg-muted hover:bg-slate-200 text-muted-foreground font-bold rounded-xl transition-all cursor-pointer text-xs"
+                className="text-muted-foreground font-bold text-xs"
               >
                 انصراف
-              </button>
+              </Button>
             </div>
           </form>
         )}

@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle, ShieldAlert, X } from 'lucide-react';
 import { RiskAssessmentData, User, Vendor } from '../../types';
+import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { can } from '../../utils/permissions';
+import { cn } from '../../lib/utils';
+import { inputBaseClass } from '../ui/input';
 
 // extracted from App.tsx
 
@@ -19,13 +22,13 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
   };
   return (
     <div className="bg-muted border border-border rounded-xl p-4" dir="ltr">
-      <div className="text-foreground font-bold text-sm mb-3 text-center" dir="rtl">
+      <div className="text-foreground font-bold text-sm mb-3 text-center">
         ماتریس ریسک (اهمیت × احتمال)
       </div>
       <div className="flex items-stretch gap-2">
         {/* Y-axis label */}
         <div className="flex items-center">
-          <span className="text-[10px] text-muted-foreground font-bold [writing-mode:vertical-rl] rotate-180">
+          <span className="text-2xs text-muted-foreground font-bold [writing-mode:vertical-rl] rotate-180">
             Criticality →
           </span>
         </div>
@@ -54,14 +57,14 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
           {/* X-axis labels */}
           <div className="grid grid-cols-5 gap-1 mt-1">
             {cols.map(p => (
-              <div key={p} className="text-center text-[10px] text-muted-foreground font-bold">{p}</div>
+              <div key={p} className="text-center text-2xs text-muted-foreground font-bold">{p}</div>
             ))}
           </div>
-          <div className="text-center text-[10px] text-muted-foreground font-bold mt-1">Probability →</div>
+          <div className="text-center text-2xs text-muted-foreground font-bold mt-1">Probability →</div>
         </div>
       </div>
       {/* Detectability factor → full 3D RPN */}
-      <div className="flex items-center justify-center gap-2 mt-3 text-xs" dir="rtl">
+      <div className="flex items-center justify-center gap-2 mt-3 text-xs">
         <span className="text-muted-foreground font-mono" dir="ltr">
           {criticality} × {probability} = <span className="text-amber-600 dark:text-amber-400 font-bold">{criticality * probability}</span>
         </span>
@@ -73,7 +76,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
         </span>
       </div>
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-muted-foreground" dir="rtl">
+      <div className="flex items-center justify-center gap-4 mt-3 text-2xs text-muted-foreground">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> پایین</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/40" /> متوسط</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/30 border border-red-500/40" /> بالا</span>
@@ -82,7 +85,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
   );
 }
 
-export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null }) {
+export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDirtyChange }: { vendor: Vendor, onSave: (v: Vendor, msg?: string | null) => void, onClose: () => void, currentUser: User | null, onDirtyChange?: (dirty: boolean) => void }) {
   const spsScore = calculateOverallScore(vendor.scores, true) || 0;
   
   // Calculate recommended probability based on SPS via the isolated FmeaService
@@ -92,6 +95,23 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
   const [detectability, setDetectability] = useState<number>(vendor.riskAssessment?.detectability || 1);
   const [probability, setProbability] = useState<number>(vendor.riskAssessment?.probability || recommendedProb);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Like the evaluation form, this is an inline section rather than a dialog, so
+  // it reports upward and the page carries the guard. The three sliders are
+  // compared against the stored assessment (or the defaults offered for a first
+  // one), so opening the form without moving anything asks no question.
+  useEffect(() => {
+    const initial = [
+      vendor.riskAssessment?.materialCriticality || 5,
+      vendor.riskAssessment?.detectability || 1,
+      vendor.riskAssessment?.probability || recommendedProb,
+    ];
+    const dirty = !isSuccess
+      && [criticality, detectability, probability].some((v, i) => v !== initial[i]);
+    onDirtyChange?.(dirty);
+  }, [criticality, detectability, probability, isSuccess, vendor.riskAssessment, recommendedProb, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   /**
    * A native alert() used to carry the permission refusal: it blocked the
    * interface, ignored the page's direction and theme, and left nothing behind
@@ -147,7 +167,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
 
   if (isSuccess) {
     return (
-      <div className="bg-card border border-emerald-500/20 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-sm fade-in" dir="rtl">
+      <div className="bg-card border border-emerald-500/20 rounded-2xl p-16 text-center flex flex-col items-center justify-center mb-8 shadow-sm fade-in">
         <div className="bg-emerald-500/10 p-4 rounded-full border border-emerald-500/20 mb-6">
           <CheckCircle className="w-16 h-16 text-emerald-500 bounce-in" />
         </div>
@@ -164,9 +184,10 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           <ShieldAlert className="w-6 h-6 text-amber-600 dark:text-amber-400" />
           ارزیابی ریسک تامین کنندگان (Supplier Risk Assessment)
         </h3>
-        <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg transition-colors text-muted-foreground hover:text-foreground cursor-pointer">
-          <X className="w-5 h-5" />
-        </button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose}
+          className="text-muted-foreground hover:text-foreground">
+          <X />
+        </Button>
       </div>
 
       <div className="space-y-6">
@@ -174,7 +195,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           {/* Material Criticality */}
           <div className="space-y-3 p-4 bg-muted rounded-xl border border-border">
             <label className="block text-sm font-semibold text-foreground">۱. اهمیت ماده (Material Criticality)</label>
-            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={5}>ماده موثره - امتیاز ۵</option>
               <option value={4}>اکسپیانت - امتیاز ۴</option>
               <option value={3}>حدواسط شیمیایی، حلال ها و واکنشگرها - امتیاز ۳</option>
@@ -189,7 +210,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
               <span>SPS فعلی: <strong className="text-amber-600 dark:text-amber-400 text-sm">{spsScore > 0 ? spsScore : 'تعیین نشده'}</strong></span>
             </div>
-            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={1}>عدم خرابی (SPS: 80-100) - امتیاز ۱</option>
               <option value={2}>احتمال کم (SPS: 60-79) - امتیاز ۲</option>
               <option value={3}>احتمال متوسط (SPS: 40-59) - امتیاز ۳</option>
@@ -201,7 +222,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
           {/* Detectability */}
           <div className="space-y-3 p-4 bg-muted rounded-xl border border-border md:col-span-2">
             <label className="block text-sm font-semibold text-foreground">۳. تشخیص (Detectability)</label>
-            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={1}>تمام مشکلات توسط QC قابل تشخیص - امتیاز ۱</option>
               <option value={2}>اکثر مشکلات قابل تشخیص - امتیاز ۲</option>
               <option value={3}>بخشی قابل تشخیص - امتیاز ۳</option>
@@ -257,13 +278,9 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser }: { v
                 {riskLevel === 'Low' ? 'پایین (Low)' : riskLevel === 'Medium' ? 'متوسط (Medium)' : 'بالا (High)'}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className="bg-primary text-primary-foreground font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
-            >
+            <Button type="button" onClick={handleSubmit}>
               ثبت نتیجه ارزیابی ریسک
-            </button>
+            </Button>
           </div>
         </div>
       </div>

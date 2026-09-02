@@ -2,13 +2,18 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, Printer, Shield, Warehouse, DollarSign, 
-  AlertTriangle, Microscope, Handshake, CheckCircle 
+  AlertTriangle, Microscope, Handshake, CheckCircle, Star 
 } from 'lucide-react';
 import { Vendor, Grade, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
 import { resolveVendorPartner } from '../utils/vendorPartner';
+import { getDisplayCountry } from '../utils/vendorUtils';
+import { categoryLabels } from '../constants/categories';
+import { selectionForVendor } from '../utils/sourceSelection';
+import { describeVendorRank } from '../utils/vendorRank';
+import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
 
 function getRawScoreValue(vendor: Vendor, deptId: string, critKey: string): number {
@@ -68,6 +73,174 @@ function getMaterialTypeLabel(v: Vendor) {
   return 'ماده اولیه (Active / Excipient)';
 }
 
+/**
+ * Dates on these forms mixed calendars: the print date was Jalali while the
+ * evaluation and registration dates came straight from the record as
+ * `2026-08-27`. One document should not carry two calendars, so anything that
+ * parses as a Gregorian date is shown in Jalali and anything already Persian is
+ * left exactly as entered.
+ */
+function toJalaliDisplay(value: string | null | undefined): string {
+  const raw = (value || '').trim();
+  if (!raw) return 'ثبت‌نشده';
+  // Already Persian (Persian digits or a Jalali-looking year) — leave it alone.
+  if (/[۰-۹]/.test(raw) || /^1[34]\d{2}[/-]/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  try {
+    return d.toLocaleDateString('fa-IR');
+  } catch {
+    return raw;
+  }
+}
+
+
+/**
+ * The archive list itself, as a printable A4 landscape document.
+ *
+ * "PDF" in this module used to mean one evaluation form for one source. There
+ * was no way to put the list on paper — the register someone actually hands to
+ * an auditor — so the only route was Excel, which is not a document you sign.
+ *
+ * It prints exactly the rows the screen is showing, filters included, and says
+ * so in the header: a printed extract that does not state what it was filtered
+ * by is not evidence of anything. Landscape, because the register is wide.
+ */
+export function PrintableArchiveList({
+  vendors,
+  filterSummary,
+  selections = [],
+  onBack,
+}: {
+  vendors: Vendor[];
+  filterSummary: string;
+  selections?: SourceSelectionRecord[];
+  onBack: () => void;
+}) {
+  return document.body ? createPortal(
+    <>
+      <style>{`
+        @media print {
+          #root { display: none !important; }
+          body, html { background-color: white !important; margin: 0; padding: 0; }
+          @page { size: A4 landscape; margin: 8mm; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          /* Repeat the column headings on every sheet and never split a row
+             across two pages — a register broken mid-row is unreadable. */
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; }
+        }
+      `}</style>
+      <div className="fixed inset-0 z-[99999] bg-slate-100 text-slate-900 overflow-y-auto w-full h-full p-4 print:static print:h-auto print:overflow-visible print:bg-white print:p-0 print:block flex flex-col items-center">
+        <div className="w-full max-w-[297mm] flex justify-between items-center mb-6 print:hidden bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
+          <button onClick={onBack} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-lg font-medium text-slate-700 transition-colors flex items-center gap-2 border border-slate-300 cursor-pointer">
+            <ChevronLeft className="w-5 h-5" />
+            بازگشت
+          </button>
+          <div className="text-xs text-slate-500">
+            {vendors.length.toLocaleString('fa-IR')} ردیف آمادهٔ چاپ — برای ذخیره به‌صورت PDF، در پنجرهٔ چاپ گزینهٔ «Save as PDF» را انتخاب کنید.
+          </div>
+          <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+            <Printer className="w-5 h-5" />
+            چاپ فهرست
+          </button>
+        </div>
+
+        <div className="w-[297mm] bg-white print:w-full print:shadow-none shadow-[0_0_20px_rgba(0,0,0,0.1)] font-sans p-6 print:p-0" dir="rtl">
+          <div className="flex border-2 border-blue-900 rounded-xl mb-4 overflow-hidden items-stretch text-right">
+            <div className="w-[18%] p-3 flex items-center justify-center border-l-2 border-blue-900">
+              <img src={temadLogo} alt="Temad Logo" className="h-[62px] w-auto object-contain" />
+            </div>
+            <div className="flex-1 flex flex-col justify-center items-center p-3">
+              <h1 className="text-lg font-bold text-blue-900">شرکت تولید مواد اولیه داروپخش (تماد)</h1>
+              <div className="text-sm font-semibold text-slate-700">فهرست آرشیو تأمین‌کنندگان</div>
+            </div>
+            <div className="w-[26%] p-3 border-r-2 border-blue-900 bg-blue-900 text-white text-[11px] space-y-1.5">
+              <div className="flex justify-between border-b border-blue-800 pb-1">
+                <span className="opacity-80">تاریخ چاپ:</span>
+                <span>{new Date().toLocaleDateString('fa-IR')}</span>
+              </div>
+              <div className="flex justify-between border-b border-blue-800 pb-1">
+                <span className="opacity-80">تعداد ردیف:</span>
+                <span className="font-mono">{vendors.length.toLocaleString('fa-IR')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="opacity-80">محدودهٔ گزارش:</span>
+                <span className="text-[10px] text-left leading-tight">{filterSummary}</span>
+              </div>
+            </div>
+          </div>
+
+          <table className="w-full text-[10px] border-collapse">
+            <thead>
+              <tr className="bg-blue-900 text-white">
+                {['#', 'تأمین‌کننده', 'ماده', 'CAS', 'دسته', 'کشور', 'گرید', 'سطح ریسک', 'IRC', 'سورس منتخب'].map(h => (
+                  <th key={h} className="border border-blue-800 px-2 py-1.5 font-bold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {vendors.map((v, i) => {
+                const chosen = selectionForVendor(v, selections);
+                // Same rule as the single-source form: a grade is printed only
+                // when one exists. `new` is a lifecycle state, not a grade, and
+                // a total of zero means nobody has scored this source — both
+                // used to print as "new (۰)" and "— (۰)", which read on paper
+                // like a real, failing evaluation.
+                const gradeText = describeVendorRank(v).label;
+                return (
+                  <tr key={v.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-mono">{(i + 1).toLocaleString('fa-IR')}</td>
+                    <td className="border border-slate-300 px-2 py-1 font-semibold">{v.name}</td>
+                    <td className="border border-slate-300 px-2 py-1">{v.material}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-mono">{v.cas || '—'}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center">
+                      {categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-center">{getDisplayCountry(v)}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{gradeText}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center">
+                      {['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
+                        ? v.riskAssessment!.riskLevel
+                        : 'ارزیابی نشده'}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-mono">{v.irc || '—'}</td>
+                    <td className={`border border-slate-300 px-2 py-1 text-center font-bold ${chosen ? 'bg-amber-100 text-amber-800' : 'text-slate-400'}`}>
+                      {chosen ? '★ منتخب' : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {vendors.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="border border-slate-300 px-2 py-6 text-center text-slate-500">
+                    با فیلترهای انتخاب‌شده ردیفی برای نمایش وجود ندارد.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="mt-4 flex justify-between text-[10px] text-slate-500 border-t border-slate-300 pt-2">
+            <span>سامانهٔ ارزیابی و رتبه‌بندی تأمین‌کنندگان (VLSE)</span>
+            <span>این فهرست بازتاب وضعیت سامانه در تاریخ چاپ است.</span>
+          </div>
+
+          <div className="mt-6 flex gap-4 print:mt-8">
+            {['تهیه‌کننده', 'تأیید مدیر کیفیت', 'تأیید مدیر بازرگانی'].map(role => (
+              <div key={role} className="flex-1 border border-slate-300 rounded-lg p-3 h-20 flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-slate-500">{role}:</span>
+                <span className="text-[9px] text-slate-400">امضا و تاریخ</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  ) : null;
+}
+
 interface PrintableSampleFormProps {
   vendor: Vendor;
   onBack: () => void;
@@ -86,7 +259,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
 
   const finalProductStr = matItem?.finalProduct || 'ثبت‌نشده';
   const casStr = vendor.cas && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : (matItem?.cas || '-');
-  const regDateStr = vendor.registrationDate || vendor.lastAudit || 'ثبت‌نشده';
+  const regDateStr = toJalaliDisplay(vendor.registrationDate || vendor.lastAudit);
 
   const statusLabel = vendor.status === 'approved' ? 'نمونه تایید شده (Approved Sample)' :
                       vendor.status === 'conditional' ? 'نمونه تایید مشروط (Conditional)' :
@@ -197,7 +370,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">تاریخ ارزیابی:</span>
-                      <span className="font-bold text-xs font-mono">{vendor.lastAudit || vendor.registrationDate || 'ثبت‌نشده'}</span>
+                      <span className="font-bold text-xs font-mono">{toJalaliDisplay(vendor.lastAudit || vendor.registrationDate)}</span>
                    </div>
                 </div>
              </div>
@@ -356,7 +529,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
 
                   <div className="text-[10px] text-slate-600 text-left border-r border-slate-200 pr-6 pl-2 space-y-1">
                     <div>مسئول کنترل کیفیت: <strong>دپارتمان کیفیت تماد</strong></div>
-                    <div>تاریخ ارزیابی نمونه: <strong>{vendor.lastAudit || 'نامشخص'}</strong></div>
+                    <div>تاریخ ارزیابی نمونه: <strong>{toJalaliDisplay(vendor.lastAudit) || 'نامشخص'}</strong></div>
                     <div>مهر و امضاء نهایی مدیر کیفیت تماد: <strong>..............................</strong></div>
                   </div>
                 </div>
@@ -379,9 +552,11 @@ interface PrintableEvaluationFormProps {
   onBack: () => void;
   partners?: BusinessPartner[];
   materials?: Material[];
+  /** The recorded decision this source is, when it is the chosen one. */
+  selection?: SourceSelectionRecord | null;
 }
 
-export function PrintableEvaluationForm({ vendor, onBack, partners = [], materials = [] }: PrintableEvaluationFormProps) {
+export function PrintableEvaluationForm({ vendor, onBack, partners = [], materials = [], selection = null }: PrintableEvaluationFormProps) {
   if (vendor.isSample) {
     return <PrintableSampleForm vendor={vendor} onBack={onBack} partners={partners} materials={materials} />;
   }
@@ -395,17 +570,30 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
 
   const finalProductStr = matItem?.finalProduct || 'ثبت‌نشده';
   const casStr = vendor.cas || matItem?.cas || 'N/A';
-  const regDateStr = vendor.registrationDate || vendor.lastAudit || 'ثبت‌نشده';
+  const regDateStr = toJalaliDisplay(vendor.registrationDate || vendor.lastAudit);
 
   const overall = calculateOverallScore(vendor.scores, true);
 
-  const getRankParams = (grade: Grade) => {
-    if (grade === 'A') return { label: 'A', score: '80 - 100', color: 'bg-emerald-600' };
-    if (grade === 'B') return { label: 'B', score: '60 - 79', color: 'bg-[#0071E3]' };
-    if (grade === 'C') return { label: 'C', score: '40 - 59', color: 'bg-amber-500' };
-    return { label: 'D', score: '0 - 39', color: 'bg-red-500' };
+  /**
+   * The rank printed on the form.
+   *
+   * The fallback used to be `D (0-39)`, which every unevaluated source fell
+   * into: a supplier with no scores and a null grade printed as a failing
+   * grade on a document that gets signed and filed. Saying "not evaluated" is
+   * the truth; saying D is a claim nobody made.
+   */
+  // The scale itself lives in vendorRank.ts, shared with the Excel export —
+  // the two had drifted onto different rubrics. Only the colour is local.
+  const ranked = describeVendorRank(vendor);
+  const isEvaluated = ranked.evaluated;
+  const GRADE_COLORS: Record<string, string> = {
+    A: 'bg-emerald-600', B: 'bg-[#0071E3]', C: 'bg-amber-500', D: 'bg-red-500',
   };
-  const rank = getRankParams(vendor.grade);
+  const rank = {
+    label: ranked.grade || '—',
+    score: ranked.range,
+    color: ranked.grade ? GRADE_COLORS[ranked.grade] : 'bg-slate-200',
+  };
 
   const getRiskColor = (level: string | undefined) => {
     if (level === 'Low') return 'bg-emerald-500 text-white';
@@ -414,12 +602,17 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
     return 'bg-slate-100 text-slate-500 border border-slate-300';
   };
   
+  // «N/A» روی سندی که به ممیز می‌رود مبهم است — نمی‌گوید ریسک ارزیابی شده و
+  // نتیجه‌اش مصداق ندارد یا اصلاً ارزیابی نشده. مثل گرید، صریح می‌نویسیم.
   const getRiskLabel = (level: string | undefined) => {
     if (level === 'Low') return 'Low';
     if (level === 'Medium') return 'Medium';
     if (level === 'High') return 'High';
-    return 'N/A';
+    return 'ارزیابی نشده';
   };
+  const riskAssessed = ['Low', 'Medium', 'High'].includes(
+    String(vendor.riskAssessment?.riskLevel || ''),
+  );
 
   return document.body ? createPortal(
     <>
@@ -461,16 +654,47 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                       <span className="opacity-80">تاریخ چاپ:</span>
                       <span className="font-sans">{new Date().toLocaleDateString('fa-IR')}</span>
                    </div>
-                   <div className="flex justify-between items-center text-[11px] border-b border-blue-800 pb-1">
-                      <span className="opacity-80">شماره صفحه:</span>
-                      <span>۱ از ۱</span>
-                   </div>
+                   {/* The row here used to read "شماره صفحه: ۱ از ۱" — hardcoded,
+                       while a source with a long history prints over more than
+                       one sheet. A filed document must not miscount its own
+                       pages, and the browser already prints a real page number
+                       in its own footer, so the false claim is simply gone. */}
                    <div className="flex justify-between items-center text-[11px]">
                       <span className="opacity-80">کد ارجاع سیستمی:</span>
                       <span className="font-mono">{vendor.id.slice(0, 8).toUpperCase()}</span>
                    </div>
                 </div>
              </div>
+
+             {/* The recorded decision, printed only when there is one.
+                 A form that said "chosen: no" on every other source would be
+                 noise on a document that is signed and filed; the absence of
+                 this band is the answer for those. Reason, who decided and when
+                 are all here, because on paper there is no tooltip to ask. */}
+             {selection && (
+               <div className="flex items-stretch border-2 border-amber-500 rounded-xl mb-6 overflow-hidden text-right bg-amber-50">
+                  <div className="px-4 py-3 bg-amber-500 text-white flex items-center gap-2 shrink-0">
+                     <Star className="w-5 h-5 fill-current" />
+                     <span className="font-bold text-sm whitespace-nowrap">سورس منتخب</span>
+                  </div>
+                  <div className="flex-1 p-3 text-[11px] text-slate-800 leading-relaxed">
+                     <div>
+                       این تأمین‌کننده به‌عنوان <strong>سورس منتخب</strong> برای
+                       {' '}«{vendor.material || vendor.materialEn}» ثبت شده است.
+                     </div>
+                     <div className="mt-1">
+                       <span className="text-slate-500">دلیل انتخاب: </span>
+                       <span className="font-semibold">{selection.reason}</span>
+                     </div>
+                     <div className="mt-0.5 text-slate-600">
+                       ثبت‌کننده: <span className="font-semibold">{selection.decidedBy}</span>
+                       {formatSelectionDate(selection.decidedAt) && (
+                         <> · تاریخ ثبت: <span className="font-mono">{formatSelectionDate(selection.decidedAt)}</span></>
+                       )}
+                     </div>
+                  </div>
+               </div>
+             )}
 
              {/* Meta Info Evaluation Form */}
              <div className="flex flex-col border-2 border-slate-300 rounded-xl mb-6 overflow-hidden text-sm bg-slate-50/50 text-right">
@@ -523,7 +747,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">تاریخ ارزیابی:</span>
-                      <span className="font-bold text-xs font-mono">{vendor.lastAudit || vendor.registrationDate || 'ثبت‌نشده'}</span>
+                      <span className="font-bold text-xs font-mono">{toJalaliDisplay(vendor.lastAudit || vendor.registrationDate)}</span>
                    </div>
                 </div>
              </div>
@@ -867,8 +1091,12 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
              <div className="flex justify-between items-center bg-slate-50 border border-slate-300 rounded-2xl p-4 shadow-sm text-right" dir="rtl">
                   {/* Right Section: Total Score */}
                   <div className="flex items-center gap-3">
+                    {/* `overall || 0` printed a bold 0 for a source nobody has
+                        scored yet, which reads as "scored zero" — the same
+                        false claim the D grade made. An em dash says the number
+                        does not exist. */}
                     <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center border-2 border-slate-200 text-slate-700 font-bold text-xl font-mono shadow-sm">
-                      {overall || 0}
+                      {overall !== null ? overall : '—'}
                     </div>
                     <div className="flex flex-col text-right">
                       <span className="text-xs text-slate-500 font-bold">جمع امتیاز نهایی</span>
@@ -880,7 +1108,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     {/* Middle Section: Risk Level */}
                     <div className="flex items-center gap-3">
                       <div className="text-[11px] text-slate-500 font-bold leading-tight text-right">سطح ریسک<br/>ارزیابی شده</div>
-                      <div className={`px-4 py-2 rounded-lg text-sm font-extrabold ${getRiskColor(vendor.riskAssessment?.riskLevel)}`}>
+                      <div className={`px-4 py-2 rounded-lg font-extrabold whitespace-nowrap ${riskAssessed ? 'text-sm' : 'text-xs'} ${getRiskColor(vendor.riskAssessment?.riskLevel)}`}>
                          {getRiskLabel(vendor.riskAssessment?.riskLevel)}
                       </div>
                     </div>
@@ -890,9 +1118,15 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     {/* Left Section: Supplier Rank */}
                     <div className="flex items-center gap-3">
                       <div className="text-xs text-slate-500 font-bold font-semibold">رتبه تأمین کننده:</div>
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white text-2xl font-black shadow-md ${getScoreColorClass(overall, true)}`}>
-                         {rank.label}
-                      </div>
+                      {isEvaluated ? (
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white text-2xl font-black shadow-md ${getScoreColorClass(overall, true)}`}>
+                           {rank.label}
+                        </div>
+                      ) : (
+                        <div className="px-3 h-12 rounded-lg flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-[11px] font-bold text-center leading-tight">
+                           ارزیابی<br/>نشده
+                        </div>
+                      )}
                     </div>
                   </div>
              </div>

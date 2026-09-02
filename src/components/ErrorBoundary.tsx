@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { Button } from './ui/button';
 
 /**
  * Last line of defence for the whole app.
@@ -51,7 +52,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     if (!this.state.error) return this.props.children;
 
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans" dir="rtl">
+      <div className="min-h-screen bg-muted flex items-center justify-center p-4 font-sans">
         <div className="bg-card border border-border rounded-3xl p-8 max-w-lg w-full shadow-xl text-right space-y-5">
           <div className="flex items-center gap-3">
             <div className="bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-2xl shrink-0">
@@ -59,39 +60,40 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
             <div>
               <h1 className="text-base font-black text-foreground">خطای غیرمنتظره در برنامه</h1>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 اطلاعات شما در پایگاه‌داده محفوظ است؛ این خطا فقط مربوط به نمایش برنامه است.
               </p>
             </div>
           </div>
 
           <div className="bg-muted border border-border rounded-xl p-3.5">
-            <span className="text-[10px] font-bold text-muted-foreground block mb-1">شرح فنی خطا:</span>
-            <code className="text-[11px] text-rose-700 dark:text-rose-400 font-mono break-all leading-relaxed">
+            <span className="text-2xs font-bold text-muted-foreground block mb-1">شرح فنی خطا:</span>
+            <code className="text-2xs text-rose-700 dark:text-rose-400 font-mono break-all leading-relaxed">
               {this.state.error.message || String(this.state.error)}
             </code>
           </div>
 
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-2xs text-muted-foreground leading-relaxed">
             اگر با بارگذاری مجدد برطرف نشد، حافظهٔ محلی مرورگر را پاک کنید. این کار هیچ داده‌ای را
             از پایگاه‌داده حذف نمی‌کند و شما را از حساب خارج نمی‌کند.
           </p>
 
           <div className="flex items-center justify-end gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={this.clearCacheAndReload}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground border border-border hover:bg-accent transition-colors cursor-pointer"
+              className="text-xs font-bold text-muted-foreground"
             >
               پاک‌کردن حافظهٔ محلی و بارگذاری مجدد
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
+              className="text-xs font-bold"
             >
               بارگذاری مجدد
-            </button>
+            </Button>
           </div>
         </div>
       </div>

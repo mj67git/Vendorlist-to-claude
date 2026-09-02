@@ -64,18 +64,18 @@ interface ScoreCardProps {
 export function ScoreCard({ title, titleEn, icon: Icon, score, items }: ScoreCardProps) {
   const colorClass = getScoreColorClass(score);
   return (
-    <div className="bg-card border border-slate-900/10 rounded-xl p-4 shadow-sm text-right hover:border-cyan-500/30 transition-colors relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-right hover:border-cyan-500/30 transition-colors relative overflow-hidden flex flex-col justify-between h-full">
       <div className={`absolute top-0 right-0 w-full h-[3px] opacity-80 ${getScoreColorClass(score, true)}`} />
       
       <div>
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-2.5 text-right">
-            <div className="p-2 rounded-lg bg-muted border border-slate-900/10 flex-shrink-0">
+            <div className="p-2 rounded-lg bg-muted border border-border flex-shrink-0">
               <Icon className="w-4 h-4 text-muted-foreground" />
             </div>
             <div className="text-right">
               <h4 className="font-bold text-foreground text-xs sm:text-sm leading-tight mt-0.5">{title}</h4>
-              <div className="text-[9px] text-muted-foreground font-mono uppercase tracking-wider">{titleEn}</div>
+              <div className="text-2xs text-muted-foreground font-mono uppercase tracking-wider">{titleEn}</div>
             </div>
           </div>
           <div className={`text-2xl font-black font-mono tracking-tighter ${colorClass}`}>

@@ -1,22 +1,58 @@
-import * as XLSX from 'xlsx-js-style';
+import * as XLSXModule from 'xlsx-js-style';
+
+/**
+ * `xlsx-js-style` ships CommonJS. Vite's interop hands the namespace back with
+ * the exports attached, Node's ESM loader hands back `{ default: … }` — so the
+ * bare namespace import worked in the browser and threw
+ * "Cannot read properties of undefined (reading 'aoa_to_sheet')" in a test,
+ * which is why this file had no tests while it grew a one-column-off bug.
+ * The namespace stays imported for its types; the runtime call goes through XL.
+ */
+import type * as XLSX from 'xlsx-js-style';
+const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInBlacklistCategory } from './vendorState';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
+import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
+import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
+import { calculateOverallScore } from './vendorUtils';
+import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
 
 /**
- * Calculates the overall evaluation score for a vendor.
+ * Column positions in the archive worksheet.
+ *
+ * These were written as bare numbers in three places and two of them were one
+ * off: the conditional formatting for «امتیاز ارزیابی کل» ran against the risk
+ * cell and the formatting for «سطح ریسک کیفی» against the QC-code cell, so
+ * neither column was ever coloured and forty lines of styling did nothing. A
+ * named constant is checkable; `colIndex === 14` is not.
  */
-function calculateOverallScore(scores: Scores | null, forceCalculate: boolean = false): number | null {
-  if (!scores) return null;
-  const isFullyScored = scores.commercial > 0 && scores.qa > 0 && scores.planning > 0 && scores.finance > 0;
-  if (!isFullyScored && !forceCalculate) return null;
-  return Math.round(
-    ((scores.commercial || 0) * 0.2) +
-    ((scores.qa || 0) * 0.4) +
-    ((scores.planning || 0) * 0.1) +
-    ((scores.finance || 0) * 0.3)
-  );
-}
+const COL = {
+  INDEX: 0,
+  NAME_FA: 1,
+  NAME_EN: 2,
+  CAS: 3,
+  ROLE: 4,
+  FINAL_PRODUCT: 5,
+  STD_FA: 6,
+  STD_EN: 7,
+  IRC: 8,
+  REG_DATE: 9,
+  PARTNER: 10,
+  PARTNER_ROLE: 11,
+  CONTACT: 12,
+  SCORE: 13,
+  RISK: 14,
+  QC: 15,
+  DEVIATIONS: 16,
+  CHOSEN: 17,
+  CHOSEN_REASON: 18,
+  CHOSEN_BY: 19,
+  SCORE_NUM: 20,
+} as const;
+
+/** What an empty cell says. Latin «N/A» sat next to Persian «ثبت‌نشده» in the same row. */
+const NOT_RECORDED = 'ثبت‌نشده';
 
 /**
  * Returns a descriptive Persian label for the material criticality (substance type).
@@ -46,7 +82,7 @@ function getMaterialType(vendor: Vendor): string {
  * Maps the English risk assessment level to formatted Persian text.
  */
 function getRiskLevelFa(riskLevel: string | undefined): string {
-  if (!riskLevel) return 'ارزیابی نشده';
+  if (!riskLevel) return UNEVALUATED_LABEL;
   switch (riskLevel) {
     case 'Low':
       return 'پایین (Low)';
@@ -120,7 +156,14 @@ export function buildCategoryWorksheet(
   vendors: Vendor[],
   categoryId: string | 'all',
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = [],
+  /**
+   * What the caller filtered by, printed above the header the way the printed
+   * register prints it. A sheet that does not say what it excluded cannot be
+   * read as evidence of anything a month later.
+   */
+  filterSummary?: string
 ): { ws: XLSX.WorkSheet, vendorCount: number } {
   // Filter appropriate vendors
   const filteredVendors = vendors.filter(v => {
@@ -155,39 +198,30 @@ export function buildCategoryWorksheet(
     'امتیاز ارزیابی کل (از ۱۰۰)',
     'سطح ریسک کیفی',
     'کد QC',
-    'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)'
+    'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)',
+    // Appended at the end on purpose: anything keyed to the existing column
+    // positions (a saved filter, a pivot, someone's macro) keeps working.
+    // "بله"/"—" rather than a star, because a spreadsheet is filtered and
+    // pivoted on its values and a glyph sorts as punctuation.
+    'سورس منتخب',
+    'دلیل انتخاب',
+    'ثبت‌کنندهٔ انتخاب',
+    // The grade column carries its score inside a sentence («Grade B (72)»),
+    // which cannot be sorted, averaged or pivoted on. The number gets its own
+    // cell rather than replacing that column, so nothing keyed to the existing
+    // positions moves.
+    'امتیاز عددی (۰-۱۰۰)'
   ];
 
   // Map to Excel rows (with 1-based indexing)
   const dataRows = sortedVendors.map((v, index) => {
-    const overallScore = calculateOverallScore(v.scores, true);
-    const gradeVal = v.grade || '';
-    let scoreStr = 'ارزیابی‌نشده';
-    
-    let effectiveGrade = '';
-    if (overallScore !== null) {
-      if (overallScore >= 80) effectiveGrade = 'A';
-      else if (overallScore >= 60) effectiveGrade = 'B';
-      else if (overallScore >= 40) effectiveGrade = 'C';
-      else if (overallScore >= 30) effectiveGrade = 'Pending Review';
-      else effectiveGrade = 'Blacklist';
-    } else if (gradeVal && gradeVal !== 'new' && gradeVal !== 'rejected') {
-      effectiveGrade = gradeVal;
-    } else if (isVendorRejected(v)) {
-      effectiveGrade = 'Blacklist';
-    }
-
-    if (effectiveGrade === 'A' || effectiveGrade === 'a') {
-      scoreStr = overallScore !== null ? `Grade A (${overallScore})` : 'Grade A';
-    } else if (effectiveGrade === 'B' || effectiveGrade === 'b') {
-      scoreStr = overallScore !== null ? `Grade B (${overallScore})` : 'Grade B';
-    } else if (effectiveGrade === 'C' || effectiveGrade === 'c') {
-      scoreStr = overallScore !== null ? `Grade C (${overallScore})` : 'Grade C';
-    } else if (effectiveGrade === 'Pending Review' || effectiveGrade === 'pending') {
-      scoreStr = overallScore !== null ? `Pending Review (${overallScore})` : 'Pending Review';
-    } else if (effectiveGrade === 'Blacklist' || effectiveGrade === 'rejected') {
-      scoreStr = overallScore !== null ? `Blacklist (${overallScore})` : 'Blacklist';
-    }
+    // One rank scale for a source, shared with the printed form (vendorRank.ts).
+    // A rejected source keeps saying so: blacklisting is a state the register
+    // must show, and it outranks whatever the arithmetic says.
+    const rank = describeVendorRank(v);
+    const scoreStr = isVendorRejected(v)
+      ? (rank.score !== null ? `Blacklist (${rank.score})` : 'Blacklist')
+      : rank.label;
 
     const riskText = getRiskLevelFa(v.riskAssessment?.riskLevel);
     const deviationSummary = getDeviationsSummary(v);
@@ -200,33 +234,36 @@ export function buildCategoryWorksheet(
       (m.nameEn && v.materialEn && m.nameEn.trim().toLowerCase() === v.materialEn.trim().toLowerCase())
     );
 
-    const roleStr = matItem?.role || 'ثبت‌نشده';
-    const finalProductStr = matItem?.finalProduct || 'ثبت‌نشده';
-    const standardNameFaStr = matItem?.standardNameFa || v.material || 'ثبت‌نشده';
-    const standardNameEnStr = matItem?.standardNameEn || v.materialEn || 'ثبت‌نشده';
+    const roleStr = matItem?.role || NOT_RECORDED;
+    const finalProductStr = matItem?.finalProduct || NOT_RECORDED;
+    const standardNameFaStr = matItem?.standardNameFa || v.material || NOT_RECORDED;
+    const standardNameEnStr = matItem?.standardNameEn || v.materialEn || NOT_RECORDED;
 
     // Get all unique active QC Codes for this vendor/source
     const qcCodesList = (v.analysisRecords || [])
       .map(r => r.qcCode)
       .filter(code => code && code.trim() !== '');
     const uniqueQcCodes = Array.from(new Set(qcCodesList));
-    const qcCodesStr = uniqueQcCodes.length > 0 ? uniqueQcCodes.join(' | ') : 'ثبت‌نشده';
+    const qcCodesStr = uniqueQcCodes.length > 0 ? uniqueQcCodes.join(' | ') : NOT_RECORDED;
 
     const partnerInfo = resolveVendorPartner(v, partners);
 
     // Fill in the IRC/registration date from lastAudit (which holds IRC Issue Date) or registrationDate
-    const registrationDateStr = v.lastAudit || v.registrationDate || 'ثبت‌نشده';
+    const registrationDateStr = v.lastAudit || v.registrationDate || NOT_RECORDED;
+
+    const chosen = selectionForVendor(v, selections);
+    const chosenWhen = chosen ? formatSelectionDate(chosen.decidedAt) : '';
 
     return [
-      (index + 1).toString(),
-      v.material || 'N/A',
-      v.materialEn || 'N/A',
-      v.cas || matItem?.cas || 'N/A',
+      index + 1,
+      v.material || NOT_RECORDED,
+      v.materialEn || NOT_RECORDED,
+      v.cas || matItem?.cas || NOT_RECORDED,
       roleStr,
       finalProductStr,
       standardNameFaStr,
       standardNameEnStr,
-      v.irc || 'N/A',
+      v.irc || NOT_RECORDED,
       registrationDateStr,
       partnerInfo.name,
       partnerInfo.roleLabel,
@@ -234,48 +271,57 @@ export function buildCategoryWorksheet(
       scoreStr,
       riskText,
       qcCodesStr,
-      deviationSummary
+      deviationSummary,
+      chosen ? 'بله' : '—',
+      chosen ? chosen.reason : '',
+      chosen ? [chosen.decidedBy, chosenWhen].filter(Boolean).join(' — ') : '',
+      rank.score !== null ? rank.score : ''
     ];
   });
 
   // If no data rows, add a placeholder row
-  const rowsToRender = dataRows.length > 0 ? dataRows : [
-    ['-', 'موردی در این دسته‌بندی یافت نشد', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-']
-  ];
+  const emptyRow: (string | number)[] = new Array(headers.length).fill('-');
+  emptyRow[COL.NAME_FA] = 'موردی در این دسته‌بندی یافت نشد';
+  const rowsToRender = dataRows.length > 0 ? dataRows : [emptyRow];
+
+  /*
+   * A caption row above the header, when the caller says what it filtered by.
+   *
+   * The rows below it are then whatever the caller passed, not the whole
+   * archive — so the sheet has to state its own scope or a filtered extract is
+   * indistinguishable from the complete register.
+   */
+  const caption = filterSummary
+    ? [[`محدودهٔ گزارش: ${filterSummary}  ·  تعداد ردیف: ${dataRows.length}  ·  تاریخ تهیه: ${new Date().toLocaleDateString('fa-IR')}`]]
+    : [];
+  const headerRow = caption.length; // 0 or 1
+  const firstDataRow = headerRow + 1;
 
   // Create workspace worksheet using array of arrays
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rowsToRender]);
+  const ws = XL.utils.aoa_to_sheet([...caption, headers, ...rowsToRender]);
 
-  // Determine merge ranges for consecutive equivalent materials
-  const merges: XLSX.Range[] = [];
-  if (sortedVendors.length > 0) {
-    let i = 0;
-    while (i < sortedVendors.length) {
-      let j = i + 1;
-      while (j < sortedVendors.length && sortedVendors[j].material === sortedVendors[i].material) {
-        j++;
-      }
-      
-      // If we have consecutive matches
-      if (j - i > 1) {
-        const startRow = i + 1; // 1-based (row 0 is header)
-        const endRow = j;       // 1-based index corresponding to element j-1
-        
-        // Merge columns 1 to 7 (Persian name, English name, CAS, role, final product, std name fa, std name en)
-        for (let c = 1; c <= 7; c++) {
-          merges.push({
-            s: { r: startRow, c: c },
-            e: { r: endRow, c: c }
-          });
-        }
-      }
-      i = j;
-    }
+  /*
+   * The material columns used to be merged vertically across every row of the
+   * same material. That is a poster habit, not a data one: Excel cannot filter
+   * or sort a sheet with merges spanning data rows without misreporting the
+   * merged value, and this file exists to be filtered. Grouping is still
+   * visible — the alternating fill below changes on every material change —
+   * and now an AutoFilter actually works.
+   */
+  if (caption.length) {
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
   }
-  
-  if (merges.length > 0) {
-    ws['!merges'] = merges;
+  if (dataRows.length > 0) {
+    ws['!autofilter'] = {
+      ref: XL.utils.encode_range(
+        { r: headerRow, c: 0 },
+        { r: headerRow + rowsToRender.length, c: headers.length - 1 },
+      ),
+    };
   }
+  // (No freeze pane: xlsx-js-style writes no <pane> element, so setting one
+  // would only look like the header was pinned. Verified by writing a workbook
+  // and reading the XML back.)
 
   // Pre-calculate alternating background color groups by material name
   const vendorGroupColors = new Array(sortedVendors.length);
@@ -302,10 +348,19 @@ export function buildCategoryWorksheet(
     const colLetter = match[1];
     const rowNumber = parseInt(match[2], 10);
     
-    const colIndex = XLSX.utils.decode_col(colLetter);
+    const colIndex = XL.utils.decode_col(colLetter);
     const rowIndex = rowNumber - 1; // 0-based
-    
-    if (rowIndex === 0) {
+
+    if (caption.length && rowIndex === 0) {
+      cell.s = {
+        fill: { patternType: 'solid', fgColor: { rgb: 'E2E8F0' } },
+        font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: '0F172A' } },
+        alignment: { horizontal: 'right', vertical: 'center', readingOrder: 2 },
+      };
+      continue;
+    }
+
+    if (rowIndex === headerRow) {
       // Header styles (Dark Teal/Navy Corporate style)
       cell.s = {
         fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
@@ -320,7 +375,7 @@ export function buildCategoryWorksheet(
       };
     } else {
       // Data Rows styles - color based on material group to highlight rows grouping under same material
-      const dataRowIdx = rowIndex - 1;
+      const dataRowIdx = rowIndex - firstDataRow;
       const rowBgColor = vendorGroupColors[dataRowIdx] || 'FFFFFF';
       
       cell.s = {
@@ -336,17 +391,17 @@ export function buildCategoryWorksheet(
       };
 
       // Chemical description texts colors
-      if (colIndex >= 1 && colIndex <= 9) {
+      if (colIndex >= COL.NAME_FA && colIndex <= COL.IRC) {
         cell.s.font.color = { rgb: '0F172A' };
       }
 
       // Left-align long texts, right-align partner/supplier information/devs
-      if ((colIndex >= 10 && colIndex <= 13) || colIndex === 17) {
+      if ((colIndex >= COL.PARTNER && colIndex <= COL.SCORE) || colIndex === COL.DEVIATIONS || colIndex === COL.CHOSEN_REASON) {
         cell.s.alignment.horizontal = 'right';
       }
 
       // Color score columns (امتیاز ارزیابی کل)
-      if (colIndex === 14) {
+      if (colIndex === COL.SCORE) {
         const valLower = String(cell.v || '').toLowerCase();
         if (valLower.includes('grade a') || valLower === 'a') {
           cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'D1FAE5' } };
@@ -366,8 +421,15 @@ export function buildCategoryWorksheet(
         }
       }
 
+      // The chosen-source column: the whole point is to be findable in a long
+      // sheet, so the "بله" cell is filled rather than left as plain text.
+      if (colIndex === COL.CHOSEN && String(cell.v || '') === 'بله') {
+        cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };   // Amber-100
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'B45309' } }; // Amber-700
+      }
+
       // Color quality risk levels (سطح ریسک کیفی)
-      if (colIndex === 15) {
+      if (colIndex === COL.RISK) {
         const valLower = String(cell.v || '').toLowerCase();
         if (valLower.includes('high') || valLower.includes('بالا')) {
           cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
@@ -382,7 +444,7 @@ export function buildCategoryWorksheet(
       }
 
       // Colorize deviations text
-      if (colIndex === 17) {
+      if (colIndex === COL.DEVIATIONS) {
         const val = String(cell.v || '');
         if (val.includes('OOS') || val.includes('OOT') || val.includes('Deviation') || val.includes('Rejection') || val.includes('مردود')) {
           cell.s.font.color = { rgb: '991B1B' };
@@ -410,11 +472,18 @@ export function buildCategoryWorksheet(
     { wch: 15 },  // Risk Level (14)
     { wch: 22 },  // QC Code Column width (15)
     { wch: 58 },  // Deviations summary (16)
+    { wch: 12 },  // Chosen source (17)
+    { wch: 45 },  // Reason for the choice (18)
+    { wch: 24 },  // Who recorded it and when (19)
+    { wch: 18 },  // Numeric score, sortable (20)
   ];
 
-  // Set page margins / right-to-left layout indicator in sheet view
-  if (!ws['!views']) ws['!views'] = [];
-  ws['!views'].push({ RTL: true });
+  /*
+   * Right-to-left is set on the workbook, not here. `ws['!views'] = [{RTL:true}]`
+   * is accepted silently and written nowhere — every Persian sheet this file
+   * produced opened left-to-right in Excel. Verified by reading the generated
+   * XML back: only the workbook-level view emits `rightToLeft`.
+   */
 
   return { ws, vendorCount: filteredVendors.length };
 }
@@ -439,17 +508,20 @@ export function exportCategoryToExcel(
   categoryId: string | 'all',
   categoryLabelFa: string,
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = [],
+  filterSummary?: string
 ) {
-  const { ws } = buildCategoryWorksheet(vendors, categoryId, partners, materials);
-  const wb = XLSX.utils.book_new();
+  const { ws } = buildCategoryWorksheet(vendors, categoryId, partners, materials, selections, filterSummary);
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
   const sheetName = categoryLabelFa.slice(0, 31); // Sheets names are capped at 31 chars in Excel
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XL.utils.book_append_sheet(wb, ws, sheetName);
 
   // Generate Excel download for user. Filename includes timestamp and proper extension.
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   const safeTitle = `گزارش_${categoryLabelFa.replace(/\s+/g, '_')}_${dateStr}`;
-  XLSX.writeFile(wb, `${safeTitle}.xlsx`);
+  XL.writeFile(wb, `${safeTitle}.xlsx`);
 }
 
 /**
@@ -459,25 +531,27 @@ export function exportCategoryToExcel(
 export function exportFullArchiveMultiSheetExcel(
   vendors: Vendor[],
   partners: BusinessPartner[] = [],
-  materials: Material[] = []
+  materials: Material[] = [],
+  selections: SourceSelectionRecord[] = []
 ) {
-  const wb = XLSX.utils.book_new();
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
 
   // 1. First Sheet: All Categories (کل آرشیو)
-  const { ws: wsAll } = buildCategoryWorksheet(vendors, 'all', partners, materials);
-  XLSX.utils.book_append_sheet(wb, wsAll, 'کل آرشیو');
+  const { ws: wsAll } = buildCategoryWorksheet(vendors, 'all', partners, materials, selections);
+  XL.utils.book_append_sheet(wb, wsAll, 'کل آرشیو');
 
   // 2. Individual Category Sheets
   for (const cat of EXPORT_CATEGORIES) {
-    const { ws: wsCat } = buildCategoryWorksheet(vendors, cat.id, partners, materials);
+    const { ws: wsCat } = buildCategoryWorksheet(vendors, cat.id, partners, materials, selections);
     const sheetName = cat.labelFa.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, wsCat, sheetName);
+    XL.utils.book_append_sheet(wb, wsCat, sheetName);
   }
 
   // Generate multi-sheet workbook download
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   const safeTitle = `گزارش_جامع_چند_شیتی_تامین_کنندگان_${dateStr}`;
-  XLSX.writeFile(wb, `${safeTitle}.xlsx`);
+  XL.writeFile(wb, `${safeTitle}.xlsx`);
 }
 
 /**
@@ -552,15 +626,15 @@ export function buildPartnersWorksheet(
     ];
   });
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const ws = XL.utils.aoa_to_sheet([headers, ...rows]);
 
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  const range = XL.utils.decode_range(ws['!ref'] || 'A1');
   for (const key of Object.keys(ws)) {
     if (key[0] === '!') continue;
     const match = key.match(/^([A-Z]+)(\d+)$/);
     if (!match) continue;
     const cell = ws[key];
-    const colIndex = XLSX.utils.decode_col(match[1]);
+    const colIndex = XL.utils.decode_col(match[1]);
     const rowIndex = parseInt(match[2], 10) - 1;
 
     if (rowIndex === 0) {
@@ -645,8 +719,6 @@ export function buildPartnersWorksheet(
     { wch: 16 },  // سورس متصل
     { wch: 16 },  // تاریخ
   ];
-  if (!ws['!views']) ws['!views'] = [];
-  ws['!views'].push({ RTL: true });
   void range;
   return { ws, count: partners.length };
 }
@@ -659,12 +731,13 @@ export function exportBusinessPartnersToExcel(
   partners: BusinessPartner[],
   db: Vendor[] = []
 ) {
-  const wb = XLSX.utils.book_new();
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
   const { ws } = buildPartnersWorksheet(partners, db);
-  XLSX.utils.book_append_sheet(wb, ws, 'شرکای تجاری');
+  XL.utils.book_append_sheet(wb, ws, 'شرکای تجاری');
 
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
-  XLSX.writeFile(wb, `گزارش_شرکای_تجاری_${dateStr}.xlsx`);
+  XL.writeFile(wb, `گزارش_شرکای_تجاری_${dateStr}.xlsx`);
 }
 
 /**
@@ -683,13 +756,15 @@ export function exportAuditToExcel(rows: AuditExportRow[]) {
     admin: 'مدیر سیستم', qa: 'واحد کیفیت', lab: 'آزمایشگاه', commercial: 'بازرگانی',
     planning: 'برنامه‌ریزی', finance: 'مالی', guest: 'مهمان', user: 'کاربر',
   };
-  const actionFa: Record<string, string> = {
-    Create: 'ایجاد', Update: 'ویرایش', Delete: 'حذف', Reject: 'مردودسازی', Restore: 'بازگردانی',
-    LOGIN: 'ورود', Login: 'ورود', LOGOUT: 'خروج', FAILED_LOGIN: 'ورود ناموفق',
-    CREATE_USER: 'ایجاد کاربر', UPDATE_USER: 'ویرایش کاربر', DELETE_USER: 'حذف کاربر',
-    ROLE_CHANGE: 'تغییر نقش', PERMISSION_CHANGE: 'تغییر دسترسی', 'System Update': 'تغییر سیستم',
+  // Rule 16: the audit vocabulary is defined once, in auditTaxonomy.ts. This
+  // used to be a hand-written map that had already drifted from the one the
+  // screen reads, so the spreadsheet named actions the UI did not.
+  // `Information` is what the server writes and `Info` what the local store
+  // writes; they are one level (rule 16). Only `Info` was mapped, so every row
+  // from a live database exported the raw English word.
+  const sevFa: Record<string, string> = {
+    Info: 'عادی', Information: 'عادی', Warning: 'هشدار', Critical: 'بحرانی',
   };
-  const sevFa: Record<string, string> = { Info: 'عادی', Warning: 'هشدار', Critical: 'بحرانی' };
 
   const changeSummary = (before: any, after: any): string => {
     const bef = before && typeof before === 'object' ? before : {};
@@ -717,12 +792,12 @@ export function exportAuditToExcel(rows: AuditExportRow[]) {
   const body = rows.map((r, i) => [
     i + 1,
     r.date || '', r.time || '', r.user || '', roleFa[r.role || ''] || r.role || '',
-    r.module || '', actionFa[r.action || ''] || r.action || '',
+    AUDIT_MODULE_LABELS[r.module || ''] || r.module || '', AUDIT_ACTION_LABELS[r.action || ''] || r.action || '',
     r.recordName || '', sevFa[r.severity || ''] || r.severity || '',
     r.description || '', r.reason || '', changeSummary(r.before, r.after),
   ]);
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
+  const ws = XL.utils.aoa_to_sheet([headers, ...body]);
   const SEV_COL = 8; // 'سطح بحرانیت'
 
   for (const key of Object.keys(ws)) {
@@ -730,7 +805,7 @@ export function exportAuditToExcel(rows: AuditExportRow[]) {
     const match = key.match(/^([A-Z]+)(\d+)$/);
     if (!match) continue;
     const cell = ws[key];
-    const colIndex = XLSX.utils.decode_col(match[1]);
+    const colIndex = XL.utils.decode_col(match[1]);
     const rowIndex = parseInt(match[2], 10) - 1;
 
     if (rowIndex === 0) {
@@ -793,13 +868,11 @@ export function exportAuditToExcel(rows: AuditExportRow[]) {
     { wch: 28 },  // دلیل
     { wch: 50 },  // خلاصهٔ تغییرات
   ];
-  if (!ws['!views']) ws['!views'] = [];
-  ws['!views'].push({ RTL: true });
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'ردیابی تغییرات');
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XL.utils.book_append_sheet(wb, ws, 'ردیابی تغییرات');
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
-  XLSX.writeFile(wb, `گزارش_Audit_${dateStr}.xlsx`);
+  XL.writeFile(wb, `گزارش_Audit_${dateStr}.xlsx`);
 }
 
 /**
@@ -824,6 +897,8 @@ export interface SupplierDossierInput {
   chosenMaterials?: string[];
   /** Materials with no alternative supplier. */
   soleSourceMaterials?: string[];
+  /** Recorded "chosen source" decisions, so the materials sheet can mark them. */
+  selections?: SourceSelectionRecord[];
 }
 
 function titleCell(text: string): XLSX.CellObject {
@@ -858,8 +933,8 @@ function labelValueRows(pairs: Array<[string, string | number]>): XLSX.CellObjec
 }
 
 export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
-  const { supplierName, vendors, partners = [], materials = [], chosenMaterials = [], soleSourceMaterials = [] } = input;
-  const wb = XLSX.utils.book_new();
+  const { supplierName, vendors, partners = [], materials = [], chosenMaterials = [], soleSourceMaterials = [], selections = [] } = input;
+  const wb = XL.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
 
   // --- Sheet 1: the summary --------------------------------------------------
@@ -935,14 +1010,16 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
     ]),
   ];
 
-  const summaryWs = XLSX.utils.aoa_to_sheet(summary as any);
+  const summaryWs = XL.utils.aoa_to_sheet(summary as any);
   summaryWs['!cols'] = [{ wch: 34 }, { wch: 52 }];
   summaryWs['!merges'] = [];
-  XLSX.utils.book_append_sheet(wb, summaryWs, 'خلاصهٔ پرونده');
+  XL.utils.book_append_sheet(wb, summaryWs, 'خلاصهٔ پرونده');
 
   // --- Sheet 2: the materials, in the archive's own format -------------------
-  const { ws: materialsWs } = buildCategoryWorksheet(vendors, 'all', partners, materials);
-  XLSX.utils.book_append_sheet(wb, materialsWs, 'اقلام تأمین‌شده');
+  // Sheet 1 counts the materials this company is the recorded source for; without
+  // the selections, sheet 2 said «—» for every one of them in the same workbook.
+  const { ws: materialsWs } = buildCategoryWorksheet(vendors, 'all', partners, materials, selections);
+  XL.utils.book_append_sheet(wb, materialsWs, 'اقلام تأمین‌شده');
 
   // --- Sheet 3: the laboratory record ---------------------------------------
   const labHeaders = ['ردیف', 'ماده', 'تاریخ', 'کد QC', 'نتیجه', 'دلیل انحراف', 'ثبت‌کننده', 'توضیحات'];
@@ -959,11 +1036,11 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
       (r as any).comments || '-',
     ]);
   }));
-  const labWs = XLSX.utils.aoa_to_sheet([labHeaders, ...(labRows.length ? labRows : [['—', 'هیچ رکورد آزمایشگاهی ثبت نشده است.', '', '', '', '', '', '']])]);
+  const labWs = XL.utils.aoa_to_sheet([labHeaders, ...(labRows.length ? labRows : [['—', 'هیچ رکورد آزمایشگاهی ثبت نشده است.', '', '', '', '', '', '']])]);
   labWs['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 40 }];
-  XLSX.utils.book_append_sheet(wb, labWs, 'سوابق آزمایشگاه');
+  XL.utils.book_append_sheet(wb, labWs, 'سوابق آزمایشگاه');
 
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   const safeName = supplierName.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40);
-  XLSX.writeFile(wb, `پرونده_تامین‌کننده_${safeName}_${dateStr}.xlsx`);
+  XL.writeFile(wb, `پرونده_تامین‌کننده_${safeName}_${dateStr}.xlsx`);
 }

@@ -1,24 +1,37 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle, KeyRound, Loader2,
+  AlertCircle, CheckCircle, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
+import { Input, inputBaseClass } from './ui/input';
+import { Button } from './ui/button';
 import { EntityName } from './EntityName';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
+import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { Role, User } from '../types';
+import { cn } from '../lib/utils';
+import { SortHeader } from './ui/sort-header';
+import { TableEmptyRow } from './ui/table-empty-row';
+import { PageTitle } from './ui/page-title';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
 
-/** The four columns of the module grid, right to left as the page reads. */
-const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string }> = [
-  { key: 'view', label: 'مشاهده' },
-  { key: 'create', label: 'ثبت' },
-  { key: 'edit', label: 'ویرایش' },
-  { key: 'delete', label: 'حذف' },
+/**
+ * The four columns of the module grid, right to left as the page reads.
+ *
+ * The CRUD letter is shown under the Persian label because that is the shape
+ * admins ask for the matrix in ("بازرگانی روی شرکای تجاری CRUD، مالی فقط R"),
+ * and it gives the row summary badge a vocabulary to be terse in.
+ */
+const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string; letter: string }> = [
+  { key: 'view', label: 'مشاهده', letter: 'R' },
+  { key: 'create', label: 'ثبت', letter: 'C' },
+  { key: 'edit', label: 'ویرایش', letter: 'U' },
+  { key: 'delete', label: 'حذف', letter: 'D' },
 ];
 
 /** Scoring is listed separately: it is per department, not per action. */
@@ -29,6 +42,44 @@ function samePermissions(a: Permission[], b: Permission[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(b);
   return a.every(p => set.has(p));
+}
+
+/**
+ * Short module names for the access column in the list. The dialog has room for
+ * «سورس‌ها (تأمین‌کنندگان)»; a table cell repeated once per module does not.
+ */
+const MODULE_SHORT: Record<string, string> = {
+  vendors: 'سورس',
+  materials: 'مواد',
+  partners: 'شرکا',
+  analysis: 'آزمایش',
+  risk: 'ریسک',
+  audit: 'ممیزی',
+  users: 'کاربران',
+};
+
+/**
+ * The CRUD letters a draft currently grants on one module, e.g. `RCUD` or `R`.
+ * An always-open cell counts as granted, since nothing can take it away.
+ */
+function moduleLetters(module: PermissionModule, draft: Permission[]): string {
+  const crud = ACTION_COLUMNS
+    .filter(col => {
+      const cell = module.actions[col.key];
+      if (cell === null) return false;
+      if (cell === 'open') return true;
+      return draft.includes(cell);
+    })
+    .map(col => col.letter);
+  const extras = (module.extras || [])
+    .filter(x => draft.includes(x.permission))
+    .map(x => x.letter);
+  return [...crud, ...extras].join('');
+}
+
+/** Every permission a module can grant, its non-CRUD extras included. */
+function allModulePermissions(module: PermissionModule): Permission[] {
+  return [...new Set([...modulePermissions(module), ...(module.extras || []).map(x => x.permission)])];
 }
 
 /** The distinct permissions a module row can actually toggle. */
@@ -86,35 +137,6 @@ function formatLastLogin(value: string | null): string {
 type SortField = 'name' | 'username' | 'role' | 'status' | 'lastLogin';
 type SortOrder = 'asc' | 'desc';
 
-/** Same sortable header as the materials, partners and audit tables. */
-const SortHeader: React.FC<{
-  field: SortField;
-  label: string;
-  center?: boolean;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  onSort: (f: SortField) => void;
-}> = ({ field, label, center, sortField, sortOrder, onSort }) => {
-  const active = sortField === field;
-  const Icon = !active ? ArrowUpDown : sortOrder === 'asc' ? ArrowUp : ArrowDown;
-  return (
-    <th
-      scope="col"
-      className={`font-bold p-0 ${active ? 'text-foreground' : ''}`}
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(field)}
-        title={`مرتب‌سازی بر اساس ${label}`}
-        className={`w-full py-3.5 px-4 flex items-center gap-1.5 hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:-outline-offset-2 ${center ? 'justify-center' : ''}`}
-      >
-        <span>{label}</span>
-        <Icon className={`w-3 h-3 shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground'}`} />
-      </button>
-    </th>
-  );
-};
 
 /** Persian names sort by the Persian alphabet, not by code point. */
 const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
@@ -155,6 +177,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const userFormDirty = useDirtySnapshot(formOpen, draft);
+  // The permissions dialog compares against what is actually in force, so
+  // opening it and ticking nothing closes without a question — the same reason
+  // its save button is disabled in that state.
+  const permDirty = useDirtySnapshot(!!permTarget, permDraft);
+  const resetDirty = useDirtySnapshot(!!resetTarget, resetPassword);
 
   const flash = (message: string) => {
     setToast(message);
@@ -345,15 +374,40 @@ export function UsersView({ currentUser }: UsersViewProps) {
     setPermError(null);
   };
 
+  /**
+   * Read and write are not independent: "may edit partners but may not see
+   * them" is not a state the application can render, and "may see them" with
+   * every write still ticked would leave writes the server allows behind a
+   * page the reader cannot open. So ticking any action of a module turns its
+   * read on, and turning its read off clears the rest of the row.
+   */
   const togglePermission = (permission: Permission) => {
-    setPermDraft(prev => prev.includes(permission)
-      ? prev.filter(p => p !== permission)
-      : ALL_PERMISSIONS.filter(p => p === permission || prev.includes(p)));
+    const module = PERMISSION_MODULES.find(m =>
+      ACTION_COLUMNS.some(c => m.actions[c.key] === permission)
+      || m.single === permission
+      || (m.extras || []).some(x => x.permission === permission));
+    const read = module?.actions.view;
+    const readPerm = read && read !== 'open' ? read : null;
+    const rowPerms = module ? allModulePermissions(module) : [];
+
+    setPermDraft(prev => {
+      const on = prev.includes(permission);
+      let next: Permission[];
+      if (on) {
+        next = permission === readPerm
+          ? prev.filter(p => !rowPerms.includes(p))   // read off ⇒ whole row off
+          : prev.filter(p => p !== permission);
+      } else {
+        next = [...prev, permission];
+        if (readPerm && !next.includes(readPerm)) next.push(readPerm);
+      }
+      return ALL_PERMISSIONS.filter(p => next.includes(p));
+    });
   };
 
   /** The row's master tick: all of this module's actions on, or all off. */
   const toggleModule = (module: PermissionModule) => {
-    const owned = modulePermissions(module);
+    const owned = allModulePermissions(module);
     if (owned.length === 0) return;
     setPermDraft(prev => {
       const allOn = owned.every(p => prev.includes(p));
@@ -409,39 +463,34 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const isSelf = (u: ManagedUser) => u.username.toLowerCase() === currentUser.username.toLowerCase();
 
   return (
-    <div className="space-y-5 fade-in" dir="rtl">
+    <div className="space-y-5 fade-in">
       {/* HEADER */}
       <div className="bg-card border border-border rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
-            <UserCog className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-base font-black text-foreground">مدیریت کاربران سامانه</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود.
-            </p>
-          </div>
-        </div>
+        <PageTitle
+          icon={UserCog}
+          title="مدیریت کاربران سامانه"
+          subtitle="تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود."
+        />
 
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
+            <Input
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="جستجوی کاربر..."
-              className="bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-56"
+              className="pr-9 pl-3 w-full sm:w-56"
             />
           </div>
-          <button
+          <Button
             type="button"
+            size="sm"
             onClick={openCreate}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-3.5 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+            className="font-bold shrink-0"
           >
-            <Plus className="w-4 h-4" />
+            <Plus />
             <span>کاربر جدید</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -456,11 +505,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
           { label: 'دسترسی سفارشی', value: customCount, hint: `${neverSignedIn.toLocaleString('fa-IR')} حساب هنوز وارد نشده` },
         ].map(card => (
           <div key={card.label} className="bg-card border border-border rounded-2xl p-4 shadow-xs">
-            <span className="text-[11px] font-bold text-muted-foreground block">{card.label}</span>
+            <span className="text-2xs font-bold text-muted-foreground block">{card.label}</span>
             <span className="text-xl font-black text-foreground block mt-1">
               {loading ? '—' : card.value.toLocaleString('fa-IR')}
             </span>
-            <span className="text-[10px] text-muted-foreground block mt-0.5">{card.hint}</span>
+            <span className="text-2xs text-muted-foreground block mt-0.5">{card.hint}</span>
           </div>
         ))}
       </div>
@@ -491,6 +540,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <SortHeader field="role" label="سمت سازمانی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="status" label="وضعیت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="lastLogin" label="آخرین ورود" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                {/* Deliberately not sortable: "RCUD" versus "R" has no order that
+                    means anything, and a header that claims one would be the same
+                    lie the audit table's severity column used to tell. */}
+                <th scope="col" className="py-3.5 px-4 font-bold">دسترسی ماژول‌ها</th>
                 <th scope="col" className="py-3.5 px-4 font-bold text-center">عملیات</th>
               </tr>
             </thead>
@@ -501,27 +554,26 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 // data lands.
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={`skeleton-${i}`} className="border-b border-border/60 last:border-0">
-                    {Array.from({ length: 6 }).map((__, c) => (
+                    {Array.from({ length: 7 }).map((__, c) => (
                       <td key={c} className="py-3.5 px-4">
-                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 5 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
+                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c === 6 ? '5rem' : `${55 + ((i + c) % 3) * 15}%` }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : loadError ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 text-rose-400" />
                     <span>{loadError}</span>
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                    <UsersIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                    <span>{search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}</span>
-                  </td>
-                </tr>
+                <TableEmptyRow
+                  colSpan={7}
+                  icon={UsersIcon}
+                  message={search.trim() ? 'کاربری با این مشخصات یافت نشد.' : 'هنوز کاربری تعریف نشده است.'}
+                />
               ) : pageRows.map(u => (
                 <tr key={u.username} className={`border-b border-border/60 last:border-0 hover:bg-accent/50 transition-colors ${u.isActive ? '' : 'opacity-60'}`}>
                   <td className="py-3 px-4 font-bold text-foreground">
@@ -530,12 +582,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         (rule 15). */}
                     <div className="flex flex-wrap items-center gap-2">
                       <EntityName name={u.name} lines={2} className="max-w-[22ch]" />
-                      {isSelf(u) && <span className="shrink-0 text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
+                      {isSelf(u) && <span className="shrink-0 text-2xs bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground" dir="ltr">{u.username}</td>
                   <td className="py-3 px-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border ${
                       u.role === 'admin'
                         ? 'bg-primary/10 text-primary border-primary/20'
                         : 'bg-muted text-muted-foreground border-border'
@@ -545,14 +597,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
                     </span>
                     {u.permissions.length > 0 && (
                       <span title="سطح دسترسی این کاربر دستی تنظیم شده و از الگوی نقش پیروی نمی‌کند"
-                        className="mr-1.5 inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
+                        className="mr-1.5 inline-flex items-center px-1.5 py-0.5 rounded-md text-2xs font-bold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
                         سفارشی
                       </span>
                     )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-col gap-1">
-                      <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                      <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-lg text-2xs font-bold border ${
                         u.isActive
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                           : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
@@ -560,39 +612,83 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         {u.isActive ? 'فعال' : 'غیرفعال'}
                       </span>
                       {u.mustChangePassword && (
-                        <span className="text-[9px] text-amber-700 dark:text-amber-400 font-semibold">تغییر رمز در ورود بعدی</span>
+                        <span className="text-2xs text-amber-700 dark:text-amber-400 font-semibold">تغییر رمز در ورود بعدی</span>
                       )}
                     </div>
                   </td>
                   <td className="py-3 px-4 text-muted-foreground">{formatLastLogin(u.lastLoginAt)}</td>
+                  {/* What this account actually holds, per module, in the same
+                      CRUD shorthand the dialog uses — so reviewing who can do
+                      what across the organisation does not mean opening seven
+                      dialogs one at a time. Read from `effectivePermissions`,
+                      which is the override when set and the role template
+                      otherwise, so it shows what is in force rather than what
+                      was ticked. */}
+                  <td className="py-3 px-4">
+                    <div className="flex flex-wrap items-center gap-1 max-w-[22rem]">
+                      {(() => {
+                        const held = PERMISSION_MODULES
+                          .map(m => ({ m, letters: moduleLetters(m, u.effectivePermissions) }))
+                          // A module that borrows another's read — lab results
+                          // and risk both open with `vendor.read` — would add a
+                          // bare "R" chip to every row that says nothing the
+                          // source chip did not already say. It earns its place
+                          // only once it grants a write of its own.
+                          .filter(({ m, letters }) => {
+                            if (!letters) return false;
+                            // The first module listed for a read permission owns
+                            // it; the later ones borrow it (lab results and risk
+                            // both open with `vendor.read`). A borrower with no
+                            // write of its own would add a bare "R" chip saying
+                            // nothing the owner's chip did not already say.
+                            const owner = PERMISSION_MODULES
+                              .find(other => other.actions.view === m.actions.view);
+                            return owner?.key === m.key || letters !== 'R';
+                          });
+                        if (held.length === 0) {
+                          return <span className="text-2xs text-muted-foreground">بدون دسترسی</span>;
+                        }
+                        return held.map(({ m, letters }) => (
+                          <span
+                            key={m.key}
+                            title={`${m.title} — ${letters.split('').map(l => ACTION_COLUMNS.find(c => c.letter === l)?.label).join('، ')}`}
+                            className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border bg-muted text-2xs font-bold text-foreground"
+                          >
+                            <span>{MODULE_SHORT[m.key] || m.title}</span>
+                            <span className="font-mono text-2xs text-primary">{letters}</span>
+                          </span>
+                        ));
+                      })()}
+                    </div>
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-center gap-1">
-                      <button type="button" title="ویرایش" onClick={() => openEdit(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title="سطح دسترسی"
+                      <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
+                        className="text-muted-foreground hover:text-primary">
+                        <Pencil />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
                         onClick={() => openPermissions(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent transition-colors cursor-pointer">
-                        <SlidersHorizontal className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title="بازنشانی کلمه عبور"
+                        className="text-muted-foreground hover:text-primary">
+                        <SlidersHorizontal />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
                         onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 hover:bg-accent transition-colors cursor-pointer">
-                        <KeyRound className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                        className="text-muted-foreground hover:text-amber-600">
+                        <KeyRound />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
                         disabled={isSelf(u)}
                         onClick={() => setActive(u, !u.isActive)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-accent transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
-                        {u.isActive ? <UserX className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                      </button>
-                      <button type="button" title="حذف کامل"
+                        className="text-muted-foreground hover:text-rose-600">
+                        {u.isActive ? <UserX /> : <CheckCircle />}
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
                         disabled={isSelf(u)}
                         onClick={() => setDeleteTarget(u)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-accent transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        className="text-muted-foreground hover:text-rose-600">
+                        <Trash2 />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -605,7 +701,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
           <>
             {visible.length > 0 && (
               <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-                <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+                <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
                   <span>تعداد در هر صفحه</span>
                   <select
                     value={perPage}
@@ -615,29 +711,29 @@ export function UsersView({ currentUser }: UsersViewProps) {
                     {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
-                <span className="text-[11px] text-muted-foreground sm:mr-auto">
+                <span className="text-2xs text-muted-foreground sm:mr-auto">
                   نمایش {((page - 1) * perPage + 1).toLocaleString('fa-IR')}
                   {' '}تا {Math.min(page * perPage, visible.length).toLocaleString('fa-IR')}
                   {' '}از {visible.length.toLocaleString('fa-IR')} کاربر
                 </span>
                 {totalPages > 1 && (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                      className="h-7 px-2.5 text-2xs font-bold">
                       قبلی
-                    </button>
-                    <span className="text-[11px] font-mono text-muted-foreground px-1">
+                    </Button>
+                    <span className="text-2xs font-mono text-muted-foreground px-1">
                       {page.toLocaleString('fa-IR')} / {totalPages.toLocaleString('fa-IR')}
                     </span>
-                    <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                      className="h-7 px-2.5 text-2xs font-bold">
                       بعدی
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
             )}
-            <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-2xs text-muted-foreground">
               <span>مجموع {users.length} کاربر · {activeAdmins} مدیر فعال</span>
               <span>حذف کاربر، سوابق او در Audit را پاک نمی‌کند؛ برای قطع دسترسی، غیرفعال‌سازی توصیه می‌شود.</span>
             </div>
@@ -646,13 +742,20 @@ export function UsersView({ currentUser }: UsersViewProps) {
       </div>
 
       {/* CREATE / EDIT */}
-      <FormModal open={formOpen} onClose={() => setFormOpen(false)} size="md" labelledBy="users-form-title">
+      <FormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        size="md"
+        labelledBy="users-form-title"
+        unsavedChanges={userFormDirty}
+        unsavedLabel={editing ? 'تغییرات این حساب کاربری' : 'اطلاعات کاربر جدید'}
+      >
         <form onSubmit={submitForm} className="flex flex-col max-h-full">
           <div className="px-6 py-4 border-b border-border bg-muted/50">
             <h3 id="users-form-title" className="text-sm font-black text-foreground">
               {editing ? `ویرایش حساب کاربری «${editing.name}»` : 'تعریف کاربر جدید'}
             </h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-2xs text-muted-foreground mt-0.5">
               {editing
                 ? 'نام کاربری قابل تغییر نیست؛ برای تغییر آن باید حساب جدیدی تعریف شود.'
                 : 'کاربر در اولین ورود ملزم به تغییر کلمه عبور خواهد بود.'}
@@ -669,24 +772,24 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
             <div className="space-y-1">
               <label htmlFor="user-name" className="block text-xs font-bold text-foreground">نام و نام خانوادگی</label>
-              <input
+              <Input
                 id="user-name"
                 value={draft.name}
                 onChange={e => setDraft({ ...draft, name: e.target.value })}
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full"
                 placeholder="مثلاً: مریم رضایی"
               />
             </div>
 
             <div className="space-y-1">
               <label htmlFor="user-username" className="block text-xs font-bold text-foreground">نام کاربری</label>
-              <input
+              <Input
                 id="user-username"
                 value={draft.username}
                 disabled={!!editing}
                 onChange={e => setDraft({ ...draft, username: e.target.value })}
                 dir="ltr"
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                className="w-full font-mono text-left disabled:opacity-50"
                 placeholder="m.rezaei"
               />
             </div>
@@ -697,17 +800,17 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 id="user-role"
                 value={draft.role}
                 onChange={e => setDraft({ ...draft, role: e.target.value as Role })}
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className={cn(inputBaseClass, 'w-full')}
               >
                 {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
               {editing && editing.permissions.length > 0 && draft.role !== editing.role && (
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   با تغییر سمت، دسترسی‌های سفارشی این کاربر پاک می‌شود و الگوی سمت جدید اعمال می‌گردد.
                 </p>
               )}
               {editing && editing.role === 'admin' && activeAdmins <= 1 && (
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   این تنها مدیر فعال سامانه است و سمت او قابل تغییر نیست.
                 </p>
               )}
@@ -718,13 +821,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <label htmlFor="user-password" className="block text-xs font-bold text-foreground">
                   کلمه عبور اولیه <span className="font-normal text-muted-foreground">(اختیاری)</span>
                 </label>
-                <input
+                <Input
                   id="user-password"
                   type="text"
                   value={draft.password}
                   onChange={e => setDraft({ ...draft, password: e.target.value })}
                   dir="ltr"
-                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full font-mono text-left"
                   placeholder="حداقل ۶ کاراکتر — خالی بگذارید تا پیش‌فرض استفاده شود"
                 />
               </div>
@@ -732,26 +835,32 @@ export function UsersView({ currentUser }: UsersViewProps) {
           </div>
 
           <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2 shrink-0">
-            <button type="button" onClick={() => setFormOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+            <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}
+              className="text-xs font-bold text-muted-foreground">
               انصراف
-            </button>
-            <button type="submit" disabled={saving}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 flex items-center gap-2">
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            </Button>
+            <Button type="submit" disabled={saving} className="text-xs font-bold">
+              {saving && <Loader2 className="animate-spin" />}
               {editing ? 'ذخیره تغییرات' : 'ایجاد کاربر'}
-            </button>
+            </Button>
           </div>
         </form>
       </FormModal>
 
       {/* RESET PASSWORD */}
-      <FormModal open={!!resetTarget} onClose={() => setResetTarget(null)} size="sm" labelledBy="users-reset-title">
+      <FormModal
+        open={!!resetTarget}
+        onClose={() => setResetTarget(null)}
+        size="sm"
+        labelledBy="users-reset-title"
+        unsavedChanges={resetDirty}
+        unsavedLabel="کلمهٔ عبور موقتی که وارد کرده‌اید"
+      >
         {resetTarget && (
           <form onSubmit={submitReset}>
             <div className="px-6 py-4 border-b border-border bg-muted/50">
               <h3 id="users-reset-title" className="text-sm font-black text-foreground">بازنشانی کلمه عبور</h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 برای «{resetTarget.name}» یک کلمه عبور موقت تعیین کنید. کاربر در ورود بعدی ملزم به تغییر آن است.
               </p>
             </div>
@@ -762,38 +871,47 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   <span>{resetError}</span>
                 </div>
               )}
-              <input
+              <Input
                 autoFocus
                 value={resetPassword}
                 onChange={e => setResetPassword(e.target.value)}
                 dir="ltr"
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full font-mono text-left"
                 placeholder="کلمه عبور موقت (حداقل ۶ کاراکتر)"
               />
             </div>
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setResetTarget(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setResetTarget(null)}
+                className="text-xs font-bold text-muted-foreground">
                 انصراف
-              </button>
-              <button type="submit"
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:opacity-90 transition-opacity cursor-pointer">
+              </Button>
+              {/* Amber is a one-off here; a variant for a single site would be
+                  dead weight in the library, so it rides on `className`. */}
+              <Button type="submit"
+                className="text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 hover:shadow-amber-600/20">
                 بازنشانی
-              </button>
+              </Button>
             </div>
           </form>
         )}
       </FormModal>
 
       {/* PERMISSIONS */}
-      <FormModal open={!!permTarget} onClose={() => setPermTarget(null)} size="md" labelledBy="users-perm-title">
+      <FormModal
+        open={!!permTarget}
+        onClose={() => setPermTarget(null)}
+        size="md"
+        labelledBy="users-perm-title"
+        unsavedChanges={permDirty}
+        unsavedLabel="تغییرات سطح دسترسی"
+      >
         {permTarget && (
           <div className="flex flex-col max-h-full">
             <div className="px-6 py-4 border-b border-border bg-muted/50">
               <h3 id="users-perm-title" className="text-sm font-black text-foreground">
                 سطح دسترسی «{permTarget.name}»
               </h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 سمت سازمانی ({ROLE_LABELS[permTarget.role] || permTarget.role}) الگوی پیش‌فرض را تعیین می‌کند؛ در اینجا می‌توانید برای همین کاربر استثنا بگذارید.
               </p>
             </div>
@@ -814,18 +932,19 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <table className="w-full min-w-[520px] border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <th className="text-right text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
+                      <th className="text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
                       {ACTION_COLUMNS.map(col => (
-                        <th key={col.key} className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
-                          {col.label}
+                        <th key={col.key} className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
+                          <span className="block">{col.label}</span>
+                          <span className="block font-mono text-2xs text-muted-foreground/70">{col.letter}</span>
                         </th>
                       ))}
-                      <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
+                      <th className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
                     </tr>
                   </thead>
                   <tbody>
                     {PERMISSION_MODULES.map(module => {
-                      const owned = modulePermissions(module);
+                      const owned = allModulePermissions(module);
                       const granted = owned.filter(p => permDraft.includes(p));
                       const allOn = owned.length > 0 && granted.length === owned.length;
                       const someOn = granted.length > 0 && !allOn;
@@ -833,12 +952,54 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       return (
                         <tr key={module.key} className="align-top">
                           <td className="py-2.5 pr-1 border-t border-border/70">
-                            <span className="text-xs font-bold text-foreground block">{module.title}</span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-xs font-bold text-foreground">{module.title}</span>
+                              {/* What this row currently grants, in the CRUD
+                                  shorthand the columns are labelled with — so a
+                                  glance down the dialog answers "what does this
+                                  person have on partners?" without counting
+                                  ticks. */}
+                              <span
+                                className={`shrink-0 font-mono text-2xs font-bold px-1.5 py-0.5 rounded-md border ${
+                                  moduleLetters(module, permDraft)
+                                    ? 'bg-primary/10 text-primary border-primary/20'
+                                    : 'bg-muted text-muted-foreground border-border'
+                                }`}
+                                title={moduleLetters(module, permDraft)
+                                  ? `دسترسی فعلی: ${moduleLetters(module, permDraft)}`
+                                  : 'هیچ دسترسی‌ای به این ماژول ندارد'}
+                              >
+                                {moduleLetters(module, permDraft) || '—'}
+                              </span>
+                            </div>
                             {module.note && (
-                              <span className="text-[10px] text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
+                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
                                 {module.note}
                               </span>
                             )}
+                            {/* Abilities that are not one of the four columns get
+                                their own tick here rather than a fifth column
+                                that would be empty on every other row. */}
+                            {(module.extras || []).map(extra => (
+                              <label key={extra.permission}
+                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[26ch]">
+                                <input
+                                  type="checkbox"
+                                  checked={permDraft.includes(extra.permission)}
+                                  onChange={() => togglePermission(extra.permission)}
+                                  className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
+                                />
+                                <span>
+                                  <span className="text-2xs font-bold text-foreground">
+                                    {extra.label}
+                                    <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
+                                  </span>
+                                  <span className="text-2xs text-muted-foreground leading-relaxed block">
+                                    {extra.note}
+                                  </span>
+                                </span>
+                              </label>
+                            ))}
                           </td>
 
                           {ACTION_COLUMNS.map(col => {
@@ -863,7 +1024,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                       aria-label={`${module.title} — ${PERMISSION_LABELS[perm]}`}
                                       className="w-4 h-4 accent-primary cursor-pointer"
                                     />
-                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                    <span className="text-2xs text-muted-foreground">دسترسی کامل</span>
                                     {inTemplate !== checked && (
                                       <span className={`text-[8px] font-bold ${checked ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
                                         {checked ? '+' : '−'}
@@ -878,7 +1039,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               return (
                                 <td key={col.key} className="py-2.5 px-1 text-center border-t border-border/70">
                                   <span
-                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-[11px] cursor-help"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-2xs cursor-help"
                                     title={cell === 'open' ? LOCKED_REASONS.open : LOCKED_REASONS.none}
                                   >
                                     {cell === 'open' ? '✓' : '—'}
@@ -909,7 +1070,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                     className="w-4 h-4 accent-primary cursor-pointer"
                                   />
                                   {merged && (
-                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                    <span className="text-2xs text-muted-foreground">دسترسی کامل</span>
                                   )}
                                   {inTemplate !== checked && (
                                     <span className={`text-[8px] font-bold px-1 rounded ${
@@ -948,7 +1109,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   department is its own permission, and a person can hold more
                   than one. */}
               <div className="space-y-1.5 pt-2">
-                <span className="text-[11px] font-bold text-muted-foreground block border-b border-border/60 pb-1.5">
+                <span className="text-2xs font-bold text-muted-foreground block border-b border-border/60 pb-1.5">
                   امتیازدهی دپارتمان‌ها
                 </span>
                 {SCORE_PERMISSIONS.map(permission => {
@@ -967,7 +1128,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         <span className="text-xs font-semibold text-foreground">{PERMISSION_LABELS[permission]}</span>
                       </span>
                       {inTemplate !== checked && (
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                        <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-md border ${
                           checked
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                             : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
@@ -980,7 +1141,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 })}
               </div>
 
-              <p className="text-[10px] text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
+              <p className="text-2xs text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
                 خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
                 واردشده آن بخش را می‌بینند و <span className="font-bold">—</span> یعنی آن عملیات در آن ماژول وجود ندارد.
                 نشانهٔ <span className="text-emerald-700 dark:text-emerald-400 font-bold">+</span> و
@@ -990,22 +1151,22 @@ export function UsersView({ currentUser }: UsersViewProps) {
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-between gap-2 shrink-0">
-              <button type="button" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
-                className="px-3 py-2 rounded-xl text-[11px] font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
+                className="px-3 text-2xs font-bold text-muted-foreground">
                 بازگشت به پیش‌فرض سمت
-              </button>
+              </Button>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setPermTarget(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                <Button type="button" variant="ghost" onClick={() => setPermTarget(null)}
+                  className="text-xs font-bold text-muted-foreground">
                   انصراف
-                </button>
-                <button type="button" onClick={savePermissions}
+                </Button>
+                <Button type="button" onClick={savePermissions}
                   disabled={permSaving || samePermissions(permDraft, permTarget.effectivePermissions)}
                   title={samePermissions(permDraft, permTarget.effectivePermissions) ? 'تغییری نسبت به وضعیت فعلی داده نشده است.' : undefined}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                  {permSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  className="text-xs font-bold">
+                  {permSaving && <Loader2 className="animate-spin" />}
                   ذخیره سطح دسترسی
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1030,14 +1191,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
               </p>
             </div>
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)}
+                className="text-xs font-bold text-muted-foreground">
                 انصراف
-              </button>
-              <button type="button" onClick={confirmDelete}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:opacity-90 transition-opacity cursor-pointer">
+              </Button>
+              <Button type="button" variant="destructive" onClick={confirmDelete}
+                className="text-xs font-bold">
                 حذف کامل
-              </button>
+              </Button>
             </div>
           </>
         )}

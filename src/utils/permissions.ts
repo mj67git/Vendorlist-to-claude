@@ -22,6 +22,8 @@
 export type Role = 'admin' | 'lab' | 'commercial' | 'qa' | 'planning' | 'finance';
 
 export type Permission =
+  /** See the source list, the category views and a source's detail page. */
+  | 'vendor.read'
   /** Register a new source. */
   | 'vendor.create'
   /** Edit an existing source's profile, contact details or activity log. */
@@ -38,18 +40,27 @@ export type Permission =
   | 'score.qa'
   | 'score.planning'
   | 'score.finance'
+  /** See the material repository. */
+  | 'material.read'
   /** Add a material to the master repository. */
   | 'material.create'
   /** Edit a material, including its active/inactive status. */
   | 'material.edit'
   /** Remove a material from the repository. */
   | 'material.delete'
+  /** See the business-partner repository and the SOP evaluations. */
+  | 'partner.read'
   /** Add a business partner. */
   | 'partner.create'
   /** Edit a partner, including its SOP evaluation and blacklist status. */
   | 'partner.edit'
   /** Remove a business partner. */
   | 'partner.delete'
+  /** Download the SOP documents attached to a partner. Separate from
+   *  `partner.read` because these are the legal papers themselves — business
+   *  licence, signatory authorisation, legalisation — and seeing that a partner
+   *  is graded B is a different thing from taking its licence off the system. */
+  | 'partner.files'
   /** Read the audit trail. */
   | 'audit.read'
   /** Administer user accounts, including their permissions. */
@@ -61,9 +72,9 @@ export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 
 /** Every permission there is, in the order the admin screen groups them. */
 export const ALL_PERMISSIONS: Permission[] = [
-  'vendor.create', 'vendor.edit', 'vendor.delete',
-  'material.create', 'material.edit', 'material.delete',
-  'partner.create', 'partner.edit', 'partner.delete',
+  'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete',
+  'material.read', 'material.create', 'material.edit', 'material.delete',
+  'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files',
   'vendor.analysis', 'vendor.risk',
   'score.commercial', 'score.qa', 'score.planning', 'score.finance',
   'audit.read', 'users.manage',
@@ -92,15 +103,19 @@ const LEGACY_PERMISSIONS: Record<string, Permission[]> = {
 
 /** Persian labels, used where a single permission is named on its own. */
 export const PERMISSION_LABELS: Record<Permission, string> = {
+  'vendor.read': 'مشاهدهٔ سورس‌ها',
   'vendor.create': 'ثبت سورس جدید',
   'vendor.edit': 'ویرایش سورس',
   'vendor.delete': 'حذف سورس',
+  'material.read': 'مشاهدهٔ مخزن مواد',
   'material.create': 'ثبت مادهٔ جدید',
   'material.edit': 'ویرایش ماده',
   'material.delete': 'حذف ماده',
+  'partner.read': 'مشاهدهٔ شرکای تجاری',
   'partner.create': 'ثبت شریک جدید',
   'partner.edit': 'ویرایش شریک',
   'partner.delete': 'حذف شریک',
+  'partner.files': 'دانلود مدارک SOP شریک',
   'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
   'vendor.risk': 'ارزیابی ریسک (FMEA)',
   'score.commercial': 'امتیازدهی بازرگانی و خرید',
@@ -131,37 +146,51 @@ export interface PermissionModule {
   actions: Record<ModuleAction, Permission | 'open' | null>;
   /** Shown under the module name to explain a locked or merged row. */
   note?: string;
+  /**
+   * Abilities of this module that are not one of the four CRUD actions, each
+   * with its own letter for the summary badge. Downloading a partner's SOP
+   * papers is the first: it is a read, but not the read that opens the list, so
+   * it needs a checkbox of its own rather than a fifth column that would be
+   * empty on every other row.
+   */
+  extras?: Array<{ permission: Permission; letter: string; label: string; note: string }>;
 }
 
 export const PERMISSION_MODULES: PermissionModule[] = [
   {
     key: 'vendors',
     title: 'سورس‌ها (تأمین‌کنندگان)',
-    actions: { view: 'open', create: 'vendor.create', edit: 'vendor.edit', delete: 'vendor.delete' },
+    actions: { view: 'vendor.read', create: 'vendor.create', edit: 'vendor.edit', delete: 'vendor.delete' },
   },
   {
     key: 'materials',
     title: 'مخزن مواد اولیه',
-    actions: { view: 'open', create: 'material.create', edit: 'material.edit', delete: 'material.delete' },
+    actions: { view: 'material.read', create: 'material.create', edit: 'material.edit', delete: 'material.delete' },
   },
   {
     key: 'partners',
     title: 'شرکای تجاری',
-    actions: { view: 'open', create: 'partner.create', edit: 'partner.edit', delete: 'partner.delete' },
+    actions: { view: 'partner.read', create: 'partner.create', edit: 'partner.edit', delete: 'partner.delete' },
+    extras: [{
+      permission: 'partner.files',
+      letter: 'F',
+      label: 'دانلود مدارک SOP',
+      note: 'مشاهدهٔ فهرست و گرید شریک با «مشاهده» داده می‌شود؛ این گزینه اجازهٔ گرفتن خودِ مدارک (مجوز کسب‌وکار، معرفی‌نامه، ترجمهٔ رسمی) را می‌دهد.',
+    }],
   },
   {
     key: 'analysis',
     title: 'نتایج آزمایشگاهی',
     single: 'vendor.analysis',
-    actions: { view: 'open', create: 'vendor.analysis', edit: 'vendor.analysis', delete: 'vendor.analysis' },
-    note: 'کل فهرست نتایج یکجا ذخیره می‌شود، پس ثبت و ویرایش و حذف از هم تفکیک‌پذیر نیستند.',
+    actions: { view: 'vendor.read', create: 'vendor.analysis', edit: 'vendor.analysis', delete: 'vendor.analysis' },
+    note: 'نتایج داخل صفحهٔ سورس نمایش داده می‌شوند، پس مشاهده‌شان همان «مشاهدهٔ سورس‌ها» است. کل فهرست یکجا ذخیره می‌شود، پس ثبت و ویرایش و حذف از هم تفکیک‌پذیر نیستند.',
   },
   {
     key: 'risk',
     title: 'ارزیابی ریسک (FMEA)',
     single: 'vendor.risk',
-    actions: { view: 'open', create: 'vendor.risk', edit: 'vendor.risk', delete: 'vendor.risk' },
-    note: 'ارزیابی ریسک یک رکورد واحد است که جایگزین می‌شود.',
+    actions: { view: 'vendor.read', create: 'vendor.risk', edit: 'vendor.risk', delete: 'vendor.risk' },
+    note: 'ارزیابی ریسک یک رکورد واحد است که جایگزین می‌شود؛ مشاهده‌اش همان «مشاهدهٔ سورس‌ها» است.',
   },
   {
     key: 'audit',
@@ -181,33 +210,58 @@ export const PERMISSION_MODULES: PermissionModule[] = [
 
 /** Why a cell is locked, shown to the admin instead of a dead checkbox. */
 export const LOCKED_REASONS = {
-  open: 'هر کاربر واردشده این بخش را می‌بیند؛ خواندن در برنامه محدود نمی‌شود.',
+  open: 'این بخش برای هر کاربر واردشده باز است و تنظیمی آن را محدود نمی‌کند.',
   none: 'این عملیات در این ماژول وجود ندارد.',
 } as const;
 
 /**
- * The default set each role starts from. Reading is not restricted anywhere:
- * every signed-in user can see the vendor list, the repositories and each
- * source's detail page. Only writes are divided.
+ * The default set each role starts from.
  *
- * `lab` intentionally holds nothing. It exists in the database enum, no account
- * uses it, and it is left alone because removing it would mean a schema
- * migration for a role nobody has.
+ * Reading is a permission now, not a given. Every working role starts with read
+ * on all three repositories, so no account loses the pages it works in; an admin
+ * can take one away for one person (finance sees the partners but cannot touch
+ * them, a contractor sees nothing but materials).
+ *
+ * `partner.files` is the exception to "everyone reads everything": the SOP
+ * papers are the partner's legal documents, so they go to the roles that handle
+ * them — commercial, who collects them, and QA, who grades them — and not to
+ * planning or finance, whose work needs the list and the grade. An admin can
+ * still grant it to one person.
+ *
+ * `lab` intentionally holds nothing, reads included. It exists in the database
+ * enum, no account uses it, and it is left alone because removing it would mean
+ * a schema migration for a role nobody has.
  */
+const READ_ALL = ['vendor.read', 'material.read', 'partner.read'] as const;
+
 const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
   commercial: [
+    ...READ_ALL,
+    // Commercial owns the partner records and collects these papers, and QA
+    // reviews them against the SOP rubric. Planning and finance need the list
+    // and the grade to do their work, not the legal documents themselves.
+    'partner.files',
     'vendor.create', 'vendor.edit',
     'partner.create', 'partner.edit', 'partner.delete',
     'score.commercial',
   ],
   qa: [
+    ...READ_ALL,
+    'partner.files',
     'vendor.analysis',
+    // FMEA risk assessment is a quality activity and belongs with the rest of
+    // QA's work. It used to sit with `admin` alone while the UI still offered
+    // QA the risk form and a "ریسک ثبت‌نشده" backlog, so every quality user who
+    // opened that backlog was refused by the server — the screen and the
+    // endpoint disagreed, which is the exact failure this policy table exists
+    // to prevent (rule 14).
+    'vendor.risk',
     'material.create', 'material.edit', 'material.delete',
     'score.qa',
   ],
-  planning: ['score.planning'],
-  finance: ['score.finance'],
+  planning: [...READ_ALL, 'score.planning'],
+  finance: [...READ_ALL, 'score.finance'],
   lab: [],
 };
 
@@ -236,9 +290,31 @@ function expandStored(entry: unknown): Permission[] {
   return LEGACY_PERMISSIONS[entry] ?? [];
 }
 
+/**
+ * Read permissions did not exist when the first per-user overrides were stored,
+ * so those lists name only writes. Reading them literally today would take the
+ * whole application away from exactly the people an admin had bothered to
+ * customise — they would keep `partner.edit` and lose the partner list it edits.
+ *
+ * A stored list that names no read at all is therefore treated as predating
+ * them and given all of them — the SOP download included, since it was part of
+ * "everyone can read the partners" too — the same "expand on read, migrate
+ * nothing" approach that carried `material.write` through its split. Once an admin saves the
+ * dialog again the list holds explicit reads and this no longer applies, which
+ * is what makes a deliberate read-only account possible: it names at least one
+ * read, so nothing is added to it.
+ */
+const READ_PERMISSIONS: Permission[] = ['vendor.read', 'material.read', 'partner.read', 'partner.files'];
+
+function withLegacyReads(list: Permission[]): Permission[] {
+  if (list.length === 0) return list;
+  if (list.some(p => READ_PERMISSIONS.includes(p))) return list;
+  return [...list, ...READ_PERMISSIONS];
+}
+
 function parseOverrides(raw: unknown): Permission[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const known = [...new Set(raw.flatMap(expandStored))];
+  const known = withLegacyReads([...new Set(raw.flatMap(expandStored))]);
   // An override list of only unrecognised entries is treated as no override
   // rather than as "nothing allowed", so a stale name cannot silently lock a
   // user out of everything.
@@ -246,7 +322,7 @@ function parseOverrides(raw: unknown): Permission[] | null {
   // A list naming only retired permissions that expand to nothing — an override
   // of just `archive.read` — lands here too and falls back to the role, which is
   // the safe reading: that account was never actually restricted by it.
-  return known.length > 0 ? known : null;
+  return known.length > 0 ? ALL_PERMISSIONS.filter(p => known.includes(p)) : null;
 }
 
 /** True when this user's access has been adjusted away from their role. */

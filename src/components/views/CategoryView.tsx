@@ -3,10 +3,10 @@ import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { Input, inputBaseClass } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { exportCategoryToExcel } from '../../utils/excelExport';
+import { useExcelExport } from '../../hooks/useExcelExport';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
@@ -14,6 +14,7 @@ import type { SourceSelectionRecord } from './MaterialsComparisonSection';
 import { FormModal } from '../../components/FormModal';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { can } from '../../utils/permissions';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
@@ -40,6 +41,7 @@ export function CategoryView({
   onAddMaterial: (m: Material) => void,
   partners?: BusinessPartner[]
 }) {
+  const excel = useExcelExport();
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
@@ -232,13 +234,17 @@ export function CategoryView({
           <div className="flex items-center gap-2 lg:mr-auto shrink-0 order-last lg:order-none">
             <Button 
               type="button" 
-              onClick={() => exportCategoryToExcel(db, categoryId, meta.fa, partners, materials)}
+              onClick={() => excel.run(xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections))}
+              disabled={excel.busy}
               className="flex items-center gap-2 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
               title={`دانلود خروجی اکسل دسته‌بندی ${meta.fa}`}
             >
               <Download className="w-4 h-4" />
-              <span>خروجی اکسل</span>
+              <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
             </Button>
+            {excel.error && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 max-w-xs">{excel.error}</p>
+            )}
           </div>
 
           <div className="relative w-full lg:w-80 shrink-0">
@@ -248,7 +254,7 @@ export function CategoryView({
               className="pl-9 pr-9 text-sm bg-background"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              dir="rtl"
+             
             />
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3 pointer-events-none" />
             {query && (
@@ -265,14 +271,14 @@ export function CategoryView({
 
           {/* Sort control */}
           <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
-            <label htmlFor="category-sort" className="text-[11px] text-muted-foreground whitespace-nowrap">
+            <label htmlFor="category-sort" className="text-2xs text-muted-foreground whitespace-nowrap">
               مرتب‌سازی
             </label>
             <select
               id="category-sort"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              dir="rtl"
+             
               className="text-xs bg-background border border-border rounded-lg px-2.5 py-2 text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
               title="مرتب‌سازی گروه‌های ماده"
             >
@@ -391,13 +397,15 @@ export function CategoryView({
             {(query || activeFilter) && (
               <div className="mt-3">
                 <p className="text-sm text-muted-foreground">با فیلتر یا جست‌وجوی فعلی موردی پیدا نشد.</p>
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="sm"
                   onClick={() => { setQuery(''); setActiveFilter(null); }}
-                  className="mt-3 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                  className="mt-3"
                 >
                   پاک کردن فیلترها
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -423,7 +431,7 @@ export function CategoryView({
               <h3 id="select-source-title" className="text-sm font-black text-foreground">
                 ثبت سورس منتخب برای «{selectDialog.materialFa}»
               </h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 این تصمیم با نام شما و دلیل آن در ردیابی تغییرات (Audit) ثبت می‌شود.
               </p>
             </div>
@@ -442,13 +450,13 @@ export function CategoryView({
                   id="select-vendor"
                   value={selectDialog.vendorId}
                   onChange={e => setSelectDialog({ ...selectDialog, vendorId: e.target.value })}
-                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className={cn(inputBaseClass, 'w-full')}
                 >
                   {selectDialog.vendors.map(v => (
                     <option key={v.id} value={v.id}>{v.name}{v.grade ? ` — Grade ${v.grade}` : ''}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-muted-foreground pt-1">
+                <p className="text-2xs text-muted-foreground pt-1">
                   انتخاب شما می‌تواند با پیشنهاد موتور متفاوت باشد؛ در آن صورت دلیل اهمیت بیشتری دارد.
                 </p>
               </div>
@@ -465,19 +473,17 @@ export function CategoryView({
                   className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   placeholder="مثلاً: بالاترین امتیاز کیفی، سابقهٔ آزمایشگاهی بدون انحراف، و تأمین پایدار در دو سال گذشته."
                 />
-                <p className="text-[10px] text-muted-foreground">حداقل ۱۰ کاراکتر.</p>
+                <p className="text-2xs text-muted-foreground">حداقل ۱۰ کاراکتر.</p>
               </div>
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setSelectDialog(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+              <Button type="button" variant="ghost" onClick={() => setSelectDialog(null)}>
                 انصراف
-              </button>
-              <button type="submit" disabled={selectSaving}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50">
+              </Button>
+              <Button type="submit" disabled={selectSaving}>
                 ثبت انتخاب
-              </button>
+              </Button>
             </div>
           </form>
         )}
