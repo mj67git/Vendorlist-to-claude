@@ -363,7 +363,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     // Process rejections
     const rejectLines = formData.rejectionReasonList.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
-    let finalIsSample = isSample;
+    const finalIsSample = isSample;
     let finalCategory = finalIsSample ? 'sample' as Category : sourceType as Category;
     let finalGrade = existingVendor ? existingVendor.grade : (finalIsSample ? null : 'new');
     let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'approved' : 'new');

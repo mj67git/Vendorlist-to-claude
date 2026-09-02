@@ -13,7 +13,7 @@ import { selectionForVendor } from '../utils/sourceSelection';
 import { describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
 
 function getRawScoreValue(vendor: Vendor, deptId: string, critKey: string): number {

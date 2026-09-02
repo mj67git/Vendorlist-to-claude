@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
 import { Category, Scores, Vendor, User, Material, BusinessPartner } from './types';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from './assets/logo.png';
 import { categoryLabels } from './constants/categories';
 
@@ -1365,7 +1365,7 @@ export default function App() {
           existingVendor={editing}
           onClose={goBack}
           onSaved={closeSourceForm}
-          onSave={(v, msg) => { editing ? handleUpdateVendor(v, msg) : handleAddVendor(v); }}
+          onSave={(v, msg) => { if (editing) handleUpdateVendor(v, msg); else handleAddVendor(v); }}
           currentUser={currentUser}
           partners={businessPartners}
           onAddPartner={handleAddBusinessPartner}

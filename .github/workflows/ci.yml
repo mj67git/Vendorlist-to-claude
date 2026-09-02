@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   verify:
-    name: typecheck · tests · build
+    name: typecheck · lint · tests · build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -72,6 +72,13 @@ jobs:
 
       - name: Typecheck
         run: bunx tsc --noEmit
+
+      # ESLint is a gate for defects, not for style: hook-order violations,
+      # unreachable branches, duplicated keys. Warnings do not fail the build —
+      # a gate everyone learns to ignore stops being a gate — so `--max-warnings`
+      # is deliberately not set.
+      - name: Lint
+        run: bunx eslint .
 
       # Unit tests and API tests in one run. Serially, because the API files
       # each reset the database: run in parallel they truncate the tables the

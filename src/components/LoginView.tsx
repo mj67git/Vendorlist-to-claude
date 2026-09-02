@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, AlertTriangle } from 'lucide-react';
 import { User } from '../types';
-// @ts-ignore
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
 
 interface LoginViewProps {

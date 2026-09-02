@@ -111,7 +111,7 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
       
       let grade = vendor.grade;
       let pStatus = vendor.status;
-      let pCategory = vendor.category;
+      const pCategory = vendor.category;
 
       if (isFullyScored) {
         const overall = calculateOverallScore(finalScores);
