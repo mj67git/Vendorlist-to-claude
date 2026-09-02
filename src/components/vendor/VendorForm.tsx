@@ -14,6 +14,8 @@ import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, S
 import { SOP_DOCUMENTS_DEF, computeSupplierEvaluation } from '../../utils/sopEvaluation';
 import { hasQcReject } from '../../utils/vendorState';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
+import { Input, inputBaseClass } from '../../components/ui/input';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
@@ -619,56 +621,56 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                       <label className="font-semibold text-foreground block">
                         {newPartnerType === 'Manufacturer' ? 'نام تولیدکننده' : 'نام فروشنده / Supplier'} <span className="text-rose-500">*</span>
                       </label>
-                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.name}
+                      <Input required type="text" className="w-full" value={newSupplierData.name}
                         onChange={e => setNewSupplierData({ ...newSupplierData, name: e.target.value })}
                         placeholder={newPartnerType === 'Manufacturer' ? 'مثلاً: BASF SE' : 'مثلاً: Biesterfeld Spezialchemie GmbH'} />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">کشور <span className="text-rose-500">*</span></label>
-                      <input required type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.country}
+                      <Input required type="text" className="w-full" value={newSupplierData.country}
                         onChange={e => setNewSupplierData({ ...newSupplierData, country: e.target.value })}
                         placeholder="مثلاً: آلمان، چین، هند..." />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">شهر</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.city}
+                      <Input type="text" className="w-full" value={newSupplierData.city}
                         onChange={e => setNewSupplierData({ ...newSupplierData, city: e.target.value })}
                         placeholder="مثلاً: لودویگزهافن" />
                     </div>
 
                     <div className="space-y-1 md:col-span-2">
                       <label className="font-semibold text-foreground block">آدرس کامل</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.address}
+                      <Input type="text" className="w-full" value={newSupplierData.address}
                         onChange={e => setNewSupplierData({ ...newSupplierData, address: e.target.value })}
                         placeholder="آدرس دقیق..." />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">نام رابط / مسئول تماس</label>
-                      <input type="text" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.contactPerson}
+                      <Input type="text" className="w-full" value={newSupplierData.contactPerson}
                         onChange={e => setNewSupplierData({ ...newSupplierData, contactPerson: e.target.value })}
                         placeholder="مثلاً: Dr. Klaus Weber" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">شماره تماس</label>
-                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.phone}
+                      <Input type="text" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.phone}
                         onChange={e => setNewSupplierData({ ...newSupplierData, phone: e.target.value })}
                         placeholder="+49 621 60-0" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">ایمیل رسمی</label>
-                      <input type="email" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.email}
+                      <Input type="email" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.email}
                         onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })}
                         placeholder="contact@company.com" />
                     </div>
 
                     <div className="space-y-1">
                       <label className="font-semibold text-foreground block">وبسایت</label>
-                      <input type="text" dir="ltr" className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card" value={newSupplierData.website}
+                      <Input type="text" dir="ltr" className="w-full text-left font-mono" value={newSupplierData.website}
                         onChange={e => setNewSupplierData({ ...newSupplierData, website: e.target.value })}
                         placeholder="https://www.company.com" />
                     </div>
@@ -845,7 +847,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <label htmlFor="vf-sample-status" className="text-foreground font-semibold text-xs">وضعیت اولیهٔ نمونه</label>
                     <select
                       id="vf-sample-status"
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring" 
+                      className={cn(inputBaseClass, 'w-full')} 
                       value={sampleStatus} 
                       onChange={e => setSampleStatus(e.target.value)}
                     >
@@ -1027,7 +1029,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     </span>
                   )}
                 </label>
-                <input
+                <Input
                   id="vf-irc"
                   type="text"
                   dir="ltr"
@@ -1035,10 +1037,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   maxLength={IRC_LENGTH}
                   aria-invalid={!isIrcValid}
                   aria-describedby="vf-irc-hint"
-                  className={`w-full bg-background border rounded-lg px-3 py-2 text-foreground text-left focus:outline-none focus:ring-1 font-mono text-sm tracking-wider ${
-                    !blocksSubmitOnIrc
-                      ? 'border-border focus:ring-ring focus:border-ring'
-                      : 'border-rose-500 focus:ring-rose-500 focus:border-rose-500'
+                  className={`w-full text-left font-mono tracking-wider ${
+                    blocksSubmitOnIrc ? 'border-rose-500 focus-visible:ring-rose-500' : ''
                   }`}
                   value={formData.irc}
                   onChange={e => {

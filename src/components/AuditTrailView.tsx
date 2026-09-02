@@ -17,6 +17,8 @@ import {
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { EntityName } from './EntityName';
 import { readLocalAudit } from '../services/localAudit';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
 
 export interface AuditLog {
   id: string;
@@ -678,12 +680,12 @@ export const AuditTrailView: React.FC = () => {
             <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
               <Search className="w-4 h-4" />
             </span>
-            <input
+            <Input
               type="text"
               placeholder="جستجو بر اساس نام کاربر، واحد، رکورد، فعالیت یا توضیحات..."
               value={searchQuery}
               onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border/80 rounded-xl pr-10 pl-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 focus:bg-card transition-all duration-200 font-medium"
+              className="w-full pr-10 pl-4 font-medium"
             />
           </div>
 
@@ -757,7 +759,7 @@ export const AuditTrailView: React.FC = () => {
             <select
               value={filterUser}
               onChange={e => { setFilterUser(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className={cn(inputBaseClass, 'w-full font-medium')}
             >
               <option value="all">همه کاربران</option>
               {uniqueUsers.map(u => (
@@ -772,7 +774,7 @@ export const AuditTrailView: React.FC = () => {
             <select
               value={filterModule}
               onChange={e => { setFilterModule(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className={cn(inputBaseClass, 'w-full font-medium')}
             >
               <option value="all">همه ماژول‌ها</option>
               {moduleOptions.map(m => (
@@ -789,7 +791,7 @@ export const AuditTrailView: React.FC = () => {
               onChange={e => { setFilterGroup(e.target.value); setCurrentPage(1); }}
               disabled={filterModule !== 'all'}
               title={filterModule !== 'all' ? 'وقتی یک ماژول مشخص انتخاب شده، گروه رویداد اثری ندارد.' : undefined}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50"
+              className={cn(inputBaseClass, 'w-full font-medium disabled:opacity-50')}
             >
               <option value="all">همه گروه‌ها</option>
               {Object.entries(AUDIT_EVENT_GROUPS).map(([key, g]) => (
@@ -804,7 +806,7 @@ export const AuditTrailView: React.FC = () => {
             <select
               value={filterAction}
               onChange={e => { setFilterAction(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className={cn(inputBaseClass, 'w-full font-medium')}
             >
               <option value="all">همه عملیات</option>
               {Object.entries(AUDIT_ACTION_LABELS).map(([value, label]) => (
@@ -819,7 +821,7 @@ export const AuditTrailView: React.FC = () => {
             <select
               value={filterSeverity}
               onChange={e => { setFilterSeverity(e.target.value); setQuickSeverityFilter(null); setCurrentPage(1); }}
-              className="w-full bg-muted/80 border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className={cn(inputBaseClass, 'w-full font-medium')}
             >
               <option value="all">همه سطوح</option>
               <option value="Information">عادی (Information)</option>

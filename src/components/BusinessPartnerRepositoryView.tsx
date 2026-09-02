@@ -39,6 +39,8 @@ import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
 
 interface Props {
   partners: BusinessPartner[];
@@ -836,12 +838,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
             <div className="relative w-full sm:w-72">
               <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
+              <Input
                 type="text"
                 value={search}
                 onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
                 placeholder="جستجو در نام، کشور، شهر، رابط، ایمیل، تلفن"
-                className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card transition-colors"
+                className="w-full pr-9 pl-3"
               />
             </div>
 
@@ -897,7 +899,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <select
                 value={sopStatusFilter}
                 onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
-                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+                className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه وضعیت‌های SOP</option>
                 <option value="Approved Supplier">Approved Supplier (تاییدشده)</option>
@@ -914,7 +916,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <select
                 value={gradeFilter}
                 onChange={e => { setGradeFilter(e.target.value as any); setCurrentPage(1); }}
-                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+                className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه گریدها</option>
                 <option value="A">Grade A (تاییدشده: ۸۰-۱۰۰)</option>
@@ -931,7 +933,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <select
                 value={countryFilter}
                 onChange={e => { setCountryFilter(e.target.value); setCurrentPage(1); }}
-                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+                className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه کشورها</option>
                 {availableCountries.map(c => <option key={c} value={c}>{c}</option>)}
@@ -943,7 +945,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <select
                 value={statusFilter}
                 onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
-                className="w-full bg-muted border border-border rounded-xl px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card font-medium transition-colors"
+                className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه وضعیت‌ها</option>
                 <option value="Active">فعال (Active)</option>
@@ -1359,13 +1361,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <label className="font-semibold text-foreground block">
                       {formData.type === 'Manufacturer' ? 'نام تولیدکننده' : 'نام فروشنده / Supplier'} <span className="text-rose-500">*</span>
                     </label>
-                    <input
+                    <Input
                       type="text"
                       required
                       value={formData.name || ''}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       placeholder={formData.type === 'Manufacturer' ? 'مثلاً: BASF SE' : 'مثلاً: Biesterfeld Spezialchemie GmbH'}
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full"
                     />
                   </div>
 
@@ -1375,88 +1377,88 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <label className="font-semibold text-foreground block">
                       کشور <span className="text-rose-500">*</span>
                     </label>
-                    <input
+                    <Input
                       type="text"
                       required
                       value={formData.country || ''}
                       onChange={e => setFormData({ ...formData, country: e.target.value })}
                       placeholder="مثلاً: آلمان، چین، هند..."
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full"
                     />
                   </div>
 
                   {/* City */}
                   <div className="space-y-1">
                     <label className="font-semibold text-foreground block">شهر</label>
-                    <input
+                    <Input
                       type="text"
                       value={formData.city || ''}
                       onChange={e => setFormData({ ...formData, city: e.target.value })}
                       placeholder="مثلاً: لودویگزهافن"
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full"
                     />
                   </div>
 
                   {/* Address */}
                   <div className="space-y-1 md:col-span-2">
                     <label className="font-semibold text-foreground block">آدرس کامل</label>
-                    <input
+                    <Input
                       type="text"
                       value={formData.address || ''}
                       onChange={e => setFormData({ ...formData, address: e.target.value })}
                       placeholder="آدرس دقیق..."
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full"
                     />
                   </div>
 
                   {/* Contact Person */}
                   <div className="space-y-1">
                     <label className="font-semibold text-foreground block">نام رابط / مسئول تماس</label>
-                    <input
+                    <Input
                       type="text"
                       value={formData.contactPerson || ''}
                       onChange={e => setFormData({ ...formData, contactPerson: e.target.value })}
                       placeholder="مثلاً: Dr. Klaus Weber"
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full"
                     />
                   </div>
 
                   {/* Phone */}
                   <div className="space-y-1">
                     <label className="font-semibold text-foreground block">شماره تماس</label>
-                    <input
+                    <Input
                       type="text"
                       value={formData.phone || ''}
                       onChange={e => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="+49 621 60-0"
                       dir="ltr"
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full text-left font-mono"
                     />
                   </div>
 
                   {/* Email */}
                   <div className="space-y-1">
                     <label className="font-semibold text-foreground block">ایمیل رسمی</label>
-                    <input
+                    <Input
                       type="email"
                       value={formData.email || ''}
                       onChange={e => setFormData({ ...formData, email: e.target.value })}
                       placeholder="contact@company.com"
                       dir="ltr"
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full text-left font-mono"
                     />
                   </div>
 
                   {/* Website */}
                   <div className="space-y-1">
                     <label className="font-semibold text-foreground block">وبسایت</label>
-                    <input
+                    <Input
                       type="text"
                       value={formData.website || ''}
                       onChange={e => setFormData({ ...formData, website: e.target.value })}
                       placeholder="https://www.company.com"
                       dir="ltr"
-                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-foreground text-left font-mono focus:outline-none focus:border-blue-500 focus:bg-card"
+                      className="w-full text-left font-mono"
                     />
                   </div>
 

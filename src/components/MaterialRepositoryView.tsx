@@ -16,6 +16,8 @@ import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
 import { categoryLabels } from '../constants/categories';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
 
 interface Props {
   materials: Material[];
@@ -572,12 +574,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
+            <Input
               type="text"
               placeholder="جستجو (نام فارسی، لاتین، CAS، محصول)..."
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors"
+              className="w-full pr-9 pl-3"
             />
           </div>
           
@@ -585,7 +587,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={roleFilter} 
               onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-40 transition-colors"
+              className={cn(inputBaseClass, 'w-full sm:w-40')}
             >
               <option value="All">همه نقش‌ها</option>
               {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
@@ -594,7 +596,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <select 
               value={pharmFilter} 
               onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className="px-3 py-2 bg-muted border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:border-blue-500 focus:bg-card focus-visible:ring-2 focus-visible:ring-primary/50 w-full sm:w-36 transition-colors"
+              className={cn(inputBaseClass, 'font-mono w-full sm:w-36')}
             >
               <option value="All">همه فارماکوپه‌ها</option>
               {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -857,12 +859,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام فارسی ماده <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.nameFa || ''} 
                           onChange={e => setFormData({ ...formData, nameFa: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full"
                           placeholder="مثال: استامینوفن"
                         />
                       </div>
@@ -871,12 +873,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام لاتین / ژنریک <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.nameEn || ''} 
                           onChange={e => setFormData({ ...formData, nameEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="e.g. Paracetamol"
                           dir="ltr"
                         />
@@ -886,12 +888,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           شماره CAS <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.cas || ''} 
                           onChange={e => setFormData({ ...formData, cas: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="103-90-2"
                           dir="ltr"
                         />
@@ -901,11 +903,11 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           نام IUPAC (اختیاری)
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           value={formData.iupac || ''} 
                           onChange={e => setFormData({ ...formData, iupac: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="N-(4-hydroxyphenyl)ethanamide"
                           dir="ltr"
                         />
@@ -928,7 +930,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <select 
                           value={formData.role || 'API'} 
                           onChange={e => setFormData({ ...formData, role: e.target.value as MaterialRole })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className={cn(inputBaseClass, 'w-full')}
                         >
                           {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                         </select>
@@ -941,7 +943,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <select 
                           value={formData.pharmacopoeia || 'USP'} 
                           onChange={e => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className={cn(inputBaseClass, 'w-full font-mono')}
                         >
                           {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
@@ -961,12 +963,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (فارسی) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.finalProduct || ''} 
                           onChange={e => setFormData({ ...formData, finalProduct: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full"
                           placeholder="مثلاً: قرص استامینوفن ۵۰۰"
                         />
                       </div>
@@ -975,12 +977,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                         <label className="text-xs font-bold text-foreground block">
                           محصول نهایی (لاتین) <span className="text-rose-500 dark:text-rose-400">*</span>
                         </label>
-                        <input 
+                        <Input 
                           type="text" 
                           required
                           value={formData.finalProductEn || ''} 
                           onChange={e => setFormData({ ...formData, finalProductEn: e.target.value })} 
-                          className="w-full px-3.5 py-2 bg-card border border-border rounded-xl text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full text-left font-mono"
                           placeholder="Paracetamol 500mg Tablet"
                           dir="ltr"
                         />

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Shield, Key, AlertCircle, CheckCircle, Eye, EyeOff, X } from 'lucide-react';
 import { User } from '../types';
 import { authFetch } from '../services/authFetch';
+import { Input } from './ui/input';
 
 interface ChangePasswordModalProps {
   currentUser: User;
@@ -133,7 +134,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="current_password_input" className="block text-xs font-bold text-foreground">کلمه عبور فعلی (پیش‌فرض)</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="current_password_input"
                     autoComplete="current-password"
                     type={showCurrent ? 'text' : 'password'}
@@ -141,7 +142,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="کلمه عبور فعلی"
                   />
                   <button
@@ -158,7 +159,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="new_password_input" className="block text-xs font-bold text-foreground">کلمه عبور جدید</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="new_password_input"
                     autoComplete="new-password"
                     type={showNew ? 'text' : 'password'}
@@ -166,7 +167,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="رمز عبور حداقل ۶ کاراکتر"
                   />
                   <button
@@ -183,7 +184,7 @@ export function ChangePasswordModal({
               <div className="space-y-1">
                 <label htmlFor="confirm_password_input" className="block text-xs font-bold text-foreground">تکرار کلمه عبور جدید</label>
                 <div className="relative">
-                  <input
+                  <Input
                     id="confirm_password_input"
                     autoComplete="new-password"
                     type={showConfirm ? 'text' : 'password'}
@@ -191,7 +192,7 @@ export function ChangePasswordModal({
                     disabled={loading}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                    className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                     placeholder="تکرار رمز عبور جدید"
                   />
                   <button
@@ -283,7 +284,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="current_password_input" className="block text-xs font-bold text-foreground">کلمه عبور فعلی</label>
               <div className="relative">
-                <input
+                <Input
                   id="current_password_input"
                   autoComplete="current-password"
                   type={showCurrent ? 'text' : 'password'}
@@ -291,7 +292,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="رمز عبور کنونی"
                 />
                 <button
@@ -308,7 +309,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="new_password_input" className="block text-xs font-bold text-foreground">کلمه عبور جدید</label>
               <div className="relative">
-                <input
+                <Input
                   id="new_password_input"
                   autoComplete="new-password"
                   type={showNew ? 'text' : 'password'}
@@ -316,7 +317,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="حداقل ۶ کاراکتر"
                 />
                 <button
@@ -333,7 +334,7 @@ export function ChangePasswordModal({
             <div className="space-y-1 text-right">
               <label htmlFor="confirm_password_input" className="block text-xs font-bold text-foreground">تکرار کلمه عبور جدید</label>
               <div className="relative">
-                <input
+                <Input
                   id="confirm_password_input"
                   autoComplete="new-password"
                   type={showConfirm ? 'text' : 'password'}
@@ -341,7 +342,7 @@ export function ChangePasswordModal({
                   disabled={loading}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-muted border border-border focus:bg-card focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-10 pr-4 py-2.5 text-foreground focus:outline-none text-left font-mono text-sm leading-none disabled:opacity-50"
+                  className="w-full pl-10 pr-4 text-left font-mono leading-none disabled:opacity-50"
                   placeholder="تکرار رمز عبور جدید"
                 />
                 <button

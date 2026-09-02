@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { BusinessPartner, BusinessPartnerType } from '../types';
 import { canSupplySources } from '../utils/sopEvaluation';
 import { EntityName } from './EntityName';
+import { Input } from './ui/input';
 
 interface PartnerSelectorProps {
   type: BusinessPartnerType;
@@ -272,13 +273,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
             <div className="p-2.5 border-b border-border bg-muted/80">
               <div className="relative">
                 <Search className="w-4 h-4 text-muted-foreground absolute right-3 top-2.5" />
-                <input
+                <Input
                   ref={searchInputRef}
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="جستجو بر اساس نام، کشور یا شهر..." 
-                  className="w-full bg-card border border-border rounded-xl pr-9 pl-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                  className="w-full pr-9 pl-8"
                 />
                 {searchTerm && (
                   <button

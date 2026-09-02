@@ -3,7 +3,7 @@ import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { Input, inputBaseClass } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
@@ -14,6 +14,7 @@ import type { SourceSelectionRecord } from './MaterialsComparisonSection';
 import { FormModal } from '../../components/FormModal';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { can } from '../../utils/permissions';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
@@ -449,7 +450,7 @@ export function CategoryView({
                   id="select-vendor"
                   value={selectDialog.vendorId}
                   onChange={e => setSelectDialog({ ...selectDialog, vendorId: e.target.value })}
-                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className={cn(inputBaseClass, 'w-full')}
                 >
                   {selectDialog.vendors.map(v => (
                     <option key={v.id} value={v.id}>{v.name}{v.grade ? ` — Grade ${v.grade}` : ''}</option>

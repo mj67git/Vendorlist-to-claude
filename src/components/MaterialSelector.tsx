@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, Package, X, Upload, FileText } from 'lucide-react';
 import { Material, MaterialRole, Pharmacopoeia } from '../types';
 import { MATERIAL_ROLES, getMaterialRole, roleOptionLabel } from '../constants/materialRoles';
+import { Input, inputBaseClass } from './ui/input';
+import { cn } from '../lib/utils';
 
 interface Props {
   value?: string;
@@ -148,12 +150,12 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
             <div className="p-2 border-b border-border bg-muted/50">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2" />
-                <input
+                <Input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="جستجوی ماده، CAS یا نام انگلیسی..."
-                  className="w-full bg-card border border-border rounded-lg pr-8 pl-3 py-1.5 text-xs focus:outline-none focus:border-cyan-600"
+                  className="w-full pr-8 pl-3"
                 />
               </div>
             </div>
@@ -257,13 +259,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     نام فارسی ماده <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.nameFa || ''}
                     onChange={(e) => setFormData({ ...formData, nameFa: e.target.value })}
                     placeholder="مثلاً: استامینوفن"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full"
                   />
                 </div>
 
@@ -272,14 +274,14 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     نام لاتین / ژنریک <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.nameEn || ''}
                     onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
                     placeholder="e.g. Paracetamol"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 
@@ -288,13 +290,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     کد CAS
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.cas || ''}
                     onChange={(e) => setFormData({ ...formData, cas: e.target.value })}
                     placeholder="103-90-2"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 
@@ -306,7 +308,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <select
                     value={formData.role || 'API'}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as MaterialRole })}
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className={cn(inputBaseClass, 'w-full')}
                   >
                     {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
                   </select>
@@ -320,7 +322,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <select
                     value={formData.pharmacopoeia || 'USP'}
                     onChange={(e) => setFormData({ ...formData, pharmacopoeia: e.target.value as Pharmacopoeia })}
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className={cn(inputBaseClass, 'w-full font-mono')}
                   >
                     {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
@@ -331,13 +333,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (فارسی) <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <Input
                     type="text"
                     required
                     value={formData.finalProduct || ''}
                     onChange={(e) => setFormData({ ...formData, finalProduct: e.target.value })}
                     placeholder="مثلاً: قرص استامینوفن ۵۰۰"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full"
                   />
                 </div>
 
@@ -346,13 +348,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <label className="text-xs font-bold text-foreground block">
                     محصول نهایی (لاتین)
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.finalProductEn || ''}
                     onChange={(e) => setFormData({ ...formData, finalProductEn: e.target.value })}
                     placeholder="Paracetamol 500mg Tablet"
                     dir="ltr"
-                    className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-xs text-left font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:bg-card transition-all"
+                    className="w-full text-left font-mono"
                   />
                 </div>
 

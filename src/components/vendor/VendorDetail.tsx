@@ -18,6 +18,8 @@ import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
+import { Input, inputBaseClass } from '../../components/ui/input';
+import { cn } from '../../lib/utils';
 
 // extracted from App.tsx
 
@@ -1360,13 +1362,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     {/* QC Code */}
                     <div>
                       <label className="block text-muted-foreground font-semibold text-xs mb-1.5">کد آزمایشگاهی / QC Code <span className="text-red-500 dark:text-red-400">*</span></label>
-                      <input
+                      <Input
                         id="new-qc-code-input"
                         type="text"
                         required
                         value={newAnalysis.qcCode}
                         onChange={e => setNewAnalysis({ ...newAnalysis, qcCode: e.target.value })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono text-left"
+                        className="w-full font-mono text-left"
                         placeholder="مثال: QC-1405-102"
                         dir="ltr"
                       />
@@ -1379,7 +1381,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         id="new-decision-select"
                         value={newAnalysis.decision}
                         onChange={e => setNewAnalysis({ ...newAnalysis, decision: e.target.value as any })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                        className={cn(inputBaseClass, 'w-full font-medium')}
                       >
                         <option value="Pass">Pass</option>
                         <option value="Approved Conditional">Approved Conditional</option>
@@ -1394,7 +1396,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         id="new-deviation-select"
                         value={newAnalysis.deviationReason}
                         onChange={e => setNewAnalysis({ ...newAnalysis, deviationReason: e.target.value as any })}
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                        className={cn(inputBaseClass, 'w-full font-medium')}
                       >
                         <option value="None">None</option>
                         <option value="NCR">NCR</option>
@@ -1614,11 +1616,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {/* QC Code */}
                         <td className="py-3 px-3">
                           {isEditingThis ? (
-                            <input
+                            <Input
                               type="text"
                               value={editingAnalysis?.qcCode || ''}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, qcCode: e.target.value })}
-                              className="px-2 py-1 rounded-lg border border-border font-mono text-center text-xs w-full bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                              className="font-mono text-center w-full"
                               dir="ltr"
                             />
                           ) : (
@@ -1632,7 +1634,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             <select
                               value={editingAnalysis?.decision || 'Pass'}
                               onChange={e => setEditingAnalysis({ ...editingAnalysis!, decision: e.target.value as any })}
-                              className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
+                              className={cn(inputBaseClass, 'w-full text-right font-medium')}
                             >
                               <option value="Pass">Pass</option>
                               <option value="Approved Conditional">Approved Conditional</option>
@@ -1656,7 +1658,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <select
                                 value={editingAnalysis?.deviationReason || 'None'}
                                 onChange={e => setEditingAnalysis({ ...editingAnalysis!, deviationReason: e.target.value as any })}
-                                className="px-2 py-1 rounded-lg border border-border text-xs w-full text-right bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring font-medium"
+                                className={cn(inputBaseClass, 'w-full text-right font-medium')}
                               >
                                 <option value="None">None</option>
                                 <option value="NCR">NCR</option>

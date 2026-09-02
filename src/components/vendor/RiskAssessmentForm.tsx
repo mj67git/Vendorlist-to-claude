@@ -5,6 +5,8 @@ import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { can } from '../../utils/permissions';
+import { cn } from '../../lib/utils';
+import { inputBaseClass } from '../ui/input';
 
 // extracted from App.tsx
 
@@ -193,7 +195,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
           {/* Material Criticality */}
           <div className="space-y-3 p-4 bg-muted rounded-xl border border-border">
             <label className="block text-sm font-semibold text-foreground">۱. اهمیت ماده (Material Criticality)</label>
-            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={criticality} onChange={e => setCriticality(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={5}>ماده موثره - امتیاز ۵</option>
               <option value={4}>اکسپیانت - امتیاز ۴</option>
               <option value={3}>حدواسط شیمیایی، حلال ها و واکنشگرها - امتیاز ۳</option>
@@ -208,7 +210,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
               <span>SPS فعلی: <strong className="text-amber-600 dark:text-amber-400 text-sm">{spsScore > 0 ? spsScore : 'تعیین نشده'}</strong></span>
             </div>
-            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={probability} onChange={e => setProbability(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={1}>عدم خرابی (SPS: 80-100) - امتیاز ۱</option>
               <option value={2}>احتمال کم (SPS: 60-79) - امتیاز ۲</option>
               <option value={3}>احتمال متوسط (SPS: 40-59) - امتیاز ۳</option>
@@ -220,7 +222,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
           {/* Detectability */}
           <div className="space-y-3 p-4 bg-muted rounded-xl border border-border md:col-span-2">
             <label className="block text-sm font-semibold text-foreground">۳. تشخیص (Detectability)</label>
-            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring">
+            <select value={detectability} onChange={e => setDetectability(Number(e.target.value))} className={cn(inputBaseClass, 'w-full cursor-pointer')}>
               <option value={1}>تمام مشکلات توسط QC قابل تشخیص - امتیاز ۱</option>
               <option value={2}>اکثر مشکلات قابل تشخیص - امتیاز ۲</option>
               <option value={3}>بخشی قابل تشخیص - امتیاز ۳</option>

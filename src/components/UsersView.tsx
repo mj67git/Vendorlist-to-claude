@@ -4,12 +4,14 @@ import {
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
+import { Input, inputBaseClass } from './ui/input';
 import { Button } from './ui/button';
 import { EntityName } from './EntityName';
 import { FormModal } from './FormModal';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { Role, User } from '../types';
+import { cn } from '../lib/utils';
 import {
   ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
@@ -505,11 +507,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
+            <Input
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="جستجوی کاربر..."
-              className="bg-muted border border-border rounded-xl pr-9 pl-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-56"
+              className="pr-9 pl-3 w-full sm:w-56"
             />
           </div>
           <Button
@@ -803,24 +805,24 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
             <div className="space-y-1">
               <label htmlFor="user-name" className="block text-xs font-bold text-foreground">نام و نام خانوادگی</label>
-              <input
+              <Input
                 id="user-name"
                 value={draft.name}
                 onChange={e => setDraft({ ...draft, name: e.target.value })}
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full"
                 placeholder="مثلاً: مریم رضایی"
               />
             </div>
 
             <div className="space-y-1">
               <label htmlFor="user-username" className="block text-xs font-bold text-foreground">نام کاربری</label>
-              <input
+              <Input
                 id="user-username"
                 value={draft.username}
                 disabled={!!editing}
                 onChange={e => setDraft({ ...draft, username: e.target.value })}
                 dir="ltr"
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                className="w-full font-mono text-left disabled:opacity-50"
                 placeholder="m.rezaei"
               />
             </div>
@@ -831,7 +833,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 id="user-role"
                 value={draft.role}
                 onChange={e => setDraft({ ...draft, role: e.target.value as Role })}
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className={cn(inputBaseClass, 'w-full')}
               >
                 {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
@@ -852,13 +854,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <label htmlFor="user-password" className="block text-xs font-bold text-foreground">
                   کلمه عبور اولیه <span className="font-normal text-muted-foreground">(اختیاری)</span>
                 </label>
-                <input
+                <Input
                   id="user-password"
                   type="text"
                   value={draft.password}
                   onChange={e => setDraft({ ...draft, password: e.target.value })}
                   dir="ltr"
-                  className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full font-mono text-left"
                   placeholder="حداقل ۶ کاراکتر — خالی بگذارید تا پیش‌فرض استفاده شود"
                 />
               </div>
@@ -902,12 +904,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   <span>{resetError}</span>
                 </div>
               )}
-              <input
+              <Input
                 autoFocus
                 value={resetPassword}
                 onChange={e => setResetPassword(e.target.value)}
                 dir="ltr"
-                className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground font-mono text-left focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full font-mono text-left"
                 placeholder="کلمه عبور موقت (حداقل ۶ کاراکتر)"
               />
             </div>

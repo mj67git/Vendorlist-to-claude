@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { User } from '../types';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
+import { Input } from './ui/input';
 
 interface LoginViewProps {
   onLogin: (user: User) => void;
@@ -104,10 +105,9 @@ export function LoginView({ onLogin }: LoginViewProps) {
   // with English labels and English error text, which made the first screen of a
   // Persian system the only English one — and stranded the Persian demo button
   // inside an LTR container.
-  const fieldClass =
-    'w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm text-foreground ' +
-    'placeholder:text-muted-foreground text-left focus:outline-none focus:ring-1 focus:ring-ring ' +
-    'focus:border-ring disabled:opacity-50 transition-colors';
+  // Only what the shared Input does not already give: direction and the
+  // disabled dimming the loading state relies on.
+  const fieldClass = 'w-full text-left disabled:opacity-50';
 
   return (
     <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4 font-sans" dir="rtl">
@@ -142,7 +142,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
             <label htmlFor="username_input" className="block text-xs font-semibold text-foreground mb-1.5">
               نام کاربری
             </label>
-            <input
+            <Input
               id="username_input"
               type="text"
               autoComplete="username"
@@ -161,7 +161,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
               کلمهٔ عبور
             </label>
             <div className="relative">
-              <input
+              <Input
                 id="password_input"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
