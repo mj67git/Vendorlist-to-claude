@@ -193,7 +193,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5 border-b border-border pb-2">
           <Package className="w-4 h-4 text-primary" />
           <span>سورس‌های متصل به این شریک ({roleLabel})</span>
-          <span className="mr-auto text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{sources.length} سورس</span>
+          <span className="mr-auto text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{sources.length} سورس</span>
         </h3>
         {sources.length === 0 ? (
           <div className="text-center py-6 bg-muted/40 rounded-2xl border border-dashed border-border">
@@ -215,7 +215,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   <tr key={v.id} className="hover:bg-muted/40">
                     <td className="py-2 px-3">
                       <span className="font-bold text-foreground">{v.material}</span>
-                      {v.materialEn && <span className="font-mono text-[10px] text-muted-foreground block">{v.materialEn}</span>}
+                      {v.materialEn && <span className="font-mono text-2xs text-muted-foreground block">{v.materialEn}</span>}
                     </td>
                     <td className="py-2 px-3 text-foreground">{v.name}</td>
                     {/* The stored key (`foreign`, `packaging`, …) is a database
@@ -808,13 +808,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             <div className="min-w-0">
               {/* Wraps rather than truncating: «مجاز برای اتصال به سورس» is the
                   whole point of the card and lost its ending at this width. */}
-              <div className="text-[11px] font-bold text-muted-foreground leading-tight">{card.label}</div>
+              <div className="text-2xs font-bold text-muted-foreground leading-tight">{card.label}</div>
               {/* The counts come from the same list the table shows, so they
                   cannot claim a number while that list is still loading. */}
               {isLoading
                 ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
                 : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
-              <div className="text-[10px] text-muted-foreground font-mono truncate">{card.en}</div>
+              <div className="text-2xs text-muted-foreground font-mono truncate">{card.en}</div>
             </div>
           </div>
         ))}
@@ -891,7 +891,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
             <div>
-              <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
+              <label className="text-2xs font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
               <select
                 value={sopStatusFilter}
                 onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
@@ -908,7 +908,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
+              <label className="text-2xs font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
               <select
                 value={gradeFilter}
                 onChange={e => { setGradeFilter(e.target.value as any); setCurrentPage(1); }}
@@ -925,7 +925,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-muted-foreground block mb-1">کشور سازنده / فروشنده</label>
+              <label className="text-2xs font-bold text-muted-foreground block mb-1">کشور سازنده / فروشنده</label>
               <select
                 value={countryFilter}
                 onChange={e => { setCountryFilter(e.target.value); setCurrentPage(1); }}
@@ -937,7 +937,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-muted-foreground block mb-1">وضعیت فعالیت سیستم</label>
+              <label className="text-2xs font-bold text-muted-foreground block mb-1">وضعیت فعالیت سیستم</label>
               <select
                 value={statusFilter}
                 onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
@@ -1039,12 +1039,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       {/* Type */}
                       <td className="py-3 px-4">
                         {partner.type === 'Manufacturer' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-900 border">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-900 border">
                             <Factory className="w-3 h-3" />
                             Manufacturer
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900 border">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-bold bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900 border">
                             <Handshake className="w-3 h-3" />
                             Supplier
                           </span>
@@ -1065,11 +1065,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
                             <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${describeGrade(partner.evaluation.grade).tone}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-2xs font-bold border ${describeGrade(partner.evaluation.grade).tone}`}>
                                 <Award className="w-3 h-3" />
                                 {partner.evaluation.grade} · {describeGrade(partner.evaluation.grade).fa}
                               </span>
-                              <span className="text-[10px] font-mono text-muted-foreground font-bold">
+                              <span className="text-2xs font-mono text-muted-foreground font-bold">
                                 ({partner.evaluation.totalScore}/100)
                               </span>
                               {/* The grade alone does not answer the question the
@@ -1080,7 +1080,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               {!canSupplySources(partner).allowed && (
                                 <span
                                   title={canSupplySources(partner).reason}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-muted text-muted-foreground border border-border"
                                 >
                                   <XCircle className="w-3 h-3 shrink-0" />
                                   قابل اتصال به سورس نیست
@@ -1089,7 +1089,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground font-semibold bg-muted px-2.5 py-0.5 rounded-md border border-border">
+                              <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground font-semibold bg-muted px-2.5 py-0.5 rounded-md border border-border">
                                 ارزیابی نشده
                               </span>
                               <button
@@ -1100,31 +1100,31 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 }}
                                 disabled={!can(currentUser, 'partner.edit')}
                                 title={can(currentUser, 'partner.edit') ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
-                                className="text-[11px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                                className="text-2xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                               >
                                 شروع ارزیابی
                               </button>
                             </div>
                           )
                         ) : (
-                          <span className="text-muted-foreground text-[11px] font-mono">- (فقط مخصوص Supplier)</span>
+                          <span className="text-muted-foreground text-2xs font-mono">- (فقط مخصوص Supplier)</span>
                         )}
                       </td>
 
                       {/* System Status */}
                       <td className="py-3 px-4">
                         {partner.status === 'Active' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/50 dark:text-teal-200 dark:border-teal-900 border">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/50 dark:text-teal-200 dark:border-teal-900 border">
                             <CheckCircle2 className="w-3 h-3" />
                             Active
                           </span>
                         ) : partner.status === 'Blacklisted' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-600 text-white border border-rose-700 dark:bg-rose-700 dark:border-rose-800">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-rose-600 text-white border border-rose-700 dark:bg-rose-700 dark:border-rose-800">
                             <AlertTriangle className="w-3 h-3" />
                             Blacklist
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900 border">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900 border">
                             <XCircle className="w-3 h-3" />
                             Inactive
                           </span>
@@ -1132,7 +1132,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </td>
 
                       {/* Created At */}
-                      <td className="py-3 px-4 text-muted-foreground font-mono text-[11px]">
+                      <td className="py-3 px-4 text-muted-foreground font-mono text-2xs">
                         {formatDate(partner.createdAt)}
                       </td>
 
@@ -1179,7 +1179,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
         {/* Table Footer / Pagination */}
         <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
             <span>تعداد در هر صفحه</span>
             <select
               value={itemsPerPage}
@@ -1325,11 +1325,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <ShieldCheck className="w-4 h-4" />
                         <span>۲. ارزیابی SOP Supplier</span>
                         {computedEval.grade === 'Not Evaluated' ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                          <span className="px-2 py-0.5 rounded-full text-2xs font-bold bg-muted text-muted-foreground border border-border">
                             ارزیابی نشده
                           </span>
                         ) : (
-                          <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border ${getGradeBadgeClass(computedEval.grade)}`}>
+                          <span className={`px-2 py-0.5 rounded-full font-mono text-2xs font-bold border ${getGradeBadgeClass(computedEval.grade)}`}>
                             {computedEval.grade === 'Pending Review' ? '🟡 Pending' :
                              computedEval.grade === 'Blacklist' ? '🔴 Blacklist' :
                              `Grade ${computedEval.grade}`} ({computedEval.totalScore}/100)
@@ -1488,7 +1488,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <ShieldCheck className="w-4 h-4" />
                         <span>Supplier Evaluation (مطابق SOP شرکت)</span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-2xs text-muted-foreground">
                         تعیین وضعیت دقیق ۵ مدرک الزامی SOP جهت محاسبه خودکار امتیاز، Grade و وضعیت تایید Supplier.
                       </p>
                     </div>
@@ -1498,7 +1498,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       every document in one body, so this is the number that
                       decides whether the server will accept it. */}
                   {docsTotalBytes > 0 && (
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground px-1">
+                    <div className="flex items-center justify-between gap-2 text-2xs text-muted-foreground px-1">
                       <span>مجموع حجم مدارک پیوست: <span className="font-mono font-bold text-foreground">{formatFileSize(docsTotalBytes)}</span> از {formatFileSize(MAX_DOCS_TOTAL_BYTES)}</span>
                       {docsTotalBytes > MAX_DOCS_TOTAL_BYTES * 0.8 && (
                         <span className="text-amber-600 dark:text-amber-400 font-bold">نزدیک به سقف مجاز</span>
@@ -1527,12 +1527,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               </span>
                               <div>
                                 <h4 className="text-xs font-black text-foreground">{def.nameEn}</h4>
-                                <p className="text-[11px] text-muted-foreground font-medium">{def.nameFa}</p>
+                                <p className="text-2xs text-muted-foreground font-medium">{def.nameFa}</p>
                               </div>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${statusInfo.badge}`}>
+                              <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border ${statusInfo.badge}`}>
                                 {statusInfo.desc}
                               </span>
                               <span className="text-xs font-mono font-bold text-foreground bg-card px-2.5 py-1 rounded-md border border-border">
@@ -1545,7 +1545,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                             {/* Status Selector Dropdown */}
                             <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-foreground block">
+                              <label className="text-2xs font-bold text-foreground block">
                                 وضعیت مدرک <span className="text-rose-500">*</span>
                               </label>
                               <select
@@ -1565,7 +1565,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                             {/* File Upload / Attachment Actions */}
                             <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-foreground block">
+                              <label className="text-2xs font-bold text-foreground block">
                                 فایل پیوست مدرک (اختیاری)
                               </label>
 
@@ -1573,11 +1573,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                 <div className="p-2 bg-card border border-border rounded-lg flex items-center justify-between text-xs gap-2">
                                   <div className="flex items-center gap-1.5 overflow-hidden text-foreground font-medium">
                                     <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span className="truncate text-[11px]" title={doc.fileName}>
+                                    <span className="truncate text-2xs" title={doc.fileName}>
                                       {doc.fileName}
                                     </span>
                                     {doc.fileSize && (
-                                      <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                                      <span className="text-2xs text-muted-foreground font-mono shrink-0">
                                         ({formatFileSize(doc.fileSize)})
                                       </span>
                                     )}
@@ -1617,7 +1617,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               ) : (
                                 <label className="flex items-center justify-center gap-2 p-2 bg-card border border-dashed border-border rounded-lg text-muted-foreground hover:border-blue-500 hover:text-blue-600 cursor-pointer text-xs transition-colors">
                                   <Upload className="w-3.5 h-3.5" />
-                                  <span className="font-semibold text-[11px]">انتخاب و بارگذاری فایل مدرک (حداکثر {formatFileSize(MAX_DOC_BYTES)})</span>
+                                  <span className="font-semibold text-2xs">انتخاب و بارگذاری فایل مدرک (حداکثر {formatFileSize(MAX_DOC_BYTES)})</span>
                                   <input
                                     type="file"
                                     className="hidden"
@@ -1647,7 +1647,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <Award className="w-4 h-4 shrink-0" />
                         <span>نتیجه ارزیابی کیفی Supplier (Live SOP Result)</span>
                       </span>
-                      <span className="text-[10px] text-background/70 font-mono">
+                      <span className="text-2xs text-background/70 font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
                       </span>
                     </div>
@@ -1655,7 +1655,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">مجموع امتیاز (Total Score)</span>
+                        <span className="text-2xs text-background/70 font-bold block">مجموع امتیاز (Total Score)</span>
                         <div className="text-xl font-black font-mono">
                           {computedEval.grade === 'Not Evaluated' ? (
                             <span className="text-background/60 text-sm">-- / ۱۰۰</span>
@@ -1669,7 +1669,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Grade */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
+                        <span className="text-2xs text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
                             <span className="px-3 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
@@ -1687,7 +1687,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Supplier Status */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">وضعیت Supplier Status</span>
+                        <span className="text-2xs text-background/70 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
                             <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
@@ -1746,7 +1746,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </button>
                     )}
                     {savedCount > 0 && (
-                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[16rem]"
+                      <span className="text-2xs font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[16rem]"
                         title={recentlySaved.join('، ')}>
                         {savedCount.toLocaleString('fa-IR')} شریک ثبت شد
                       </span>
@@ -1795,7 +1795,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-black text-foreground">{selectedPartner.name}</h2>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                    <span className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
                       selectedPartner.type === 'Manufacturer' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     }`}>
                       {selectedPartner.type === 'Manufacturer' ? 'Manufacturer (تولیدکننده)' : 'Supplier (فروشنده)'}
@@ -1893,38 +1893,38 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">نام تولیدکننده</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">نام تولیدکننده</span>
                       <span className="font-bold text-foreground">{selectedPartner.name}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">کشور / شهر</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">کشور / شهر</span>
                       <span className="font-bold text-foreground">{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">مسئول تماس / رابط</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">مسئول تماس / رابط</span>
                       <span className="font-bold text-foreground">{selectedPartner.contactPerson || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">شماره تماس</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">ایمیل</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">ایمیل</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">وبسایت رسمی</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">وبسایت رسمی</span>
                       {selectedPartner.website ? (
                         <a
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-[11px]"
+                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />
@@ -1936,7 +1936,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     {selectedPartner.address && (
                       <div className="sm:col-span-2 md:col-span-3">
-                        <span className="text-muted-foreground text-[10px] block font-medium">آدرس کامل</span>
+                        <span className="text-muted-foreground text-2xs block font-medium">آدرس کامل</span>
                         <span className="text-foreground leading-relaxed">{selectedPartner.address}</span>
                       </div>
                     )}
@@ -1961,38 +1961,38 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">نام فروشنده / Supplier</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">نام فروشنده / Supplier</span>
                       <span className="font-black text-foreground">{selectedPartner.name}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">کشور / شهر</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">کشور / شهر</span>
                       <span className="font-bold text-foreground">{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">مسئول تماس / رابط</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">مسئول تماس / رابط</span>
                       <span className="font-bold text-foreground">{selectedPartner.contactPerson || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">شماره تماس</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">ایمیل رسمی</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">ایمیل رسمی</span>
                       <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
-                      <span className="text-muted-foreground text-[10px] block font-medium">وبسایت</span>
+                      <span className="text-muted-foreground text-2xs block font-medium">وبسایت</span>
                       {selectedPartner.website ? (
                         <a
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-[11px]"
+                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />
@@ -2004,7 +2004,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     {selectedPartner.address && (
                       <div className="sm:col-span-2 md:col-span-3">
-                        <span className="text-muted-foreground text-[10px] block font-medium">آدرس کامل</span>
+                        <span className="text-muted-foreground text-2xs block font-medium">آدرس کامل</span>
                         <span className="text-foreground leading-relaxed">{selectedPartner.address}</span>
                       </div>
                     )}
@@ -2018,14 +2018,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <Award className="w-4 h-4 shrink-0" />
                       <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
                     </span>
-                    <span className="text-[10px] text-background/70 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
+                    <span className="text-2xs text-background/70 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
 
                   {selectedPartner.evaluation && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
+                        <span className="text-2xs text-background/70 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
                         <div className="text-2xl font-black font-mono">
                           {selectedPartner.evaluation.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
                         </div>
@@ -2033,7 +2033,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Grade */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
+                        <span className="text-2xs text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-3 py-0.5 rounded-lg font-mono font-black text-sm border ${getGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                             {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending Review' :
@@ -2045,7 +2045,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                       {/* Supplier Status */}
                       <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-[10px] text-background/70 font-bold block">وضعیت Supplier Status</span>
+                        <span className="text-2xs text-background/70 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(selectedPartner.evaluation.grade).tone}`}>
                             {describeGrade(selectedPartner.evaluation.grade).en} ({describeGrade(selectedPartner.evaluation.grade).fa})
@@ -2056,7 +2056,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   ) : (
                     <div className="p-4 bg-background/10 border border-background/20 rounded-xl text-center space-y-1">
                       <span className="font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
-                      <p className="text-[11px] text-background/70">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
+                      <p className="text-2xs text-background/70">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
                 </div>
@@ -2069,7 +2069,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         <History className="w-4 h-4 text-indigo-600" />
                         <span>تاریخچه و روند ارزیابی SOP <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
                       </h3>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{evalHistory.length} تغییر</span>
+                      <span className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{evalHistory.length} تغییر</span>
                     </div>
 
                     {evalHistory.length >= 2 && (
@@ -2113,7 +2113,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   {delta === null || delta === 0 ? <span className="text-muted-foreground">—</span> : delta > 0 ? <span className="text-emerald-600">▲ {delta}</span> : <span className="text-red-500">▼ {Math.abs(delta)}</span>}
                                 </td>
                                 <td className="py-2 px-2 text-center">
-                                  {h.grade ? <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getGradeBadgeClass(h.grade)}`}>{h.grade}</span> : <span className="text-muted-foreground">—</span>}
+                                  {h.grade ? <span className={`px-2 py-0.5 rounded text-2xs font-mono font-bold border ${getGradeBadgeClass(h.grade)}`}>{h.grade}</span> : <span className="text-muted-foreground">—</span>}
                                 </td>
                                 <td className="py-2 px-2 text-muted-foreground">{h.user}</td>
                               </tr>
@@ -2152,10 +2152,10 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               <tr key={def.key} className="hover:bg-muted/60 transition-colors">
                                 <td className="py-2.5 px-3 font-semibold text-foreground">
                                   <div className="font-bold text-foreground">{def.nameEn}</div>
-                                  <div className="text-[10px] text-muted-foreground">{def.nameFa}</div>
+                                  <div className="text-2xs text-muted-foreground">{def.nameFa}</div>
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${statusInfo.badge}`}>
+                                  <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border ${statusInfo.badge}`}>
                                     {statusInfo.desc}
                                   </span>
                                 </td>
@@ -2184,18 +2184,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                         </>
                                       ) : (
                                         <span
-                                          className="text-[10px] text-muted-foreground"
+                                          className="text-2xs text-muted-foreground"
                                           title="حساب کاربری شما مجوز دریافت مدارک SOP را ندارد."
                                         >
                                           بدون مجوز دریافت
                                         </span>
                                       )}
-                                      <span className="text-[10px] text-muted-foreground truncate max-w-[120px] font-mono" title={doc.fileName}>
+                                      <span className="text-2xs text-muted-foreground truncate max-w-[120px] font-mono" title={doc.fileName}>
                                         {doc.fileName}
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className="text-muted-foreground text-[10px]">ثبت نشده</span>
+                                    <span className="text-muted-foreground text-2xs">ثبت نشده</span>
                                   )}
                                 </td>
                               </tr>
@@ -2219,7 +2219,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             </div>
 
             {/* Sticky Bottom Footer */}
-            <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs text-[11px] text-muted-foreground font-mono">
+            <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs text-2xs text-muted-foreground font-mono">
               <div>تاریخ ایجاد: {formatDate(selectedPartner.createdAt)}</div>
               <button
                 type="button"
@@ -2242,7 +2242,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
               <div>
                 <h3 className="font-black text-foreground text-sm">افزودن به لیست سیاه</h3>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{blacklistTarget.name}</p>
+                <p className="text-2xs text-muted-foreground mt-0.5">{blacklistTarget.name}</p>
               </div>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -2360,13 +2360,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
               {deleteConstraintError.sources && deleteConstraintError.sources.length > 0 && (
                 <div className="space-y-1.5 max-h-[140px] overflow-y-auto bg-muted border border-border rounded-xl p-3">
-                  <p className="font-bold text-[11px] text-foreground mb-1 flex items-center gap-1.5 border-b border-border/60 pb-1.5">
+                  <p className="font-bold text-2xs text-foreground mb-1 flex items-center gap-1.5 border-b border-border/60 pb-1.5">
                     <Package className="w-4 h-4 text-indigo-600" />
                     <span>تعداد {deleteConstraintError.sources.length} سورس (Source) به این رکورد متصل هستند:</span>
                   </p>
                   <ul className="space-y-1">
                     {deleteConstraintError.sources.map(src => (
-                      <li key={src.id} className="flex items-center justify-between text-[11px] bg-card p-1.5 rounded-lg border border-border font-bold">
+                      <li key={src.id} className="flex items-center justify-between text-2xs bg-card p-1.5 rounded-lg border border-border font-bold">
                         <span className="text-foreground">{src.material || src.name}</span>
                         <span className="text-muted-foreground font-medium font-mono">({src.country || 'نامشخص'})</span>
                       </li>
@@ -2375,7 +2375,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 </div>
               )}
 
-              <p className="text-[11px] text-muted-foreground bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
+              <p className="text-2xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
                 ℹ️ <strong>توصیه یکپارچگی داده‌ها:</strong> برای حفظ کامل سوابق تاریخی بر اساس GMP و ALCOA+، می‌توانید به جای حذف، وضعیت رکورد را به حالت <strong>غیرفعال (Inactive)</strong> تغییر دهید.
               </p>
             </div>

@@ -437,7 +437,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   {displayedScore !== null ? displayedScore : '-'}
                 </span>
               </div>
-              <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">
+              <span className="text-2xs text-muted-foreground font-medium whitespace-nowrap">
                 {displayedScore === null
                   ? 'بدون امتیاز'
                   : isDepartmentScore
@@ -627,17 +627,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             {vendor.ircExpiryDate}
                           </span>
                           {check.status === 'expired' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
                               منقضی
                             </span>
                           )}
                           {check.status === 'expiring_soon' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
                               {check.daysLeft} روز
                             </span>
                           )}
                           {check.status === 'valid' && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
                               معتبر
                             </span>
                           )}
@@ -730,7 +730,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                   {sourcePartner.website && (
                     <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-[11px]">
+                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-2xs">
                         {sourcePartner.website}
                       </a>
                     </div>
@@ -814,7 +814,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {r.deviationReason && r.deviationReason !== 'None' && (
-                                      <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                                      <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded text-2xs font-bold">
                                         <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                         انحراف: {
                                           r.deviationReason === 'OOS' ? 'خارج از حدود مشخصات (OOS)' :
@@ -826,7 +826,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                         }
                                       </span>
                                     )}
-                                    <span className="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                                    <span className="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded text-2xs font-bold">
                                       تصمیم: مردود (Reject)
                                     </span>
                                   </div>
@@ -840,7 +840,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 )}
 
                                 {r.recordedBy && (
-                                  <div className="text-[11px] text-muted-foreground font-medium text-left">
+                                  <div className="text-2xs text-muted-foreground font-medium text-left">
                                     ثبت‌شده توسط: <span className="text-muted-foreground font-bold">{r.recordedBy}</span>
                                   </div>
                                 )}
@@ -856,7 +856,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             <ul className="space-y-1.5">
                               {nonQcRejectionReasons.map((reason, idx) => (
                                 <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-3.5 py-2.5 rounded-xl text-rose-800 dark:text-rose-300 text-xs flex gap-2.5 items-start font-medium shadow-xs">
-                                  <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-[10px] w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                                  <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-2xs w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
                                   <span>{reason}</span>
                                 </li>
                               ))}
@@ -924,7 +924,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     }`}>
                       {done ? <CheckCircle className="w-4 h-4" /> : <Ic className="w-4 h-4" />}
                     </span>
-                    <span className={`text-[10px] sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.title}</span>
+                    <span className={`text-2xs sm:text-xs font-semibold whitespace-nowrap ${current ? 'text-primary' : done ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{s.title}</span>
                   </button>
                   {i < evalStages.length - 1 && (
                     <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-muted overflow-hidden">
@@ -984,7 +984,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <div className="text-center bg-muted border border-border p-5 rounded-2xl flex flex-col items-center justify-center min-w-[240px] shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 right-0 left-0 h-[3px] bg-cyan-600" />
                       <span className="text-muted-foreground text-xs font-bold mb-1">امتیاز کل (میانگین وزنی)</span>
-                      <span className="text-[10px] text-muted-foreground font-mono mb-2">Weighted Average Score</span>
+                      <span className="text-2xs text-muted-foreground font-mono mb-2">Weighted Average Score</span>
                       <span id="weighted-average-score-badge" className={`text-3xl font-extrabold font-mono tracking-tighter ${getScoreColorClass(overall)}`}>
                         {overall !== null ? overall : '-'}
                       </span>
@@ -1077,7 +1077,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <History className="w-4 h-4 text-primary" />
               <h3 className="font-bold text-foreground text-sm">تاریخچه و روند نمرات <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Score History)</span></h3>
             </div>
-            <Badge variant="outline" className="text-[11px] px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
+            <Badge variant="outline" className="text-2xs px-2 py-0.5">{scoreHistory.length} تغییر</Badge>
           </div>
 
           {scoreHistory.length >= 2 && (
@@ -1130,7 +1130,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         )}
                       </td>
                       <td className="py-2 px-2 text-center">
-                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-[10px] px-2 py-0">{h.grade}</Badge> : <span className="text-muted-foreground">—</span>}
+                        {h.grade ? <Badge variant={h.grade === 'A' ? 'gradeA' : h.grade === 'B' ? 'gradeB' : h.grade === 'C' ? 'gradeC' : 'gradeReject'} className="text-2xs px-2 py-0">{h.grade}</Badge> : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2 px-2 text-muted-foreground">{h.user}</td>
                     </tr>
@@ -1185,7 +1185,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     <div className="font-black text-foreground text-base">
                       سطح ریسک: {vendor.riskAssessment.riskLevel === 'Low' ? 'پایین' : vendor.riskAssessment.riskLevel === 'Medium' ? 'متوسط' : 'بالا'}
                     </div>
-                    <div className="text-muted-foreground text-[10px] uppercase font-mono tracking-wide mt-0.5">Supplier Risk Index</div>
+                    <div className="text-muted-foreground text-2xs uppercase font-mono tracking-wide mt-0.5">Supplier Risk Index</div>
                   </div>
                 </div>
                 <div className={`text-3xl font-black font-mono shrink-0 leading-none ${
@@ -1211,11 +1211,11 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
                 <div className="bg-muted/50 p-4 rounded-xl border border-border col-span-2 flex justify-between items-center px-5">
                   <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground uppercase font-mono mb-0.5">Evaluator</div>
+                    <div className="text-2xs text-muted-foreground uppercase font-mono mb-0.5">Evaluator</div>
                     <div className="text-xs font-bold text-foreground">{vendor.riskAssessment.evaluator}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground uppercase font-mono mb-0.5">Evaluation Date</div>
+                    <div className="text-2xs text-muted-foreground uppercase font-mono mb-0.5">Evaluation Date</div>
                     <div className="text-xs font-bold text-foreground font-mono" dir="ltr">{vendor.riskAssessment.date}</div>
                   </div>
                 </div>
@@ -1235,7 +1235,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   <History className="w-4 h-4 text-primary" />
                   <h3 className="font-bold text-foreground text-sm">تاریخچه و روند ریسک <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk History)</span></h3>
                 </div>
-                <Badge variant="outline" className="text-[11px] px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
+                <Badge variant="outline" className="text-2xs px-2 py-0.5">{riskHistory.length} ارزیابی</Badge>
               </div>
 
               {riskHistory.length >= 2 && (
@@ -1276,7 +1276,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <tr key={h.id} className="border-b border-border hover:bg-accent/60">
                         <td className="py-2 px-2 text-foreground">{new Date(h.date).toLocaleDateString('fa-IR', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                         <td className="py-2 px-2 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-2xs font-bold border ${
                             h.riskLevel === 'Low' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
                             h.riskLevel === 'Medium' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' :
                             h.riskLevel === 'High' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'bg-muted text-muted-foreground border-border'
@@ -1458,19 +1458,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-300">{pass}</div>
-                    <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">قبول (Pass)</div>
+                    <div className="text-2xs font-bold text-emerald-600 dark:text-emerald-400">قبول (Pass)</div>
                   </div>
                   <div className="bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-blue-700 dark:text-blue-300">{cond}</div>
-                    <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400">قبول مشروط</div>
+                    <div className="text-2xs font-bold text-blue-600 dark:text-blue-400">قبول مشروط</div>
                   </div>
                   <div className="bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl p-3 text-center">
                     <div className="text-2xl font-black font-mono text-rose-700 dark:text-rose-300">{rej}</div>
-                    <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400">مردود (Reject)</div>
+                    <div className="text-2xs font-bold text-rose-600 dark:text-rose-400">مردود (Reject)</div>
                   </div>
                   <div className="bg-muted border border-border rounded-xl p-3 text-center">
                     <div className={`text-2xl font-black font-mono ${passRate >= 80 ? 'text-emerald-700 dark:text-emerald-300' : passRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-700 dark:text-rose-300'}`}>{passRate}%</div>
-                    <div className="text-[11px] font-bold text-muted-foreground">نرخ قبولی</div>
+                    <div className="text-2xs font-bold text-muted-foreground">نرخ قبولی</div>
                   </div>
                 </div>
 
@@ -1515,9 +1515,9 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <h4 className="font-bold text-foreground text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-muted-foreground font-normal font-mono">(QA Decision)</span></h4>
                     </div>
                     {vendor.status === 'rejected' ? (
-                      <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                      <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+                      <p className="text-2xs text-muted-foreground leading-relaxed mb-3">
                         وجود {rej > 0 ? <strong className="text-rose-600 dark:text-rose-400">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
                       </p>
                     )}
@@ -1531,7 +1531,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           placeholder={vendor.status === 'rejected' ? 'دلیل بازگردانی از لیست سیاه (الزامی)...' : 'دلیل رد سورس بر اساس نتایج آزمایشگاهی (الزامی)...'}
                         />
                         {rejectError && (
-                          <div role="alert" className="flex items-start gap-2 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                          <div role="alert" className="flex items-start gap-2 text-2xs font-bold text-rose-600 dark:text-rose-400">
                             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                             <span>{rejectError}</span>
                           </div>
@@ -1623,7 +1623,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <option value="Reject">Reject</option>
                             </select>
                           ) : (
-                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-bold ${
                               record.decision === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
                               record.decision === 'Approved Conditional' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-[#3b82f6] border border-blue-200 dark:border-blue-800' :
                               'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
@@ -1652,7 +1652,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                                 <option value="Other">Other</option>
                               </select>
                             ) : (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
+                              <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-bold tracking-wide ${
                                 record.deviationReason === 'None' ? 'bg-muted text-muted-foreground' :
                                 record.deviationReason === 'NCR' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800' :
                                 record.deviationReason === 'Deviation' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
@@ -1689,7 +1689,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           {/* Actions */}
                           <td className="py-3 px-3 text-center">
                             {isEditingThis && editAnalysisError && (
-                              <div role="alert" className="mb-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
+                              <div role="alert" className="mb-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
                                 {editAnalysisError}
                               </div>
                             )}
@@ -1697,14 +1697,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
                                 <button
                                   onClick={() => handleEditAnalysisSave(record.id)}
-                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-2xs rounded transition-all"
                                   title="ذخیره"
                                 >
                                   ذخیره
                                 </button>
                                 <button
                                   onClick={handleEditAnalysisCancel}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-2xs rounded transition-all"
                                   title="انصراف"
                                 >
                                   انصراف
@@ -1714,14 +1714,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
                                 <button
                                   onClick={() => handleDeleteAnalysis(record.id)}
-                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-2xs rounded transition-all"
                                   title="تایید حذف"
                                 >
                                   حذف قطعی
                                 </button>
                                 <button
                                   onClick={() => setConfirmDeleteAnalysisId(null)}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-[10px] rounded transition-all"
+                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-2xs rounded transition-all"
                                   title="لغو"
                                 >
                                   لغو

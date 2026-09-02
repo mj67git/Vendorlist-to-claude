@@ -50,7 +50,7 @@ export function GradeBadge({ grade, status, scores, className }: GradeBadgeProps
   }
 
   return (
-    <Badge variant={variant} className={cn("gap-1.5 py-1 px-3 text-[11px] font-bold tracking-normal shadow-xs", className)}>
+    <Badge variant={variant} className={cn("gap-1.5 py-1 px-3 text-2xs font-bold tracking-normal shadow-xs", className)}>
       <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 animate-pulse", dotColor)} />
       <span>{label}</span>
     </Badge>

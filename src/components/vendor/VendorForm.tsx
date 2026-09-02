@@ -563,7 +563,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5">
+                <p className="text-2xs text-muted-foreground mt-1.5">
                   {newPartnerType === 'Supplier'
                     ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
                     : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
@@ -590,7 +590,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     }`}
                   >
                     ۲. ارزیابی مدارک SOP
-                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-[10px]">
+                    <span className="bg-card/20 px-1.5 py-0.2 rounded text-2xs">
                       امتیاز: {computeNewSupplierEval().totalScore}
                     </span>
                   </button>
@@ -769,7 +769,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 1: MATERIAL MASTER SELECTION */}
           <div className="space-y-3 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-[11px] font-bold shrink-0">۱</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-fuchsia-600 text-white text-2xs font-bold shrink-0">۱</span>
               {/* The badge already numbers the section, so the title no longer
                   repeats it, and the English gloss is gone. */}
               <h3 className="text-xs font-black text-foreground">انتخاب ماده اولیه از مخزن مرجع</h3>
@@ -795,7 +795,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 }}
               />
               {fieldError === 'material' && (
-                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                <p role="alert" className="mt-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400">
                   انتخاب ماده اولیه الزامی است.
                 </p>
               )}
@@ -805,7 +805,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 2: SUPPLY CHAIN & PARTNERS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] font-bold shrink-0">۲</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-2xs font-bold shrink-0">۲</span>
               <h3 className="text-xs font-black text-foreground">زنجیرهٔ تأمین: تولیدکننده و فروشنده</h3>
             </div>
 
@@ -895,12 +895,12 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   setShowNewSupplierModal(true);
                 }}
               />
-              <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
+              <p className="text-2xs text-muted-foreground mt-2 flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-muted-foreground" />
                 تأمین‌کنندهٔ این سورس می‌تواند یک تولیدکننده یا یک فروشنده باشد.
               </p>
               {fieldError === 'partner' && (
-                <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                <p role="alert" className="mt-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400">
                   انتخاب تأمین‌کننده الزامی است. یکی را از مخزن شرکای تجاری انتخاب کنید یا تأمین‌کنندهٔ جدید ثبت کنید.
                 </p>
               )}
@@ -917,7 +917,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             {(selectedSupplier || selectedManufacturer) && (
               <div className="bg-muted/60 border border-border rounded-xl p-4 fade-in">
                 <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${
+                  <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${
                     selectedSupplier
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                       : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800'
@@ -976,7 +976,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <Building className="w-4 h-4 text-primary" />
                     <span>اطلاعات تماس {selectedSupplier ? 'فروشنده' : 'تولیدکننده'}</span>
                   </div>
-                  <span className="text-[10px] font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
+                  <span className="text-2xs font-medium text-muted-foreground">از مخزن شرکای تجاری</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs leading-relaxed">
                   <div>
@@ -1011,7 +1011,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           {/* SECTION 3: REGULATORY, IRC & INITIAL STATUS */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] font-bold shrink-0">۳</span>
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-2xs font-bold shrink-0">۳</span>
               <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانهٔ IRC</h3>
             </div>
 
@@ -1020,7 +1020,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
                   <span>کد IRC (اختیاری)</span>
                   {ircDigits !== '' && (
-                    <span className={`text-[10px] font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                    <span className={`text-2xs font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                       {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
                     </span>
                   )}
@@ -1050,14 +1050,14 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   placeholder="1228123456789012"
                 />
                 {isIrcValid ? (
-                  <p id="vf-irc-hint" className="text-[11px] text-muted-foreground">
+                  <p id="vf-irc-hint" className="text-2xs text-muted-foreground">
                     کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
                   </p>
                 ) : (
                   <p
                     id="vf-irc-hint"
                     role="alert"
-                    className={`flex items-start gap-1.5 text-[11px] font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
+                    className={`flex items-start gap-1.5 text-2xs font-bold ${blocksSubmitOnIrc ? 'text-rose-600' : 'text-amber-600'}`}
                   >
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                     <span>
@@ -1084,7 +1084,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 <label className="text-foreground font-semibold text-xs flex items-center justify-between">
                   <span>تاریخ انقضای مجوز (اختیاری)</span>
                   {formData.ircExpiryDate && (
-                    <span className="text-[10px] text-muted-foreground font-mono">انقضا</span>
+                    <span className="text-2xs text-muted-foreground font-mono">انقضا</span>
                   )}
                 </label>
                 <ShamsiDatePicker
@@ -1097,7 +1097,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               {/* Not a field: nothing here is editable, and dressing a
                   sentence up as an input invites the user to type in it. */}
               {!existingVendor && (
-                <p className="md:col-span-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <p className="md:col-span-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
                   <Info className="w-3.5 h-3.5 shrink-0" />
                   سورس با وضعیت «در انتظار بررسی» ثبت می‌شود؛ گرید کیفی در مرحلهٔ ارزیابی تعیین می‌گردد.
                 </p>
@@ -1156,7 +1156,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
               </div>
               <ul className="mt-2 space-y-1">
                 {recentlySaved.map(r => (
-                  <li key={r.id} className="text-[11px] text-muted-foreground truncate" title={r.label}>
+                  <li key={r.id} className="text-2xs text-muted-foreground truncate" title={r.label}>
                     • {r.label}
                   </li>
                 ))}

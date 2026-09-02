@@ -255,7 +255,7 @@ export function ChangePasswordModal({
           </div>
           <div className="text-right">
             <h3 id="change-password-title" className="text-base font-extrabold text-foreground">تغییر رمز عبور</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">بروزرسانی اطلاعات امنیتی حساب کاربری</p>
+            <p className="text-2xs text-muted-foreground mt-0.5">بروزرسانی اطلاعات امنیتی حساب کاربری</p>
           </div>
         </div>
 

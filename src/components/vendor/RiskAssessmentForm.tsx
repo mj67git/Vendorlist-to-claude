@@ -25,7 +25,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
       <div className="flex items-stretch gap-2">
         {/* Y-axis label */}
         <div className="flex items-center">
-          <span className="text-[10px] text-muted-foreground font-bold [writing-mode:vertical-rl] rotate-180">
+          <span className="text-2xs text-muted-foreground font-bold [writing-mode:vertical-rl] rotate-180">
             Criticality →
           </span>
         </div>
@@ -54,10 +54,10 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
           {/* X-axis labels */}
           <div className="grid grid-cols-5 gap-1 mt-1">
             {cols.map(p => (
-              <div key={p} className="text-center text-[10px] text-muted-foreground font-bold">{p}</div>
+              <div key={p} className="text-center text-2xs text-muted-foreground font-bold">{p}</div>
             ))}
           </div>
-          <div className="text-center text-[10px] text-muted-foreground font-bold mt-1">Probability →</div>
+          <div className="text-center text-2xs text-muted-foreground font-bold mt-1">Probability →</div>
         </div>
       </div>
       {/* Detectability factor → full 3D RPN */}
@@ -73,7 +73,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
         </span>
       </div>
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-muted-foreground" dir="rtl">
+      <div className="flex items-center justify-center gap-4 mt-3 text-2xs text-muted-foreground" dir="rtl">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> پایین</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/40" /> متوسط</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/30 border border-red-500/40" /> بالا</span>

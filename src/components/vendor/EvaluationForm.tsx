@@ -191,13 +191,13 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
                        </div>
                        <div>
                          <h4 className="font-bold text-foreground leading-none">{dept.title}</h4>
-                         <span className="text-[10px] text-muted-foreground font-medium block mt-1">
+                         <span className="text-2xs text-muted-foreground font-medium block mt-1">
                            <span className="text-muted-foreground">بخش ارزیابی دپارتمانی</span>
                          </span>
                        </div>
                      </div>
                      <div className="text-right">
-                       <div className="text-[10px] text-muted-foreground font-semibold mb-0.5">میانگین بخش</div>
+                       <div className="text-2xs text-muted-foreground font-semibold mb-0.5">میانگین بخش</div>
                        <div className={`text-2xl font-black font-mono tracking-tighter ${getScoreColorClass(avg)}`}>
                          {avg}
                        </div>
@@ -218,11 +218,11 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
                             <span className="text-foreground font-medium leading-relaxed max-w-[70%]">{crit.label} <span className="text-cyan-600 font-semibold ml-1">(وزن: {crit.weight})</span></span>
                             <div className="flex items-center gap-1.5 shrink-0 select-none">
                               {prevValue > 0 && (
-                                <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/60 font-medium">
+                                <span className="text-2xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/60 font-medium">
                                   قبلی: {prevValue}
                                 </span>
                               )}
-                              <span className={`text-[11px] px-1.5 py-0.5 rounded border font-mono font-bold ${
+                              <span className={`text-2xs px-1.5 py-0.5 rounded border font-mono font-bold ${
                                 isChanged
                                   ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse'
                                   : 'text-muted-foreground bg-muted border-border'

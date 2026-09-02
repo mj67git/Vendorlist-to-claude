@@ -642,19 +642,19 @@ export const AuditTrailView: React.FC = () => {
           </button>
           <div className="bg-card border border-border px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-[11px] text-muted-foreground font-medium">کل لاگ‌ها:</span>
+            <span className="text-2xs text-muted-foreground font-medium">کل لاگ‌ها:</span>
             <span className="text-xs font-bold font-mono text-foreground">{stats.total}</span>
           </div>
           <div className="bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 px-3 py-1.5 rounded-xl flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-            <span className="text-[11px] text-rose-500 font-medium">خطای بحرانی:</span>
+            <span className="text-2xs text-rose-500 font-medium">خطای بحرانی:</span>
             <span className="text-xs font-bold font-mono text-rose-700">{stats.critical}</span>
           </div>
 
           {exportNotice && (
             <div
               role={exportNotice.kind === 'error' ? 'alert' : 'status'}
-              className={`w-full md:w-auto flex items-start gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
+              className={`w-full md:w-auto flex items-start gap-2 px-3 py-1.5 rounded-xl text-2xs font-bold border ${
                 exportNotice.kind === 'error'
                   ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
                   : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
@@ -730,7 +730,7 @@ export const AuditTrailView: React.FC = () => {
               <SlidersHorizontal className="w-3.5 h-3.5" />
               فیلترها
               {advancedFilterCount > 0 && (
-                <span className="bg-white/25 text-white rounded-full px-1.5 text-[10px] font-black">{advancedFilterCount}</span>
+                <span className="bg-white/25 text-white rounded-full px-1.5 text-2xs font-black">{advancedFilterCount}</span>
               )}
             </button>
             <button
@@ -748,7 +748,7 @@ export const AuditTrailView: React.FC = () => {
         <div className="pt-4 border-t border-border grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {/* User Filter */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">فیلتر کاربر</label>
+            <label className="text-muted-foreground text-2xs font-bold">فیلتر کاربر</label>
             <select
               value={filterUser}
               onChange={e => { setFilterUser(e.target.value); setCurrentPage(1); }}
@@ -763,7 +763,7 @@ export const AuditTrailView: React.FC = () => {
 
           {/* Module Filter */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">فیلتر ماژول</label>
+            <label className="text-muted-foreground text-2xs font-bold">فیلتر ماژول</label>
             <select
               value={filterModule}
               onChange={e => { setFilterModule(e.target.value); setCurrentPage(1); }}
@@ -778,7 +778,7 @@ export const AuditTrailView: React.FC = () => {
 
           {/* Event group — a coarser grain above the module filter. */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">گروه رویداد</label>
+            <label className="text-muted-foreground text-2xs font-bold">گروه رویداد</label>
             <select
               value={filterGroup}
               onChange={e => { setFilterGroup(e.target.value); setCurrentPage(1); }}
@@ -795,7 +795,7 @@ export const AuditTrailView: React.FC = () => {
 
           {/* Action Filter */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">فیلتر نوع عملیات</label>
+            <label className="text-muted-foreground text-2xs font-bold">فیلتر نوع عملیات</label>
             <select
               value={filterAction}
               onChange={e => { setFilterAction(e.target.value); setCurrentPage(1); }}
@@ -810,7 +810,7 @@ export const AuditTrailView: React.FC = () => {
 
           {/* Severity Filter */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">سطح بحرانیت (Severity)</label>
+            <label className="text-muted-foreground text-2xs font-bold">سطح بحرانیت (Severity)</label>
             <select
               value={filterSeverity}
               onChange={e => { setFilterSeverity(e.target.value); setQuickSeverityFilter(null); setCurrentPage(1); }}
@@ -825,7 +825,7 @@ export const AuditTrailView: React.FC = () => {
 
           {/* Date range — a real Jalali picker instead of free text. */}
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">از تاریخ</label>
+            <label className="text-muted-foreground text-2xs font-bold">از تاریخ</label>
             <ShamsiDatePicker
               value={startDate}
               onChange={v => { setStartDate(v); setCurrentPage(1); }}
@@ -834,7 +834,7 @@ export const AuditTrailView: React.FC = () => {
           </div>
 
           <div className="space-y-1">
-            <label className="text-muted-foreground text-[10px] font-bold">تا تاریخ</label>
+            <label className="text-muted-foreground text-2xs font-bold">تا تاریخ</label>
             <ShamsiDatePicker
               value={endDate}
               onChange={v => { setEndDate(v); setCurrentPage(1); }}
@@ -894,9 +894,9 @@ export const AuditTrailView: React.FC = () => {
                       {/* Date and time used to sit shoulder to shoulder in one
                           run of digits, which read as a single number. They are
                           two facts, so they get two lines. */}
-                      <td className="py-3.5 px-4 font-mono text-[11px] whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-mono text-2xs whitespace-nowrap">
                         <span className="block text-foreground font-bold">{log.date}</span>
-                        <span className="block text-muted-foreground text-[10px] mt-0.5">{log.time}</span>
+                        <span className="block text-muted-foreground text-2xs mt-0.5">{log.time}</span>
                       </td>
                       <td className="py-3.5 px-4 font-bold text-foreground">
                         <div className="flex items-center gap-1.5">
@@ -905,14 +905,14 @@ export const AuditTrailView: React.FC = () => {
                           </div>
                           <div className="flex flex-col min-w-0">
                             <span className="truncate max-w-[140px]">{log.user}</span>
-                            <span className="text-muted-foreground text-[10px] font-medium truncate max-w-[140px]">{roleLabels[log.role] || log.role}</span>
+                            <span className="text-muted-foreground text-2xs font-medium truncate max-w-[140px]">{roleLabels[log.role] || log.role}</span>
                           </div>
                         </div>
                       </td>
                       {/* Same label the module filter shows, so the two read alike. */}
                       <td className="py-3.5 px-4 text-muted-foreground font-semibold">{AUDIT_MODULE_LABELS[log.module] || log.module}</td>
                       <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${actMeta.bg}`}>
+                        <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border inline-block ${actMeta.bg}`}>
                           {actMeta.label}
                         </span>
                       </td>
@@ -920,7 +920,7 @@ export const AuditTrailView: React.FC = () => {
                         <EntityName name={log.recordName} lines={2} className="font-bold whitespace-normal" />
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 shrink-0 ${sevMeta.bg}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border inline-flex items-center gap-1 shrink-0 ${sevMeta.bg}`}>
                           <SevIcon className="w-3 h-3 shrink-0" />
                           {sevMeta.label}
                         </span>
@@ -949,7 +949,7 @@ export const AuditTrailView: React.FC = () => {
                       ) : (
                         <>
                           <span>هنوز هیچ رویدادی در سامانه ثبت نشده است.</span>
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="text-2xs text-muted-foreground">
                             هر تغییری در سورس‌ها، مواد، شرکا و کاربران به‌صورت خودکار همین‌جا ثبت می‌شود.
                           </span>
                         </>
@@ -964,7 +964,7 @@ export const AuditTrailView: React.FC = () => {
 
         {/* PAGINATION PANEL */}
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
             <span>تعداد در هر صفحه</span>
             <select
               value={itemsPerPage}
@@ -1009,7 +1009,7 @@ export const AuditTrailView: React.FC = () => {
               {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-muted/50">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold font-mono text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
+                <span className="text-2xs font-bold font-mono text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
                   {selectedLog.id}
                 </span>
                 <h3 id="audit-detail-title" className="text-sm font-black text-foreground mt-1">جزئیات ثبت ردیابی تغییرات (Audit)</h3>
@@ -1037,7 +1037,7 @@ export const AuditTrailView: React.FC = () => {
                   {!isLoadingDetail && (() => {
                     const n = isNonDataEvent(selectedLog) ? 0 : computeFieldDiff(selectedLog.before, selectedLog.after).length;
                     return (
-                      <span className="text-[10px] font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
+                      <span className="text-2xs font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
                         {n > 0 ? `${n} فیلد` : 'بدون تغییر داده'}
                       </span>
                     );
@@ -1050,7 +1050,7 @@ export const AuditTrailView: React.FC = () => {
                     <span className="italic">در حال بارگذاری تغییرات از دیتابیس...</span>
                   </div>
                 ) : isNonDataEvent(selectedLog) ? (
-                  <div className="text-[11px] text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
+                  <div className="text-2xs text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
                     این رویداد تغییر داده‌ای ندارد؛ ثبت یک اقدام است (ورود/خروج). مشخصات کاربر و دستگاه در «اطلاعات فنی رویداد» آمده است.
                   </div>
                 ) : (() => {
@@ -1058,7 +1058,7 @@ export const AuditTrailView: React.FC = () => {
                   const bothObjects = (selectedLog.before && typeof selectedLog.before === 'object') || (selectedLog.after && typeof selectedLog.after === 'object');
                   if (diff.length === 0) {
                     return (
-                      <div className="text-[11px] text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
+                      <div className="text-2xs text-muted-foreground bg-muted border border-border rounded-lg p-3 leading-relaxed">
                         {!selectedLog.before && !bothObjects
                           ? 'این رویداد تغییر داده‌ای ندارد؛ فقط ثبت یک اقدام است (مانند ورود به سامانه). شرح آن در ادامه آمده است.'
                           : !selectedLog.before && selectedLog.after ? 'رکورد جدید ایجاد شده است (مقدار قبلی وجود ندارد).'
@@ -1079,10 +1079,10 @@ export const AuditTrailView: React.FC = () => {
                         return (
                           <div key={d.key} className={`rounded-lg border p-2.5 ${s.row}`}>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-[11px] font-bold text-foreground">{d.label}</span>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${s.tag}`}>{s.label}</span>
+                              <span className="text-2xs font-bold text-foreground">{d.label}</span>
+                              <span className={`text-2xs font-bold px-1.5 py-0.5 rounded ${s.tag}`}>{s.label}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] font-mono" dir="ltr">
+                            <div className="flex items-center gap-2 text-2xs font-mono" dir="ltr">
                               <span className="flex-1 text-rose-700 bg-rose-50/70 dark:text-rose-200 dark:bg-rose-950/50 rounded px-2 py-1 line-through decoration-rose-300 dark:decoration-rose-700 break-all">{d.from}</span>
                               <span className="text-muted-foreground shrink-0">→</span>
                               <span className="flex-1 text-emerald-700 bg-emerald-50/70 dark:text-emerald-200 dark:bg-emerald-950/50 rounded px-2 py-1 font-bold break-all">{d.to}</span>
@@ -1092,10 +1092,10 @@ export const AuditTrailView: React.FC = () => {
                       })}
                       {/* Raw JSON fallback for full traceability */}
                       <details className="mt-2">
-                        <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-muted-foreground select-none">نمایش داده خام JSON (before / after)</summary>
+                        <summary className="text-2xs text-muted-foreground cursor-pointer hover:text-muted-foreground select-none">نمایش داده خام JSON (before / after)</summary>
                         <div className="grid grid-cols-1 gap-2 mt-2" dir="ltr">
-                          <pre className="whitespace-pre-wrap font-mono text-[10px] text-rose-800 bg-rose-50/50 border border-rose-100 p-2 rounded-lg overflow-x-auto">{selectedLog.before ? (typeof selectedLog.before === 'object' ? JSON.stringify(selectedLog.before, null, 2) : String(selectedLog.before)) : 'null'}</pre>
-                          <pre className="whitespace-pre-wrap font-mono text-[10px] text-emerald-800 bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg overflow-x-auto">{selectedLog.after ? (typeof selectedLog.after === 'object' ? JSON.stringify(selectedLog.after, null, 2) : String(selectedLog.after)) : 'null'}</pre>
+                          <pre className="whitespace-pre-wrap font-mono text-2xs text-rose-800 bg-rose-50/50 border border-rose-100 p-2 rounded-lg overflow-x-auto">{selectedLog.before ? (typeof selectedLog.before === 'object' ? JSON.stringify(selectedLog.before, null, 2) : String(selectedLog.before)) : 'null'}</pre>
+                          <pre className="whitespace-pre-wrap font-mono text-2xs text-emerald-800 bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg overflow-x-auto">{selectedLog.after ? (typeof selectedLog.after === 'object' ? JSON.stringify(selectedLog.after, null, 2) : String(selectedLog.after)) : 'null'}</pre>
                         </div>
                       </details>
                     </div>
@@ -1104,7 +1104,7 @@ export const AuditTrailView: React.FC = () => {
               </div>
               {/* Description box */}
               <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground block">شرح فعالیت انجام شده (GMP Note):</span>
+                <span className="text-2xs font-bold text-muted-foreground block">شرح فعالیت انجام شده (GMP Note):</span>
                 <div className="bg-amber-50/40 border border-amber-200/50 dark:bg-amber-950/30 dark:border-amber-900 p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
                   {selectedLog.description}
                 </div>
@@ -1112,7 +1112,7 @@ export const AuditTrailView: React.FC = () => {
 
               {/* Reason for Change (GMP Necessity) */}
               <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-muted-foreground block">دلیل رسمی تغییرات (Change Rationale):</span>
+                <span className="text-2xs font-bold text-muted-foreground block">دلیل رسمی تغییرات (Change Rationale):</span>
                 <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
                   {selectedLog.reason}
                 </div>
@@ -1121,7 +1121,7 @@ export const AuditTrailView: React.FC = () => {
 
               {/* Context, folded away: the same facts, one click from the change. */}
               <details className="group border border-border rounded-xl bg-muted/30">
-                <summary className="cursor-pointer select-none px-4 py-2.5 text-[11px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-2">
+                <summary className="cursor-pointer select-none px-4 py-2.5 text-2xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-2">
                   <ChevronLeft className="w-3.5 h-3.5 shrink-0 transition-transform group-open:-rotate-90" />
                   <span>اطلاعات فنی رویداد (کاربر، ماژول، دستگاه و جزئیات تخصصی)</span>
                 </summary>
@@ -1129,19 +1129,19 @@ export const AuditTrailView: React.FC = () => {
                 {/* Core Information Cards */}
                 <div className="grid grid-cols-2 gap-3.5 bg-muted p-4 rounded-xl border border-border">
                   <div className="space-y-0.5">
-                    <span className="text-[10px] text-muted-foreground font-bold block">کاربر ثبت‌کننده:</span>
+                    <span className="text-2xs text-muted-foreground font-bold block">کاربر ثبت‌کننده:</span>
                     <span className="text-xs font-bold text-foreground">{selectedLog.user}</span>
                   </div>
                   <div className="space-y-0.5">
-                    <span className="text-[10px] text-muted-foreground font-bold block">سمت سازمانی:</span>
+                    <span className="text-2xs text-muted-foreground font-bold block">سمت سازمانی:</span>
                     <span className="text-xs font-bold text-muted-foreground">{roleLabels[selectedLog.role] || selectedLog.role}</span>
                   </div>
                   <div className="space-y-0.5 pt-2 border-t border-border/50">
-                    <span className="text-[10px] text-muted-foreground font-bold block">تاریخ و ساعت:</span>
+                    <span className="text-2xs text-muted-foreground font-bold block">تاریخ و ساعت:</span>
                     <span className="text-xs font-bold text-foreground font-mono">{selectedLog.date} - {selectedLog.time}</span>
                   </div>
                   <div className="space-y-0.5 pt-2 border-t border-border/50">
-                    <span className="text-[10px] text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
+                    <span className="text-2xs text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
                     <span className="text-xs font-mono font-bold text-muted-foreground">{selectedLog.correlationId}</span>
                   </div>
                 </div>
@@ -1164,7 +1164,7 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-bold">نوع اکشن:</span>
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${actionLabels[selectedLog.action]?.bg || 'bg-muted text-foreground'}`}>
+                    <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border ${actionLabels[selectedLog.action]?.bg || 'bg-muted text-foreground'}`}>
                       {actionLabels[selectedLog.action]?.label || selectedLog.action}
                     </span>
                   </div>
@@ -1174,13 +1174,13 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-bold">دستگاه / مرورگر:</span>
-                    <span className="font-mono text-[10px] font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
+                    <span className="font-mono text-2xs font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
                       {selectedLog.userAgent || 'Chrome / Windows'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-bold">سطح بحرانیت:</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${severityLabels[selectedLog.severity]?.bg || 'bg-muted text-foreground'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border inline-flex items-center gap-1 ${severityLabels[selectedLog.severity]?.bg || 'bg-muted text-foreground'}`}>
                       <CheckCircle className="w-3 h-3" />
                       {severityLabels[selectedLog.severity]?.label || selectedLog.severity}
                     </span>
@@ -1213,26 +1213,26 @@ export const AuditTrailView: React.FC = () => {
                           <FlaskConical className="w-4 h-4 text-blue-400" />
                           <span className="text-xs font-bold">جزئیات اختصاصی آزمایشگاه و وضعیت نمونه</span>
                         </div>
-                        <span className="text-[10px] bg-background/10 text-background/80 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-2xs bg-background/10 text-background/80 px-2 py-0.5 rounded-full font-mono">
                           {selectedLog.module} / {selectedLog.recordName}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">نام سورس / شرکت:</span>
+                          <span className="text-muted-foreground text-2xs block">نام سورس / شرکت:</span>
                           <span className="font-bold text-white">{sourceName || 'N/A'}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
+                          <span className="text-muted-foreground text-2xs block">ماده اولیه (Material):</span>
                           <span className="font-bold text-white">{material || 'N/A'}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">کد آزمون / Test Name:</span>
+                          <span className="text-muted-foreground text-2xs block">کد آزمون / Test Name:</span>
                           <span className="font-mono text-amber-300 font-bold">{testName || 'N/A'}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">کاربر ثبت کننده:</span>
+                          <span className="text-muted-foreground text-2xs block">کاربر ثبت کننده:</span>
                           <span className="font-medium">{selectedLog.user}</span>
                         </div>
                       </div>
@@ -1240,12 +1240,12 @@ export const AuditTrailView: React.FC = () => {
                       {(beforeResult || afterResult) && (
                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
                           <div>
-                            <span className="text-rose-300 text-[10px] block">نتیجه آزمایش (Before):</span>
-                            <span className="font-mono text-rose-200 bg-rose-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{beforeResult || 'نامشخص / تعریف اولیه'}</span>
+                            <span className="text-rose-300 text-2xs block">نتیجه آزمایش (Before):</span>
+                            <span className="font-mono text-rose-200 bg-rose-950/40 px-2 py-1 rounded block mt-0.5 text-2xs">{beforeResult || 'نامشخص / تعریف اولیه'}</span>
                           </div>
                           <div>
-                            <span className="text-emerald-300 text-[10px] block">نتیجه آزمایش (After):</span>
-                            <span className="font-mono text-emerald-200 bg-emerald-950/40 px-2 py-1 rounded block mt-0.5 text-[11px]">{afterResult || 'حذف شده یا بدون تغییر'}</span>
+                            <span className="text-emerald-300 text-2xs block">نتیجه آزمایش (After):</span>
+                            <span className="font-mono text-emerald-200 bg-emerald-950/40 px-2 py-1 rounded block mt-0.5 text-2xs">{afterResult || 'حذف شده یا بدون تغییر'}</span>
                           </div>
                         </div>
                       )}
@@ -1253,20 +1253,20 @@ export const AuditTrailView: React.FC = () => {
                       {(beforeStatus || afterStatus) && (
                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-background/20 text-xs">
                           <div>
-                            <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (Before):</span>
+                            <span className="text-muted-foreground text-2xs block">وضعیت/تصمیم (Before):</span>
                             <span className="font-bold text-rose-300">{beforeStatus || 'N/A'}</span>
                           </div>
                           <div>
-                            <span className="text-muted-foreground text-[10px] block">وضعیت/تصمیم (After):</span>
+                            <span className="text-muted-foreground text-2xs block">وضعیت/تصمیم (After):</span>
                             <span className="font-bold text-emerald-300">{afterStatus || 'N/A'}</span>
                           </div>
                         </div>
                       )}
 
                       {(prevCounters.reject !== undefined || newCounters.reject !== undefined) && (
-                        <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
-                          <span className="text-muted-foreground text-[10px] block">شمارنده‌های نتایج آزمایشگاه (Laboratory Counters):</span>
-                          <div className="flex items-center justify-between bg-background/10 p-2 rounded-lg text-background/80 font-mono text-[10px]">
+                        <div className="pt-2 border-t border-background/20 text-2xs space-y-1">
+                          <span className="text-muted-foreground text-2xs block">شمارنده‌های نتایج آزمایشگاه (Laboratory Counters):</span>
+                          <div className="flex items-center justify-between bg-background/10 p-2 rounded-lg text-background/80 font-mono text-2xs">
                             <div>
                               <span className="text-muted-foreground">قبلی: </span>
                               <span className="text-emerald-400">Pass: {prevCounters.pass ?? 0}</span> | <span className="text-amber-400">Cond: {prevCounters.conditional ?? 0}</span> | <span className="text-rose-400">Reject: {prevCounters.reject ?? 0}</span>
@@ -1318,18 +1318,18 @@ export const AuditTrailView: React.FC = () => {
                           <AlertTriangle className="w-4 h-4 text-amber-400" />
                           <span className="text-xs font-bold">جزئیات ارزیابی ریسک و FMEA</span>
                         </div>
-                        <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-2xs bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-mono">
                           {selectedLog.action} / {selectedLog.user}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">تامین‌کننده / سورس:</span>
+                          <span className="text-muted-foreground text-2xs block">تامین‌کننده / سورس:</span>
                           <span className="font-bold text-white">{supplier || 'N/A'}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground text-[10px] block">ماده اولیه (Material):</span>
+                          <span className="text-muted-foreground text-2xs block">ماده اولیه (Material):</span>
                           <span className="font-bold text-white">{material || 'N/A'}</span>
                         </div>
                       </div>
@@ -1337,27 +1337,27 @@ export const AuditTrailView: React.FC = () => {
                       {/* RPN, SRI & Risk Level Comparison */}
                       <div className="grid grid-cols-3 gap-2 pt-2 border-t border-background/20 text-xs text-center">
                         <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">RPN (شاخص ریسک)</span>
-                          <span className="font-mono text-rose-300 text-[11px] block">{prevRPN ?? '-'}</span>
+                          <span className="text-muted-foreground text-2xs block">RPN (شاخص ریسک)</span>
+                          <span className="font-mono text-rose-300 text-2xs block">{prevRPN ?? '-'}</span>
                           <span className="font-mono text-emerald-400 font-bold text-xs">{newRPN ?? '-'}</span>
                         </div>
                         <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">SRI (ریسک کل)</span>
-                          <span className="font-mono text-rose-300 text-[11px] block">{prevSRI ?? '-'}</span>
+                          <span className="text-muted-foreground text-2xs block">SRI (ریسک کل)</span>
+                          <span className="font-mono text-rose-300 text-2xs block">{prevSRI ?? '-'}</span>
                           <span className="font-mono text-emerald-400 font-bold text-xs">{newSRI ?? '-'}</span>
                         </div>
                         <div className="bg-background/10 p-2 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">سطح ریسک</span>
-                          <span className="font-bold text-rose-300 text-[11px] block">{prevLevel ?? '-'}</span>
+                          <span className="text-muted-foreground text-2xs block">سطح ریسک</span>
+                          <span className="font-bold text-rose-300 text-2xs block">{prevLevel ?? '-'}</span>
                           <span className="font-bold text-emerald-400 text-xs">{newLevel ?? '-'}</span>
                         </div>
                       </div>
 
                       {/* FMEA Parameter Changes */}
                       {(prevSev !== undefined || newSev !== undefined) && (
-                        <div className="pt-2 border-t border-background/20 text-[11px] space-y-1">
-                          <span className="text-muted-foreground text-[10px] block">پارامترهای FMEA (شدت، وقوع، تشخیص):</span>
-                          <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px] bg-background/10 p-2 rounded-lg border border-background/20">
+                        <div className="pt-2 border-t border-background/20 text-2xs space-y-1">
+                          <span className="text-muted-foreground text-2xs block">پارامترهای FMEA (شدت، وقوع، تشخیص):</span>
+                          <div className="grid grid-cols-3 gap-2 text-center font-mono text-2xs bg-background/10 p-2 rounded-lg border border-background/20">
                             <div>
                               <span className="text-muted-foreground block">شدت (Severity)</span>
                               <span className="text-background/80">{prevSev ?? '-'} &rarr; <strong className="text-amber-300">{newSev ?? '-'}</strong></span>
@@ -1409,26 +1409,26 @@ export const AuditTrailView: React.FC = () => {
                           <Calculator className="w-4 h-4 text-emerald-400" />
                           <span className="text-xs font-bold">جزئیات محاسبه امتیاز SPS و رتبه‌بندی</span>
                         </div>
-                        <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-2xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono">
                           SPS Score Calculation
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS قبلی:</span>
+                          <span className="text-muted-foreground text-2xs block">امتیاز کل SPS قبلی:</span>
                           <span className="font-mono text-rose-300 font-bold text-sm">{prevTotal} (Grade: {prevGrade})</span>
                         </div>
                         <div className="bg-background/10 p-2.5 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">امتیاز کل SPS جدید:</span>
+                          <span className="text-muted-foreground text-2xs block">امتیاز کل SPS جدید:</span>
                           <span className="font-mono text-emerald-400 font-bold text-sm">{newTotal} (Grade: {newGrade})</span>
                         </div>
                       </div>
 
                       {/* Department Breakdown */}
-                      <div className="pt-2 border-t border-background/20 space-y-1 text-[11px]">
-                        <span className="text-muted-foreground text-[10px] block">تفکیک امتیازات بخش‌های ارزیابی (Department Breakdown):</span>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[10px] font-mono bg-background/10 p-2 rounded-lg border border-background/20">
+                      <div className="pt-2 border-t border-background/20 space-y-1 text-2xs">
+                        <span className="text-muted-foreground text-2xs block">تفکیک امتیازات بخش‌های ارزیابی (Department Breakdown):</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-2xs font-mono bg-background/10 p-2 rounded-lg border border-background/20">
                           <div>
                             <span className="text-muted-foreground block">کیفیت QA (40%)</span>
                             <span className="text-background/80">{prevQA} &rarr; <strong className="text-emerald-400">{newQA}</strong></span>
@@ -1474,25 +1474,25 @@ export const AuditTrailView: React.FC = () => {
                           <Award className="w-4 h-4 text-purple-400" />
                           <span className="text-xs font-bold">تغییر خودکار جایگاه در جدول رتبه‌بندی (Supplier Ranking)</span>
                         </div>
-                        <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">
+                        <span className="text-2xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">
                           SYSTEM / Auto-Recalculated
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 text-center">
                         <div className="bg-background/10 p-3 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">رتبه قبلی (Previous Rank):</span>
+                          <span className="text-muted-foreground text-2xs block">رتبه قبلی (Previous Rank):</span>
                           <span className="font-mono text-rose-400 font-extrabold text-lg">#{prevRank}</span>
-                          <span className="text-muted-foreground text-[10px] block font-mono">SPS: {prevSPS}</span>
+                          <span className="text-muted-foreground text-2xs block font-mono">SPS: {prevSPS}</span>
                         </div>
                         <div className="bg-background/10 p-3 rounded-lg border border-background/20">
-                          <span className="text-muted-foreground text-[10px] block">رتبه جدید (New Rank):</span>
+                          <span className="text-muted-foreground text-2xs block">رتبه جدید (New Rank):</span>
                           <span className="font-mono text-emerald-400 font-extrabold text-lg">#{newRank}</span>
-                          <span className="text-muted-foreground text-[10px] block font-mono">SPS: {newSPS}</span>
+                          <span className="text-muted-foreground text-2xs block font-mono">SPS: {newSPS}</span>
                         </div>
                       </div>
 
-                      <div className="text-[10px] text-background/70 bg-background/10 p-2 rounded-lg flex items-center justify-between border border-background/20">
+                      <div className="text-2xs text-background/70 bg-background/10 p-2 rounded-lg flex items-center justify-between border border-background/20">
                         <span>دلیل محاسبه: {selectedLog.reason || 'SPS score recalculated'}</span>
                         <span className="text-purple-300 font-mono">Trigger Source: SYSTEM</span>
                       </div>
@@ -1505,7 +1505,7 @@ export const AuditTrailView: React.FC = () => {
 
             {/* Drawer Footer */}
             <div className="p-4 border-t border-border bg-muted text-center shrink-0">
-              <p className="text-[10px] text-muted-foreground font-medium">انطباق تضمین کیفیت دارویی با دستورالعمل‌های ICH Q9 و ضوابط سازمان غذا و دارو (ALCOA+)</p>
+              <p className="text-2xs text-muted-foreground font-medium">انطباق تضمین کیفیت دارویی با دستورالعمل‌های ICH Q9 و ضوابط سازمان غذا و دارو (ALCOA+)</p>
             </div>
           </>
         )}

@@ -145,7 +145,7 @@ export function AppSidebarButton({
       >
         <Icon className="w-4 h-4" aria-hidden="true" />
         {collapsed && hasAlert && (
-          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{alert}</span>
+          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-2xs font-bold rounded-full flex items-center justify-center">{alert}</span>
         )}
       </div>
 
@@ -159,7 +159,7 @@ export function AppSidebarButton({
       )}
 
       {!collapsed && hasAlert && (
-        <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 bg-rose-600 text-white" title="نیازمند توجه">
+        <span className="text-2xs font-mono font-black px-1.5 py-0.5 rounded-full shrink-0 bg-rose-600 text-white" title="نیازمند توجه">
           {alert}
         </span>
       )}
@@ -167,7 +167,7 @@ export function AppSidebarButton({
       {!collapsed && badge !== undefined && (
         <span
           className={cn(
-            'text-[11px] font-mono font-bold px-2 py-0.5 rounded-full shrink-0',
+            'text-2xs font-mono font-bold px-2 py-0.5 rounded-full shrink-0',
             active
               ? 'bg-white/25 text-white'
               : 'bg-muted dark:bg-slate-800 text-muted-foreground dark:text-muted-foreground group-hover:bg-slate-200 dark:group-hover:bg-slate-700'

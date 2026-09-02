@@ -495,7 +495,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
           </div>
           <div>
             <h2 className="text-base font-black text-foreground">مدیریت کاربران سامانه</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-2xs text-muted-foreground mt-0.5">
               تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود.
             </p>
           </div>
@@ -533,11 +533,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
           { label: 'دسترسی سفارشی', value: customCount, hint: `${neverSignedIn.toLocaleString('fa-IR')} حساب هنوز وارد نشده` },
         ].map(card => (
           <div key={card.label} className="bg-card border border-border rounded-2xl p-4 shadow-xs">
-            <span className="text-[11px] font-bold text-muted-foreground block">{card.label}</span>
+            <span className="text-2xs font-bold text-muted-foreground block">{card.label}</span>
             <span className="text-xl font-black text-foreground block mt-1">
               {loading ? '—' : card.value.toLocaleString('fa-IR')}
             </span>
-            <span className="text-[10px] text-muted-foreground block mt-0.5">{card.hint}</span>
+            <span className="text-2xs text-muted-foreground block mt-0.5">{card.hint}</span>
           </div>
         ))}
       </div>
@@ -611,12 +611,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         (rule 15). */}
                     <div className="flex flex-wrap items-center gap-2">
                       <EntityName name={u.name} lines={2} className="max-w-[22ch]" />
-                      {isSelf(u) && <span className="shrink-0 text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
+                      {isSelf(u) && <span className="shrink-0 text-2xs bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full font-bold">شما</span>}
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground" dir="ltr">{u.username}</td>
                   <td className="py-3 px-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold border ${
                       u.role === 'admin'
                         ? 'bg-primary/10 text-primary border-primary/20'
                         : 'bg-muted text-muted-foreground border-border'
@@ -626,14 +626,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
                     </span>
                     {u.permissions.length > 0 && (
                       <span title="سطح دسترسی این کاربر دستی تنظیم شده و از الگوی نقش پیروی نمی‌کند"
-                        className="mr-1.5 inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
+                        className="mr-1.5 inline-flex items-center px-1.5 py-0.5 rounded-md text-2xs font-bold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
                         سفارشی
                       </span>
                     )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-col gap-1">
-                      <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                      <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded-lg text-2xs font-bold border ${
                         u.isActive
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                           : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
@@ -641,7 +641,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         {u.isActive ? 'فعال' : 'غیرفعال'}
                       </span>
                       {u.mustChangePassword && (
-                        <span className="text-[9px] text-amber-700 dark:text-amber-400 font-semibold">تغییر رمز در ورود بعدی</span>
+                        <span className="text-2xs text-amber-700 dark:text-amber-400 font-semibold">تغییر رمز در ورود بعدی</span>
                       )}
                     </div>
                   </td>
@@ -675,16 +675,16 @@ export function UsersView({ currentUser }: UsersViewProps) {
                             return owner?.key === m.key || letters !== 'R';
                           });
                         if (held.length === 0) {
-                          return <span className="text-[10px] text-muted-foreground">بدون دسترسی</span>;
+                          return <span className="text-2xs text-muted-foreground">بدون دسترسی</span>;
                         }
                         return held.map(({ m, letters }) => (
                           <span
                             key={m.key}
                             title={`${m.title} — ${letters.split('').map(l => ACTION_COLUMNS.find(c => c.letter === l)?.label).join('، ')}`}
-                            className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border bg-muted text-[10px] font-bold text-foreground"
+                            className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border bg-muted text-2xs font-bold text-foreground"
                           >
                             <span>{MODULE_SHORT[m.key] || m.title}</span>
-                            <span className="font-mono text-[9px] text-primary">{letters}</span>
+                            <span className="font-mono text-2xs text-primary">{letters}</span>
                           </span>
                         ));
                       })()}
@@ -730,7 +730,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
           <>
             {visible.length > 0 && (
               <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-                <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+                <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
                   <span>تعداد در هر صفحه</span>
                   <select
                     value={perPage}
@@ -740,7 +740,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                     {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
-                <span className="text-[11px] text-muted-foreground sm:mr-auto">
+                <span className="text-2xs text-muted-foreground sm:mr-auto">
                   نمایش {((page - 1) * perPage + 1).toLocaleString('fa-IR')}
                   {' '}تا {Math.min(page * perPage, visible.length).toLocaleString('fa-IR')}
                   {' '}از {visible.length.toLocaleString('fa-IR')} کاربر
@@ -748,21 +748,21 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 {totalPages > 1 && (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="px-2.5 py-1 rounded-lg border border-border text-2xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                       قبلی
                     </button>
-                    <span className="text-[11px] font-mono text-muted-foreground px-1">
+                    <span className="text-2xs font-mono text-muted-foreground px-1">
                       {page.toLocaleString('fa-IR')} / {totalPages.toLocaleString('fa-IR')}
                     </span>
                     <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                      className="px-2.5 py-1 rounded-lg border border-border text-[11px] font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="px-2.5 py-1 rounded-lg border border-border text-2xs font-bold text-foreground hover:bg-accent transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                       بعدی
                     </button>
                   </div>
                 )}
               </div>
             )}
-            <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <div className="px-5 py-3 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-2 text-2xs text-muted-foreground">
               <span>مجموع {users.length} کاربر · {activeAdmins} مدیر فعال</span>
               <span>حذف کاربر، سوابق او در Audit را پاک نمی‌کند؛ برای قطع دسترسی، غیرفعال‌سازی توصیه می‌شود.</span>
             </div>
@@ -784,7 +784,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <h3 id="users-form-title" className="text-sm font-black text-foreground">
               {editing ? `ویرایش حساب کاربری «${editing.name}»` : 'تعریف کاربر جدید'}
             </h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-2xs text-muted-foreground mt-0.5">
               {editing
                 ? 'نام کاربری قابل تغییر نیست؛ برای تغییر آن باید حساب جدیدی تعریف شود.'
                 : 'کاربر در اولین ورود ملزم به تغییر کلمه عبور خواهد بود.'}
@@ -834,12 +834,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
               {editing && editing.permissions.length > 0 && draft.role !== editing.role && (
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   با تغییر سمت، دسترسی‌های سفارشی این کاربر پاک می‌شود و الگوی سمت جدید اعمال می‌گردد.
                 </p>
               )}
               {editing && editing.role === 'admin' && activeAdmins <= 1 && (
-                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   این تنها مدیر فعال سامانه است و سمت او قابل تغییر نیست.
                 </p>
               )}
@@ -890,7 +890,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
           <form onSubmit={submitReset}>
             <div className="px-6 py-4 border-b border-border bg-muted/50">
               <h3 id="users-reset-title" className="text-sm font-black text-foreground">بازنشانی کلمه عبور</h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 برای «{resetTarget.name}» یک کلمه عبور موقت تعیین کنید. کاربر در ورود بعدی ملزم به تغییر آن است.
               </p>
             </div>
@@ -939,7 +939,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
               <h3 id="users-perm-title" className="text-sm font-black text-foreground">
                 سطح دسترسی «{permTarget.name}»
               </h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 سمت سازمانی ({ROLE_LABELS[permTarget.role] || permTarget.role}) الگوی پیش‌فرض را تعیین می‌کند؛ در اینجا می‌توانید برای همین کاربر استثنا بگذارید.
               </p>
             </div>
@@ -960,14 +960,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 <table className="w-full min-w-[520px] border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <th className="text-right text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
+                      <th className="text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
                       {ACTION_COLUMNS.map(col => (
-                        <th key={col.key} className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
+                        <th key={col.key} className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
                           <span className="block">{col.label}</span>
-                          <span className="block font-mono text-[9px] text-muted-foreground/70">{col.letter}</span>
+                          <span className="block font-mono text-2xs text-muted-foreground/70">{col.letter}</span>
                         </th>
                       ))}
-                      <th className="text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
+                      <th className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-14">همه</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -988,7 +988,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                   person have on partners?" without counting
                                   ticks. */}
                               <span
-                                className={`shrink-0 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                className={`shrink-0 font-mono text-2xs font-bold px-1.5 py-0.5 rounded-md border ${
                                   moduleLetters(module, permDraft)
                                     ? 'bg-primary/10 text-primary border-primary/20'
                                     : 'bg-muted text-muted-foreground border-border'
@@ -1001,7 +1001,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               </span>
                             </div>
                             {module.note && (
-                              <span className="text-[10px] text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
+                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
                                 {module.note}
                               </span>
                             )}
@@ -1018,11 +1018,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                   className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
                                 />
                                 <span>
-                                  <span className="text-[11px] font-bold text-foreground">
+                                  <span className="text-2xs font-bold text-foreground">
                                     {extra.label}
-                                    <span className="font-mono text-[9px] text-muted-foreground"> ({extra.letter})</span>
+                                    <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground leading-relaxed block">
+                                  <span className="text-2xs text-muted-foreground leading-relaxed block">
                                     {extra.note}
                                   </span>
                                 </span>
@@ -1052,7 +1052,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                       aria-label={`${module.title} — ${PERMISSION_LABELS[perm]}`}
                                       className="w-4 h-4 accent-primary cursor-pointer"
                                     />
-                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                    <span className="text-2xs text-muted-foreground">دسترسی کامل</span>
                                     {inTemplate !== checked && (
                                       <span className={`text-[8px] font-bold ${checked ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
                                         {checked ? '+' : '−'}
@@ -1067,7 +1067,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               return (
                                 <td key={col.key} className="py-2.5 px-1 text-center border-t border-border/70">
                                   <span
-                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-[11px] cursor-help"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-2xs cursor-help"
                                     title={cell === 'open' ? LOCKED_REASONS.open : LOCKED_REASONS.none}
                                   >
                                     {cell === 'open' ? '✓' : '—'}
@@ -1098,7 +1098,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                     className="w-4 h-4 accent-primary cursor-pointer"
                                   />
                                   {merged && (
-                                    <span className="text-[9px] text-muted-foreground">دسترسی کامل</span>
+                                    <span className="text-2xs text-muted-foreground">دسترسی کامل</span>
                                   )}
                                   {inTemplate !== checked && (
                                     <span className={`text-[8px] font-bold px-1 rounded ${
@@ -1137,7 +1137,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   department is its own permission, and a person can hold more
                   than one. */}
               <div className="space-y-1.5 pt-2">
-                <span className="text-[11px] font-bold text-muted-foreground block border-b border-border/60 pb-1.5">
+                <span className="text-2xs font-bold text-muted-foreground block border-b border-border/60 pb-1.5">
                   امتیازدهی دپارتمان‌ها
                 </span>
                 {SCORE_PERMISSIONS.map(permission => {
@@ -1156,7 +1156,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         <span className="text-xs font-semibold text-foreground">{PERMISSION_LABELS[permission]}</span>
                       </span>
                       {inTemplate !== checked && (
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                        <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-md border ${
                           checked
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800'
                             : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
@@ -1169,7 +1169,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 })}
               </div>
 
-              <p className="text-[10px] text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
+              <p className="text-2xs text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
                 خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
                 واردشده آن بخش را می‌بینند و <span className="font-bold">—</span> یعنی آن عملیات در آن ماژول وجود ندارد.
                 نشانهٔ <span className="text-emerald-700 dark:text-emerald-400 font-bold">+</span> و
@@ -1180,7 +1180,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
             <div className="px-6 py-4 border-t border-border bg-muted/50 flex items-center justify-between gap-2 shrink-0">
               <button type="button" onClick={() => setPermDraft(roleTemplate(permTarget.role))}
-                className="px-3 py-2 rounded-xl text-[11px] font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                className="px-3 py-2 rounded-xl text-2xs font-bold text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
                 بازگشت به پیش‌فرض سمت
               </button>
               <div className="flex items-center gap-2">

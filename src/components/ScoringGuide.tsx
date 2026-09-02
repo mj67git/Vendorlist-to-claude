@@ -75,7 +75,7 @@ export function ScoreCard({ title, titleEn, icon: Icon, score, items }: ScoreCar
             </div>
             <div className="text-right">
               <h4 className="font-bold text-foreground text-xs sm:text-sm leading-tight mt-0.5">{title}</h4>
-              <div className="text-[9px] text-muted-foreground font-mono uppercase tracking-wider">{titleEn}</div>
+              <div className="text-2xs text-muted-foreground font-mono uppercase tracking-wider">{titleEn}</div>
             </div>
           </div>
           <div className={`text-2xl font-black font-mono tracking-tighter ${colorClass}`}>

@@ -411,7 +411,7 @@ interface SourceSelection {
                           {activeSupplier.country && (
                             <span className="font-normal text-muted-foreground text-sm">کشور : {activeSupplier.country}</span>
                           )}
-                          <span className="text-[10px] font-bold bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-md">
+                          <span className="text-2xs font-bold bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-md">
                             نوع شریک ثبت نشده
                           </span>
                         </div>
@@ -443,7 +443,7 @@ interface SourceSelection {
                     <div className="text-lg font-bold text-foreground flex items-center justify-start gap-2.5">
                       <span>{activeSupplier.name}</span>
                       {activeSupplier.country && (
-                        <span className="bg-muted border border-border text-muted-foreground text-[10px] font-bold px-2 py-0.5 rounded-md font-mono max-w-[200px] truncate" title={activeSupplier.country}>
+                        <span className="bg-muted border border-border text-muted-foreground text-2xs font-bold px-2 py-0.5 rounded-md font-mono max-w-[200px] truncate" title={activeSupplier.country}>
                           {activeSupplier.country}
                         </span>
                       )}
@@ -461,7 +461,7 @@ interface SourceSelection {
              {stats.avgPerformance !== null && (
                <div className="bg-muted border border-border rounded-2xl p-4 flex items-center gap-4 self-stretch md:self-auto justify-between">
                  <div className="text-left">
-                   <div className="text-[10px] uppercase font-bold text-muted-foreground">{stats.showsOwnDepartment ? 'Departmental Average Rating' : 'Integrated SPS Rating'}</div>
+                   <div className="text-2xs uppercase font-bold text-muted-foreground">{stats.showsOwnDepartment ? 'Departmental Average Rating' : 'Integrated SPS Rating'}</div>
                    <div className="text-xs text-muted-foreground font-medium font-sans mt-0.5" dir="rtl">{stats.showsOwnDepartment ? 'شاخص میانگین عملکرد واحد شما' : 'شاخص کل عملکرد تامین‌کننده'}</div>
                  </div>
                  <div className={`text-3xl font-black font-mono leading-none ${getScoreColorClass(stats.avgPerformance)} bg-card px-4 py-3 rounded-xl border border-border shadow-sm`}>
@@ -478,14 +478,14 @@ interface SourceSelection {
              <div className="bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center gap-2 mb-2">
                  <Microscope className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                 <span className="text-[11px] font-bold text-muted-foreground">سابقهٔ آزمایشگاه</span>
+                 <span className="text-2xs font-bold text-muted-foreground">سابقهٔ آزمایشگاه</span>
                </div>
                {stats.lab.total > 0 ? (
                  <>
                    <div className={`text-2xl font-black font-mono leading-none ${stats.lab.reject > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                      {stats.lab.rate}<span className="text-sm">٪</span>
                    </div>
-                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                   <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                      {stats.lab.total} تست روی {stats.lab.materialsTested} ماده ·{' '}
                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">{stats.lab.pass + stats.lab.conditional} قبول</span>
                      {stats.lab.reject > 0 && (
@@ -494,7 +494,7 @@ interface SourceSelection {
                    </p>
                  </>
                ) : (
-                 <p className="text-[11px] text-muted-foreground mt-1">هنوز تستی ثبت نشده است.</p>
+                 <p className="text-2xs text-muted-foreground mt-1">هنوز تستی ثبت نشده است.</p>
                )}
              </div>
 
@@ -502,7 +502,7 @@ interface SourceSelection {
              <div className="bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center gap-2 mb-2">
                  <ShieldAlert className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-                 <span className="text-[11px] font-bold text-muted-foreground">بالاترین ریسک</span>
+                 <span className="text-2xs font-bold text-muted-foreground">بالاترین ریسک</span>
                </div>
                {stats.highestRisk ? (
                  <>
@@ -512,7 +512,7 @@ interface SourceSelection {
                    }`}>
                      {stats.highestRisk === 'High' ? 'بالا' : stats.highestRisk === 'Medium' ? 'متوسط' : 'پایین'}
                    </div>
-                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                   <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                      بالا {stats.riskCounts.High} · متوسط {stats.riskCounts.Medium} · پایین {stats.riskCounts.Low}
                      {stats.riskCounts.none > 0 && (
                        <> · <span className="text-amber-700 dark:text-amber-400 font-bold">{stats.riskCounts.none} بدون ارزیابی</span></>
@@ -520,7 +520,7 @@ interface SourceSelection {
                    </p>
                  </>
                ) : (
-                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                 <p className="text-2xs text-amber-700 dark:text-amber-400 mt-1">
                    هیچ‌کدام از {stats.totalItems} ماده ارزیابی ریسک ندارد.
                  </p>
                )}
@@ -530,14 +530,14 @@ interface SourceSelection {
              <div className="bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center gap-2 mb-2">
                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                 <span className="text-[11px] font-bold text-muted-foreground">وضعیت IRC</span>
+                 <span className="text-2xs font-bold text-muted-foreground">وضعیت IRC</span>
                </div>
                {stats.licences.expired + stats.licences.expiring > 0 ? (
                  <>
                    <div className="text-2xl font-black font-mono leading-none text-rose-600">
                      {stats.licences.expired + stats.licences.expiring}
                    </div>
-                   <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                   <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                      {stats.licences.expired > 0 && <span className="text-rose-700 dark:text-rose-400 font-bold">{stats.licences.expired} منقضی</span>}
                      {stats.licences.expired > 0 && stats.licences.expiring > 0 && ' · '}
                      {stats.licences.expiring > 0 && <span className="text-amber-700 dark:text-amber-400 font-bold">{stats.licences.expiring} نزدیک انقضا</span>}
@@ -546,7 +546,7 @@ interface SourceSelection {
                ) : (
                  <>
                    <div className="text-2xl font-black font-mono leading-none text-emerald-600">۰</div>
-                   <p className="text-[10px] text-muted-foreground mt-1.5">هیچ مجوزی منقضی یا نزدیک انقضا نیست.</p>
+                   <p className="text-2xs text-muted-foreground mt-1.5">هیچ مجوزی منقضی یا نزدیک انقضا نیست.</p>
                  </>
                )}
              </div>
@@ -555,12 +555,12 @@ interface SourceSelection {
              <div className="bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center gap-2 mb-2">
                  <Warehouse className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                 <span className="text-[11px] font-bold text-muted-foreground">تک‌منبع</span>
+                 <span className="text-2xs font-bold text-muted-foreground">تک‌منبع</span>
                </div>
                <div className={`text-2xl font-black font-mono leading-none ${stats.soleSource.length > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
                  {stats.soleSource.length}
                </div>
-               <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+               <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                  {stats.soleSource.length > 0
                    ? 'مادهٔ بدون سورس جایگزین — قطع تأمین از این شرکت مستقیماً تولید را متوقف می‌کند.'
                    : 'برای همهٔ مواد این شرکت سورس جایگزین وجود دارد.'}
@@ -574,13 +574,13 @@ interface SourceSelection {
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
              <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center justify-between gap-2 mb-3">
-                 <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-2">
+                 <span className="text-2xs font-bold text-muted-foreground flex items-center gap-2">
                    <Award className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                    ارزیابی مدارک SOP
                  </span>
                  {activePartnerDetails?.supPartner && onNavigate && (
                    <button type="button" onClick={() => onNavigate('business-partners')}
-                     className="text-[10px] font-bold text-primary hover:underline cursor-pointer shrink-0">
+                     className="text-2xs font-bold text-primary hover:underline cursor-pointer shrink-0">
                      مشاهده در مخزن شرکای تجاری ←
                    </button>
                  )}
@@ -594,9 +594,9 @@ interface SourceSelection {
                        status={activePartnerDetails.supPartner.evaluation.status as any}
                      />
                      <span className="font-mono font-bold text-foreground text-sm">
-                       {activePartnerDetails.supPartner.evaluation.totalScore} <span className="text-[10px] text-muted-foreground">از ۱۰۰</span>
+                       {activePartnerDetails.supPartner.evaluation.totalScore} <span className="text-2xs text-muted-foreground">از ۱۰۰</span>
                      </span>
-                     <span className="text-[10px] text-muted-foreground">
+                     <span className="text-2xs text-muted-foreground">
                        آخرین ارزیابی: {activePartnerDetails.supPartner.evaluation.updatedAt
                          ? new Date(activePartnerDetails.supPartner.evaluation.updatedAt).toLocaleDateString('fa-IR')
                          : 'نامشخص'}
@@ -617,7 +617,7 @@ interface SourceSelection {
                          : status === 'Permit Approval' ? 'تأیید موقت'
                          : status === 'Expired' ? 'منقضی' : 'ارائه نشده';
                        return (
-                         <div key={def.key} className="flex items-center justify-between gap-3 text-[11px] border-b border-border/50 last:border-0 py-1">
+                         <div key={def.key} className="flex items-center justify-between gap-3 text-2xs border-b border-border/50 last:border-0 py-1">
                            <EntityName name={def.nameFa} lines={1} className="text-foreground" />
                            <span className={`font-bold shrink-0 ${tone}`}>{label}</span>
                          </div>
@@ -626,7 +626,7 @@ interface SourceSelection {
                    </div>
                  </>
                ) : (
-                 <p className="text-[11px] text-muted-foreground leading-relaxed">
+                 <p className="text-2xs text-muted-foreground leading-relaxed">
                    {activePartnerDetails?.supPartner
                      ? 'این فروشنده هنوز ارزیابی SOP ندارد.'
                      : 'هیچ‌کدام از اقلام این تأمین‌کننده به یک رکورد فروشنده در مخزن شرکای تجاری متصل نیست، پس ارزیابی SOP در دسترس نیست.'}
@@ -639,12 +639,12 @@ interface SourceSelection {
                <div>
                  <div className="flex items-center gap-2 mb-2">
                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                   <span className="text-[11px] font-bold text-muted-foreground">سورس منتخب</span>
+                   <span className="text-2xs font-bold text-muted-foreground">سورس منتخب</span>
                  </div>
                  <div className="text-2xl font-black font-mono leading-none text-foreground">
                    {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.totalItems}</span>
                  </div>
-                 <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                 <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                    {stats.chosenFor.length > 0
                      ? 'ماده‌ای که این شرکت به‌عنوان سورس منتخب برایش ثبت شده است.'
                      : 'برای هیچ‌کدام از اقلام این شرکت تصمیم رسمی سورس ثبت نشده است.'}
@@ -662,26 +662,26 @@ interface SourceSelection {
                    chosenMaterials: stats.chosenFor.map(v => v.material),
                    soleSourceMaterials: stats.soleSource.map(v => v.material),
                  }))}
-                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer"
+                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-2xs font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer"
                >
                  <Briefcase className="w-3.5 h-3.5" />
                  {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}
                </button>
                {excel.error && (
-                 <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">{excel.error}</p>
+                 <p className="mt-2 text-2xs text-rose-600 dark:text-rose-400">{excel.error}</p>
                )}
              </div>
            </div>
 
            {stats.soleSource.length > 0 && (
              <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
-               <p className="text-[11px] font-bold text-amber-900 dark:text-amber-300 mb-2">
+               <p className="text-2xs font-bold text-amber-900 dark:text-amber-300 mb-2">
                  موادی که فقط از این شرکت تأمین می‌شوند:
                </p>
                <div className="flex flex-wrap gap-1.5">
                  {stats.soleSource.map(v => (
                    <EntityName key={v.id} name={v.material} lines={1}
-                     className="text-[10px] bg-card text-foreground px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 font-medium max-w-[200px]" />
+                     className="text-2xs bg-card text-foreground px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 font-medium max-w-[200px]" />
                  ))}
                </div>
              </div>
@@ -706,14 +706,14 @@ interface SourceSelection {
                <div className="w-full sm:w-auto uppercase font-bold text-muted-foreground text-xs tracking-wider text-right">
                  جدول مقایسه نمرات مواد تامین شده (Materials Performance Matrix)
                </div>
-               <span className="text-[10px] text-teal-600 font-bold bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-md">
+               <span className="text-2xs text-teal-600 font-bold bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-md">
                  تعداد اقلام ممیزی شده: <span className="font-mono">{stats.totalItems}</span> ماده فعال یا نمونه
                </span>
              </div>
  
              <div className="overflow-x-auto">
                <table className="w-full text-right divide-y divide-border">
-                 <thead className="bg-muted/50 text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border">
+                 <thead className="bg-muted/50 text-2xs sm:text-2xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border">
                    <tr>
                      <th className="px-3 sm:px-4 py-3 text-right">ماده</th>
                      <th className="px-3 sm:px-4 py-3 text-center">CAS No.</th>
@@ -734,21 +734,21 @@ interface SourceSelection {
                                <CatIcon className="w-3.5 h-3.5" />
                              </div>
                              <div className="min-w-0">
-                               <div className="font-bold text-foreground text-[11px] sm:text-[12px] whitespace-nowrap" title={v.material}>{v.material || 'N/A'}</div>
-                               <div className="text-muted-foreground text-[9px] sm:text-[10px] font-mono mt-0.5 whitespace-nowrap" dir="ltr" style={{ textAlign: 'right' }} title={v.materialEn}>{v.materialEn || 'N/A'}</div>
+                               <div className="font-bold text-foreground text-2xs sm:text-[12px] whitespace-nowrap" title={v.material}>{v.material || 'N/A'}</div>
+                               <div className="text-muted-foreground text-2xs font-mono mt-0.5 whitespace-nowrap" dir="ltr" style={{ textAlign: 'right' }} title={v.materialEn}>{v.materialEn || 'N/A'}</div>
                              </div>
                            </div>
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center whitespace-nowrap">
                            <div className="inline-block text-right">
                              {v.cas && (
-                                <div className="text-[10px] sm:text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50 inline-block font-mono" dir="ltr">
-                                  <span className="text-muted-foreground font-sans font-bold text-[9px] mr-1">CAS No.:</span>
+                                <div className="text-2xs sm:text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50 inline-block font-mono" dir="ltr">
+                                  <span className="text-muted-foreground font-sans font-bold text-2xs mr-1">CAS No.:</span>
                                   <span>{v.cas}</span>
                                 </div>
                               )}
                              {v.isSample && (
-                               <div className="text-[9px] sm:text-[10px] text-teal-600 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded font-bold mt-1 block">
+                               <div className="text-2xs text-teal-600 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded font-bold mt-1 block">
                                  نمونه ارزیابی اولیه / سمپل
                                </div>
                              )}
@@ -761,7 +761,7 @@ interface SourceSelection {
                            <button
                              type="button"
                              onClick={() => onSelectVendor(v)}
-                             className="text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100/80 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-colors border border-teal-200/50 font-bold text-[10px] sm:text-xs cursor-pointer inline-flex items-center gap-1"
+                             className="text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100/80 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-colors border border-teal-200/50 font-bold text-2xs sm:text-xs cursor-pointer inline-flex items-center gap-1"
                            >
                              <Pencil className="w-3 h-3" />
                              <span>پرونده ممیزی</span>
@@ -880,7 +880,7 @@ interface SourceSelection {
                            <Building className="w-5 h-5" />
                          </div>
                          {supplier.country && (
-                           <div className="text-left font-mono text-[10px] text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border max-w-[150px] truncate" title={supplier.country}>
+                           <div className="text-left font-mono text-2xs text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border max-w-[150px] truncate" title={supplier.country}>
                              {supplier.country}
                            </div>
                          )}
@@ -895,18 +895,18 @@ interface SourceSelection {
  
                        {/* List of drugs supplied */}
                        <div className="mt-4 pt-3 border-t border-border">
-                         <span className="text-[10px] font-bold text-muted-foreground block mb-1.5 uppercase font-sans">محصولات ثبت‌شده در دیتابیس:</span>
+                         <span className="text-2xs font-bold text-muted-foreground block mb-1.5 uppercase font-sans">محصولات ثبت‌شده در دیتابیس:</span>
                          <div className="flex flex-wrap gap-1 justify-start">
                            {supplier.vendors.slice(0, 3).map((v) => (
                              <EntityName
                                key={v.id}
                                name={v.material}
                                lines={1}
-                               className="text-[10px] bg-muted text-muted-foreground px-2 py-1 rounded border border-slate-150 font-medium max-w-[160px]"
+                               className="text-2xs bg-muted text-muted-foreground px-2 py-1 rounded border border-slate-150 font-medium max-w-[160px]"
                              />
                            ))}
                            {supplier.vendors.length > 3 && (
-                             <span className="text-[9px] bg-slate-900 text-white px-1.5 py-1 rounded font-bold font-mono">
+                             <span className="text-2xs bg-slate-900 text-white px-1.5 py-1 rounded font-bold font-mono">
                                +{supplier.vendors.length - 3} مورد دیگر
                              </span>
                            )}
@@ -916,7 +916,7 @@ interface SourceSelection {
  
                      <div className="mt-6 pt-3 border-t border-border flex items-center justify-between">
                        <div className="flex items-center gap-3">
-                         <span className="text-[11px] text-muted-foreground font-sans">{myDepartments.length === 1 ? 'میانگین امتیاز واحد شما:' : 'میانگین امتیاز ممیزی:'}</span>
+                         <span className="text-2xs text-muted-foreground font-sans">{myDepartments.length === 1 ? 'میانگین امتیاز واحد شما:' : 'میانگین امتیاز ممیزی:'}</span>
                          <span className={`text-xs font-bold ${getScoreColorClass(avgScore)} font-mono`}>
                            {avgScore !== null ? `${avgScore}%` : 'N/A'}
                          </span>

@@ -59,20 +59,20 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
             <div>
               <h1 className="text-base font-black text-foreground">خطای غیرمنتظره در برنامه</h1>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 اطلاعات شما در پایگاه‌داده محفوظ است؛ این خطا فقط مربوط به نمایش برنامه است.
               </p>
             </div>
           </div>
 
           <div className="bg-muted border border-border rounded-xl p-3.5">
-            <span className="text-[10px] font-bold text-muted-foreground block mb-1">شرح فنی خطا:</span>
-            <code className="text-[11px] text-rose-700 dark:text-rose-400 font-mono break-all leading-relaxed">
+            <span className="text-2xs font-bold text-muted-foreground block mb-1">شرح فنی خطا:</span>
+            <code className="text-2xs text-rose-700 dark:text-rose-400 font-mono break-all leading-relaxed">
               {this.state.error.message || String(this.state.error)}
             </code>
           </div>
 
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-2xs text-muted-foreground leading-relaxed">
             اگر با بارگذاری مجدد برطرف نشد، حافظهٔ محلی مرورگر را پاک کنید. این کار هیچ داده‌ای را
             از پایگاه‌داده حذف نمی‌کند و شما را از حساب خارج نمی‌کند.
           </p>

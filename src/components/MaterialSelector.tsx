@@ -104,7 +104,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
       <label className="text-foreground font-semibold text-xs flex items-center justify-between">
         <span>ماده اولیه (انتخاب از مخزن مرجع) <span className="text-rose-500">*</span></span>
         {selectedMaterial && (
-          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">
+          <span className="text-2xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-mono">
             ID: {selectedMaterial.id}
           </span>
         )}
@@ -133,7 +133,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
           <div className="flex items-center gap-1 shrink-0">
             {selectedMaterial && (
-              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
+              <span className="text-2xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
                 {selectedMaterial.role}
               </span>
             )}
@@ -181,10 +181,10 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                         <span className="font-bold text-foreground text-xs flex items-center gap-1.5">
                           {mat.nameFa}
                           {mat.standardNameFa && mat.standardNameFa !== mat.nameFa && (
-                            <span className="text-[10px] text-muted-foreground font-normal">({mat.standardNameFa})</span>
+                            <span className="text-2xs text-muted-foreground font-normal">({mat.standardNameFa})</span>
                           )}
                         </span>
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono mt-0.5" dir="ltr">
+                        <div className="flex items-center gap-2 text-2xs text-muted-foreground font-mono mt-0.5" dir="ltr">
                           <span>{mat.nameEn}</span>
                           {mat.cas && mat.cas !== 'N/A' && (
                             <>
@@ -196,7 +196,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
+                        <span className="text-2xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
                           {mat.role}
                         </span>
                         {isSelected && <Check className="w-4 h-4 text-cyan-600" />}
@@ -233,7 +233,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                 </div>
                 <div>
                   <h3 className="font-bold text-foreground text-base">ثبت ماده اولیه جدید در مخزن</h3>
-                  <p className="text-[11px] text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
+                  <p className="text-2xs text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
                 </div>
               </div>
               <button
@@ -372,7 +372,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                     {formData.specificationFile && (
                       <div className="flex items-center gap-2 bg-fuchsia-50 text-fuchsia-700 px-3 py-1.5 rounded-lg border border-fuchsia-100">
                         <FileText className="w-4 h-4" />
-                        <span className="text-[11px] font-mono font-bold truncate max-w-[200px]" dir="ltr">
+                        <span className="text-2xs font-mono font-bold truncate max-w-[200px]" dir="ltr">
                           {formData.specificationFile}
                         </span>
                         <button type="button" onClick={() => setFormData({...formData, specificationFile: undefined})} className="text-rose-500 hover:text-rose-700 p-1">
@@ -387,13 +387,13 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
               {/* Standard Names Auto-generation Box */}
               <div className="bg-muted p-4 rounded-xl border border-border space-y-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
+                  <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی (تولید خودکار)</label>
                   <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-bold select-all">
                     {generateStandardNameFa(formData)}
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
+                  <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name (Auto-generated)</label>
                   <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs text-foreground font-mono font-bold select-all" dir="ltr">
                     {generateStandardNameEn(formData)}
                   </div>

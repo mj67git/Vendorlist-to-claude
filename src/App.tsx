@@ -116,7 +116,7 @@ const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void
     </div>
     <h2 className="text-base font-black text-foreground">{title}</h2>
     <p className="text-xs text-muted-foreground leading-relaxed font-medium">{detail}</p>
-    <p className="text-[11px] text-muted-foreground">
+    <p className="text-2xs text-muted-foreground">
       برای دریافت دسترسی با مدیر سیستم تماس بگیرید؛ سطح دسترسی هر کاربر در «مدیریت کاربران» تنظیم می‌شود.
     </p>
     <button
@@ -1587,7 +1587,7 @@ export default function App() {
               </span>
               <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
                 <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-[10px] mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
+                <span className="text-muted-foreground text-2xs mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
               </div>
             </div>
             <button
@@ -1626,7 +1626,7 @@ export default function App() {
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-muted/40 hover:bg-accent text-muted-foreground transition-colors text-xs"
               >
                 <span className="flex items-center gap-2"><Search className="w-3.5 h-3.5" /> جستجوی سریع...</span>
-                <kbd className="font-mono text-[10px] bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+                <kbd className="font-mono text-2xs bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
               </button>
             </div>
           )}
@@ -1640,7 +1640,7 @@ export default function App() {
             />
 
             {can(currentUser, 'vendor.read') && (
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>دسته‌بندی‌ها</span>
             </div>
             )}
@@ -1662,7 +1662,7 @@ export default function App() {
               );
             })}
 
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
             </div>
             {can(currentUser, 'partner.read') && (
@@ -1684,7 +1684,7 @@ export default function App() {
               />
             )}
 
-            <div className={`pt-3 pb-1 px-3 text-[11px] font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
             </div>
             {/* Each entry is gated by the permission its page and endpoints
@@ -1815,7 +1815,7 @@ export default function App() {
                 >
                   <Bell className="w-4 h-4" />
                   {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
+                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-2xs font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
                       {expiringVendors.length}
                     </span>
                   )}
@@ -1834,7 +1834,7 @@ export default function App() {
                           <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                           <span className="font-bold text-xs text-foreground">مرکز اعلان‌های انقضای مجوز (IRC / IVC)</span>
                         </div>
-                        <Badge variant="warning" className="text-[10px] font-mono font-bold">
+                        <Badge variant="warning" className="text-2xs font-mono font-bold">
                           {expiringVendors.length} مورد
                         </Badge>
                       </div>
@@ -1844,7 +1844,7 @@ export default function App() {
                           <div className="p-6 text-center text-muted-foreground text-xs">
                             <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
                             <div className="font-bold text-foreground">همه مجوزها معتبر هستند</div>
-                            <div className="text-[11px] mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
+                            <div className="text-2xs mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
                           </div>
                         ) : (
                           expiringVendors.map(({ vendor, check }) => (
@@ -1861,21 +1861,21 @@ export default function App() {
                                   {vendor.material || vendor.name}
                                 </div>
                                 {check.status === 'expired' ? (
-                                  <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                  <Badge variant="destructive" className="text-2xs px-1.5 py-0">
                                     منقضی
                                   </Badge>
                                 ) : (
-                                  <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                                  <Badge variant="warning" className="text-2xs px-1.5 py-0">
                                     {check.daysLeft} روز مانده
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-[11px] text-muted-foreground truncate">
+                              <div className="text-2xs text-muted-foreground truncate">
                                 تامین‌کننده: {vendor.name} {vendor.irc ? `(IRC: ${vendor.irc})` : ''}
                               </div>
-                              <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1">
+                              <div className="text-2xs text-muted-foreground flex items-center justify-between pt-1">
                                 <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                                <span className="text-primary font-bold text-[10px] group-hover:underline">مشاهده سورس ←</span>
+                                <span className="text-primary font-bold text-2xs group-hover:underline">مشاهده سورس ←</span>
                               </div>
                             </div>
                           ))
@@ -1917,7 +1917,7 @@ export default function App() {
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
                 <span className="text-border">|</span>
-                <span className="font-mono text-[10px] text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
+                <span className="font-mono text-2xs text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
                   {systemTime.isoDate}
                 </span>
               </div>
@@ -1930,7 +1930,7 @@ export default function App() {
               {isLocalMode() && (
                 <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
                   <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
+                  <span className="text-2xs font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
                 </div>
               )}
 
@@ -1943,11 +1943,11 @@ export default function App() {
                     title={currentUser.name || currentUser.username}
                   >
                     <Avatar className="h-7 w-7 border border-border">
-                      <AvatarFallback className="text-[10px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
+                      <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
                     </Avatar>
                     <span className="hidden sm:flex flex-col text-right leading-tight max-w-[120px]">
-                      <span className="text-[11px] font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                      <span className="text-[9px] text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
+                      <span className="text-2xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
+                      <span className="text-2xs text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                     </span>
                     <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
                   </button>
@@ -1958,16 +1958,16 @@ export default function App() {
                       <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right" dir="rtl">
                         <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
                           <Avatar className="h-9 w-9 border border-border">
-                            <AvatarFallback className="text-[11px] font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
+                            <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
                           </Avatar>
                           <div className="flex flex-col min-w-0">
                             <span className="text-xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                            <span className="text-[10px] font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
+                            <span className="text-2xs font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
                           </div>
                         </div>
                         {/* Session facts: when they were last here, how long this
                             session has left, and what they can do. */}
-                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-[10px] text-muted-foreground">
+                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-2xs text-muted-foreground">
                           <div className="flex items-center justify-between gap-2">
                             <span className="flex items-center gap-1.5">
                               <History className="w-3 h-3" />
@@ -1999,15 +1999,15 @@ export default function App() {
 
                         {/* My recent activity, straight from the audit trail. */}
                         <div className="px-3.5 py-2.5 border-b border-border">
-                          <span className="text-[10px] font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
+                          <span className="text-2xs font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
                           {myActivity === null ? (
-                            <span className="text-[10px] text-muted-foreground italic">در حال بارگذاری...</span>
+                            <span className="text-2xs text-muted-foreground italic">در حال بارگذاری...</span>
                           ) : myActivity.length === 0 ? (
-                            <span className="text-[10px] text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
+                            <span className="text-2xs text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
                           ) : (
                             <ul className="space-y-1">
                               {myActivity.map((a: any) => (
-                                <li key={a.id} className="flex items-start gap-1.5 text-[10px] leading-snug">
+                                <li key={a.id} className="flex items-start gap-1.5 text-2xs leading-snug">
                                   <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
                                   <span className="text-muted-foreground truncate" title={a.description}>
                                     {a.description || a.action}
@@ -2027,7 +2027,7 @@ export default function App() {
                               {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                               {isDark ? 'حالت روز (روشن)' : 'حالت شب (تیره)'}
                             </span>
-                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
+                            <span className={`text-2xs font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
                           </button>
                           {can(currentUser, 'users.manage') && (
                             <button
@@ -2164,7 +2164,7 @@ export default function App() {
                     setToastMsg(null); setToastKind(null); setToastAction(null);
                     run();
                   }}
-                  className="shrink-0 mr-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                  className="shrink-0 mr-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-2xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
                 >
                   {toastAction.label}
                 </button>

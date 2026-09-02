@@ -270,7 +270,7 @@ export function CategoryView({
 
           {/* Sort control */}
           <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
-            <label htmlFor="category-sort" className="text-[11px] text-muted-foreground whitespace-nowrap">
+            <label htmlFor="category-sort" className="text-2xs text-muted-foreground whitespace-nowrap">
               مرتب‌سازی
             </label>
             <select
@@ -428,7 +428,7 @@ export function CategoryView({
               <h3 id="select-source-title" className="text-sm font-black text-foreground">
                 ثبت سورس منتخب برای «{selectDialog.materialFa}»
               </h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-2xs text-muted-foreground mt-0.5">
                 این تصمیم با نام شما و دلیل آن در ردیابی تغییرات (Audit) ثبت می‌شود.
               </p>
             </div>
@@ -453,7 +453,7 @@ export function CategoryView({
                     <option key={v.id} value={v.id}>{v.name}{v.grade ? ` — Grade ${v.grade}` : ''}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-muted-foreground pt-1">
+                <p className="text-2xs text-muted-foreground pt-1">
                   انتخاب شما می‌تواند با پیشنهاد موتور متفاوت باشد؛ در آن صورت دلیل اهمیت بیشتری دارد.
                 </p>
               </div>
@@ -470,7 +470,7 @@ export function CategoryView({
                   className="w-full bg-muted border border-border rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   placeholder="مثلاً: بالاترین امتیاز کیفی، سابقهٔ آزمایشگاهی بدون انحراف، و تأمین پایدار در دو سال گذشته."
                 />
-                <p className="text-[10px] text-muted-foreground">حداقل ۱۰ کاراکتر.</p>
+                <p className="text-2xs text-muted-foreground">حداقل ۱۰ کاراکتر.</p>
               </div>
             </div>
 

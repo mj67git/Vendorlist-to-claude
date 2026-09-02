@@ -194,9 +194,9 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                     lines={2}
                     className="font-bold text-foreground text-xs sm:text-sm"
                   />
-                  <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
+                  <div className="text-2xs text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
                     {selectedPartner.nameEn && (
-                      <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">
+                      <span className="font-mono text-2xs text-muted-foreground" dir="ltr">
                         {selectedPartner.nameEn}
                       </span>
                     )}
@@ -214,13 +214,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
                 {!isManufacturer && (
                   selectedPartner.evaluation?.grade && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
-                    <span className={`mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${getSOPGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
+                    <span className={`mr-2 px-2 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${getSOPGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                       {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
                        selectedPartner.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
                        `Grade ${selectedPartner.evaluation.grade}`}
                     </span>
                   ) : (
-                    <span className="mr-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border shrink-0">
+                    <span className="mr-2 px-2 py-0.5 rounded-md text-2xs font-bold bg-muted text-muted-foreground border border-border shrink-0">
                       ارزیابی نشده
                     </span>
                   )
@@ -355,12 +355,12 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                           <div className="text-xs font-bold flex items-center gap-2 min-w-0">
                             <EntityName name={p.name} lines={1} />
                             {p.status === 'Blacklisted' && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-100 text-rose-800 font-bold shrink-0">
+                              <span className="px-1.5 py-0.2 rounded text-2xs bg-rose-100 text-rose-800 font-bold shrink-0">
                                 بلک‌لیست
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate flex items-center gap-2 mt-0.5">
+                          <div className="text-2xs text-muted-foreground truncate flex items-center gap-2 mt-0.5">
                             {p.nameEn && (
                               <span className="font-mono text-muted-foreground" dir="ltr">
                                 {p.nameEn}
@@ -381,7 +381,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                             )}
                           </div>
                           {!allowed && (
-                            <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
+                            <div className="text-2xs font-bold text-amber-700 dark:text-amber-400 mt-1 leading-snug">
                               {reason}
                             </div>
                           )}
@@ -391,13 +391,13 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                       <div className="flex items-center gap-2 shrink-0 mr-2">
                         {p.type === 'Supplier' && (
                           p.evaluation?.grade && p.evaluation.grade !== 'Not Evaluated' ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getSOPGradeBadgeClass(p.evaluation.grade)}`}>
+                            <span className={`px-2 py-0.5 rounded text-2xs font-bold border ${getSOPGradeBadgeClass(p.evaluation.grade)}`}>
                               {p.evaluation.grade === 'Pending Review' ? '🟡 Pending' :
                                p.evaluation.grade === 'Blacklist' ? '🔴 Blacklist' :
                                `Grade ${p.evaluation.grade}`}
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                            <span className="px-2 py-0.5 rounded text-2xs font-bold bg-muted text-muted-foreground border border-border">
                               ارزیابی نشده
                             </span>
                           )
@@ -412,7 +412,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
 
             {/* Quick Add Footer inside Dropdown */}
             <div className="p-2 border-t border-border bg-muted/50 flex items-center justify-between text-xs">
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {filteredPartners.length} مورد یافت شد
                 {blockedCount > 0 && (
                   <span className="text-amber-700 dark:text-amber-400 font-bold">

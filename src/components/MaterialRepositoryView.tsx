@@ -535,7 +535,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             <Archive className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
+            <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
             <div className="text-xl font-black text-foreground font-mono mt-0.5">{materials.length}</div>
           </div>
         </div>
@@ -547,7 +547,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 <Icon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[11px] font-bold text-muted-foreground tracking-wider truncate">
+                <div className="text-2xs font-bold text-muted-foreground tracking-wider truncate">
                   {role.labelEn} <span className="font-normal">({role.labelFa})</span>
                 </div>
                 <div className="text-xl font-black text-foreground font-mono mt-0.5">{roleCounts.get(role.value) || 0}</div>
@@ -643,7 +643,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <EntityName name={material.nameEn} lines={2} className="whitespace-normal" />
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${role.tone}`}>
+                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-2xs font-bold border ${role.tone}`}>
                         {role.labelEn} <span className="font-normal">· {role.labelFa}</span>
                       </span>
                     </td>
@@ -655,7 +655,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     <td className="py-3 px-4 text-center">
                       {/* The number that decides whether this row can be deleted. */}
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-bold border ${
                           sourceCount > 0
                             ? 'bg-muted text-foreground border-border'
                             : 'text-muted-foreground border-transparent'
@@ -752,7 +752,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
         
         {/* PAGINATION */}
         <div className="px-6 py-3 border-t border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
             <span>تعداد در هر صفحه</span>
             <select
               value={itemsPerPage}
@@ -806,7 +806,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                       <h2 className="text-base sm:text-lg font-black text-foreground">
                         {editingMaterial ? 'ویرایش ماده اولیه در مخزن مرجع' : 'ثبت ماده اولیه جدید در مخزن مرجع'}
                       </h2>
-                      <p className="text-[11px] text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
+                      <p className="text-2xs text-muted-foreground">تکمیل مشخصات شیمیایی، نقش دارویی و استانداردهای فارماکوپه‌ای</p>
                     </div>
                   </div>
                   <button 
@@ -1004,7 +1004,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                           {formData.specificationFile && (
                             <div className="flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-900 px-3 py-1.5 rounded-xl border">
                               <FileText className="w-4 h-4" />
-                              <span className="text-[11px] font-mono font-bold truncate max-w-[240px]" dir="ltr">
+                              <span className="text-2xs font-mono font-bold truncate max-w-[240px]" dir="ltr">
                                 {formData.specificationFile}
                               </span>
                               <button
@@ -1018,7 +1018,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             </div>
                           )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-2xs text-muted-foreground">
                           {pendingSpecFile
                             ? `فایل «${pendingSpecFile.name}» (${formatFileSize(pendingSpecFile.size)}) پس از ذخیرهٔ ماده بارگذاری می‌شود.`
                             : `فایل روی سرور ذخیره و در شناسنامهٔ ماده قابل دانلود است. حداکثر ${formatFileSize(MAX_SPEC_BYTES)}.`}
@@ -1040,13 +1040,13 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
                         <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-bold select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
+                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
                         <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-mono font-bold select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
@@ -1059,7 +1059,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 {/* Sticky Bottom Footer */}
                 <div className="sticky bottom-0 z-30 px-6 py-4 border-t border-border bg-muted/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0 shadow-xs">
                   {savedCount > 0 && (
-                    <span className="mr-auto text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[22rem]"
+                    <span className="mr-auto text-2xs font-bold text-emerald-700 dark:text-emerald-300 truncate max-w-[22rem]"
                       title={recentlySaved.join('، ')}>
                       {savedCount.toLocaleString('fa-IR')} ماده در این نشست ثبت شد
                       {recentlySaved[0] ? ` — آخرین: ${recentlySaved[0]}` : ''}
@@ -1104,7 +1104,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-foreground">جزئیات شناسنامه ماده اولیه</h2>
-                  <p className="text-[11px] text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
+                  <p className="text-2xs text-muted-foreground font-mono" dir="ltr">{selectedMaterial.id}</p>
                 </div>
               </div>
               <button 
@@ -1126,19 +1126,19 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام فارسی</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام فارسی</div>
                     <div className="text-sm font-bold text-foreground">{selectedMaterial.nameFa}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام لاتین / ژنریک</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.nameEn}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام IUPAC</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام IUPAC</div>
                     <div className="text-xs font-mono text-foreground" dir="ltr">{selectedMaterial.iupac || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">CAS Number</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">CAS Number</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.cas}</div>
                   </div>
                 </div>
@@ -1152,21 +1152,21 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6">
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نقش ماده (Role)</div>
                     <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold border ${getMaterialRole(selectedMaterial.role).tone}`}>
                       {getMaterialRole(selectedMaterial.role).labelEn} <span className="font-normal">· {getMaterialRole(selectedMaterial.role).labelFa}</span>
                     </span>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">فارماکوپه مرجع (Pharmacopoeia)</div>
                     <div className="text-sm font-bold font-mono text-foreground">{selectedMaterial.pharmacopoeia}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (فارسی)</div>
                     <div className="text-sm font-bold text-foreground">{selectedMaterial.finalProduct}</div>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">محصول نهایی (لاتین)</div>
                     <div className="text-sm font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.finalProductEn}</div>
                   </div>
                 </div>
@@ -1182,20 +1182,20 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                 <div className="space-y-4">
                   <div className="p-4 bg-card border border-border rounded-xl space-y-3">
                     <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
+                      <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">نام استاندارد فارسی</div>
                       <div className="text-xs font-bold text-foreground">{selectedMaterial.standardNameFa}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Standard English Name</div>
+                      <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Standard English Name</div>
                       <div className="text-xs font-bold font-mono text-foreground" dir="ltr">{selectedMaterial.standardNameEn}</div>
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
+                    <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider mb-2">فایل پیوست Specification</div>
 
                     {specError && (
-                      <div role="alert" className="mb-2 p-2.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-[11px] leading-relaxed fade-in">
+                      <div role="alert" className="mb-2 p-2.5 bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/50 dark:border-rose-900 dark:text-rose-200 border rounded-xl text-2xs leading-relaxed fade-in">
                         {specError}
                       </div>
                     )}
@@ -1213,7 +1213,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                             {/* A name with no file behind it is exactly what this
                                 module used to record, so the record says which
                                 one this is. */}
-                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                            <div className="text-2xs text-muted-foreground mt-0.5">
                               {selectedMaterial.hasSpecificationFile
                                 ? [formatFileSize(selectedMaterial.specificationFileSize), 'ذخیره‌شده روی سرور'].filter(Boolean).join(' · ')
                                 : 'فقط نام فایل ثبت شده است — فایلی روی سرور نیست.'}
@@ -1267,10 +1267,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                               <span>{specBusy ? 'در حال بارگذاری…' : 'بارگذاری فایل'}</span>
                               <input type="file" className="hidden" onChange={handleReplaceSpec} disabled={specBusy} />
                             </label>
-                            <span className="text-[10px] text-muted-foreground">حداکثر {formatFileSize(MAX_SPEC_BYTES)}</span>
+                            <span className="text-2xs text-muted-foreground">حداکثر {formatFileSize(MAX_SPEC_BYTES)}</span>
                           </>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground">بارگذاری فایل در دسترس نقش شما نیست.</span>
+                          <span className="text-2xs text-muted-foreground">بارگذاری فایل در دسترس نقش شما نیست.</span>
                         )}
                       </div>
                     )}
@@ -1312,7 +1312,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                     {connectedVendors.map(vendor => (
                       <div key={vendor.id} className="py-2 px-2 text-xs text-foreground flex justify-between items-center">
                         <span className="font-bold">{vendor.name}</span>
-                        <span className="font-mono bg-background border border-border px-2 py-0.5 rounded text-[10px] text-foreground">
+                        <span className="font-mono bg-background border border-border px-2 py-0.5 rounded text-2xs text-foreground">
                           {categoryLabels[vendor.category as keyof typeof categoryLabels]?.fa || vendor.category}
                         </span>
                       </div>

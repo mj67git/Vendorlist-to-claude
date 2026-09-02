@@ -247,7 +247,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
             </button>
 
             <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-xl py-2 z-20 divide-y divide-border text-right">
-              <div className="px-3.5 py-2 text-[10px] font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
+              <div className="px-3.5 py-2 text-2xs font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
                 انتخاب دسته‌بندی جهت خروجی تک‌شیت
               </div>
               <div className="py-1">
@@ -256,7 +256,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                   onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
                   className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                 >
-                  <span className="font-mono text-[9px] text-muted-foreground">All</span>
+                  <span className="font-mono text-2xs text-muted-foreground">All</span>
                   <span>گزارش تجمیعی کل آرشیو</span>
                 </button>
                 {Object.entries(categoryLabels).map(([key, labelData]) => (
@@ -266,7 +266,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                     onClick={() => { setExportMenuOpen(false); handleExportCategory(key, labelData.fa); }}
                     className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
                   >
-                    <span className="font-mono text-[9px] text-muted-foreground">{key}</span>
+                    <span className="font-mono text-2xs text-muted-foreground">{key}</span>
                     <span>گزارش {labelData.fa}</span>
                   </button>
                 ))}
@@ -383,7 +383,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
                 <div className="flex flex-wrap items-center gap-1.5">
                   {chosen && (
                     <span
-                      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-md"
+                      className="shrink-0 inline-flex items-center gap-1 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-md"
                       title={`سورس منتخب برای «${v.material || v.materialEn}» — ${describeSelection(chosen)}`}
                     >
                       <Star className="w-3 h-3 fill-current" />
@@ -436,7 +436,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground shrink-0">
+        <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
           <span>تعداد در هر صفحه</span>
           <select
             value={perPage}

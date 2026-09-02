@@ -120,7 +120,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
           <h1 className="text-base font-bold text-foreground mb-1 leading-snug tracking-tight">
             سامانهٔ ارزیابی و رتبه‌بندی تأمین‌کنندگان
           </h1>
-          <p className="text-primary text-[11px] font-semibold uppercase tracking-wider" dir="ltr">
+          <p className="text-primary text-2xs font-semibold uppercase tracking-wider" dir="ltr">
             Vendor List &amp; Supplier Evaluation System
           </p>
         </div>
@@ -184,7 +184,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
               </button>
             </div>
             {capsLock && (
-              <p className="mt-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+              <p className="mt-1.5 text-2xs font-semibold text-amber-700 dark:text-amber-400">
                 کلید Caps Lock روشن است.
               </p>
             )}
@@ -203,7 +203,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
         {/* Someone locked out of a system where only an admin can reset a password
             needs to be told that, on the screen where they are stuck. */}
-        <p className="mt-4 text-[11px] text-muted-foreground text-center leading-relaxed">
+        <p className="mt-4 text-2xs text-muted-foreground text-center leading-relaxed">
           کلمهٔ عبور را فراموش کرده‌اید؟ بازنشانی رمز فقط توسط مدیر سیستم انجام می‌شود.
         </p>
 
@@ -216,7 +216,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
             >
               ورود آزمایشی (بدون پایگاه‌داده)
             </button>
-            <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+            <p className="mt-2 text-2xs text-muted-foreground leading-relaxed">
               داده‌ها فقط در همین مرورگر ذخیره می‌شوند. برای نسخهٔ نهایی، ورود عادی با پایگاه‌داده استفاده می‌شود.
             </p>
           </div>

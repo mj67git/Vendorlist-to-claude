@@ -223,7 +223,7 @@ export function WorklistView({
             >
               <m.icon className="w-3.5 h-3.5 shrink-0" />
               <span>{m.label}</span>
-              <span className={`font-mono tabular-nums text-[11px] px-1.5 rounded-md ${
+              <span className={`font-mono tabular-nums text-2xs px-1.5 rounded-md ${
                 active ? 'bg-primary-foreground/20' : 'bg-muted'
               }`}>
                 {counts[k]}
@@ -235,9 +235,9 @@ export function WorklistView({
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-border bg-muted/40">
-          <p className="text-[11px] text-muted-foreground leading-relaxed">{meta.description}</p>
+          <p className="text-2xs text-muted-foreground leading-relaxed">{meta.description}</p>
           {!mayAct && (
-            <p className="text-[11px] text-amber-700 dark:text-amber-400 font-bold mt-1.5">{meta.readOnlyNote}</p>
+            <p className="text-2xs text-amber-700 dark:text-amber-400 font-bold mt-1.5">{meta.readOnlyNote}</p>
           )}
         </div>
 
@@ -257,18 +257,18 @@ export function WorklistView({
                 >
                   <span className="min-w-0 flex-1">
                     <EntityName name={item.title} lines={2} className="text-sm font-bold text-foreground" />
-                    <EntityName name={item.subtitle} lines={1} className="text-[11px] text-muted-foreground mt-0.5" />
+                    <EntityName name={item.subtitle} lines={1} className="text-2xs text-muted-foreground mt-0.5" />
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     {item.vendor?.grade && taskKey === 'eval' && (
                       <GradeBadge grade={item.vendor.grade as any} status={item.vendor.status as any} />
                     )}
                     {item.note && (
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${TONE_CLASSES[item.tone || 'neutral']}`}>
+                      <span className={`text-2xs font-bold px-2 py-1 rounded-lg border ${TONE_CLASSES[item.tone || 'neutral']}`}>
                         {item.note}
                       </span>
                     )}
-                    <span className="text-[10px] font-bold text-primary">رسیدگی ←</span>
+                    <span className="text-2xs font-bold text-primary">رسیدگی ←</span>
                   </span>
                 </button>
               </li>

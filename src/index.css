@@ -64,6 +64,23 @@
   --color-info: var(--info-main);
   --color-info-foreground: var(--info-content);
 
+  /**
+   * The floor for text size in the interface.
+   *
+   * Persian has no capital letters, so a word carries fewer shape cues than the
+   * same word in Latin; its dots and diacritics collide once the glyphs get
+   * small, and Vazirmatn's relative x-height sits below the interface faces
+   * this scale was borrowed from. Twelve-pixel Persian reads roughly like
+   * ten-and-a-half-pixel Latin — which is why 9px and 10px labels had crept in
+   * as if they were merely "small" when they were in fact unreadable.
+   *
+   * `text-2xs` is the smallest size the interface may use. The existing
+   * Tailwind sizes are deliberately left alone: `text-xs` stays 12px, because
+   * moving it would move 558 call sites at once.
+   */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.65;
+
   /* Spacing */
   --spacing-1: 4px;
   --spacing-2: 8px;
