@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
+import { Button } from './ui/button';
 import { BusinessPartner, BusinessPartnerType } from '../types';
 import { canSupplySources } from '../utils/sopEvaluation';
 import { EntityName } from './EntityName';
@@ -297,17 +298,19 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               {filteredPartners.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground text-xs">
                   <div>شریکی با این مشخصات یافت نشد.</div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setIsOpen(false);
                       triggerOpenCreate();
                     }}
-                    className="mt-3 inline-flex items-center gap-1 text-primary hover:underline font-bold text-xs bg-blue-50 px-3 py-1.5 rounded-xl"
+                    className="mt-3 text-primary bg-blue-50 dark:bg-blue-950/40 hover:text-primary font-bold"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus />
                     <span>ثبت شریک تجاری جدید</span>
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 filteredPartners.map(p => {

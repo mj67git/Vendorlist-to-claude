@@ -119,12 +119,9 @@ const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void
     <p className="text-2xs text-muted-foreground">
       برای دریافت دسترسی با مدیر سیستم تماس بگیرید؛ سطح دسترسی هر کاربر در «مدیریت کاربران» تنظیم می‌شود.
     </p>
-    <button
-      onClick={onHome}
-      className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
-    >
+    <Button onClick={onHome} className="text-xs font-bold">
       بازگشت به صفحه اصلی
-    </button>
+    </Button>
   </div>
 );
 
@@ -1391,12 +1388,9 @@ export default function App() {
           <p className="text-xs text-muted-foreground leading-relaxed font-medium">
             لینکی که باز کرده‌اید به سورسی با شناسهٔ <span className="font-mono text-foreground">{pendingVendor!.id}</span> اشاره می‌کند که دیگر در سامانه وجود ندارد (احتمالاً حذف شده است).
           </p>
-          <button
-            onClick={() => navigate('home')}
-            className="px-4 py-2 bg-primary hover:opacity-90 text-white rounded-xl text-xs font-bold transition-opacity cursor-pointer"
-          >
+          <Button onClick={() => navigate('home')} className="text-xs font-bold">
             بازگشت به صفحه اصلی
-          </button>
+          </Button>
         </div>
       );
     } else if (selectedVendor) {
@@ -1489,12 +1483,9 @@ export default function App() {
             <p className="text-xs text-rose-700 leading-relaxed font-medium">
               مشاهده ردیابی تغییرات، لاگ‌های امنیتی و فعالیت‌های کاربران طبق سیاست‌های امنیتی و GMP تنها در انحصار مدیران ارشد سیستم (Administrator) می‌باشد.
             </p>
-            <button
-              onClick={() => navigate('home')}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
+            <Button variant="destructive" onClick={() => navigate('home')} className="text-xs font-bold">
               بازگشت به صفحه اصلی
-            </button>
+            </Button>
           </div>
         );
       }
@@ -1590,31 +1581,35 @@ export default function App() {
                 <span className="text-muted-foreground text-2xs mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
               </div>
             </div>
-            <button
-              className="md:hidden text-muted-foreground hover:text-foreground p-1 rounded-lg"
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="md:hidden text-muted-foreground"
               onClick={() => setSidebarOpen(false)}
             >
-              <X className="w-5 h-5" />
-            </button>
+              <X />
+            </Button>
             {/* Desktop collapse toggle */}
-            <button
-              className={`hidden md:flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border transition-all ${sidebarCollapsed ? 'md:hidden' : ''}`}
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className={`hidden md:inline-flex text-muted-foreground ${sidebarCollapsed ? 'md:hidden' : ''}`}
               onClick={() => setSidebarCollapsed(true)}
               title="جمع کردن نوار کناری"
             >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              <ChevronRight />
+            </Button>
           </div>
 
           {/* Collapsed: search + expand controls */}
           {sidebarCollapsed && (
             <div className="hidden md:flex flex-col items-center gap-1.5 py-2 border-b border-border/80">
-              <button onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-accent border border-border">
-                <Search className="w-4 h-4" />
-              </button>
-              <button onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent border border-border">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
+              <Button variant="outline" size="icon-sm" onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="text-muted-foreground hover:text-primary">
+                <Search />
+              </Button>
+              <Button variant="outline" size="icon-sm" onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="text-muted-foreground">
+                <ChevronLeft />
+              </Button>
             </div>
           )}
 
@@ -1738,12 +1733,14 @@ export default function App() {
           {/* Sticky Topbar */}
           <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
             <div className="flex items-center gap-3 sm:gap-4">
-              <button 
-                className="md:hidden p-2 rounded-xl text-muted-foreground bg-transparent hover:bg-accent hover:text-foreground transition-colors focus:outline-none"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden text-muted-foreground"
                 onClick={() => setSidebarOpen(true)}
               >
-                <Menu className="w-5 h-5" />
-              </button>
+                <Menu />
+              </Button>
 
               {/* Navigation History & Back Handler */}
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1793,23 +1790,27 @@ export default function App() {
             
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Dark / light theme toggle */}
-              <button
+              <Button
+                variant="outline"
+                size="icon"
                 onClick={toggleTheme}
-                className="relative p-2 rounded-xl border border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-all active:scale-95 cursor-pointer"
+                className="text-muted-foreground"
                 title={isDark ? 'روشن کردن حالت روز' : 'فعال‌کردن حالت شب'}
                 aria-label="تغییر حالت روز/شب"
               >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
+                {isDark ? <Sun /> : <Moon />}
+              </Button>
 
               {/* Notification Center for License Expiry */}
               <div className="relative">
-                <button
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => setShowNotificationPanel(!showNotificationPanel)}
-                  className={`relative p-2 rounded-xl border transition-all active:scale-95 cursor-pointer flex items-center justify-center ${
+                  className={`relative ${
                     expiringVendors.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
-                      : 'bg-background hover:bg-accent border-border text-muted-foreground'
+                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 hover:text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
+                      : 'text-muted-foreground'
                   }`}
                   title={expiringVendors.length > 0 ? `${expiringVendors.length} مورد هشدار انقضای مجوز` : 'مرکز اعلان‌های سیستم'}
                 >
@@ -1819,7 +1820,7 @@ export default function App() {
                       {expiringVendors.length}
                     </span>
                   )}
-                </button>
+                </Button>
 
                 {/* Dropdown Popover */}
                 {showNotificationPanel && (
@@ -2101,19 +2102,20 @@ export default function App() {
                     dialog interrupts someone who was mid-task, and the reflex
                     click should keep their work, not discard it. Same order and
                     wording as the confirmation inside FormModal. */}
-                <button
+                <Button
                   autoFocus
                   onClick={() => setPendingNav(null)}
-                  className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                  className="text-xs font-bold"
                 >
                   بازگشت به فرم
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
-                  className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
+                  className="border border-border text-xs font-bold"
                 >
                   خروج بدون ذخیره
-                </button>
+                </Button>
               </div>
         </FormModal>
 
@@ -2156,18 +2158,19 @@ export default function App() {
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
               <span className="font-medium text-xs font-sans text-right" dir="rtl">{toastMsg}</span>
               {toastAction && (
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   onClick={() => {
                     const run = toastAction.run;
                     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
                     setToastMsg(null); setToastKind(null); setToastAction(null);
                     run();
                   }}
-                  className="shrink-0 mr-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-2xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                  className="shrink-0 mr-1 h-7 px-2.5 text-2xs font-bold"
                 >
                   {toastAction.label}
-                </button>
+                </Button>
               )}
             </div>
           );

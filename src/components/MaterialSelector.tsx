@@ -1,3 +1,4 @@
+import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import React, { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, Package, X, Upload, FileText } from 'lucide-react';
@@ -209,14 +210,15 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
             {onAddMaterial && (
               <div className="p-2 border-t border-border bg-muted">
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   onClick={() => setShowCreateModal(true)}
-                  className="w-full py-1.5 px-3 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  className="w-full bg-fuchsia-600 text-white hover:bg-fuchsia-700 hover:shadow-fuchsia-600/20 font-bold"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus />
                   تعریف ماده اولیه جدید در مخزن (فرم کامل)
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -236,13 +238,15 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
                   <p className="text-2xs text-muted-foreground">تکمیل کامل اطلاعات فنی و ثبتی ماده اولیه مطابق استاندارد VLSE</p>
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowCreateModal(false)}
-                className="text-muted-foreground hover:text-muted-foreground p-2 rounded-xl hover:bg-slate-200/50 transition-colors"
+                className="text-muted-foreground"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <X />
+              </Button>
             </div>
 
             {/* Modal Form Content */}
@@ -402,19 +406,20 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
 
               {/* Footer Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-accent transition-colors"
+                  className="text-xs font-bold text-muted-foreground"
                 >
                   انصراف
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className="px-6 py-2 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-bold shadow-sm transition-all active:scale-95"
+                  className="px-6 bg-fuchsia-600 text-white hover:bg-fuchsia-700 hover:shadow-fuchsia-600/20 text-xs font-bold"
                 >
                   ذخیره ماده اولیه در مخزن
-                </button>
+                </Button>
               </div>
             </form>
       </FormModal>

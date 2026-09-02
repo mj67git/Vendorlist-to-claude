@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { AlertTriangle } from 'lucide-react';
+import { Button } from './ui/button';
 
 /**
  * The single overlay shell for every dialog in the app.
@@ -280,21 +281,22 @@ export function FormModal({
                     </div>
                   </div>
                   <div className="flex items-center justify-start gap-2.5 mt-6">
-                    <button
+                    <Button
                       type="button"
                       autoFocus
                       onClick={() => setConfirming(false)}
-                      className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                      className="text-xs font-bold"
                     >
                       بازگشت به فرم
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="secondary"
                       onClick={() => { setConfirming(false); onCloseRef.current(); }}
-                      className="px-4 py-2 rounded-xl bg-muted hover:bg-accent text-foreground border border-border text-xs font-bold transition-colors cursor-pointer"
+                      className="border border-border text-xs font-bold"
                     >
                       خروج بدون ذخیره
-                    </button>
+                    </Button>
                   </div>
                 </motion.div>
               </motion.div>

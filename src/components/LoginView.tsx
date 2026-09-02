@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, AlertTriangle } from 'lucide-react';
+import { Button } from './ui/button';
 import { User } from '../types';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
@@ -190,15 +191,15 @@ export function LoginView({ onLogin }: LoginViewProps) {
             )}
           </div>
 
-          <button
+          <Button
             id="login_submit_btn"
             type="submit"
             disabled={loading}
-            className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-2.5 rounded-lg transition-colors mt-6 text-sm cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full h-11 mt-6 font-semibold text-sm"
           >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading && <Loader2 className="animate-spin" />}
             <span>{loading ? 'در حال بررسی...' : 'ورود به سامانه'}</span>
-          </button>
+          </Button>
         </form>
 
         {/* Someone locked out of a system where only an admin can reset a password
@@ -209,13 +210,14 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
         {showDemoButton && (
           <div className="mt-5 pt-4 border-t border-border text-center">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={handleLocalDemoLogin}
-              className="w-full bg-card border border-primary text-primary hover:bg-primary/5 font-semibold py-2.5 rounded-lg transition-colors text-sm cursor-pointer"
+              className="w-full h-11 bg-card border-primary text-primary hover:bg-primary/5 hover:text-primary font-semibold text-sm"
             >
               ورود آزمایشی (بدون پایگاه‌داده)
-            </button>
+            </Button>
             <p className="mt-2 text-2xs text-muted-foreground leading-relaxed">
               داده‌ها فقط در همین مرورگر ذخیره می‌شوند. برای نسخهٔ نهایی، ورود عادی با پایگاه‌داده استفاده می‌شود.
             </p>

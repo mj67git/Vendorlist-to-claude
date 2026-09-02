@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { Button } from './ui/button';
 
 /**
  * Last line of defence for the whole app.
@@ -78,20 +79,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
           </p>
 
           <div className="flex items-center justify-end gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={this.clearCacheAndReload}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-muted-foreground border border-border hover:bg-accent transition-colors cursor-pointer"
+              className="text-xs font-bold text-muted-foreground"
             >
               پاک‌کردن حافظهٔ محلی و بارگذاری مجدد
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
+              className="text-xs font-bold"
             >
               بارگذاری مجدد
-            </button>
+            </Button>
           </div>
         </div>
       </div>

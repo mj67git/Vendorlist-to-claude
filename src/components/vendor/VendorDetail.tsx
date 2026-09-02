@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
+import { Button } from '../../components/ui/button';
 import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
@@ -406,18 +407,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
            <h3 className="text-xl font-bold text-foreground mb-1">آیا از حذف این فایل مطمئن هستید؟</h3>
            <p className="text-red-700 dark:text-red-300 mb-6 font-medium text-sm">این عملیات غیر قابل بازگشت است و سورس به همراه تمامی ارزیابی‌های آن از سیستم حذف خواهد شد.</p>
            <div className="flex justify-center gap-4">
-              <button 
+              <Button
+                variant="outline"
                 onClick={() => setShowConfirmDelete(false)}
-                className="px-6 py-2 rounded-xl bg-card border border-border text-foreground hover:bg-accent font-bold text-sm"
+                className="px-6 bg-card font-bold text-sm"
               >
                 انصراف
-              </button>
-              <button 
+              </Button>
+              <Button
+                variant="destructive"
                 onClick={() => onDelete(vendor.id)}
-                className="px-6 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-bold text-sm shadow-[0_4px_14px_rgba(220,38,38,0.25)]"
+                className="px-6 font-bold text-sm"
               >
                 بله، حذف شود
-              </button>
+              </Button>
            </div>
         </div>
       )}
@@ -475,22 +478,25 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               {/* Editing and deleting are separate permissions: commercial may
                   register and correct a source, but only an admin removes one. */}
               {canEditVendor && (
-                <button 
+                <Button
+                  variant="outline"
                   onClick={() => onEditVendor?.()}
-                  className="flex items-center justify-center gap-2 text-sm transition-all h-10 px-4 rounded-xl border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                  className="h-10 text-sm font-bold bg-card shadow-sm"
                 >
-                  <Pencil className="w-4 h-4" />
+                  <Pencil />
                   <span>ویرایش اطلاعات</span>
-                </button>
+                </Button>
               )}
               {canDeleteVendor && (
-                <button 
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => setShowConfirmDelete(true)}
-                  className="flex items-center justify-center h-10 w-10 transition-colors rounded-xl border bg-card border-border text-muted-foreground hover:border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/40 dark:bg-red-950/30 hover:text-red-600 dark:text-red-400 shadow-sm"
+                  className="h-10 w-10 bg-card text-muted-foreground hover:border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/40 dark:bg-red-950/30 hover:text-red-600 dark:text-red-400 shadow-sm"
                   title="حذف"
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                  <Trash2 />
+                </Button>
               )}
             </div>
 
@@ -947,20 +953,24 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <h3 className="font-bold text-foreground text-sm">ارزیابی عملکرد تامین‌کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Evaluation)</span></h3>
             </div>
             {currentUser && currentUser.role !== 'lab' && !showAdminScoresEdit && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowAdminScoresEdit(true)}
-                className="px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 dark:bg-cyan-900/40 border border-cyan-200 dark:border-cyan-800 transition-colors text-xs font-bold flex items-center gap-1.5"
+                className="bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 hover:text-cyan-700 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 border-cyan-200 dark:border-cyan-800 font-bold"
               >
                 {vendor.scores && Object.values(vendor.scores).some(v => v > 0) ? 'تغییر امتیازات' : 'ثبت امتیاز ارزیابی'}
-              </button>
+              </Button>
             )}
             {showAdminScoresEdit && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowAdminScoresEdit(false)}
-                className="flex items-center justify-center gap-1.5 text-xs transition-colors w-fit px-4 py-1.5 rounded-lg border font-bold bg-card text-foreground hover:bg-accent border-border shadow-sm"
+                className="px-4 font-bold bg-card shadow-sm"
               >
                 <span>انصراف</span>
-              </button>
+              </Button>
             )}
           </div>
 
@@ -1151,12 +1161,14 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <h3 className="font-bold text-foreground text-sm">ارزیابی ریسک تامین کنندگان <span className="text-muted-foreground text-xs font-normal font-mono relative top-[0.5px]">(Risk Assessment)</span></h3>
             </div>
             {canRisk && !showRiskAssessment && (
-              <button 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowRiskAssessment(true)}
-                className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800 transition-colors text-xs font-bold"
+                className="px-2.5 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50 border-amber-200 dark:border-amber-800 font-bold"
               >
                 {vendor.riskAssessment ? 'بروزرسانی ارزیابی ریسک' : 'ثبت ارزیابی ریسک'}
-              </button>
+              </Button>
             )}
           </div>
 
@@ -1308,14 +1320,15 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <p className="text-xs text-muted-foreground mt-1">مدیریت و ثبت اطلاعات آزمایش، کدهای آزمایشگاهی (QC)، وضعیت انحراف و تصمیم نهایی (صرفاً ادمین و واحد کیفیت)</p>
               </div>
             </div>
-            <button
+            <Button
               id="add-analysis-record-btn"
+              size="sm"
               onClick={() => setShowAddAnalysisForm(!showAddAnalysisForm)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg transition-all shadow-sm"
+              className="bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
             >
-              <Plus className="w-4 h-4" />
+              <Plus />
               <span>ثبت نتیجه آزمایش جدید</span>
-            </button>
+            </Button>
           </div>
 
           {/* Inline Form to add laboratory record */}
@@ -1417,26 +1430,29 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
                   {/* Action buttons */}
                   <div className="flex justify-end gap-3 pt-2">
-                    <button
+                    <Button
                       id="cancel-analysis-btn"
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => {
                         setAddAnalysisError(null);
                         setShowAddAnalysisForm(false);
                         setNewAnalysis({ date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]), qcCode: '', decision: 'Pass', deviationReason: 'None', comments: '' });
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent active:bg-border rounded-lg transition-all"
+                      className="font-bold text-muted-foreground"
                     >
                       انصراف
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       id="submit-analysis-btn"
                       type="button"
+                      size="sm"
                       onClick={handleAddAnalysisSubmit}
-                      className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg transition-all shadow-sm"
+                      className="px-4 bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
                     >
                       ثبت آزمایش در سابقه سورس
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1537,18 +1553,18 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           </div>
                         )}
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="px-3 py-1.5 text-xs font-bold text-muted-foreground bg-muted hover:bg-accent rounded-lg">انصراف</button>
+                          <Button type="button" variant="secondary" size="sm" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="font-bold text-muted-foreground">انصراف</Button>
                           {vendor.status === 'rejected' ? (
-                            <button type="button" onClick={handleAdminRestoreSource} className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">تأیید بازگردانی</button>
+                            <Button type="button" variant="success" size="sm" onClick={handleAdminRestoreSource} className="px-4 font-bold">تأیید بازگردانی</Button>
                           ) : (
-                            <button type="button" onClick={handleAdminRejectSource} className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg">تأیید رد و انتقال به لیست سیاه</button>
+                            <Button type="button" variant="destructive" size="sm" onClick={handleAdminRejectSource} className="px-4 font-bold">تأیید رد و انتقال به لیست سیاه</Button>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setShowRejectBox(true)} className={`px-4 py-1.5 text-xs font-bold text-white rounded-lg ${vendor.status === 'rejected' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                      <Button type="button" variant={vendor.status === 'rejected' ? 'success' : 'destructive'} size="sm" onClick={() => setShowRejectBox(true)} className="px-4 font-bold">
                         {vendor.status === 'rejected' ? 'بازگردانی سورس از لیست سیاه' : 'رد سورس و انتقال به لیست سیاه'}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
@@ -1695,54 +1711,66 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                             )}
                             {isEditingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <button
+                                <Button
+                                  variant="success"
+                                  size="sm"
                                   onClick={() => handleEditAnalysisSave(record.id)}
-                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-2xs rounded transition-all"
+                                  className="h-7 px-2 font-bold text-2xs"
                                   title="ذخیره"
                                 >
                                   ذخیره
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={handleEditAnalysisCancel}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-2xs rounded transition-all"
+                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
                                   title="انصراف"
                                 >
                                   انصراف
-                                </button>
+                                </Button>
                               </div>
                             ) : isDeletingThis ? (
                               <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <button
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
                                   onClick={() => handleDeleteAnalysis(record.id)}
-                                  className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-2xs rounded transition-all"
+                                  className="h-7 px-2 font-bold text-2xs"
                                   title="تایید حذف"
                                 >
                                   حذف قطعی
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={() => setConfirmDeleteAnalysisId(null)}
-                                  className="px-2 py-1 bg-muted hover:bg-accent text-muted-foreground font-bold text-2xs rounded transition-all"
+                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
                                   title="لغو"
                                 >
                                   لغو
-                                </button>
+                                </Button>
                               </div>
                             ) : (
                               <div className="flex items-center justify-center gap-1" dir="ltr">
-                                <button
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
                                   onClick={() => handleEditAnalysisStart(record)}
-                                  className="p-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 dark:bg-indigo-950/30 rounded transition-all"
+                                  className="text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40"
                                   title="ویرایش"
                                 >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
+                                  <Pencil />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
                                   onClick={() => setConfirmDeleteAnalysisId(record.id)}
-                                  className="p-1 text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/40 dark:bg-rose-950/30 rounded transition-all"
+                                  className="text-rose-600 dark:text-rose-300 hover:text-rose-800 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-900/40"
                                   title="حذف"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  <Trash2 />
+                                </Button>
                               </div>
                             )}
                           </td>
@@ -1763,16 +1791,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         {/* Evaluation wizard navigation */}
         {showEvalWizard && (
           <div className="flex items-center justify-between gap-3 bg-card border border-border/60 rounded-2xl px-5 py-4 shadow-sm">
-            <button type="button" onClick={() => setEvalStage(evalStages[Math.max(0, evalStageIdx - 1)].id)} disabled={evalStageIdx === 0}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-muted-foreground border border-border hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-              <ChevronRight className="w-4 h-4" /> مرحله قبل
-            </button>
+            <Button type="button" variant="outline" onClick={() => setEvalStage(evalStages[Math.max(0, evalStageIdx - 1)].id)} disabled={evalStageIdx === 0}
+              className="h-11 px-5 font-bold text-sm text-muted-foreground">
+              <ChevronRight /> مرحله قبل
+            </Button>
             <span className="text-xs text-muted-foreground font-medium">مرحله {evalStageIdx + 1} از {evalStages.length}</span>
             {evalStageIdx < evalStages.length - 1 ? (
-              <button type="button" onClick={() => setEvalStage(evalStages[Math.min(evalStages.length - 1, evalStageIdx + 1)].id)}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                مرحله بعد <ChevronLeft className="w-4 h-4" />
-              </button>
+              <Button type="button" onClick={() => setEvalStage(evalStages[Math.min(evalStages.length - 1, evalStageIdx + 1)].id)}
+                className="h-11 px-6 font-bold text-sm">
+                مرحله بعد <ChevronLeft />
+              </Button>
             ) : (
               <span className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                 <CheckCircle className="w-4 h-4" /> آخرین مرحله
