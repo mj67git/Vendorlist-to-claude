@@ -3,6 +3,7 @@ import { Archive, ChevronDown, Download, FileText, ListChecks, Printer, Search, 
 import { EntityName } from '../../components/EntityName';
 import { Pagination } from '../../components/Pagination';
 import { Button } from '../../components/ui/button';
+import { PageTitle } from '../../components/ui/page-title';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
@@ -189,14 +190,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
             cluster on the right and pushed the title to the left, the opposite
             of what those classes were written for. Source order alone does the
             right thing here: first child right on desktop, first child on top
-            when the row stacks. */}
-        <div className="text-right">
-          <h2 className="text-2xl font-bold text-foreground mb-1 flex items-center justify-end gap-3">
-            آرشیو کل تامین‌کنندگان
-            <Archive className="w-6 h-6 text-muted-foreground" />
-          </h2>
-          <p className="text-muted-foreground text-sm">لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)</p>
-        </div>
+            when the row stacks.
+
+            `PageTitle` rather than a hand-built heading, for the same reason
+            the four repository screens use it: this one was the last `h2`
+            standing in as a page title, so a screen reader heard a different
+            document outline here than on every other page. */}
+        <PageTitle
+          icon={Archive}
+          title="آرشیو کل تامین‌کنندگان"
+          subtitle="لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)"
+        />
 
         {/* Exports, on the left. */}
         <div className="flex items-center gap-2.5 flex-wrap">
