@@ -28,6 +28,9 @@ git archive HEAD | tar -x -C "$STAGE"
 rm -rf "$STAGE/CLAUDE.md" "$STAGE/STATUS.md" "$STAGE/.claude" "$STAGE/tests" \
        "$STAGE/.github" "$STAGE/metadata.json" "$STAGE/bun.lock"
 
+# مسیر استقرار Vercel در نصب داخلی نقشی ندارد و فقط سردرگمی می‌سازد.
+rm -rf "$STAGE/api" "$STAGE/vercel.json"
+
 printf '%s\n' "$VERSION" > "$STAGE/VERSION"
 git rev-parse HEAD > "$STAGE/COMMIT"
 

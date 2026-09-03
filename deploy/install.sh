@@ -32,6 +32,7 @@ say "---------------------------------------------"
 command -v docker >/dev/null 2>&1 || die "Docker نصب نیست. نسخهٔ ۲۴ یا بالاتر لازم است."
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 در دسترس نیست (دستور: docker compose)."
 docker info >/dev/null 2>&1 || die "سرویس Docker در حال اجرا نیست، یا این کاربر اجازهٔ دسترسی به آن را ندارد."
+command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || die "برای بررسی سلامت سامانه به curl یا wget نیاز است."
 ok "Docker: $(docker --version | cut -d' ' -f3 | tr -d ,) · Compose: $(docker compose version --short)"
 
 # --- ۲. پیکربندی -----------------------------------------------------------
@@ -69,7 +70,9 @@ docker compose up -d --build
 say ""
 printf 'در انتظار آماده شدن سامانه'
 for i in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null 2>&1; then
+  # هر سروری یکی از این دو را دارد؛ نصب نباید سر نبودن curl بخوابد.
+  if { command -v curl >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null 2>&1; } \
+     || { command -v wget >/dev/null 2>&1 && wget -q -O /dev/null "http://127.0.0.1:${APP_PORT}/api/health" 2>/dev/null; }; then
     printf '\n'; ok "سامانه پاسخ می‌دهد و پایگاه‌داده در دسترس است."
     break
   fi
