@@ -4,6 +4,7 @@ import { requirePrisma } from "../db/prisma.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
+import { STALE_COPY_MESSAGE, lockRecordWrite, staleCopy } from "../http/recordLock.js";
 import { getVendorById } from "../repositories/vendorRepository.js";
 
 /**
@@ -31,6 +32,8 @@ export function sourceSelectionRoutes(): express.Router {
         reason: r.reason,
         decidedBy: r.decidedBy,
         decidedAt: r.decidedAt.toISOString(),
+        // Carried so a later save can claim the copy it was made from.
+        updatedAt: r.updatedAt.toISOString(),
       })));
     } catch (err: any) {
       console.error("Failed to fetch source selections:", err);
@@ -46,6 +49,7 @@ export function sourceSelectionRoutes(): express.Router {
    * asks. Requires vendor.write — the same permission as registering a source.
    */
   router.put("/api/source-selections", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+    let release: (() => void) | null = null;
     try {
       const { materialKey, category, vendorId, reason } = req.body || {};
       if (!materialKey || !category || !vendorId) {
@@ -58,10 +62,20 @@ export function sourceSelectionRoutes(): express.Router {
       const vendor = await getVendorById(vendorId);
       if (!vendor) return res.status(404).json({ error: "سورس یافت نشد." });
 
+      // This row is keyed by material and category rather than by an id, so the
+      // lock is taken by hand instead of through the middleware. Same reason as
+      // everywhere else: the upsert below is a read-modify-write, and two
+      // decisions recorded for one material at the same moment would otherwise
+      // interleave, with the audit trail naming the wrong previous holder.
+      release = await lockRecordWrite("source-selection", `${category}:${materialKey}`);
+
       const prisma = requirePrisma();
       const previous = await prisma.sourceSelection.findUnique({
         where: { materialKey_category: { materialKey, category } },
       });
+      if (staleCopy(req, previous)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
+      }
 
       const decidedBy = req.user.name || req.user.username;
       const saved = await prisma.sourceSelection.upsert({
@@ -101,11 +115,14 @@ export function sourceSelectionRoutes(): express.Router {
         selection: {
           materialKey: saved.materialKey, category: saved.category, vendorId: saved.vendorId,
           reason: saved.reason, decidedBy: saved.decidedBy, decidedAt: saved.decidedAt.toISOString(),
+          updatedAt: saved.updatedAt.toISOString(),
         },
       });
     } catch (err: any) {
       console.error("Failed to save source selection:", err);
       res.status(500).json({ error: err.message });
+    } finally {
+      release?.();
     }
   });
 

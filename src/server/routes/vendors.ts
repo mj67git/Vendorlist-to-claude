@@ -19,6 +19,7 @@ import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampInt } from "../http/query.js";
+import { STALE_COPY_MESSAGE, staleCopy } from "../http/recordLock.js";
 import {
   countVendors, deleteVendorFromDb, getRankingSnapshot, getVendorById, getVendorRank,
   getVendorChangesSince, getVendorsList, saveVendorToDb, serializeVendorWrites,
@@ -39,39 +40,6 @@ import {
  * Score and risk history are reconstructed from `audit_log` rather than stored
  * twice; the audit trail already holds every before/after pair.
  */
-
-/**
- * The copy this caller edited is still the current one — or it is not.
- *
- * The per-request `updatedAt` precondition in `saveVendorToDb` only closes the
- * window between a handler's own read and its own write, which is the race
- * between two requests in flight at the same time. It says nothing about the
- * older and more common case: somebody opened a form, went to a meeting, and
- * saved an hour later over three edits made in between. The handler re-reads
- * the row, merges the incoming fields into it and writes — so the stale form
- * silently wins for every field it carries.
- *
- * So the client sends back the `updatedAt` it read, and this compares it with
- * the row as it stands now. A mismatch is refused with 409 before any work is
- * done, and the client re-reads and tells the operator.
- *
- * Absent means "not claimed": an older client, a script, or the create path
- * keeps exactly the behaviour it had. An unparseable value is treated the same
- * way rather than failing the request, because a broken clock must not make the
- * register unwritable.
- */
-function staleCopy(req: any, current: any): boolean {
-  const claimed = req?.body?.expectedUpdatedAt;
-  if (typeof claimed !== "string" || claimed === "") return false;
-  const asked = new Date(claimed);
-  if (Number.isNaN(asked.getTime())) return false;
-  const actual = current?.updatedAt ? new Date(current.updatedAt) : null;
-  if (!actual || Number.isNaN(actual.getTime())) return false;
-  return asked.getTime() !== actual.getTime();
-}
-
-const STALE_COPY_MESSAGE =
-  "این رکورد هم‌زمان توسط شخص دیگری تغییر کرده است. نسخهٔ تازه بارگذاری شد؛ تغییر خود را دوباره اعمال کنید.";
 
 export function vendorRoutes(): express.Router {
   const router = express.Router();

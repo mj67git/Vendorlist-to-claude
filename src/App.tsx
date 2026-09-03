@@ -1353,8 +1353,27 @@ export default function App() {
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
-    authFetch(`/api/materials/${updatedMaterial.id}`, { method: 'PATCH', body: JSON.stringify(updatedMaterial) })
-      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ویرایش ماده'); })
+    // The copy this edit was based on. The server refuses with 409 when the row
+    // has moved on since, so a form opened before somebody else's save cannot
+    // quietly undo it.
+    authFetch(`/api/materials/${updatedMaterial.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: (oldMaterial as any)?.updatedAt ?? null }),
+    })
+      .then(async res => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // Re-read on a conflict: what is on screen is not what is on file.
+          if (res.status === 409) void materialsCollection.reload();
+          throw new Error(body.error || 'خطا در ویرایش ماده');
+        }
+        // Carry the row's new timestamp, so the next edit in this session
+        // claims the copy the server actually holds.
+        const saved = body?.material;
+        if (saved?.updatedAt) {
+          setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? { ...m, updatedAt: saved.updatedAt } as Material : m)));
+        }
+      })
       .catch(err => {
         if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
         setToastMsg(err.message || 'ویرایش ماده در سرور ناموفق بود.');
@@ -1446,10 +1465,21 @@ export default function App() {
     }
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
-      body: JSON.stringify(updatedPartner)
+      // Claiming the copy this form was opened on: the server answers 409 when
+      // somebody else has saved in the meantime, rather than letting this write
+      // replace the whole record — SOP evaluation included — with older values.
+      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: (oldPartner as any)?.updatedAt ?? null })
     })
       .then(async res => {
-        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        if (!res.ok) {
+          if (res.status === 409) void partnersCollection.reload();
+          throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        }
+        const body = await res.json().catch(() => ({}));
+        const saved = body?.partner;
+        if (saved?.updatedAt) {
+          setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? { ...p, updatedAt: saved.updatedAt } : p)));
+        }
         notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
       })
       .catch(err => {

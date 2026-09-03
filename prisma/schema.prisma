@@ -127,6 +127,9 @@ model Material {
   ircReceiveDate    String?  @map("irc_receive_date")
   ircExpiryDate     String?  @map("irc_expiry_date")
   createdAt         DateTime @default(now()) @map("created_at")
+  // Written on every save, and compared for equality when a client claims the
+  // copy it edited — see http/recordLock.ts.
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   vendors     VendorMaterial[]
   evaluations Evaluation[]

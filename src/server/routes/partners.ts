@@ -1,4 +1,5 @@
 import express from "express";
+import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
 import { AuditService } from "../../utils/auditService.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
@@ -126,13 +127,16 @@ export function partnerRoutes(): express.Router {
     }
   });
 
-  router.put("/api/business-partners/:id", requireAuth, requirePermission("partner.edit"), async (req: any, res) => {
+  router.put("/api/business-partners/:id", requireAuth, requirePermission("partner.edit"), serializeWrites("partner"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
       const existing = await prisma.businessPartner.findUnique({ where: { id } });
       if (!existing) {
         return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+      if (staleCopy(req, existing)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
       const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
       await upsertBusinessPartner(prisma, { ...req.body, id });
@@ -165,13 +169,16 @@ export function partnerRoutes(): express.Router {
     }
   });
 
-  router.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.delete"), async (req: any, res) => {
+  router.delete("/api/business-partners/:id", requireAuth, requirePermission("partner.delete"), serializeWrites("partner"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
       const existing = await prisma.businessPartner.findUnique({ where: { id } });
       if (!existing) {
         return res.status(404).json({ error: "شریک تجاری یافت نشد" });
+      }
+      if (staleCopy(req, existing)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
 
       const auditBase = {

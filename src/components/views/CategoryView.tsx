@@ -84,6 +84,10 @@ export function CategoryView({
     }
     setSelectSaving(true);
     setSelectError(null);
+    // The decision on record when this dialog was opened. The server refuses
+    // with 409 if somebody else has recorded a different one since, so two
+    // people cannot each believe theirs is the choice on file.
+    const held = selections.find(x => x.materialKey === selectDialog.materialKey && x.category === categoryId);
     authFetch('/api/source-selections', {
       method: 'PUT',
       body: JSON.stringify({
@@ -91,11 +95,17 @@ export function CategoryView({
         category: categoryId,
         vendorId: selectDialog.vendorId,
         reason,
+        expectedUpdatedAt: held?.updatedAt ?? null,
       }),
     })
       .then(async res => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'ثبت انتخاب ناموفق بود.');
+        if (!res.ok) {
+          // A refusal because the record moved is not a failed save to retry
+          // blindly: re-read, so the reason box shows what is actually on file.
+          if (res.status === 409) loadSelections();
+          throw new Error(data.error || 'ثبت انتخاب ناموفق بود.');
+        }
         setSelectDialog(null);
         loadSelections();
       })

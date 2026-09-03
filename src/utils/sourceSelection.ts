@@ -8,6 +8,8 @@ export interface SourceSelectionRecord {
   reason: string;
   decidedBy: string;
   decidedAt: string;
+  /** The row's last write, claimed back on a save so a stale one is refused. */
+  updatedAt?: string;
 }
 
 /**

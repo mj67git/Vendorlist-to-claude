@@ -1,3 +1,4 @@
+import { lockRecordWrite, serializeWrites } from "../http/recordLock.js";
 import type { PrismaClient } from "@prisma/client";
 import { AuditService } from "../../utils/auditService.js";
 import { calculateGradeAndStatus } from "../../utils/sopEvaluation.js";
@@ -415,58 +416,16 @@ export async function getVendorById(id: string): Promise<any> {
 /**
  * Serialise the mutating requests that touch one source.
  *
- * Every `PATCH /api/vendors/:id/*` route reads the whole vendor, changes one
- * part of it and writes the whole thing back. Two of them in flight at once —
- * two users, two tabs, or a retry arriving beside the original — both read the
- * same starting state and the slower write puts back its own stale copy of
- * everything the faster one had just changed. Verified before this existed: a
- * contact update racing a score update lost the contact change 5 times out of
- * 5, silently, with both requests answering 200.
- *
- * The client already queues its own writes (see the sync queue in App.tsx), but
- * that only orders one browser tab against itself. This is the server-side half:
- * requests for the same source id run one after another, requests for different
- * sources still run in parallel.
- *
- * Scope worth knowing: this is an in-process lock, so it covers one Node
- * process — the way this application is deployed (a single container, or PM2 in
- * fork mode). Running several instances behind a load balancer would need a
- * database-level lock instead, because each process would hold its own map.
+ * The mechanism — and the measurement that made it necessary — lives in
+ * `http/recordLock.ts`, because partners, materials and the chosen-source
+ * decision have the same read-modify-write shape and needed the same
+ * protection. This is the source module's binding of it, kept under its old
+ * name so the seven routes that carry it read unchanged.
  */
-const vendorWriteChain = new Map<string, Promise<void>>();
+export const serializeVendorWrites = serializeWrites("vendor");
 
 export function lockVendorWrite(id: string): Promise<() => void> {
-  const previous = vendorWriteChain.get(id) ?? Promise.resolve();
-  let release!: () => void;
-  const mine = new Promise<void>(resolve => {
-    release = () => {
-      // Only clear the map when nobody queued behind us, so a later waiter does
-      // not find a deleted chain and start in parallel with the one after it.
-      if (vendorWriteChain.get(id) === mine) vendorWriteChain.delete(id);
-      resolve();
-    };
-  });
-  vendorWriteChain.set(id, previous.then(() => mine));
-  return previous.then(() => release);
-}
-
-/** Express middleware form: holds the lock until the response is done. */
-export async function serializeVendorWrites(req: any, res: any, next: any) {
-  const id = req.params?.id;
-  if (!id) return next();
-
-  const release = await lockVendorWrite(id);
-  let released = false;
-  const done = () => {
-    if (released) return;
-    released = true;
-    release();
-  };
-  // 'close' covers a client that disconnects mid-request, which 'finish' does
-  // not — without it an aborted request would hold the lock for ever.
-  res.once("finish", done);
-  res.once("close", done);
-  next();
+  return lockRecordWrite("vendor", id);
 }
 
 /**
