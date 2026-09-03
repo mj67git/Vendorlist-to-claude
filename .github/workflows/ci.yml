@@ -52,9 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The repository locks with bun.lock, so CI installs with bun to resolve
-      # the same dependency graph a developer gets. (The Dockerfile still uses
-      # npm without a lockfile — a known inconsistency, tracked separately.)
+      # The repository locks twice on purpose: `bun.lock` is what a developer
+      # installs from and what CI resolves here, and `package-lock.json` is what
+      # the production image installs from with `npm ci`. Both are committed and
+      # both must be updated when a dependency moves, or one of the two installs
+      # starts failing on a mismatch.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

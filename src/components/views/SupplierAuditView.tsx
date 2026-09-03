@@ -5,6 +5,7 @@ import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
 import { Button } from '../ui/button';
+import { PageTitle } from '../ui/page-title';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
 import { isVendorRejected } from '../../utils/vendorState';
 import { getScoreColorClass } from '../../components/ScoreBar';
@@ -50,7 +51,34 @@ export function supplierKey(name: string): string {
    contactInfo: string;
    registrationDate: string;
    vendors: Vendor[];
+   /**
+    * What this company is, taken from its Business Partner record — never
+    * guessed from the name. `unknown` is a real answer: a company with no
+    * partner record has no stated role, and rule 4 makes that role a regulated
+    * fact rather than a label to fill in. `mixed` is the rare company that
+    * appears as both, through different sources.
+    */
+   role: 'manufacturer' | 'supplier' | 'mixed' | 'unknown';
  }
+
+/**
+ * The icon that says what kind of company this is: the factory for a
+ * manufacturer and the handshake for a seller, the same pair the business
+ * partner repository uses. A company whose role is not recorded — or that is
+ * both — keeps the neutral building rather than being shown as one of them.
+ */
+function roleIcon(role: SupplierGroup['role']) {
+  if (role === 'manufacturer') return Factory;
+  if (role === 'supplier') return Handshake;
+  return Building;
+}
+
+const ROLE_LABEL: Record<SupplierGroup['role'], string> = {
+  manufacturer: 'تولیدکننده',
+  supplier: 'فروشنده',
+  mixed: 'تولیدکننده و فروشنده',
+  unknown: 'نقش ثبت‌نشده',
+};
 
   interface SupplierAuditViewProps {
     db: Vendor[];
@@ -113,14 +141,24 @@ interface SourceSelection {
             country: cleanPlaceholder(getDisplayCountry(v)) || '',
             contactInfo: v.contactInfo || '',
             registrationDate: v.registrationDate || '',
-            vendors: []
+            vendors: [],
+            role: 'unknown',
           };
         }
         groups[key].vendors.push(v);
+
+        // The role comes from the partner record behind the source, through the
+        // same resolver the detail header uses, so a card and that header can
+        // never disagree about what a company is.
+        const { role } = resolveVendorPartner(v, partners);
+        if (role === 'manufacturer' || role === 'supplier') {
+          const seen = groups[key].role;
+          groups[key].role = seen === 'unknown' || seen === role ? role : 'mixed';
+        }
       });
 
       return Object.values(groups);
-    }, [db]);
+    }, [db, partners]);
 
     // Filter matching suppliers list
     const filteredSuppliers = useMemo(() => {
@@ -345,35 +383,33 @@ interface SourceSelection {
      <div className="space-y-6 fade-in text-right">
        {/* Breadcrumbs / View switcher header */}
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
-         <div>
-           {activeSupplier ? (
-             <Button
-               variant="outline"
-               onClick={() => setSelectedSupplierKey(null)}
-             >
-               <ChevronLeft className="rotate-180 text-muted-foreground" />
-               <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
-             </Button>
-           ) : (
-             <div className="flex items-center gap-2 bg-teal-50 text-teal-600 border border-teal-200/50 px-3 py-1 rounded-lg text-xs font-bold font-mono">
-               <Activity className="w-3.5 h-3.5 animate-pulse" />
-               <span>PROACTIVE ACTIVE DISCOVERY MODULE</span>
-             </div>
-           )}
-         </div>
+         {/* Same header shape as the repository screens: the title first in
+             source, so RTL puts it on the right and the actions on the left,
+             and `PageTitle` so this page contributes the same single `h1` to
+             the document outline as every other one. */}
+         <PageTitle
+           eyebrow="Supplier Monitoring & Audit"
+           eyebrowIcon={Activity}
+           title={activeSupplier ? 'کارنامه جامع ممیزی و تامین' : 'بررسی یکپارچه تامین‌کنندگان'}
+           subtitle={activeSupplier
+             ? 'تجمیع اطلاعات تامین کالا، پایداری کیفیت و سوابق ممیزی اقلام'
+             : 'مشاهده و مانیتورینگ متمرکز تامین‌کنندگان، تعداد مواد عرضه شده و گرید کیفی میانگین'}
+         />
+
+         {/* Only the way back out of a dossier lives here. The banner that
+             used to sit in this corner announced the module as a "proactive
+             active discovery module", which named nothing a reader could act
+             on and left an empty box on the list view. */}
+         {activeSupplier && (
+           <Button
+             variant="outline"
+             onClick={() => setSelectedSupplierKey(null)}
+           >
+             <ChevronLeft className="rotate-180 text-muted-foreground" />
+             <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
+           </Button>
+         )}
  
-         <div className="order-1 md:order-2 text-right">
-           <h2 className="text-2xl font-bold text-foreground mb-1.5 flex items-center justify-end gap-3">
-             {activeSupplier ? 'کارنامه جامع ممیزی و تامین' : 'بررسی یکپارچه تامین‌کنندگان (Supplier Core)'}
-             <Handshake className="w-6 h-6 text-teal-600" />
-           </h2>
-           <p className="text-[#6E6E73] text-sm">
-             {activeSupplier 
-               ? 'تجمیع اطلاعات تامین کالا، پایداری کیفیت و سوابق ممیزی اقلام'
-               : 'مشاهده و مانیتورینگ متمرکز تامین‌کنندگان، تعداد مواد عرضه شده و گرید کیفی میانگین'
-             }
-           </p>
-         </div>
        </div>
 
        {/* DETAIL VIEW OF SINGLE SUPPLIER */}
@@ -383,8 +419,11 @@ interface SourceSelection {
            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
              <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-teal-600" />
              <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-right">
-               <div className="bg-teal-50 border border-teal-100 text-teal-600 p-3 rounded-xl shrink-0 self-start sm:self-center">
-                 <Building className="w-7 h-7" />
+               <div
+                 className="bg-teal-50 border border-teal-100 text-teal-600 p-3 rounded-xl shrink-0 self-start sm:self-center"
+                 title={ROLE_LABEL[activeSupplier.role]}
+               >
+                 {React.createElement(roleIcon(activeSupplier.role), { className: 'w-7 h-7' })}
                 </div>
                 <div>
                   {activePartnerDetails ? (
@@ -880,8 +919,11 @@ interface SourceSelection {
                    >
                      <div>
                        <div className="flex items-start justify-between gap-3 mb-4">
-                         <div className="bg-teal-50 border border-teal-100 text-teal-600 p-2.5 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-colors">
-                           <Building className="w-5 h-5" />
+                         <div
+                           className="bg-teal-50 border border-teal-100 text-teal-600 p-2.5 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-colors"
+                           title={ROLE_LABEL[supplier.role]}
+                         >
+                           {React.createElement(roleIcon(supplier.role), { className: 'w-5 h-5' })}
                          </div>
                          {supplier.country && (
                            <div className="text-left font-mono text-2xs text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border max-w-[150px] truncate" title={supplier.country}>

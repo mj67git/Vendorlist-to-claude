@@ -3,6 +3,7 @@ import { Archive, ChevronDown, Download, FileText, ListChecks, Printer, Search, 
 import { EntityName } from '../../components/EntityName';
 import { Pagination } from '../../components/Pagination';
 import { Button } from '../../components/ui/button';
+import { PageTitle } from '../../components/ui/page-title';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
@@ -183,8 +184,27 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
   return (
     <div className="space-y-6 fade-in text-right">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-4">
-        {/* Left side: Export Options */}
-        <div className="flex items-center gap-2.5 flex-wrap order-2 md:order-1">
+        {/* The title leads, on the right, the way every other module's header
+            reads. It used to be second in the DOM with `order` classes trying
+            to place it — but this container is RTL, so `order-1` put the export
+            cluster on the right and pushed the title to the left, the opposite
+            of what those classes were written for. Source order alone does the
+            right thing here: first child right on desktop, first child on top
+            when the row stacks.
+
+            `PageTitle` rather than a hand-built heading, for the same reason
+            the four repository screens use it: this one was the last `h2`
+            standing in as a page title, so a screen reader heard a different
+            document outline here than on every other page. */}
+        <PageTitle
+          eyebrow="Vendor Archive Data"
+          eyebrowIcon={Archive}
+          title="آرشیو کل تامین‌کنندگان"
+          subtitle="لیست جامع تمامی تامین‌کنندگان ارزیابی شده"
+        />
+
+        {/* Exports, on the left. */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
           <Button
             type="button"
@@ -286,14 +306,6 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [] }: 
           )}
         </div>
 
-        {/* Right side: Title */}
-        <div className="order-1 md:order-2 text-right">
-          <h2 className="text-2xl font-bold text-foreground mb-1 flex items-center justify-end gap-3">
-            آرشیو کل تامین‌کنندگان
-            <Archive className="w-6 h-6 text-muted-foreground" />
-          </h2>
-          <p className="text-muted-foreground text-sm">لیست جامع تمامی تامین‌کنندگان ارزیابی شده (Vendor Archive Data)</p>
-        </div>
       </div>
 
       {/* Search and Filters */}

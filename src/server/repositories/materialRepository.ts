@@ -42,6 +42,9 @@ export function mapMaterialToClient(m: any, hasFile?: boolean) {
       ? (m.specificationUploadedAt.toISOString?.() || m.specificationUploadedAt)
       : undefined,
     createdAt: m.createdAt ? (m.createdAt.toISOString?.() || m.createdAt) : new Date().toISOString(),
+    // Carried to the client so a save can claim the copy it edited; the server
+    // refuses with 409 when the row has moved on (http/recordLock.ts).
+    updatedAt: m.updatedAt ? (m.updatedAt.toISOString?.() || m.updatedAt) : undefined,
   };
 }
 
@@ -141,6 +144,8 @@ const MATERIAL_FIELDS = {
   role: true, finalProduct: true, finalProductEn: true, pharmacopoeia: true,
   standardNameFa: true, standardNameEn: true, specificationFile: true,
   specificationFileSize: true, specificationUploadedAt: true, createdAt: true,
+  // Read on every list because a save claims it back (http/recordLock.ts).
+  updatedAt: true,
 } as const;
 
 export async function listMaterials(): Promise<any[]> {

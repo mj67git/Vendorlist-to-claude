@@ -65,7 +65,7 @@
   --color-info-foreground: var(--info-content);
 
   /**
-   * The floor for text size in the interface.
+   * The interface type scale.
    *
    * Persian has no capital letters, so a word carries fewer shape cues than the
    * same word in Latin; its dots and diacritics collide once the glyphs get
@@ -74,12 +74,37 @@
    * ten-and-a-half-pixel Latin — which is why 9px and 10px labels had crept in
    * as if they were merely "small" when they were in fact unreadable.
    *
-   * `text-2xs` is the smallest size the interface may use. The existing
-   * Tailwind sizes are deliberately left alone: `text-xs` stays 12px, because
-   * moving it would move 558 call sites at once.
+   * An earlier pass fixed the floor (nothing below 11px) but left the scale
+   * itself where it was, and that was not enough: of ~1080 sized elements, 860
+   * sat at 11px or 12px, inside a container that runs to 1600px. On a desktop
+   * monitor the whole application read as small print.
+   *
+   * So the scale moves as a whole, here, rather than at 860 call sites:
+   *
+   *     text-2xs  11px → 12px    badges, chips, column labels
+   *     text-xs   12px → 13.5px  body copy and table cells
+   *     text-sm   14px → 15px    form fields, emphasised text
+   *     text-xl   20px → 22px    page titles
+   *
+   * 12 / 13.5 / 15 is also a ladder you can see; 11 / 12 / 14 put the first two
+   * steps one pixel apart, which is no step at all.
+   *
+   * In `rem`, not `px`, so that a reader who raises the default text size in
+   * the browser or the operating system moves this with it. The old 11px token
+   * ignored that setting entirely.
+   *
+   * Line height is generous on purpose: Persian sets its diacritics above and
+   * below the baseline, and the tight leading these sizes ship with elsewhere
+   * makes stacked rows of Persian look like one block of texture.
    */
-  --text-2xs: 11px;
-  --text-2xs--line-height: 1.65;
+  --text-2xs: 0.75rem;      /* 12px */
+  --text-2xs--line-height: 1.7;
+  --text-xs: 0.84375rem;    /* 13.5px */
+  --text-xs--line-height: 1.75;
+  --text-sm: 0.9375rem;     /* 15px */
+  --text-sm--line-height: 1.7;
+  --text-xl: 1.375rem;      /* 22px */
+  --text-xl--line-height: 1.45;
 
   /* Spacing */
   --spacing-1: 4px;
@@ -96,6 +121,29 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
+}
+
+/**
+ * Paper keeps the old scale.
+ *
+ * `PrintableForms.tsx` uses these same tokens — 56 `text-xs`, 17 `text-sm`, 12
+ * `text-lg` — on A4 sheets whose layout and page count are part of an approved
+ * GxP form. Growing the screen scale would reflow them and could push a form
+ * onto another page, so the printed output stays at the sizes it was signed off
+ * with. Typography for paper has its own physics; it does not follow the
+ * monitor.
+ */
+@media print {
+  :root {
+    --text-2xs: 11px;
+    --text-2xs--line-height: 1.65;
+    --text-xs: 12px;
+    --text-xs--line-height: 1.6;
+    --text-sm: 14px;
+    --text-sm--line-height: 1.6;
+    --text-xl: 20px;
+    --text-xl--line-height: 1.4;
+  }
 }
 
 :root {

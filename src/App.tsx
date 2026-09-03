@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
@@ -674,6 +674,20 @@ export default function App() {
       setToastAction(null);
     }, life);
   };
+  /**
+   * How many changes other people made while a form on this screen was dirty.
+   * Zero means there is nothing to offer; the bar under the header shows the
+   * rest. See the background-sync effect below.
+   */
+  const [remoteChangeCount, setRemoteChangeCount] = useState(0);
+  /** The server's clock at the last poll — the `since` of the next one. */
+  const syncCursorRef = useRef<string | null>(null);
+  /** How many sources the server had at the last poll, which is how a deletion is noticed. */
+  const knownTotalRef = useRef<number | null>(null);
+  /** Sources this session wrote since the last poll, so we are not told about our own work. */
+  const ownWritesRef = useRef<Set<string>>(new Set());
+  /** Set below, next to the function itself — the effect above runs before it is defined. */
+  const resyncRef = useRef<((focusVendorId?: string) => Promise<void>) | null>(null);
   const [isSyncing, setIsSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
@@ -740,6 +754,92 @@ export default function App() {
     if (!isLocalMode()) return 0;
     try { return readLocalAudit().filter((l: any) => l.severity === 'Critical').length; } catch { return 0; }
   }, [db, businessPartners, materials]);
+
+  /**
+   * Background sync — how a second operator sees the first one's work.
+   *
+   * The register is fetched once at sign-in and, before this, re-read only
+   * after a refused write, so two people working at the same time each saw the
+   * snapshot they arrived with until somebody pressed reload. Every half minute
+   * this asks the server the cheap question (`GET /api/vendors/changes`: ids,
+   * timestamps and a count) and acts on the answer.
+   *
+   * Two rules govern what it does with it, and they are the point of the
+   * design:
+   *
+   *   1. **An edit in progress is never thrown away.** When the unsaved-changes
+   *      guard says a form is dirty, nothing is refetched: a bar appears
+   *      offering the update, and the operator takes it when they are ready.
+   *      Refreshing under a half-typed evaluation would lose real work.
+   *   2. **The page never jumps.** A silent refetch replaces the data behind
+   *      the current view — including the record open on screen, refreshed in
+   *      place through the history stack — and navigates nowhere.
+   *
+   * Our own writes are filtered out by id: they come back as changes like any
+   * other, and without this the operator who just saved would be told their own
+   * record changed. The set is cleared each poll, so somebody else's later
+   * change to the same record is still seen.
+   *
+   * `since` is always the server's clock, never the browser's — two machines
+   * disagree, and a browser running fast would ask for a window that has not
+   * happened yet and miss every write inside it.
+   */
+  useEffect(() => {
+    if (!currentUser || isLocalMode() || !can(currentUser, 'vendor.read')) return;
+
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || document.hidden) return;
+      try {
+        const since = syncCursorRef.current;
+        const res = await authFetch(`/api/vendors/changes${since ? `?since=${encodeURIComponent(since)}` : ''}`);
+        if (!res.ok || stopped) return;
+        const data = await res.json();
+        const firstPoll = syncCursorRef.current === null;
+        syncCursorRef.current = typeof data.serverTime === 'string' ? data.serverTime : syncCursorRef.current;
+
+        const previousTotal = knownTotalRef.current;
+        knownTotalRef.current = typeof data.total === 'number' ? data.total : previousTotal;
+
+        // The first poll only establishes the cursor. Without this, everything
+        // written before the session started would count as "new".
+        if (firstPoll) { ownWritesRef.current.clear(); return; }
+
+        const mine = ownWritesRef.current;
+        const changed = (Array.isArray(data.changed) ? data.changed : [])
+          .filter((c: any) => c && typeof c.id === 'string' && !mine.has(c.id));
+        ownWritesRef.current = new Set();
+
+        // A deletion leaves no timestamp behind, so the count is what reveals
+        // it — and a creation by someone else moves both.
+        const countMoved = previousTotal !== null && typeof data.total === 'number' && data.total !== previousTotal;
+        if (changed.length === 0 && !countMoved) return;
+
+        if (navGuardRef.current?.()) {
+          setRemoteChangeCount(n => n + Math.max(changed.length, countMoved ? 1 : 0));
+          return;
+        }
+        const stack = historyRef.current;
+        await resyncRef.current?.(stack[stack.length - 1]?.selectedVendor?.id);
+      } catch {
+        // A poll that fails changes nothing on screen: the cursor is untouched,
+        // so the next one asks for the same window again.
+      }
+    };
+
+    const timer = window.setInterval(poll, 30000);
+    // A tab that was in the background missed every tick; ask once on return
+    // rather than waiting out another interval.
+    const onVisible = () => { if (!document.hidden) void poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    void poll();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [currentUser]);
 
   if (!currentUser) {
     return <LoginView onLogin={setCurrentUser} />;
@@ -880,6 +980,9 @@ export default function App() {
 
   const handleUpdateVendor = (updatedVendor: Vendor, msg?: string | null) => {
     const normalized = normalizeAndCleanVendor(updatedVendor);
+    // Ours, so the next background poll does not announce this record back to
+    // the person who just saved it.
+    ownWritesRef.current.add(normalized.id);
     const original = db.find(v => v.id === normalized.id);
 
     setDb(db.map(v => v.id === normalized.id ? normalized : v));
@@ -958,10 +1061,18 @@ export default function App() {
     // read-modify-write of the vendor, so two in flight at once means the
     // slower one writes back its stale copy of the other's data — which is how
     // a deleted lab result used to reappear after a reload.
-    const syncQueue: Array<() => Promise<unknown>> = [];
+    /*
+     * Each entry is handed the `updatedAt` the caller is claiming to have
+     * edited, and the server refuses with 409 if the row has moved on since
+     * (`staleCopy` in the vendor routes). The value has to be threaded through
+     * the queue rather than fixed once: this save may send several PATCHes, and
+     * each one moves the row's timestamp, so the second would otherwise arrive
+     * claiming a copy its own predecessor had just replaced.
+     */
+    const syncQueue: Array<(expectedUpdatedAt: string | null) => Promise<any>> = [];
 
     if (profileChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -979,65 +1090,71 @@ export default function App() {
           initialSampleStatus: normalized.initialSampleStatus,
           manufacturerId: normalized.manufacturerId ?? null,
           supplierId: normalized.supplierId ?? null,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (contactChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contactInfo: normalized.contactInfo,
           lastAudit: normalized.lastAudit,
           ircExpiryDate: normalized.ircExpiryDate,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (scoresChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scores: normalized.scores,
           rawScores: normalized.rawScores,
           rejectionReasons: normalized.rejectionReasons,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (analysisChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analysisRecords: normalized.analysisRecords,
           activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     } else if (logsChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (riskChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
@@ -1054,8 +1171,28 @@ export default function App() {
      */
     void (async () => {
       try {
+        // What this save was based on. `original` is the copy that was on
+        // screen when the form was opened, so its timestamp is exactly the
+        // claim the server has to check. Absent (a record this session has
+        // never read) means no claim, and the write behaves as it always did.
+        let expected: string | null = typeof (original as any)?.updatedAt === 'string'
+          ? (original as any).updatedAt
+          : null;
         for (const send of syncQueue) {
-          await send();
+          const saved = await send(expected);
+          // Each PATCH answers with the row it wrote, so the next one in this
+          // queue claims that instead of the copy we started from.
+          const next = saved?.vendor?.updatedAt;
+          expected = typeof next === 'string' ? next : null;
+        }
+        // Carry the row's new timestamp into the copy on screen. Without this
+        // the next edit in this session would claim the timestamp from before
+        // this save and be refused as stale — a conflict with nobody on the
+        // other side of it.
+        if (expected) {
+          const stamp = expected;
+          setDb(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
+          updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
         }
       } catch (err: any) {
         const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
@@ -1097,11 +1234,25 @@ export default function App() {
       if (focused) updateCurrentVendorInHistory(focused);
     } catch (err) {
       console.error('Could not re-read sources after a failed write:', err);
+    } finally {
+      // Whatever the outcome, the offer on screen is answered: either the list
+      // now matches the server, or the failure is logged and a later poll will
+      // ask again.
+      setRemoteChangeCount(0);
     }
   };
 
+  // The background-sync effect is declared above the sign-in early return, so
+  // it cannot see this function directly (hooks may not move below a return).
+  resyncRef.current = resyncVendorsFromServer;
+
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
     const removed = db.find(v => v.id === vendorId);
+    // Ours, so the next background poll does not announce this record back to
+    // the person who just saved it.
+    ownWritesRef.current.add(vendorId);
+    // Our own removal moves the register size too; re-baseline on the next poll.
+    knownTotalRef.current = null;
     setDb(db.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
     setToastMsg('سورس با موفقیت حذف شد!');
@@ -1138,6 +1289,10 @@ export default function App() {
    */
   const handleAddVendor = (newVendor: Vendor) => {
     const normalized = normalizeAndCleanVendor(newVendor);
+    // Ours: skip it in the next poll, and drop the count baseline so our own
+    // new row is not read as somebody else's change to the register size.
+    ownWritesRef.current.add(normalized.id);
+    knownTotalRef.current = null;
     setDb([normalized, ...db]);
     notify(
       `سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`,
@@ -1198,8 +1353,27 @@ export default function App() {
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
-    authFetch(`/api/materials/${updatedMaterial.id}`, { method: 'PATCH', body: JSON.stringify(updatedMaterial) })
-      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ویرایش ماده'); })
+    // The copy this edit was based on. The server refuses with 409 when the row
+    // has moved on since, so a form opened before somebody else's save cannot
+    // quietly undo it.
+    authFetch(`/api/materials/${updatedMaterial.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: (oldMaterial as any)?.updatedAt ?? null }),
+    })
+      .then(async res => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // Re-read on a conflict: what is on screen is not what is on file.
+          if (res.status === 409) void materialsCollection.reload();
+          throw new Error(body.error || 'خطا در ویرایش ماده');
+        }
+        // Carry the row's new timestamp, so the next edit in this session
+        // claims the copy the server actually holds.
+        const saved = body?.material;
+        if (saved?.updatedAt) {
+          setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? { ...m, updatedAt: saved.updatedAt } as Material : m)));
+        }
+      })
       .catch(err => {
         if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
         setToastMsg(err.message || 'ویرایش ماده در سرور ناموفق بود.');
@@ -1291,10 +1465,21 @@ export default function App() {
     }
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
       method: 'PUT',
-      body: JSON.stringify(updatedPartner)
+      // Claiming the copy this form was opened on: the server answers 409 when
+      // somebody else has saved in the meantime, rather than letting this write
+      // replace the whole record — SOP evaluation included — with older values.
+      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: (oldPartner as any)?.updatedAt ?? null })
     })
       .then(async res => {
-        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        if (!res.ok) {
+          if (res.status === 409) void partnersCollection.reload();
+          throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
+        }
+        const body = await res.json().catch(() => ({}));
+        const saved = body?.partner;
+        if (saved?.updatedAt) {
+          setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? { ...p, updatedAt: saved.updatedAt } : p)));
+        }
         notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
       })
       .catch(err => {
@@ -1569,22 +1754,31 @@ export default function App() {
               English one is a subtitle. It used to be the other way round: a
               three-line English headline at 14px above a 10px Persian line in
               a mono face, in an application whose entire interface is Persian. */}
-          <div className={`py-3.5 border-b border-border/80 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-5 justify-between' : 'px-5 justify-between'}`}>
-            <div className="flex items-center gap-3 min-w-0">
+          {/* The mark sits above the name, both centred, rather than in a row
+              beside it: the two controls that used to share this row pushed the
+              brand off-centre and squeezed the name into a 15px line that read
+              as small print at the top of the screen. Those controls are pinned
+              to the corner now, so the brand owns the full width. */}
+          <div className={`relative py-4 border-b border-border/80 ${sidebarCollapsed ? 'md:px-2 px-5' : 'px-5'}`}>
+            <div className="flex flex-col items-center gap-2 text-center">
               {/* Dark navy mark on a dark card is all but invisible, so it gets
                   a light plate in dark mode — same fix as the login screen. */}
               <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
-                <img src={temadLogo} alt="تماد" className="h-10 w-auto object-contain" />
+                <img
+                  src={temadLogo}
+                  alt="تماد"
+                  className={`w-auto object-contain ${sidebarCollapsed ? 'h-10 md:h-9' : 'h-12'}`}
+                />
               </span>
-              <div className={`flex-col justify-center text-right min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-sm leading-tight tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-2xs mt-0.5 tracking-tight truncate" dir="ltr">VLSE</span>
+              <div className={`flex-col items-center min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
+                <span className="font-extrabold text-foreground text-base leading-snug tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
+                <span className="text-muted-foreground text-xs mt-0.5 tracking-widest" dir="ltr">VLSE</span>
               </div>
             </div>
             <Button
               variant="ghost"
               size="icon-xs"
-              className="md:hidden text-muted-foreground"
+              className="md:hidden text-muted-foreground absolute left-3 top-3"
               onClick={() => setSidebarOpen(false)}
             >
               <X />
@@ -1593,7 +1787,7 @@ export default function App() {
             <Button
               variant="outline"
               size="icon-sm"
-              className={`hidden md:inline-flex text-muted-foreground ${sidebarCollapsed ? 'md:hidden' : ''}`}
+              className={`hidden md:inline-flex text-muted-foreground absolute left-3 top-3 ${sidebarCollapsed ? 'md:hidden' : ''}`}
               onClick={() => setSidebarCollapsed(true)}
               title="جمع کردن نوار کناری"
             >
@@ -1773,7 +1967,15 @@ export default function App() {
                           ) : (
                             <button
                               onClick={() => goToHistoryIndex(idx)}
-                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[130px] transition-colors cursor-pointer"
+                              // `shrink-0`, because these are short fixed labels
+                              // («صفحه اصلی», «خرید خارجی») and the flex row was
+                              // squeezing them below their own width — at 13.5px
+                              // even those two clipped, and a breadcrumb whose
+                              // own labels are cut tells the reader nothing
+                              // about where they are. The squeeze belongs on the
+                              // last crumb, which is the entity name and carries
+                              // a tooltip when it truncates (rule 15).
+                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[160px] shrink-0 transition-colors cursor-pointer"
                               title={`رفتن به ${label}`}
                             >
                               {label}
@@ -1912,8 +2114,14 @@ export default function App() {
                 </Button>
               )}
 
-              {/* Live clock, in the top-left beside the account box. */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
+              {/* Live clock, in the top-left beside the account box.
+                  Shown from `lg` up, not `sm`: from `md` the fixed 272px
+                  sidebar leaves the header roughly 460–650px, and this chip
+                  alone is 276px of it. None of the items in this row can
+                  shrink, so between 768px and ~950px the whole cluster —
+                  account box included — was pushed off the left edge of the
+                  window and clipped, unreachable. */}
+              <div className="hidden lg:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
                 <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
@@ -2143,6 +2351,35 @@ export default function App() {
             <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
             <span className="font-medium text-xs font-sans text-right">{loadError}</span>
             <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Somebody else changed the register while a form here was dirty.
+
+            An offer, not an action: refreshing under a half-finished
+            evaluation would throw away real work, so the operator decides when
+            to take it. Once no form is dirty the background sync goes back to
+            refreshing silently and this never appears. */}
+        {remoteChangeCount > 0 && (
+          <div
+            role="status"
+            className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-3 max-w-[92vw] bg-card border border-primary/40 text-card-foreground px-4 py-2.5 rounded-xl shadow-lg"
+          >
+            <RefreshCw className="w-4 h-4 shrink-0 text-primary" />
+            <span className="font-medium text-xs font-sans text-right">
+              {remoteChangeCount.toLocaleString('fa-IR')} تغییر تازه توسط کاربران دیگر ثبت شده است.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-2xs font-bold shrink-0"
+              onClick={() => { const stack = historyRef.current; void resyncVendorsFromServer(stack[stack.length - 1]?.selectedVendor?.id); }}
+            >
+              نمایش تغییرات
+            </Button>
+            <button onClick={() => setRemoteChangeCount(0)} className="text-muted-foreground hover:text-card-foreground" aria-label="بستن">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>

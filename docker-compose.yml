@@ -19,13 +19,27 @@ services:
     container_name: pharma_regulatory_app
     restart: always
     ports:
-      - "3000:3000"
+      # پورت میزبان از .env خوانده می‌شود (پیش‌فرض ۸۰۸۰) تا اگر روی سرور
+      # چیز دیگری روی ۳۰۰۰ نشسته باشد، نصب نشکند. سمت راست همیشه ۳۰۰۰ است:
+      # پورت داخل کانتینر.
+      - "${APP_PORT:-8080}:3000"
     environment:
       - NODE_ENV=production
-      # NOTE: the application listens on 3000 and does not read PORT; change the
-      # published port on the left of the mapping above instead.
-      - DATABASE_URL=postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_server:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}?schema=public
-      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env — generate with: openssl rand -base64 48}
+      # سرویس داخل کانتینر روی PORT گوش می‌دهد (پیش‌فرض ۳۰۰۰ در Dockerfile).
+      # برای عوض کردن پورتِ بیرونی، APP_PORT در .env را تغییر دهید.
+      - "DATABASE_URL=postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_server:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}?schema=public"
+      # نقل‌قول لازم است: مقدار پیش‌فرضِ خطا شامل «: » است و YAML بدون
+      # نقل‌قول آن را نگاشت می‌خواند، نه رشته.
+      - "JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env - generate with openssl rand -base64 48}"
+    # سلامت واقعی یعنی «پایگاه‌داده پاسخ می‌دهد»؛ /api/health خودش کوئری می‌زند.
+    # تعریفش در Dockerfile است و اینجا فقط بازهٔ شروع کمی بازتر گرفته شده تا
+    # اجرای مهاجرت‌ها هنگام بالا آمدن، ناسالم شمرده نشود.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
     depends_on:
       postgres_server:
         # `depends_on` alone only waits for the container to exist, not for

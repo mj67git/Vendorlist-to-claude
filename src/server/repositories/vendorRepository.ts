@@ -1,3 +1,4 @@
+import { lockRecordWrite, serializeWrites } from "../http/recordLock.js";
 import type { PrismaClient } from "@prisma/client";
 import { AuditService } from "../../utils/auditService.js";
 import { calculateGradeAndStatus } from "../../utils/sopEvaluation.js";
@@ -152,6 +153,44 @@ export interface VendorPage {
 /** How many sources exist, so a paging client knows when it has them all. */
 export async function countVendors(): Promise<number> {
   return requirePrisma().vendor.count();
+}
+
+/**
+ * Which sources changed since a moment, and how many exist now.
+ *
+ * The client holds the whole register in memory and, until this existed, only
+ * ever re-read it on a failed write — so a second operator worked from the
+ * snapshot they logged in with and never saw anybody else's edits without
+ * pressing reload. This is the cheap question a poll can ask every half minute:
+ * two indexed reads, ids and timestamps only, no vendor bodies.
+ *
+ * `total` covers what `updatedAt` cannot. A deleted row leaves no timestamp
+ * behind, so a caller whose count no longer matches knows to re-read the list
+ * even when nothing came back as changed.
+ *
+ * `take` is capped because the answer is a signal, not a payload: a caller that
+ * has been away long enough to miss more than this needs a full re-read anyway,
+ * which `total` and the sheer size of the list already tell it.
+ */
+export async function getVendorChangesSince(
+  since: Date | null,
+): Promise<{ changed: { id: string; updatedAt: string }[]; total: number }> {
+  const prisma = requirePrisma();
+  const [rows, total] = await Promise.all([
+    since
+      ? prisma.vendor.findMany({
+          where: { updatedAt: { gt: since } },
+          select: { id: true, updatedAt: true },
+          orderBy: { updatedAt: "asc" },
+          take: 500,
+        })
+      : Promise.resolve([] as { id: string; updatedAt: Date }[]),
+    prisma.vendor.count(),
+  ]);
+  return {
+    changed: rows.map(r => ({ id: r.id, updatedAt: r.updatedAt.toISOString() })),
+    total,
+  };
 }
 
 export async function getVendorsList(vendorId?: string, window?: VendorPage): Promise<any[]> {
@@ -377,58 +416,16 @@ export async function getVendorById(id: string): Promise<any> {
 /**
  * Serialise the mutating requests that touch one source.
  *
- * Every `PATCH /api/vendors/:id/*` route reads the whole vendor, changes one
- * part of it and writes the whole thing back. Two of them in flight at once —
- * two users, two tabs, or a retry arriving beside the original — both read the
- * same starting state and the slower write puts back its own stale copy of
- * everything the faster one had just changed. Verified before this existed: a
- * contact update racing a score update lost the contact change 5 times out of
- * 5, silently, with both requests answering 200.
- *
- * The client already queues its own writes (see the sync queue in App.tsx), but
- * that only orders one browser tab against itself. This is the server-side half:
- * requests for the same source id run one after another, requests for different
- * sources still run in parallel.
- *
- * Scope worth knowing: this is an in-process lock, so it covers one Node
- * process — the way this application is deployed (a single container, or PM2 in
- * fork mode). Running several instances behind a load balancer would need a
- * database-level lock instead, because each process would hold its own map.
+ * The mechanism — and the measurement that made it necessary — lives in
+ * `http/recordLock.ts`, because partners, materials and the chosen-source
+ * decision have the same read-modify-write shape and needed the same
+ * protection. This is the source module's binding of it, kept under its old
+ * name so the seven routes that carry it read unchanged.
  */
-const vendorWriteChain = new Map<string, Promise<void>>();
+export const serializeVendorWrites = serializeWrites("vendor");
 
 export function lockVendorWrite(id: string): Promise<() => void> {
-  const previous = vendorWriteChain.get(id) ?? Promise.resolve();
-  let release!: () => void;
-  const mine = new Promise<void>(resolve => {
-    release = () => {
-      // Only clear the map when nobody queued behind us, so a later waiter does
-      // not find a deleted chain and start in parallel with the one after it.
-      if (vendorWriteChain.get(id) === mine) vendorWriteChain.delete(id);
-      resolve();
-    };
-  });
-  vendorWriteChain.set(id, previous.then(() => mine));
-  return previous.then(() => release);
-}
-
-/** Express middleware form: holds the lock until the response is done. */
-export async function serializeVendorWrites(req: any, res: any, next: any) {
-  const id = req.params?.id;
-  if (!id) return next();
-
-  const release = await lockVendorWrite(id);
-  let released = false;
-  const done = () => {
-    if (released) return;
-    released = true;
-    release();
-  };
-  // 'close' covers a client that disconnects mid-request, which 'finish' does
-  // not — without it an aborted request would hold the lock for ever.
-  res.once("finish", done);
-  res.once("close", done);
-  next();
+  return lockRecordWrite("vendor", id);
 }
 
 /**

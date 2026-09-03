@@ -645,7 +645,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                 <div className="w-1/4 p-4 flex flex-col items-center justify-center border-l-2 border-blue-900">
                    <img src={temadLogo} alt="Temad Logo" className="h-[100px] w-auto object-contain" />
                 </div>
-                <div className="w-2/4 flex flex-col justify-center items-center p-4">
+                <div className="w-2/4 flex flex-col justify-center items-center p-4 text-center">
                    <h1 className="text-xl font-bold text-blue-900 mb-2">شرکت تولید مواد اولیه داروپخش (تماد)</h1>
                    <div className="text-sm font-semibold text-slate-700">ارزیابی تامین کنندگان</div>
                 </div>
@@ -767,33 +767,33 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    <table className="w-full text-center">
                       <thead className="bg-slate-100/50 border-b border-slate-300 text-slate-600 text-xs font-bold">
                          <tr>
-                           <th className="py-2 px-1 w-1/3 font-medium text-right pr-3">فاکتورهای ارزیابی</th>
-                           <th className="py-2 px-1 w-1/6 font-medium">وزن</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز کسب شده</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز نهایی</th>
+                           <th className="py-2 px-1 w-[42%] font-medium text-right pr-3">فاکتورهای ارزیابی</th>
+                           <th className="py-2 px-1 w-[14%] font-medium">وزن</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز کسب شده</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز نهایی</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">تحویل به موقع</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">تحویل به موقع</td>
                            <td className="py-2 px-1 font-mono">40</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'delivery')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'delivery')) / 5 * 40)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">پاسخگویی و جبران سازی</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">پاسخگویی و جبران سازی</td>
                            <td className="py-2 px-1 font-mono">30</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'responsiveness')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'responsiveness')) / 5 * 30)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">سابقه همکاری و تعداد دفعات خرید</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">سابقه همکاری و تعداد دفعات خرید</td>
                            <td className="py-2 px-1 font-mono">30</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'history')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'history')) / 5 * 30)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
-                           <td className="py-2 px-1 text-right pr-3">جمع</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
                            <td className="py-2 px-1 font-mono">100</td>
                            <td className="py-2 px-1"></td>
                            <td className={`py-2 px-1 font-mono font-black ${getScoreColorClass(vendor.scores?.commercial || 0)}`}>{vendor.scores?.commercial || 0}</td>
@@ -818,39 +818,39 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    <table className="w-full text-center">
                       <thead className="bg-slate-100/50 border-b border-slate-300 text-slate-600 text-xs font-bold">
                          <tr>
-                           <th className="py-2 px-1 w-1/3 font-medium text-right pr-3">فاکتورهای ارزیابی</th>
-                           <th className="py-2 px-1 w-1/6 font-medium">وزن</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز کسب شده</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز نهایی</th>
+                           <th className="py-2 px-1 w-[42%] font-medium text-right pr-3">فاکتورهای ارزیابی</th>
+                           <th className="py-2 px-1 w-[14%] font-medium">وزن</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز کسب شده</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز نهایی</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">کیفیت و تطابق با مشخصات</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">کیفیت و تطابق با مشخصات</td>
                            <td className="py-2 px-1 font-mono">35</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'quality')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'quality')) / 5 * 35)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">تداوم کیفیت</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">تداوم کیفیت</td>
                            <td className="py-2 px-1 font-mono">25</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'consistency')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'consistency')) / 5 * 25)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">نتایج Deviation, OOS</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">نتایج Deviation, OOS</td>
                            <td className="py-2 px-1 font-mono">25</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'ncr')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'ncr')) / 5 * 25)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 text-[11px] font-semibold">ارائه مستندات درخواستی</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">ارائه مستندات درخواستی</td>
                            <td className="py-2 px-1 font-mono">15</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'documents')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'documents')) / 5 * 15)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
-                           <td className="py-2 px-1 text-right pr-3">جمع</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
                            <td className="py-2 px-1 font-mono">100</td>
                            <td className="py-2 px-1"></td>
                            <td className={`py-2 px-1 font-mono font-black ${getScoreColorClass(vendor.scores?.qa || 0)}`}>{vendor.scores?.qa || 0}</td>
@@ -868,22 +868,22 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                      <Warehouse className="w-4 h-4" />
                    </div>
                    <div className="text-[10px] text-green-600 flex items-center gap-1 mt-2 font-semibold">
-                     <CheckCircle className="w-3 h-3" /> تأیید مدیر برنامه
+                     <CheckCircle className="w-3 h-3" /> تأیید مدیر برنامه‌ریزی
                    </div>
                 </div>
                 <div className="w-4/5 text-sm flex flex-col">
                    <table className="w-full text-center">
                       <thead className="bg-slate-100/50 border-b border-slate-300 text-slate-600 text-xs font-bold">
                          <tr>
-                           <th className="py-2 px-1 w-1/3 font-medium text-right pr-3">فاکتورهای ارزیابی</th>
-                           <th className="py-2 px-1 w-1/6 font-medium">وزن</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز کسب شده</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز نهایی</th>
+                           <th className="py-2 px-1 w-[42%] font-medium text-right pr-3">فاکتورهای ارزیابی</th>
+                           <th className="py-2 px-1 w-[14%] font-medium">وزن</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز کسب شده</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز نهایی</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">راندمان</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">راندمان</td>
                            <td className="py-2 px-1 font-mono">60</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'planning', 'efficiency')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'planning', 'efficiency')) / 5 * 60)}</td>
@@ -895,7 +895,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'planning', 'conformance')) / 5 * 40)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
-                           <td className="py-2 px-1 text-right pr-3">جمع</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
                            <td className="py-2 px-1 font-mono">100</td>
                            <td className="py-2 px-1"></td>
                            <td className={`py-2 px-1 font-mono font-black ${getScoreColorClass(vendor.scores?.planning || 0)}`}>{vendor.scores?.planning || 0}</td>
@@ -920,27 +920,27 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    <table className="w-full text-center">
                       <thead className="bg-slate-100/50 border-b border-slate-300 text-slate-600 text-xs font-bold">
                          <tr>
-                           <th className="py-2 px-1 w-1/3 font-medium text-right pr-3">فاکتورهای ارزیابی</th>
-                           <th className="py-2 px-1 w-1/6 font-medium">وزن</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز کسب شده</th>
-                           <th className="py-2 px-1 w-1/4 font-medium">امتیاز نهایی</th>
+                           <th className="py-2 px-1 w-[42%] font-medium text-right pr-3">فاکتورهای ارزیابی</th>
+                           <th className="py-2 px-1 w-[14%] font-medium">وزن</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز کسب شده</th>
+                           <th className="py-2 px-1 w-[22%] font-medium">امتیاز نهایی</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">قیمت</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">قیمت</td>
                            <td className="py-2 px-1 font-mono">60</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'finance', 'price')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'finance', 'price')) / 5 * 60)}</td>
                          </tr>
                          <tr>
-                           <td className="py-2 px-1 text-right pr-3 font-semibold">نوع پرداخت</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">نوع پرداخت</td>
                            <td className="py-2 px-1 font-mono">40</td>
                            <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'finance', 'payment')}</td>
                            <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'finance', 'payment')) / 5 * 40)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
-                           <td className="py-2 px-1 text-right pr-3">جمع</td>
+                           <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
                            <td className="py-2 px-1 font-mono">100</td>
                            <td className="py-2 px-1"></td>
                            <td className={`py-2 px-1 font-mono font-black ${getScoreColorClass(vendor.scores?.finance || 0)}`}>{vendor.scores?.finance || 0}</td>

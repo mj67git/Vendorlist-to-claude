@@ -1,27 +1,32 @@
-# ----------------------------------------------------
-# 🏗️ Dockerfile ویژه استقرار روی سرورهای داخلی شرکت
-# ----------------------------------------------------
+# ---------------------------------------------------------------------------
+# VLSE — تصویر تولیدی برای استقرار روی سرور داخلی شرکت
+#
+# دو مرحله دارد: مرحلهٔ بیلد کل سورس و وابستگی‌های توسعه را می‌گیرد، و مرحلهٔ
+# اجرا فقط خروجی بیلد و وابستگی‌های تولیدی را برمی‌دارد. پیش‌تر کل پوشهٔ
+# node_modules مرحلهٔ بیلد کپی می‌شد، یعنی Vite و ESLint و کل زنجیرهٔ ابزار
+# توسعه هم روی سرور تولید می‌نشست.
+#
+# نصب با `npm ci` انجام می‌شود نه `npm install`: بدون فایل قفل، هر بیلد ممکن
+# بود نسخهٔ متفاوتی از وابستگی‌ها بیاورد و چیزی که روی سرور اجرا می‌شد دقیقاً
+# همان چیزی نبود که آزموده شده است.
+# ---------------------------------------------------------------------------
 
-# مرحله ۱: بیلد (Build Stage)
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# کپی فایل‌های مدیریت پکیج و ساختار دیتابیس
-COPY package*.json ./
+COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
-# نصب تمام وابستگی‌ها
-RUN npm install
+RUN npm ci
 
-# کپی کل سورس کد پروژه
 COPY . .
 
-# ساخت کلاینت پریزما و کامپایل نهایی فرانت‌اند و بک‌اند
 RUN npx prisma generate
 RUN npm run build
 
-# مرحله ۲: اجرای نهایی (Production Runner Stage)
+# ---------------------------------------------------------------------------
+
 FROM node:20-alpine AS runner
 
 WORKDIR /app
@@ -29,14 +34,24 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# کپی فایل‌های کامپایل شده و مورد نیاز از مرحله بیلد
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+# فقط وابستگی‌های تولیدی. `prisma` عمداً جزو dependencies است، چون مهاجرت‌ها
+# هنگام بالا آمدن کانتینر اجرا می‌شوند و CLI آن باید در همین تصویر باشد.
+COPY package.json package-lock.json ./
+# schema پیش از نصب کپی می‌شود چون postinstall همین‌جا `prisma generate` را
+# صدا می‌زند و بدون schema شکست می‌خورد.
+COPY prisma ./prisma/
+RUN npm ci --omit=dev && npm cache clean --force
+
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/database ./database
+COPY scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
+RUN chmod +x ./scripts/docker-entrypoint.sh
 
 EXPOSE 3000
 
-# اجرای وب‌سرور نهایی
-CMD ["node", "dist/server.cjs"]
+# سلامت واقعی سرویس یعنی «پایگاه‌داده پاسخ می‌دهد»، نه «پروسه بالاست»:
+# /api/health خودش یک کوئری می‌زند و در صورت قطعی ۵۰۳ می‌دهد.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
+
+ENTRYPOINT ["./scripts/docker-entrypoint.sh"]

@@ -75,9 +75,15 @@ export function ScoreBar({ label, value, max = 100 }: ScoreBarProps) {
   const percentage = (value / max) * 100;
   return (
     <div className="flex flex-col gap-1.5 mb-3">
-      <div className="flex justify-between items-center text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className={`font-bold font-mono ${getScoreColorClass(percentage)}`}>{value} / {max}</span>
+      {/* `items-start`, not `items-center`: the planning department's criterion
+          («تطابق کالا با مشخصات فنی درج شده در پکینگ لیست») is too long for one
+          line in a quarter-width card, and centring dropped its «۵ / ۵» beside
+          the second line, reading as though the number belonged to nothing.
+          The score now stays level with the first line of its own label, and
+          `shrink-0` keeps it from being squeezed or broken across lines. */}
+      <div className="flex justify-between items-start gap-2 text-xs">
+        <span className="text-muted-foreground leading-snug">{label}</span>
+        <span className={`font-bold font-mono shrink-0 whitespace-nowrap leading-snug ${getScoreColorClass(percentage)}`}>{value} / {max}</span>
       </div>
       <div className="w-full h-px bg-border rounded-full">
         <div 

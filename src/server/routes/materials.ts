@@ -1,4 +1,5 @@
 import express from "express";
+import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
 import { AuditService } from "../../utils/auditService.js";
 import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
 import { requirePrisma } from "../db/prisma.js";
@@ -89,7 +90,7 @@ export function materialRoutes(): express.Router {
     }
   });
 
-  router.patch("/api/materials/:id", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+  router.patch("/api/materials/:id", requireAuth, requirePermission("material.edit"), serializeWrites("material"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const b = req.body;
@@ -99,6 +100,9 @@ export function materialRoutes(): express.Router {
       const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+      }
+      if (staleCopy(req, current)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
 
       const originalData = mapMaterialToClient(current);
@@ -172,7 +176,7 @@ export function materialRoutes(): express.Router {
     }
   });
 
-  router.delete("/api/materials/:id", requireAuth, requirePermission("material.delete"), async (req: any, res) => {
+  router.delete("/api/materials/:id", requireAuth, requirePermission("material.delete"), serializeWrites("material"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const reasonForChange = req.query.reasonForChange as string || "عدم استفاده مجدد در فرمولاسیون محصولات نهایی";
@@ -181,6 +185,9 @@ export function materialRoutes(): express.Router {
       const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+      }
+      if (staleCopy(req, current)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
 
       // Check dependency
@@ -260,7 +267,7 @@ export function materialRoutes(): express.Router {
    *  data URL is ~33% larger than the file it encodes. */
   const MAX_SPECIFICATION_BYTES = 7 * 1024 * 1024;
 
-  router.put("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+  router.put("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), serializeWrites("material"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { fileName, fileSize, fileDataUrl, reasonForChange } = req.body || {};
@@ -275,6 +282,7 @@ export function materialRoutes(): express.Router {
 
       const current = await prisma.material.findUnique({ where: { id } });
       if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+      if (staleCopy(req, current)) return res.status(409).json({ error: STALE_COPY_MESSAGE });
 
       const isReplacement = !!current.specificationFileData;
       const updated = await prisma.material.update({
@@ -330,12 +338,13 @@ export function materialRoutes(): express.Router {
     }
   });
 
-  router.delete("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+  router.delete("/api/materials/:id/specification", requireAuth, requirePermission("material.edit"), serializeWrites("material"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const prisma = requirePrisma();
       const current = await prisma.material.findUnique({ where: { id } });
       if (!current) return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+      if (staleCopy(req, current)) return res.status(409).json({ error: STALE_COPY_MESSAGE });
 
       const updated = await prisma.material.update({
         where: { id },
@@ -372,7 +381,7 @@ export function materialRoutes(): express.Router {
     }
   });
 
-  router.put("/api/materials/:id/status", requireAuth, requirePermission("material.edit"), async (req: any, res) => {
+  router.put("/api/materials/:id/status", requireAuth, requirePermission("material.edit"), serializeWrites("material"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status, reasonForChange } = req.body;
@@ -381,6 +390,9 @@ export function materialRoutes(): express.Router {
       const current = await prisma.material.findUnique({ where: { id } });
       if (!current) {
         return res.status(404).json({ error: "ماده مورد نظر یافت نشد" });
+      }
+      if (staleCopy(req, current)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
 
       const oldStatus = (current as any).status || "Active";
