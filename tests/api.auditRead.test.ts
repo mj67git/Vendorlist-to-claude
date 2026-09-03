@@ -27,6 +27,7 @@ async function seedLogs() {
     entityName: i === 7 ? 'ماده نشانه‌دار' : `رکورد ${i}`,
     action: i % 3 === 0 ? 'Delete' : 'Update',
     severity: i % 10 === 0 ? 'Critical' : i % 5 === 0 ? 'Warning' : 'Information',
+    result: i % 20 === 0 ? 'Blocked' : i % 30 === 0 ? 'Failed' : 'Success',
     description: i === 7 ? 'یک توضیح یکتا برای جست‌وجو' : 'توضیح عادی',
   }));
   await p.auditLog.createMany({ data: rows });
@@ -125,6 +126,28 @@ test('the counters are computed over the whole table', SKIP, async () => {
   assert.equal(res.body.warning, 24);
   // Exactly the two distinct actors seeded.
   assert.equal(res.body.activeUsers, 2);
+});
+
+test('the overview counts refusals and today separately from severity', SKIP, async () => {
+  const res = await api('/api/audit-logs/stats', { token });
+  // Severity and result answer different questions, and the counts prove it:
+  // these rows are not the same rows as the critical ones.
+  assert.equal(res.body.blocked, 12);
+  assert.equal(res.body.failed, 4);
+  // Everything seeded is dated 1 January 2026, so nothing lands in today.
+  assert.equal(res.body.today, 0);
+});
+
+test('today counts what was written today, not what was written at all', SKIP, async () => {
+  await db().auditLog.create({
+    data: {
+      auditId: 'AUD-TODAY', module: 'System', action: 'Update',
+      severity: 'Information', result: 'Success', timestamp: new Date(),
+    },
+  });
+  const res = await api('/api/audit-logs/stats', { token });
+  assert.equal(res.body.today, 1);
+  assert.equal(res.body.total, ROWS + 1);
 });
 
 test('the filter options list every distinct value once', SKIP, async () => {

@@ -595,11 +595,15 @@ export class AuditService {
   }
 
   /**
-   * The three numbers above the table, counted in SQL.
+   * The numbers above the table, counted in SQL.
    *
    * They used to be derived by reading ten thousand full rows — both JSON
    * payloads of every one of them — into memory and calling `.filter()` on the
    * array. Counting is what the database is for, and an audit trail only grows.
+   *
+   * `today`, `blocked` and `failed` were added with the overview strip. They
+   * are three more counts against indexed columns rather than three more
+   * passes over the rows, which is the whole reason the strip can exist.
    */
   public static async getStats(): Promise<{
     total: number;
@@ -607,13 +611,24 @@ export class AuditService {
     warning: number;
     activeUsers: number;
     lastUpdated: string;
+    today: number;
+    blocked: number;
+    failed: number;
   }> {
     const prisma = requirePrisma();
 
-    const [total, critical, warning, actors, lastLog] = await Promise.all([
+    // Midnight of the current day in the server's own zone, which is the day
+    // the person reading the page is having.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [total, critical, warning, blocked, failed, today, actors, lastLog] = await Promise.all([
       prisma.auditLog.count(),
       prisma.auditLog.count({ where: { severity: { in: severityMatches("Critical") } } }),
       prisma.auditLog.count({ where: { severity: { in: severityMatches("Warning") } } }),
+      prisma.auditLog.count({ where: { result: "Blocked" } }),
+      prisma.auditLog.count({ where: { result: "Failed" } }),
+      prisma.auditLog.count({ where: { timestamp: { gte: startOfToday } } }),
       prisma.auditLog.groupBy({ by: ["userId"], where: { userId: { not: null } } }),
       prisma.auditLog.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
     ]);
@@ -632,6 +647,9 @@ export class AuditService {
       // users" and zero of them is never the honest answer on a live system.
       activeUsers: actors.length || 1,
       lastUpdated,
+      today,
+      blocked,
+      failed,
     };
   }
 
