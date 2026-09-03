@@ -291,30 +291,20 @@ function expandStored(entry: unknown): Permission[] {
 }
 
 /**
- * Read permissions did not exist when the first per-user overrides were stored,
- * so those lists name only writes. Reading them literally today would take the
- * whole application away from exactly the people an admin had bothered to
- * customise — they would keep `partner.edit` and lose the partner list it edits.
+ * A stored exception list is read literally.
  *
- * A stored list that names no read at all is therefore treated as predating
- * them and given all of them — the SOP download included, since it was part of
- * "everyone can read the partners" too — the same "expand on read, migrate
- * nothing" approach that carried `material.write` through its split. Once an admin saves the
- * dialog again the list holds explicit reads and this no longer applies, which
- * is what makes a deliberate read-only account possible: it names at least one
- * read, so nothing is added to it.
+ * It was not always: read permissions arrived after per-user lists already
+ * existed, so old rows name writes and no reads, and `effectivePermissions`
+ * used to hand the reads back to any list that had none. That heuristic could
+ * not tell an old row from a deliberate restriction — an administrator who
+ * turned every module off and left only the department's scoring tick got the
+ * reads back silently, and the dialog showed their change as if it had never
+ * been saved. Migration 20260903120000 expands the rows the heuristic was
+ * written for, once, so from here a list means what it says.
  */
-const READ_PERMISSIONS: Permission[] = ['vendor.read', 'material.read', 'partner.read', 'partner.files'];
-
-function withLegacyReads(list: Permission[]): Permission[] {
-  if (list.length === 0) return list;
-  if (list.some(p => READ_PERMISSIONS.includes(p))) return list;
-  return [...list, ...READ_PERMISSIONS];
-}
-
 function parseOverrides(raw: unknown): Permission[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const known = withLegacyReads([...new Set(raw.flatMap(expandStored))]);
+  const known = [...new Set(raw.flatMap(expandStored))];
   // An override list of only unrecognised entries is treated as no override
   // rather than as "nothing allowed", so a stale name cannot silently lock a
   // user out of everything.
