@@ -16,6 +16,7 @@ import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
 import { calculateOverallScore } from './vendorUtils';
+import { canSupplySources } from './sopEvaluation';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
 
 /**
@@ -598,6 +599,9 @@ export function buildPartnersWorksheet(
     'امتیاز SOP (فروشنده)',
     'گرید ارزیابی',
     'نتیجهٔ ارزیابی SOP',
+    // The same rule the table and the server apply, so a printed report cannot
+    // promise a seller the form will refuse.
+    'امکان اتصال به سورس',
     'تعداد سورس متصل',
     'تاریخ ثبت',
   ];
@@ -621,6 +625,7 @@ export function buildPartnersWorksheet(
       ev && ev.grade !== 'Not Evaluated' ? `${ev.totalScore} / 100` : '—',
       ev && ev.grade !== 'Not Evaluated' ? `Grade ${ev.grade}` : '—',
       ev && ev.grade !== 'Not Evaluated' ? sopResultLabel(ev.grade) : '—',
+      canSupplySources(p).allowed ? 'مجاز' : 'غیرمجاز',
       connectedCount(p),
       createdStr,
     ];
