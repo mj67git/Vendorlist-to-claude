@@ -75,7 +75,7 @@ const formatFileSize = (bytes?: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} مگابایت`;
 };
 
-type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt' | 'grade';
+type SortField = 'name' | 'type' | 'country' | 'city' | 'status' | 'createdAt' | 'updatedAt' | 'grade' | 'sourceLink';
 
 /** Persian has its own alphabet order; a plain `<` sorts by code point. */
 const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' });
@@ -103,6 +103,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'Blacklisted' | 'All'>('All');
   const [gradeFilter, setGradeFilter] = useState<SOPGrade | 'All'>('All');
   const [sopStatusFilter, setSopStatusFilter] = useState<SOPSupplierStatus | 'All'>('All');
+  /** «فقط قابل اتصال» / «فقط غیرمجاز» — the same rule the server enforces. */
+  const [sourceLinkFilter, setSourceLinkFilter] = useState<'All' | 'Allowed' | 'Blocked'>('All');
   const [countryFilter, setCountryFilter] = useState<string>('All');
 
   // Sorting state
@@ -319,9 +321,10 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       statusFilter !== 'All' ||
       gradeFilter !== 'All' ||
       sopStatusFilter !== 'All' ||
+      sourceLinkFilter !== 'All' ||
       countryFilter !== 'All'
     );
-  }, [search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, countryFilter]);
+  }, [search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter]);
 
   const handleResetFilters = () => {
     setSearch('');
@@ -329,6 +332,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     setStatusFilter('All');
     setGradeFilter('All');
     setSopStatusFilter('All');
+    setSourceLinkFilter('All');
     setCountryFilter('All');
     setCurrentPage(1);
   };
@@ -354,12 +358,20 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         if (p.evaluation?.status !== sopStatusFilter) return false;
       }
 
-      // 5. Country filter
+      // 5. May this partner be attached to a source? Read from the same helper
+      // the server refuses with, so the filter cannot drift from the rule.
+      if (sourceLinkFilter !== 'All') {
+        const allowed = canSupplySources(p).allowed;
+        if (sourceLinkFilter === 'Allowed' && !allowed) return false;
+        if (sourceLinkFilter === 'Blocked' && allowed) return false;
+      }
+
+      // 6. Country filter
       if (countryFilter !== 'All' && p.country.trim().toLowerCase() !== countryFilter.trim().toLowerCase()) {
         return false;
       }
 
-      // 6. Smart Search query
+      // 7. Smart Search query
       if (search.trim()) {
         const query = search.toLowerCase().trim();
 
@@ -383,6 +395,10 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       return true;
     }).sort((a, b) => {
       const dir = sortOrder === 'asc' ? 1 : -1;
+      if (sortField === 'sourceLink') {
+        const rank = (p: BusinessPartner) => (canSupplySources(p).allowed ? 1 : 0);
+        return dir * (rank(a) - rank(b));
+      }
       if (sortField === 'grade') {
         const rank = (p: BusinessPartner) =>
           p.type === 'Supplier' ? (GRADE_RANK[p.evaluation?.grade || 'Not Evaluated'] ?? 0) : -1;
@@ -391,7 +407,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       // Dates are ISO strings, which the collator orders correctly as text.
       return dir * collator.compare(String(a[sortField] ?? ''), String(b[sortField] ?? ''));
     });
-  }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, countryFilter, sortField, sortOrder]);
+  }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter, sortField, sortOrder]);
 
   // Pagination calculations
   const totalPages = Math.max(1, Math.ceil(filteredPartners.length / itemsPerPage));
@@ -862,7 +878,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 flex-1">
             <div>
               <label className="text-2xs font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
               <select
@@ -894,6 +910,19 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
                 <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-2xs font-bold text-muted-foreground block mb-1">امکان اتصال به سورس</label>
+              <select
+                value={sourceLinkFilter}
+                onChange={e => { setSourceLinkFilter(e.target.value as any); setCurrentPage(1); }}
+                className={cn(inputBaseClass, 'w-full font-medium')}
+              >
+                <option value="All">همه</option>
+                <option value="Allowed">فقط قابل اتصال</option>
+                <option value="Blocked">فقط غیرمجاز</option>
               </select>
             </div>
 
@@ -947,7 +976,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <SortHeader field="name" label="نام شرکت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="type" label="نوع" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="country" label="کشور / شهر" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-                <SortHeader field="grade" label="نتیجهٔ ارزیابی SOP" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="grade" label="نتیجهٔ ارزیابی" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                <SortHeader field="sourceLink" label="امکان اتصال به سورس" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="status" label="وضعیت سیستم" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <SortHeader field="createdAt" label="تاریخ ثبت" sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                 <th scope="col" className="py-3 px-4 text-center">عملیات</th>
@@ -959,13 +989,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                    empty state below would claim the repository is empty. */
                 <TableSkeletonRows
                   rows={5}
-                  columns={7}
-                  width={c => (c === 0 ? '80%' : c > 4 ? '3rem' : '60%')}
+                  columns={8}
+                  width={c => (c === 0 ? '80%' : c > 5 ? '3rem' : '60%')}
                 />
               ) : paginatedPartners.length === 0 ? (
                 hasActiveFilters ? (
                   <TableEmptyRow
-                    colSpan={7}
+                    colSpan={8}
                     icon={Building2}
                     message="هیچ شریکی با این جستجو یا فیلترها پیدا نشد."
                     action={
@@ -977,7 +1007,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   />
                 ) : (
                   <TableEmptyRow
-                    colSpan={7}
+                    colSpan={8}
                     icon={Building2}
                     message="هنوز شریک تجاری‌ای ثبت نشده است."
                     action={can(currentUser, 'partner.create') ? (
@@ -1022,33 +1052,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         </div>
                       </td>
 
-                      {/* SOP Supplier Evaluation */}
+                      {/* Evaluation result — the grade, and only the grade.
+
+                          This cell used to carry three messages at once: the
+                          grade, its Persian wording, the score out of 100, and
+                          a chip saying whether the seller could be attached to
+                          a source. The column grew wide enough to squeeze the
+                          company name, and the grade — the thing the column is
+                          named after — was the least visible of the four. The
+                          wording and the score are one hover or one click away,
+                          in the tooltip and in the detail panel; the
+                          attachment rule now has a column of its own. */}
                       <td className="py-3 px-4">
                         {partner.type === 'Supplier' ? (
                           partner.evaluation && partner.evaluation.grade !== 'Not Evaluated' ? (
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-2xs font-bold border ${describeGrade(partner.evaluation.grade).tone}`}>
-                                <Award className="w-3 h-3" />
-                                {partner.evaluation.grade} · {describeGrade(partner.evaluation.grade).fa}
-                              </span>
-                              <span className="text-2xs font-mono text-muted-foreground font-bold">
-                                ({partner.evaluation.totalScore}/100)
-                              </span>
-                              {/* The grade alone does not answer the question the
-                                  buyer actually has. Only grade A may be attached
-                                  to a source, and the server refuses the rest with
-                                  422 — so the row says so instead of letting the
-                                  refusal come as a surprise later. */}
-                              {!canSupplySources(partner).allowed && (
-                                <span
-                                  title={canSupplySources(partner).reason}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-muted text-muted-foreground border border-border"
-                                >
-                                  <XCircle className="w-3 h-3 shrink-0" />
-                                  قابل اتصال به سورس نیست
-                                </span>
-                              )}
-                            </div>
+                            <span
+                              title={`${describeGrade(partner.evaluation.grade).fa} · ${describeGrade(partner.evaluation.grade).en} · امتیاز ${partner.evaluation.totalScore} از ۱۰۰`}
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-2xs font-bold border ${describeGrade(partner.evaluation.grade).tone}`}
+                            >
+                              <Award className="w-3 h-3" />
+                              {partner.evaluation.grade}
+                            </span>
                           ) : (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground font-semibold bg-muted px-2.5 py-0.5 rounded-md border border-border">
@@ -1069,8 +1093,42 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             </div>
                           )
                         ) : (
-                          <span className="text-muted-foreground text-2xs font-mono">- (فقط مخصوص Supplier)</span>
+                          // A manufacturer is never SOP-evaluated, and the
+                          // sentence saying so was repeated on every one of
+                          // their rows. The dash carries it in the tooltip.
+                          <span className="text-muted-foreground font-mono" title="ارزیابی SOP فقط برای فروشنده انجام می‌شود.">—</span>
                         )}
+                      </td>
+
+                      {/* May this partner be attached to a source?
+
+                          A separate rule from the grade, and the server's, not
+                          the table's: `canSupplySources` is what refuses the
+                          save with 422, so the row and the endpoint cannot
+                          disagree. Read here rather than inferred from the
+                          grade, which is why a blacklisted partner and an
+                          unevaluated one are also blocked. */}
+                      <td className="py-3 px-4">
+                        {(() => {
+                          const link = canSupplySources(partner);
+                          return link.allowed ? (
+                            <span
+                              title={partner.type === 'Supplier' ? 'گرید A دارد و طبق دستورالعمل قابل انتخاب به‌عنوان سورس است.' : 'تولیدکننده مشمول قاعدهٔ گرید SOP نیست.'}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900"
+                            >
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              مجاز
+                            </span>
+                          ) : (
+                            <span
+                              title={link.reason}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-muted text-muted-foreground border border-border"
+                            >
+                              <XCircle className="w-3 h-3 shrink-0" />
+                              غیرمجاز
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* System Status */}

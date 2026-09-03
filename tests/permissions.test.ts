@@ -134,25 +134,27 @@ test('an override list can take away what the role would have given', () => {
 });
 
 test('overrides replace the template rather than adding to it', () => {
-  // The reads come along because the stored list names none of them, so it is
-  // read as predating read permissions — see withLegacyReads. What matters here
-  // is that the admin template's writes are gone.
   const user = { role: 'admin', permissions: ['audit.read'] };
-  assert.deepEqual(effectivePermissions(user),
-    ['vendor.read', 'material.read', 'partner.read', 'partner.files', 'audit.read']);
+  assert.deepEqual(effectivePermissions(user), ['audit.read']);
   assert.equal(can(user, 'users.manage'), false, 'an admin can be narrowed');
 });
 
-test('a stored override predating read permissions keeps its reads', () => {
-  // Nothing migrated the database, so the lists written before reads existed
-  // name only writes. Read literally they would leave an account able to edit a
-  // repository it can no longer open.
-  const legacy = { role: 'commercial', permissions: ['partner.edit'] };
+test('a stored list is read literally, so a restriction survives being saved', () => {
+  // This used to be the opposite: a list naming no read was assumed to predate
+  // read permissions and got all of them back, which meant an administrator
+  // could not restrict an account to its own scoring — the reads reappeared and
+  // the dialog showed the change as if it had never been made. The rows that
+  // assumption existed for are fixed once by migration
+  // 20260903120000_expand_legacy_permission_reads.
+  const scoringOnly = { role: 'finance', permissions: ['score.finance'] };
   for (const read of LEGACY_READS) {
-    assert.equal(can(legacy, read), true, `legacy override lost ${read}`);
+    assert.equal(can(scoringOnly, read), false, `${read} must not be handed back`);
   }
-  assert.equal(can(legacy, 'partner.edit'), true);
-  assert.equal(can(legacy, 'partner.delete'), false, 'still replaces the template');
+  assert.equal(can(scoringOnly, 'score.finance'), true);
+
+  const narrowed = { role: 'commercial', permissions: ['partner.edit'] };
+  assert.deepEqual(effectivePermissions(narrowed), ['partner.edit'], 'exactly what was stored');
+  assert.equal(can(narrowed, 'partner.delete'), false, 'still replaces the template');
 });
 
 test('an override naming any read is taken at its word', () => {
@@ -206,7 +208,7 @@ test('unrecognised override entries do not lock a user out', () => {
   // mixed input keeps only what is real, expanding retired names
   const mixed = { role: 'qa', permissions: ['material.write', 'bogus'] };
   assert.deepEqual(effectivePermissions(mixed),
-    ['vendor.read', 'material.read', 'material.create', 'material.edit', 'material.delete', 'partner.read', 'partner.files']);
+    ['material.create', 'material.edit', 'material.delete']);
 });
 
 test('a retired permission keeps exactly the access it used to grant', () => {
@@ -225,11 +227,11 @@ test('a retired permission keeps exactly the access it used to grant', () => {
   assert.equal(can(vendor, 'vendor.edit'), true);
   assert.equal(can(vendor, 'vendor.delete'), false);
 
-  // The three writes are what `partner.write` meant; the reads are added on top
-  // because this list names none, so it predates read permissions.
+  // The three writes are what `partner.write` meant, and nothing more: a row
+  // that also needs the reads gets them from the migration, not from here.
   const partner = { role: 'finance', permissions: ['partner.write'] };
   assert.deepEqual(effectivePermissions(partner),
-    ['vendor.read', 'material.read', 'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files']);
+    ['partner.create', 'partner.edit', 'partner.delete']);
 });
 
 test('an override naming only a dropped permission falls back to the role', () => {
