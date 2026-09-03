@@ -17,6 +17,7 @@ import {
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { EntityName } from './EntityName';
 import { readLocalAudit } from '../services/localAudit';
+import { PERMISSION_LABELS, type Permission } from '../utils/permissions';
 import { Input, inputBaseClass } from './ui/input';
 import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
@@ -88,6 +89,19 @@ function InfoIcon(props: any) {
 
 // Persian labels for common audit field keys (fallback: raw key).
 const fieldKeyLabels: Record<string, string> = {
+  // Collections. These are compared item by item (see computeFieldDiff), so the
+  // label names the collection and the value names what actually moved.
+  activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
+  documents: 'مدارک SOP', sopDocuments: 'مدارک SOP', permissions: 'دسترسی‌ها',
+  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی SOP',
+  // Accounts and partners.
+  isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
+  address: 'آدرس', website: 'وبسایت', contactPerson: 'مسئول تماس', type: 'نوع شریک',
+  // Sources.
+  supplierId: 'فروشنده', manufacturerId: 'تولیدکننده', isSample: 'نمونه',
+  ircExpiryDate: 'انقضای IRC', lastAudit: 'تاریخ صدور IRC', registrationDate: 'تاریخ ثبت',
+  materialId: 'مادهٔ مرتبط', comments: 'توضیحات', recordedBy: 'ثبت‌کنندهٔ نتیجه',
+  action: 'اقدام', user: 'کاربر', file: 'فایل', fileName: 'نام فایل',
   status: 'وضعیت', grade: 'گرید', name: 'نام', nameEn: 'نام لاتین', country: 'کشور',
   material: 'ماده', materialEn: 'ماده (لاتین)', cas: 'CAS', irc: 'IRC', category: 'دسته',
   contactInfo: 'اطلاعات تماس', totalSPS: 'امتیاز SPS', scores: 'نمرات', riskLevel: 'سطح ریسک',
@@ -123,6 +137,13 @@ function jalaliToIso(jalaliStr: string, edge: 'start' | 'end'): string {
   }
 }
 
+/** A value that was actually recorded, as opposed to a placeholder dash. */
+export function hasRecordedValue(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  const text = String(v).trim();
+  return text !== '' && text !== '—' && text !== '-';
+}
+
 const fmtVal = (v: any): string => {
   if (v === null || v === undefined || v === '') return '—';
   if (Array.isArray(v)) return `${v.length} مورد`;
@@ -131,11 +152,22 @@ const fmtVal = (v: any): string => {
 };
 
 /**
- * Metadata that describes the event rather than the change. It lives in its own
- * columns now, but records written before that still carry it inside
- * `after_data`, where it would otherwise read as a set of added fields.
+ * Keys that never belong in the change list.
+ *
+ * Two groups. The first describes the event rather than the change: it lives in
+ * its own columns now, but records written before that still carry it inside
+ * `after_data`, where it would read as a set of added fields.
+ *
+ * The second is bookkeeping the server stores beside a collection — a count
+ * that is nothing but the length of an array in the same record. The activity
+ * log endpoint writes both, so the panel showed `activityLogs ۶ → ۷ مورد` and
+ * `activityLogCount ۶ → ۷` one under the other: two rows, one fact, and the
+ * fact was "how many", not "what".
  */
-const META_KEYS = new Set(['ipAddress', 'userAgent', 'eventType', 'ip', 'device']);
+const META_KEYS = new Set([
+  'ipAddress', 'userAgent', 'eventType', 'ip', 'device',
+  'activityLogCount', 'analysisRecordCount', 'documentCount', 'recordCount', 'count',
+]);
 
 const isPlainObject = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -157,6 +189,88 @@ export interface FieldDiffRow {
   from: string;
   to: string;
   kind: 'added' | 'removed' | 'changed';
+  /** Set when the row describes items of a collection rather than one value. */
+  note?: string;
+}
+
+/** How many fields were left out of the change list because nothing names them. */
+export interface DiffResult {
+  rows: FieldDiffRow[];
+  hidden: number;
+}
+
+/**
+ * One line describing a record inside a collection.
+ *
+ * A lab result is its QC code and decision; an activity entry is what was done
+ * and when; an SOP document is its name and status. Falling back to an id is
+ * still better than the JSON — but a record that offers nothing recognisable is
+ * reported by position, and the raw data below the panel carries the rest.
+ */
+function describeItem(item: any, index: number): string {
+  if (item === null || item === undefined) return `مورد ${toFa(index + 1)}`;
+  // A permission list is an array of machine names; the same table the access
+  // dialog reads turns them into the words an administrator ticked.
+  if (typeof item === 'string') return PERMISSION_LABELS[item as Permission] || item;
+  if (typeof item !== 'object') return String(item);
+
+  const parts: string[] = [];
+  if (item.qcCode) parts.push(String(item.qcCode));
+  if (item.action) parts.push(String(item.action));
+  if (item.decision) parts.push(String(item.decision));
+  if (!parts.length && item.name) parts.push(String(item.name));
+  if (!parts.length && item.title) parts.push(String(item.title));
+  if (!parts.length && item.status) parts.push(String(item.status));
+  if (item.date) parts.push(String(item.date));
+  if (parts.length) return parts.join(' · ');
+  return item.id ? String(item.id) : `مورد ${toFa(index + 1)}`;
+}
+
+/** Persian digits, so a count inside a sentence matches the rest of the page. */
+function toFa(n: number): string {
+  return n.toLocaleString('fa-IR');
+}
+
+const itemKey = (item: any, index: number): string =>
+  isPlainObject(item) && item.id !== undefined ? `id:${item.id}` : `pos:${index}:${JSON.stringify(item)}`;
+
+/**
+ * What changed inside a collection, in terms of its records.
+ *
+ * Comparing arrays by length produced the change this panel is being fixed for:
+ * «۶ مورد ← ۷ مورد», which tells a reviewer how many there are and nothing
+ * about what was added. Comparing item by item names the record instead.
+ *
+ * At most two records are named; beyond that the count carries the rest, so a
+ * bulk import does not turn one row into forty.
+ */
+function diffCollection(label: string, path: string, before: any[], after: any[]): FieldDiffRow[] {
+  const beforeKeys = new Map(before.map((item, i) => [itemKey(item, i), item]));
+  const afterKeys = new Map(after.map((item, i) => [itemKey(item, i), item]));
+
+  const added = after.filter((item, i) => !beforeKeys.has(itemKey(item, i)));
+  const removed = before.filter((item, i) => !afterKeys.has(itemKey(item, i)));
+  if (added.length === 0 && removed.length === 0) return [];
+
+  const summarise = (items: any[]) => {
+    const named = items.slice(0, 2).map((item, i) => describeItem(item, i)).join(' ، ');
+    return items.length > 2 ? `${named} و ${toFa(items.length - 2)} مورد دیگر` : named;
+  };
+
+  const rows: FieldDiffRow[] = [];
+  if (added.length) {
+    rows.push({
+      key: `${path}#added`, label, from: '', to: summarise(added),
+      kind: 'added', note: `${toFa(added.length)} مورد افزوده شد`,
+    });
+  }
+  if (removed.length) {
+    rows.push({
+      key: `${path}#removed`, label, from: summarise(removed), to: '',
+      kind: 'removed', note: `${toFa(removed.length)} مورد حذف شد`,
+    });
+  }
+  return rows;
 }
 
 /**
@@ -166,12 +280,18 @@ export interface FieldDiffRow {
  * four department scores in one object, and comparing them as JSON turned a
  * single changed number into one unreadable line of `{"commercial":80,…}` →
  * `{"commercial":90,…}`. Walking names the field that actually moved.
+ *
+ * A field nobody has named in Persian is counted, not printed. The panel is
+ * read by people who did not write the schema, and `activityLogs` told them
+ * less than nothing; the complete before/after JSON is still one click below,
+ * which is where a key like that belongs.
  */
-export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDiffRow[] {
+export function computeFieldDiffDetailed(before: any, after: any, prefix = ''): DiffResult {
   const bef = isPlainObject(before) ? before : {};
   const aft = isPlainObject(after) ? after : {};
   const keys = Array.from(new Set([...Object.keys(bef), ...Object.keys(aft)]));
   const rows: FieldDiffRow[] = [];
+  let hidden = 0;
 
   for (const k of keys) {
     if (!prefix && META_KEYS.has(k)) continue;
@@ -179,7 +299,22 @@ export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDif
     const bv = bef[k];
     const av = aft[k];
     if (isPlainObject(bv) || isPlainObject(av)) {
-      rows.push(...computeFieldDiff(bv, av, prefix ? `${prefix}.${k}` : k));
+      const nested = computeFieldDiffDetailed(bv, av, prefix ? `${prefix}.${k}` : k);
+      rows.push(...nested.rows);
+      hidden += nested.hidden;
+      continue;
+    }
+
+    const path = prefix ? `${prefix}.${k}` : k;
+    const label = fieldKeyLabels[k];
+
+    if (Array.isArray(bv) || Array.isArray(av)) {
+      const collection = diffCollection(
+        label || k, path, Array.isArray(bv) ? bv : [], Array.isArray(av) ? av : [],
+      );
+      if (collection.length === 0) continue;
+      if (!label) { hidden += collection.length; continue; }
+      rows.push(...collection);
       continue;
     }
 
@@ -187,20 +322,24 @@ export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDif
     const to = fmtVal(av);
     if (from === to) continue;
 
-    const path = prefix ? `${prefix}.${k}` : k;
+    if (!label) { hidden += 1; continue; }
+
     const inBef = k in bef && bv !== null && bv !== undefined && bv !== '';
     const inAft = k in aft && av !== null && av !== undefined && av !== '';
     rows.push({
       key: path,
-      // A nested field is labelled by its own name, with the parent kept for
-      // context when there is no Persian label for it.
-      label: fieldKeyLabels[k] || (prefix ? `${fieldKeyLabels[prefix] || prefix} · ${k}` : k),
+      label,
       from,
       to,
       kind: !inBef ? 'added' : !inAft ? 'removed' : 'changed',
     });
   }
-  return rows;
+  return { rows, hidden };
+}
+
+/** The rows alone, for callers that do not report what was left out. */
+export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDiffRow[] {
+  return computeFieldDiffDetailed(before, after, prefix).rows;
 }
 
 export const AuditTrailView: React.FC = () => {
@@ -965,13 +1104,22 @@ export const AuditTrailView: React.FC = () => {
         {/* Children are evaluated even while closed, so this guard is required. */}
         {selectedLog && (
             <>
-              {/* Modal Header */}
-            <div className="p-5 border-b border-border flex items-center justify-between bg-muted/50">
-              <div className="space-y-1">
-                <span className="text-2xs font-bold font-mono text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
-                  {selectedLog.id}
+              {/* Modal header.
+
+                  It used to read «جزئیات ثبت ردیابی تغییرات (Audit)» above a
+                  36-character identifier — the same words on every record in
+                  the register, and a number nobody reads. The record's own name
+                  and the action taken on it say which event this is; who and
+                  when say the rest. The identifier moved down to the technical
+                  section, where the other identifiers already live. */}
+            <div className="p-5 border-b border-border flex items-center justify-between gap-3 bg-muted/50">
+              <div className="min-w-0 space-y-1">
+                <h3 id="audit-detail-title" className="text-sm font-black text-foreground">
+                  {(actionLabels[selectedLog.action]?.label) || selectedLog.action} · {selectedLog.recordName}
+                </h3>
+                <span className="text-2xs text-muted-foreground block">
+                  {selectedLog.user} · <span className="font-mono">{selectedLog.date} {selectedLog.time}</span>
                 </span>
-                <h3 id="audit-detail-title" className="text-sm font-black text-foreground mt-1">جزئیات ثبت ردیابی تغییرات (Audit)</h3>
               </div>
               <Button
                 variant="outline"
@@ -996,7 +1144,7 @@ export const AuditTrailView: React.FC = () => {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-black text-foreground">آنچه تغییر کرد</span>
                   {!isLoadingDetail && (() => {
-                    const n = isNonDataEvent(selectedLog) ? 0 : computeFieldDiff(selectedLog.before, selectedLog.after).length;
+                    const n = isNonDataEvent(selectedLog) ? 0 : computeFieldDiffDetailed(selectedLog.before, selectedLog.after).rows.length;
                     return (
                       <span className="text-2xs font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
                         {n > 0 ? `${n} فیلد` : 'بدون تغییر داده'}
@@ -1015,7 +1163,7 @@ export const AuditTrailView: React.FC = () => {
                     این رویداد تغییر داده‌ای ندارد؛ ثبت یک اقدام است (ورود/خروج). مشخصات کاربر و دستگاه در «اطلاعات فنی رویداد» آمده است.
                   </div>
                 ) : (() => {
-                  const diff = computeFieldDiff(selectedLog.before, selectedLog.after);
+                  const { rows: diff, hidden } = computeFieldDiffDetailed(selectedLog.before, selectedLog.after);
                   const bothObjects = (selectedLog.before && typeof selectedLog.before === 'object') || (selectedLog.after && typeof selectedLog.after === 'object');
                   if (diff.length === 0) {
                     return (
@@ -1039,18 +1187,36 @@ export const AuditTrailView: React.FC = () => {
                         const s = kindStyle[d.kind];
                         return (
                           <div key={d.key} className={`rounded-lg border p-2.5 ${s.row}`}>
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between gap-2 mb-1">
                               <span className="text-2xs font-bold text-foreground">{d.label}</span>
-                              <span className={`text-2xs font-bold px-1.5 py-0.5 rounded ${s.tag}`}>{s.label}</span>
+                              <span className={`text-2xs font-bold px-1.5 py-0.5 rounded shrink-0 ${s.tag}`}>{d.note || s.label}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-2xs font-mono" dir="ltr">
-                              <span className="flex-1 text-rose-700 bg-rose-50/70 dark:text-rose-200 dark:bg-rose-950/50 rounded px-2 py-1 line-through decoration-rose-300 dark:decoration-rose-700 break-all">{d.from}</span>
-                              <span className="text-muted-foreground shrink-0">→</span>
-                              <span className="flex-1 text-emerald-700 bg-emerald-50/70 dark:text-emerald-200 dark:bg-emerald-950/50 rounded px-2 py-1 font-bold break-all">{d.to}</span>
-                            </div>
+                            {/* A collection row names the records that arrived or
+                                left, so it has one side, not two: printing an
+                                empty box opposite an arrow says nothing. */}
+                            {d.note ? (
+                              <div className={`text-2xs rounded px-2 py-1 break-words ${d.kind === 'removed'
+                                ? 'text-rose-700 bg-rose-50/70 dark:text-rose-200 dark:bg-rose-950/50 line-through decoration-rose-300 dark:decoration-rose-700'
+                                : 'text-emerald-700 bg-emerald-50/70 dark:text-emerald-200 dark:bg-emerald-950/50 font-bold'}`}>
+                                {d.kind === 'removed' ? d.from : d.to}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 text-2xs font-mono" dir="ltr">
+                                <span className="flex-1 text-rose-700 bg-rose-50/70 dark:text-rose-200 dark:bg-rose-950/50 rounded px-2 py-1 line-through decoration-rose-300 dark:decoration-rose-700 break-all">{d.from}</span>
+                                <span className="text-muted-foreground shrink-0">→</span>
+                                <span className="flex-1 text-emerald-700 bg-emerald-50/70 dark:text-emerald-200 dark:bg-emerald-950/50 rounded px-2 py-1 font-bold break-all">{d.to}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
+                      {/* Nothing is dropped silently: a field with no Persian
+                          name is counted here and printed in full below. */}
+                      {hidden > 0 && (
+                        <p className="text-2xs text-muted-foreground pt-1">
+                          {hidden.toLocaleString('fa-IR')} فیلد فنی دیگر تغییر کرده که در «داده خام JSON» پایین آمده است.
+                        </p>
+                      )}
                       {/* Raw JSON fallback for full traceability */}
                       <details className="mt-2">
                         <summary className="text-2xs text-muted-foreground cursor-pointer hover:text-muted-foreground select-none">نمایش داده خام JSON (before / after)</summary>
@@ -1063,17 +1229,16 @@ export const AuditTrailView: React.FC = () => {
                   );
                 })()}
               </div>
-              {/* Description box */}
-              <div className="space-y-1.5">
-                <span className="text-2xs font-bold text-muted-foreground block">شرح فعالیت انجام شده (GMP Note):</span>
-                <div className="bg-amber-50/40 border border-amber-200/50 dark:bg-amber-950/30 dark:border-amber-900 p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
-                  {selectedLog.description}
-                </div>
-              </div>
+              {/* The reason, and only the reason.
 
-              {/* Reason for Change (GMP Necessity) */}
+                  The description above it said the same thing in other words —
+                  «ثبت سابقهٔ فعالیت برای سورس UPI (۶ → ۷ مورد)» beside a change
+                  list that already names the record and what arrived — so it is
+                  gone from this panel. It is still written to every record and
+                  still searchable from the list; what changed is that the panel
+                  does not print two sentences for one event. */}
               <div className="space-y-1.5">
-                <span className="text-2xs font-bold text-muted-foreground block">دلیل رسمی تغییرات (Change Rationale):</span>
+                <span className="text-2xs font-bold text-muted-foreground block">دلیل ثبت‌شده</span>
                 <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
                   {selectedLog.reason}
                 </div>
@@ -1101,10 +1266,18 @@ export const AuditTrailView: React.FC = () => {
                     <span className="text-2xs text-muted-foreground font-bold block">تاریخ و ساعت:</span>
                     <span className="text-xs font-bold text-foreground font-mono">{selectedLog.date} - {selectedLog.time}</span>
                   </div>
+                  {/* The identifiers, together, where an auditor looks for them —
+                      the panel header used to carry the record id instead. */}
                   <div className="space-y-0.5 pt-2 border-t border-border/50">
-                    <span className="text-2xs text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
-                    <span className="text-xs font-mono font-bold text-muted-foreground">{selectedLog.correlationId}</span>
+                    <span className="text-2xs text-muted-foreground font-bold block">شناسهٔ رکورد:</span>
+                    <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.id}</span>
                   </div>
+                  {hasRecordedValue(selectedLog.correlationId) && (
+                    <div className="space-y-0.5 pt-2 border-t border-border/50 col-span-2">
+                      <span className="text-2xs text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
+                      <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.correlationId}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Scope cards */}
@@ -1129,16 +1302,27 @@ export const AuditTrailView: React.FC = () => {
                       {actionLabels[selectedLog.action]?.label || selectedLog.action}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
-                    <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress || '127.0.0.1'}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground font-bold">دستگاه / مرورگر:</span>
-                    <span className="font-mono text-2xs font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
-                      {selectedLog.userAgent || 'Chrome / Windows'}
-                    </span>
-                  </div>
+                  {/* Recorded, or absent — never guessed.
+
+                      These two used to fall back to `127.0.0.1` and
+                      `Chrome / Windows`, which is worse than an empty row: a
+                      record written before these columns existed would show an
+                      address and a browser nobody ever used. A row with nothing
+                      behind it is not printed at all. */}
+                  {hasRecordedValue(selectedLog.ipAddress) && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
+                      <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress}</span>
+                    </div>
+                  )}
+                  {hasRecordedValue(selectedLog.userAgent) && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-muted-foreground font-bold">دستگاه / مرورگر:</span>
+                      <span className="font-mono text-2xs font-semibold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md truncate max-w-[200px]" title={selectedLog.userAgent}>
+                        {selectedLog.userAgent}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-bold">سطح بحرانیت:</span>
                     <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border inline-flex items-center gap-1 ${severityLabels[selectedLog.severity]?.bg || 'bg-muted text-foreground'}`}>
