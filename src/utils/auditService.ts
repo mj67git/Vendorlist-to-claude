@@ -254,11 +254,62 @@ export class AuditService {
     }
   }
 
+  /**
+   * The `where` for a read, built once.
+   *
+   * The list read and the text search used to build this twice, side by side,
+   * and they had already drifted: only one of them applied the date range. A
+   * filter that works on the plain list and quietly widens to "everything" as
+   * soon as the user also types a word is worse than no filter at all in a GxP
+   * trail, so both paths now come through here.
+   *
+   * `query` is ANDed with the filters, never ORed with them: `where.OR` belongs
+   * to the text search, so the filters that need an OR of their own (user id or
+   * user name) go into `where.AND`.
+   */
+  private static whereForPrisma(filters?: AuditLogFilters, query?: string): any {
+    const where: any = {};
+
+    if (filters) {
+      if (filters.userId) where.userId = filters.userId;
+      if (filters.user) {
+        where.AND = [{ OR: [{ userId: filters.user }, { userName: filters.user }] }];
+      }
+      if (filters.module && filters.module !== "all") where.module = filters.module;
+      else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
+      if (filters.action && filters.action !== "all") where.action = filters.action;
+      // `Info` and `Information` are the same level; see auditTaxonomy.ts.
+      if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
+      if (filters.entityId) where.entityId = filters.entityId;
+      if (filters.correlationId) where.correlationId = filters.correlationId;
+
+      if (filters.startDate || filters.endDate) {
+        where.timestamp = {};
+        if (filters.startDate) where.timestamp.gte = filters.startDate;
+        if (filters.endDate) where.timestamp.lte = filters.endDate;
+      }
+    }
+
+    const text = (query || "").trim();
+    if (text) {
+      where.OR = [
+        { userName: { contains: text, mode: "insensitive" } },
+        { module: { contains: text, mode: "insensitive" } },
+        { entityName: { contains: text, mode: "insensitive" } },
+        { description: { contains: text, mode: "insensitive" } },
+        { reasonForChange: { contains: text, mode: "insensitive" } },
+      ];
+    }
+
+    return where;
+  }
+
   public static async getAuditLogs(
     filters?: AuditLogFilters,
     page: number = 1,
     limit: number = 20,
-    sort?: { by?: string; dir?: string }
+    sort?: { by?: string; dir?: string },
+    query?: string
   ): Promise<{ data: any[]; total: number }> {
     const prisma = requirePrisma();
     if (!prisma) {
@@ -397,25 +448,7 @@ export class AuditService {
 
     try {
       const skip = (page - 1) * limit;
-      const where: any = {};
-
-      if (filters) {
-        if (filters.userId) where.userId = filters.userId;
-        if (filters.user) where.OR = [{ userId: filters.user }, { userName: filters.user }];
-        if (filters.module && filters.module !== "all") where.module = filters.module;
-        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
-        if (filters.action && filters.action !== "all") where.action = filters.action;
-        // `Info` and `Information` are the same level; see auditTaxonomy.ts.
-        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
-        if (filters.entityId) where.entityId = filters.entityId;
-        if (filters.correlationId) where.correlationId = filters.correlationId;
-
-        if (filters.startDate || filters.endDate) {
-          where.timestamp = {};
-          if (filters.startDate) where.timestamp.gte = filters.startDate;
-          if (filters.endDate) where.timestamp.lte = filters.endDate;
-        }
-      }
+      const where = this.whereForPrisma(filters, query);
 
       const [data, total] = await Promise.all([
         prisma.auditLog.findMany({
@@ -492,87 +525,76 @@ export class AuditService {
     }
   }
 
-  /**
-   * Search audit logs with a search text query and filters
+  /*
+   * `searchAuditLogs` is gone. It was a second copy of the read path — its own
+   * filter translation, its own `where` — that fetched a hard-capped 100 rows
+   * and left the route to slice them in memory. The cap became the reported
+   * total, so the pager under a search that matched more than 100 records
+   * showed a number that was not the number of matches. Text search is now a
+   * parameter of `getAuditLogs`, which pages in SQL like every other read.
    */
-  public static async searchAuditLogs(
-    query: string,
-    filters?: AuditLogFilters,
-    sort?: { by?: string; dir?: string }
-  ): Promise<any[]> {
+
+  /**
+   * The three numbers above the table, counted in SQL.
+   *
+   * They used to be derived by reading ten thousand full rows — both JSON
+   * payloads of every one of them — into memory and calling `.filter()` on the
+   * array. Counting is what the database is for, and an audit trail only grows.
+   */
+  public static async getStats(): Promise<{
+    total: number;
+    critical: number;
+    warning: number;
+    activeUsers: number;
+    lastUpdated: string;
+  }> {
     const prisma = requirePrisma();
-    if (!prisma) {
-      let logs = getJsonLogs();
 
-      if (filters) {
-        if (filters.userId) logs = logs.filter(l => l.userId === filters.userId);
-        if (filters.module && filters.module !== "all") logs = logs.filter(l => l.module === filters.module);
-        if (filters.action && filters.action !== "all") logs = logs.filter(l => l.action === filters.action);
-        if (filters.severity && filters.severity !== "all") logs = logs.filter(l => l.severity.toLowerCase() === filters.severity.toLowerCase());
-        if (filters.entityId) logs = logs.filter(l => l.entityId === filters.entityId);
-        if (filters.correlationId) logs = logs.filter(l => l.correlationId === filters.correlationId);
-      }
+    const [total, critical, warning, actors, lastLog] = await Promise.all([
+      prisma.auditLog.count(),
+      prisma.auditLog.count({ where: { severity: { in: severityMatches("Critical") } } }),
+      prisma.auditLog.count({ where: { severity: { in: severityMatches("Warning") } } }),
+      prisma.auditLog.groupBy({ by: ["userId"], where: { userId: { not: null } } }),
+      prisma.auditLog.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
+    ]);
 
-      if (query && query.trim()) {
-        const q = query.toLowerCase();
-        logs = logs.filter(l => 
-          (l.userName && l.userName.toLowerCase().includes(q)) ||
-          (l.module && l.module.toLowerCase().includes(q)) ||
-          (l.entityName && l.entityName.toLowerCase().includes(q)) ||
-          (l.description && l.description.toLowerCase().includes(q)) ||
-          (l.reasonForChange && l.reasonForChange.toLowerCase().includes(q))
-        );
-      }
-
-      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return logs.slice(0, 100);
+    let lastUpdated = "-";
+    if (lastLog?.timestamp) {
+      const d = new Date(lastLog.timestamp);
+      lastUpdated = d.toLocaleTimeString("fa-IR", { hour12: false }) || d.toLocaleTimeString("en-US", { hour12: false });
     }
 
-    try {
-      const where: any = {};
+    return {
+      total,
+      critical,
+      warning,
+      // `|| 1` is kept from the previous implementation: the chip reads "active
+      // users" and zero of them is never the honest answer on a live system.
+      activeUsers: actors.length || 1,
+      lastUpdated,
+    };
+  }
 
-      if (filters) {
-        if (filters.userId) where.userId = filters.userId;
-        // AND, not OR: the free-text search below claims `where.OR` for itself,
-        // and the two conditions must both hold rather than either one.
-        if (filters.user) {
-          where.AND = [{ OR: [{ userId: filters.user }, { userName: filters.user }] }];
-        }
-        if (filters.module && filters.module !== "all") where.module = filters.module;
-        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
-        if (filters.action && filters.action !== "all") where.action = filters.action;
-        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
-        if (filters.entityId) where.entityId = filters.entityId;
-        if (filters.correlationId) where.correlationId = filters.correlationId;
-        // The date range used to be dropped here, so searching by text inside a
-        // date range quietly widened the range to "everything".
-        if (filters.startDate || filters.endDate) {
-          where.timestamp = {};
-          if (filters.startDate) where.timestamp.gte = filters.startDate;
-          if (filters.endDate) where.timestamp.lte = filters.endDate;
-        }
-      }
+  /**
+   * The distinct values the filter dropdowns offer, taken from the index rather
+   * than from a full table read.
+   *
+   * The user option matches the same way the filter does — `userId` OR
+   * `userName` — so the label offered is the label that will match.
+   */
+  public static async getFilterOptions(): Promise<{ uniqueUsers: string[]; uniqueModules: string[] }> {
+    const prisma = requirePrisma();
 
-      if (query && query.trim()) {
-        where.OR = [
-          { userName: { contains: query, mode: "insensitive" } },
-          { module: { contains: query, mode: "insensitive" } },
-          { entityName: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
-          { reasonForChange: { contains: query, mode: "insensitive" } },
-        ];
-      }
+    const [actors, modules] = await Promise.all([
+      prisma.auditLog.groupBy({ by: ["userName", "userId"] }),
+      prisma.auditLog.groupBy({ by: ["module"] }),
+    ]);
 
-      const logs = await prisma.auditLog.findMany({
-        where,
-        orderBy: this.orderFor(sort?.by, sort?.dir) as any,
-        take: 100,
-      });
+    const uniqueUsers = Array.from(
+      new Set(actors.map((a: any) => a.userName || a.userId).filter(Boolean) as string[]),
+    );
+    const uniqueModules = modules.map((m: any) => m.module).filter(Boolean) as string[];
 
-      return logs;
-    } catch (err: any) {
-      console.error("[AuditService] Failed to search audit logs from PostgreSQL:", err.message);
-      throw err;
-    }
+    return { uniqueUsers, uniqueModules };
   }
 }

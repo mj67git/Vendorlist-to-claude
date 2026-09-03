@@ -69,23 +69,19 @@ export function auditRoutes(): express.Router {
       const endDate = parseDate(req.query.endDate);
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
-      if (req.query.quickFilter && req.query.quickFilter !== "all") filters.quickFilter = req.query.quickFilter as string;
+      // `quickFilter` is no longer read. It was accepted here, passed down and
+      // then ignored by the PostgreSQL read path — the same silent-no-op the
+      // old `eventType` parameter was — and no control in the UI ever set it.
 
       const query = (req.query.query as string || "").trim();
       // The table's sort choice, applied in SQL — see AuditService.orderFor.
       const sort = { by: req.query.sortBy as string, dir: req.query.sortDir as string };
-      let result;
 
-      if (query) {
-        const searched = await AuditService.searchAuditLogs(query, filters, sort);
-        const skip = (page - 1) * limit;
-        result = {
-          data: searched.slice(skip, skip + limit),
-          total: searched.length,
-        };
-      } else {
-        result = await AuditService.getAuditLogs(filters, page, limit, sort);
-      }
+      // Searching and listing are the same read with one more condition, and
+      // both page in SQL. The search used to take a separate path that pulled a
+      // fixed 100 rows and paged them in memory, so `total` reported the cap
+      // rather than the number of matches.
+      const result = await AuditService.getAuditLogs(filters, page, limit, sort, query);
 
       res.json(result);
     } catch (err: any) {
@@ -98,28 +94,9 @@ export function auditRoutes(): express.Router {
   router.get("/api/audit-logs/stats", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
 
-      const result = await AuditService.getAuditLogs({}, 1, 10000);
-      const total = result.total;
-      const critical = result.data.filter((l: any) => l.severity.toLowerCase() === "critical").length;
-      const warning = result.data.filter((l: any) => l.severity.toLowerCase() === "warning").length;
-
-      const uniqueUsersSet = new Set(result.data.map((l: any) => l.userId).filter(Boolean));
-      const activeUsers = uniqueUsersSet.size || 1;
-
-      const lastLog = result.data[0];
-      let lastUpdated = "-";
-      if (lastLog) {
-        const d = new Date(lastLog.timestamp);
-        lastUpdated = d.toLocaleTimeString('fa-IR', { hour12: false }) || d.toLocaleTimeString('en-US', { hour12: false });
-      }
-
-      res.json({
-        total,
-        critical,
-        warning,
-        activeUsers,
-        lastUpdated
-      });
+      // Counted in SQL. This used to read ten thousand full rows — both JSON
+      // payloads of each — to produce three integers and a clock time.
+      res.json(await AuditService.getStats());
     } catch (err: any) {
       console.error("Failed to fetch audit stats:", err);
       console.error("[audit] request failed:", err);
@@ -130,13 +107,8 @@ export function auditRoutes(): express.Router {
   router.get("/api/audit-logs/filters", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
 
-      const result = await AuditService.getAuditLogs({}, 1, 10000);
-      const uniqueUsers = Array.from(new Set(result.data.map((l: any) => l.userName || l.userId).filter(Boolean)));
-      const uniqueModules = Array.from(new Set(result.data.map((l: any) => l.module).filter(Boolean)));
-      res.json({
-        uniqueUsers,
-        uniqueModules
-      });
+      // Distinct values off the index, not a full table read.
+      res.json(await AuditService.getFilterOptions());
     } catch (err: any) {
       console.error("Failed to fetch filter options:", err);
       res.status(500).json({ error: "Internal Server Error" });

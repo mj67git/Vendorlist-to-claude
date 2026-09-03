@@ -370,7 +370,12 @@ export const AuditTrailView: React.FC = () => {
 
   // Quick Action selection helper
   const [quickSeverityFilter, setQuickSeverityFilter] = useState<string | null>(null);
-  const [quickCategoryFilter, setQuickCategoryFilter] = useState<string>('all');
+  /*
+   * The "quick category" filter is gone. It was a piece of state that nothing
+   * ever set — no control in this view called its setter — and it was sent on
+   * every request as a `quickFilter` parameter that the PostgreSQL read path
+   * ignored outright. Two dead ends pointing at each other.
+   */
 
   // Backend integration states
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -468,7 +473,6 @@ export const AuditTrailView: React.FC = () => {
         group: filterGroup !== 'all' ? filterGroup : '',
         action: filterAction !== 'all' ? filterAction : '',
         severity: activeSeverity !== 'all' ? activeSeverity : '',
-        quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
         startDate: startDate ? jalaliToIso(startDate, 'start') : '',
         endDate: endDate ? jalaliToIso(endDate, 'end') : '',
         query: searchQuery,
@@ -523,7 +527,7 @@ export const AuditTrailView: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, quickSeverityFilter, quickCategoryFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
+  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, quickSeverityFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
 
   // Fetch metrics and filters
   const fetchStatsAndFilters = useCallback(async () => {
@@ -637,7 +641,6 @@ export const AuditTrailView: React.FC = () => {
     setStartDate('');
     setEndDate('');
     setQuickSeverityFilter(null);
-    setQuickCategoryFilter('all');
     setCurrentPage(1);
   };
 
@@ -650,6 +653,12 @@ export const AuditTrailView: React.FC = () => {
    * finding, not a failure, so the two are told apart.
    */
   const [exportNotice, setExportNotice] = useState<{ kind: 'empty' | 'error'; text: string } | null>(null);
+  /**
+   * Set when the export stopped at the row ceiling before reaching the end of
+   * the result. The spreadsheet is still produced — a partial export is useful
+   * — but it is never handed over as if it were complete.
+   */
+  const [truncatedExport, setTruncatedExport] = useState<{ taken: number; total: number } | null>(null);
   const handleExport = async () => {
     setIsExporting(true);
     try {
@@ -685,20 +694,47 @@ export const AuditTrailView: React.FC = () => {
           return true;
         });
       } else {
-        const params = new URLSearchParams({
-          page: '1', limit: '10000',
-          userId: filterUser !== 'all' ? filterUser : '',
-          module: filterModule !== 'all' ? filterModule : '',
-          group: filterGroup !== 'all' ? filterGroup : '',
-          action: filterAction !== 'all' ? filterAction : '',
-          severity: activeSev !== 'all' ? activeSev : '',
-          quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
-          startDate: startDate ? jalaliToIso(startDate, 'start') : '',
-          endDate: endDate ? jalaliToIso(endDate, 'end') : '',
-          query: searchQuery,
-        });
-        const res = await authFetch(`/api/audit-logs?${params.toString()}`);
-        if (res.ok) { const j = await res.json(); rows = (j.data || []).map(mapRow); }
+        /*
+         * Paged, because the server clamps `limit` to 200.
+         *
+         * This asked for `limit=10000` in one request and treated whatever came
+         * back as the whole result. The clamp is deliberate — one request must
+         * not pull a year of audit data into memory — so the export was silently
+         * capped at 200 rows and the spreadsheet claimed to be everything that
+         * matched the filters. In a GxP trail a short export that does not say
+         * it is short is the worst of the three possible outcomes.
+         */
+        const PAGE = 200;
+        const MAX_ROWS = 10000;
+        let page = 1;
+        let total = Infinity;
+        while (rows.length < Math.min(total, MAX_ROWS)) {
+          const params = new URLSearchParams({
+            page: String(page), limit: String(PAGE),
+            userId: filterUser !== 'all' ? filterUser : '',
+            module: filterModule !== 'all' ? filterModule : '',
+            group: filterGroup !== 'all' ? filterGroup : '',
+            action: filterAction !== 'all' ? filterAction : '',
+            severity: activeSev !== 'all' ? activeSev : '',
+            startDate: startDate ? jalaliToIso(startDate, 'start') : '',
+            endDate: endDate ? jalaliToIso(endDate, 'end') : '',
+            query: searchQuery,
+          });
+          const res = await authFetch(`/api/audit-logs?${params.toString()}`);
+          if (!res.ok) break;
+          const j = await res.json();
+          const batch = (j.data || []).map(mapRow);
+          rows = rows.concat(batch);
+          total = typeof j.total === 'number' ? j.total : rows.length;
+          // A short page means the end, whatever the reported total says.
+          if (batch.length < PAGE) break;
+          page += 1;
+        }
+        if (rows.length < total) {
+          setTruncatedExport({ taken: rows.length, total });
+        } else {
+          setTruncatedExport(null);
+        }
       }
       if (rows.length === 0) {
         setExportNotice({ kind: 'empty', text: 'با فیلترهای فعلی رکوردی برای خروجی پیدا نشد.' });
@@ -759,6 +795,20 @@ export const AuditTrailView: React.FC = () => {
             <span className="text-2xs text-rose-500 font-medium">خطای بحرانی:</span>
             <span className="text-xs font-bold font-mono text-rose-700">{stats.critical}</span>
           </div>
+
+          {truncatedExport && (
+            <div
+              role="status"
+              className="w-full md:w-auto flex items-start gap-2 px-3 py-1.5 rounded-xl text-2xs font-bold border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>
+                خروجی شامل {truncatedExport.taken.toLocaleString('fa-IR')} رکورد از
+                {' '}{truncatedExport.total.toLocaleString('fa-IR')} رکورد منطبق است. برای دریافت
+                کامل، بازهٔ تاریخ را باریک‌تر کنید.
+              </span>
+            </div>
+          )}
 
           {exportNotice && (
             <div
