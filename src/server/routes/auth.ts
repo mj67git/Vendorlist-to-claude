@@ -5,6 +5,7 @@ import { AuditService } from "../../utils/auditService.js";
 import { effectivePermissions, hasCustomPermissions } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth } from "../http/auth.js";
+import { setCurrentSession } from "../http/requestContext.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
@@ -274,11 +275,16 @@ export function authRoutes(): express.Router {
     // `sid` names this sign-in. It is what lets the trail say that a run of
     // changes came from one session rather than only from one account, and it
     // is minted here because that is the only moment a session begins.
+    const sessionId = crypto.randomUUID();
     const token = jwt.sign(
-      { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, sid: crypto.randomUUID() },
+      { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, sid: sessionId },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
+    // The sign-in record belongs to the session it starts. Without this the one
+    // record that says when a session began would be the only record of that
+    // session with no way to tie it to the changes that followed.
+    setCurrentSession(sessionId);
 
     // Read the previous sign-in before overwriting it: what a person wants to
     // see when they log in is when they were *last* here, not the moment they

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  computeFieldDiff, computeFieldDiffDetailed, hasRecordedValue,
+  computeFieldDiff, computeFieldDiffDetailed, hasRecordedValue, toAuditLog,
 } from '../src/components/AuditTrailView';
 
 /**
@@ -100,4 +100,35 @@ test('a permission is named the way the access dialog names it', () => {
   );
   assert.equal(row.label, 'دسترسی‌ها');
   assert.equal(row.to, 'امتیازدهی مالی و حسابداری', 'not the stored name `score.finance`');
+});
+
+
+/**
+ * One mapping from an API row to what the panel shows.
+ *
+ * The table's page of rows and a related event opened from inside the panel go
+ * through the same function, so the same record cannot describe itself
+ * differently depending on which list it was reached from.
+ */
+test('an API row keeps its outcome and its session', () => {
+  const row = toAuditLog({
+    id: 'A1', timestamp: '2026-09-03T10:00:00.000Z', userName: 'محسن',
+    module: 'Source Management', action: 'Update - Blocked', severity: 'Warning',
+    entityName: 'سورس الف', result: 'Blocked', sessionId: 'sess-1',
+  });
+  assert.equal(row.result, 'Blocked');
+  assert.equal(row.sessionId, 'sess-1');
+  assert.equal(row.recordName, 'سورس الف');
+});
+
+test('a record written before those columns existed claims neither', () => {
+  const row = toAuditLog({
+    id: 'A2', timestamp: '2026-09-03T10:00:00.000Z', module: 'System',
+    action: 'Update', severity: 'Information',
+  });
+  // Empty, not "Success": the outcome of an old record is unknown, and the
+  // panel prints nothing rather than a guess.
+  assert.equal(row.result, '');
+  assert.equal(row.sessionId, '');
+  assert.equal(row.user, 'سیستم');
 });

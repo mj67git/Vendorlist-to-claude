@@ -45,6 +45,10 @@ export interface AuditLog {
   eventType?: string;
   ipAddress?: string;
   userAgent?: string;
+  /** Did the action happen: Success, Failed or Blocked. Absent on older rows. */
+  result?: string;
+  /** The sign-in the action came from. Absent for tokens issued before sessions were identified. */
+  sessionId?: string;
 }
 
 // Persian helper maps
@@ -81,6 +85,21 @@ const severityLabels: Record<string, { label: string; bg: string; text: string; 
   Info: { label: 'عادی (Info)', bg: 'bg-muted text-foreground border-border', text: 'text-foreground', icon: InfoIcon },
   Warning: { label: 'هشدار (Warning)', bg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900', text: 'text-amber-700', icon: AlertTriangle },
   Critical: { label: 'بحرانی (Critical)', bg: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900', text: 'text-rose-700', icon: ShieldAlert }
+};
+
+/**
+ * Did the action happen?
+ *
+ * Kept apart from severity on purpose: severity says how much this matters,
+ * result says whether it took effect. A blocked delete of a critical record is
+ * both critical and refused, and reading either one off the other loses half
+ * the fact. Older records carry no result and show nothing rather than a
+ * guessed "success".
+ */
+const resultLabels: Record<string, { label: string; className: string }> = {
+  Success: { label: 'انجام شد', className: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900' },
+  Failed: { label: 'ناموفق', className: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900' },
+  Blocked: { label: 'مسدود شد', className: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900' },
 };
 
 function InfoIcon(props: any) {
@@ -342,6 +361,41 @@ export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDif
   return computeFieldDiffDetailed(before, after, prefix).rows;
 }
 
+/**
+ * One audit row as the API returns it, in the shape this view renders.
+ *
+ * Written once and used by both readers: the table's page of rows, and a
+ * related event opened from inside the detail panel. Two copies of this
+ * mapping would be two chances for the panel to describe a record differently
+ * depending on which list it was reached from.
+ */
+export function toAuditLog(l: any): AuditLog {
+  const d = new Date(l.timestamp || l.createdAt);
+  return {
+    id: l.id,
+    date: d.toLocaleDateString('fa-IR'),
+    time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    user: l.userName || l.userId || 'سیستم',
+    role: l.role || 'user',
+    module: l.module,
+    action: l.action,
+    recordName: l.entityName || l.entityId || 'مشخصات',
+    severity: l.severity === 'Critical' ? 'Critical' : l.severity === 'Warning' ? 'Warning' : 'Info',
+    description: l.description || '',
+    before: l.beforeData,
+    after: l.afterData,
+    reason: l.reasonForChange || 'تایید فرآیندی',
+    correlationId: l.correlationId || 'N/A',
+    eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
+    // Read from the record's own columns; the `afterData` lookups are the
+    // fallback for rows written before those columns existed.
+    ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '—',
+    userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || '—',
+    result: l.result || '',
+    sessionId: l.sessionId || '',
+  };
+}
+
 export const AuditTrailView: React.FC = () => {
   // Navigation & view states
   const [searchQuery, setSearchQuery] = useState('');
@@ -384,6 +438,16 @@ export const AuditTrailView: React.FC = () => {
   const [apiUsers, setApiUsers] = useState<string[]>([]);
   const [apiModules, setApiModules] = useState<string[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  /**
+   * The rest of the chain the open record belongs to.
+   *
+   * One save routinely writes several records — the edit, the risk assessment
+   * it carried, the recalculation that followed — and until every record
+   * written for one request started sharing that request's identifier, this
+   * question had no answer in the data. `null` means "not asked yet", an empty
+   * array means "asked, and this event stands alone".
+   */
+  const [relatedEvents, setRelatedEvents] = useState<any[] | null>(null);
   const [stats, setStats] = useState({
     total: 0,
     critical: 0,
@@ -487,37 +551,7 @@ export const AuditTrailView: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
         
-        const formattedData = result.data.map((l: any) => {
-          const d = new Date(l.timestamp || l.createdAt);
-          const persianDate = d.toLocaleDateString('fa-IR');
-          const persianTime = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          
-          let cleanSeverity = 'Info';
-          if (l.severity === 'Critical') cleanSeverity = 'Critical';
-          if (l.severity === 'Warning') cleanSeverity = 'Warning';
-
-          return {
-            id: l.id,
-            date: persianDate,
-            time: persianTime,
-            user: l.userName || l.userId || 'سیستم',
-            role: l.role || 'user',
-            module: l.module,
-            action: l.action,
-            recordName: l.entityName || l.entityId || 'مشخصات',
-            severity: cleanSeverity,
-            description: l.description || '',
-            before: l.beforeData,
-            after: l.afterData,
-            reason: l.reasonForChange || 'تایید فرآیندی',
-            correlationId: l.correlationId || 'N/A',
-            eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
-            // Read from the record's own columns; the `afterData` lookups are
-            // the fallback for rows written before those columns existed.
-            ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '—',
-            userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || '—',
-          };
-        });
+        const formattedData = result.data.map(toAuditLog);
 
         setLogs(formattedData);
         setTotalItems(result.total || 0);
@@ -597,6 +631,13 @@ export const AuditTrailView: React.FC = () => {
   const handleOpenDrawer = async (log: AuditLog) => {
     setSelectedLog(log);
     setIsLoadingDetail(true);
+    setRelatedEvents(null);
+    // The chain is a second, independent read: a failure to load it must not
+    // take the change itself down with it.
+    authFetch(`/api/audit-logs/${log.id}/related`)
+      .then(res => (res.ok ? res.json() : { data: [] }))
+      .then(j => setRelatedEvents(Array.isArray(j.data) ? j.data : []))
+      .catch(() => setRelatedEvents([]));
     try {
       const response = await authFetch(`/api/audit-logs/${log.id}`);
       if (response.ok) {
@@ -608,7 +649,9 @@ export const AuditTrailView: React.FC = () => {
             before: l.beforeData,
             after: l.afterData,
             reason: l.reasonForChange || prev.reason,
-            correlationId: l.correlationId || prev.correlationId
+            correlationId: l.correlationId || prev.correlationId,
+            result: l.result || prev.result,
+            sessionId: l.sessionId || prev.sessionId,
           };
         });
       }
@@ -1171,14 +1214,24 @@ export const AuditTrailView: React.FC = () => {
                   {selectedLog.user} · <span className="font-mono">{selectedLog.date} {selectedLog.time}</span>
                 </span>
               </div>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setSelectedLog(null)}
-                className="bg-card text-muted-foreground"
-              >
-                <X />
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Whether it took effect, next to what was attempted. A refused
+                    attempt used to be readable only by noticing the wording of
+                    the action label. */}
+                {selectedLog.result && resultLabels[selectedLog.result] && (
+                  <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border ${resultLabels[selectedLog.result].className}`}>
+                    {resultLabels[selectedLog.result].label}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setSelectedLog(null)}
+                  className="bg-card text-muted-foreground"
+                >
+                  <X />
+                </Button>
+              </div>
             </div>
 
             {/* Drawer Content */}
@@ -1295,6 +1348,55 @@ export const AuditTrailView: React.FC = () => {
               </div>
 
 
+              {/* What else happened because of the same action.
+
+                  One save writes several records: the edit, the risk assessment
+                  it carried, the recalculation that followed. They now share the
+                  identifier of the request that produced them, so the sequence
+                  is a lookup rather than a guess from adjacent timestamps.
+                  Shown oldest first, because the answer is an order of events.
+
+                  Rendered only when there is something to show — an event that
+                  stands alone should not get an empty heading explaining that it
+                  stands alone. */}
+              {relatedEvents !== null && relatedEvents.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-foreground">در پی همین اقدام</span>
+                    <span className="text-2xs font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
+                      {relatedEvents.length.toLocaleString('fa-IR')} رویداد دیگر
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {relatedEvents.map((r: any) => {
+                      const when = new Date(r.timestamp || r.createdAt);
+                      const meta = actionLabels[r.action];
+                      return (
+                        <li key={r.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDrawer(toAuditLog(r))}
+                            className="w-full text-right bg-muted/40 hover:bg-accent border border-border rounded-lg p-2.5 transition-colors flex items-center justify-between gap-2"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="text-2xs font-bold text-foreground block truncate">
+                                {(meta?.label) || r.action} · {r.entityName || r.entityId || 'مشخصات'}
+                              </span>
+                              <span className="text-2xs text-muted-foreground block truncate">
+                                {AUDIT_MODULE_LABELS[r.module] || r.module}
+                              </span>
+                            </span>
+                            <span className="text-2xs font-mono text-muted-foreground shrink-0">
+                              {when.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
               {/* Context, folded away: the same facts, one click from the change. */}
               <details className="group border border-border rounded-xl bg-muted/30">
                 <summary className="cursor-pointer select-none px-4 py-2.5 text-2xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-2">
@@ -1324,8 +1426,17 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                   {hasRecordedValue(selectedLog.correlationId) && (
                     <div className="space-y-0.5 pt-2 border-t border-border/50 col-span-2">
-                      <span className="text-2xs text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
+                      <span className="text-2xs text-muted-foreground font-bold block">شناسهٔ درخواست (Correlation):</span>
                       <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.correlationId}</span>
+                    </div>
+                  )}
+                  {/* Which sign-in this came from. Empty on records written
+                      before sessions carried an identifier — those really had
+                      none, so the row is not printed at all. */}
+                  {hasRecordedValue(selectedLog.sessionId) && (
+                    <div className="space-y-0.5 pt-2 border-t border-border/50 col-span-2">
+                      <span className="text-2xs text-muted-foreground font-bold block">شناسهٔ نشست (Session):</span>
+                      <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.sessionId}</span>
                     </div>
                   )}
                 </div>
