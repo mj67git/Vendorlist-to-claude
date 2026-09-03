@@ -1061,10 +1061,18 @@ export default function App() {
     // read-modify-write of the vendor, so two in flight at once means the
     // slower one writes back its stale copy of the other's data — which is how
     // a deleted lab result used to reappear after a reload.
-    const syncQueue: Array<() => Promise<unknown>> = [];
+    /*
+     * Each entry is handed the `updatedAt` the caller is claiming to have
+     * edited, and the server refuses with 409 if the row has moved on since
+     * (`staleCopy` in the vendor routes). The value has to be threaded through
+     * the queue rather than fixed once: this save may send several PATCHes, and
+     * each one moves the row's timestamp, so the second would otherwise arrive
+     * claiming a copy its own predecessor had just replaced.
+     */
+    const syncQueue: Array<(expectedUpdatedAt: string | null) => Promise<any>> = [];
 
     if (profileChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/profile`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/profile`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1082,65 +1090,71 @@ export default function App() {
           initialSampleStatus: normalized.initialSampleStatus,
           manufacturerId: normalized.manufacturerId ?? null,
           supplierId: normalized.supplierId ?? null,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (contactChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/contact`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/contact`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contactInfo: normalized.contactInfo,
           lastAudit: normalized.lastAudit,
           ircExpiryDate: normalized.ircExpiryDate,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (scoresChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/scores`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/scores`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scores: normalized.scores,
           rawScores: normalized.rawScores,
           rejectionReasons: normalized.rejectionReasons,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (analysisChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/analysis`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/analysis`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analysisRecords: normalized.analysisRecords,
           activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     } else if (logsChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/logs`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/logs`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
 
     if (riskChanged) {
-      syncQueue.push(() => authWrite(`/api/vendors/${normalized.id}/risk`, {
+      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/risk`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           riskAssessment: normalized.riskAssessment,
-          reasonForChange: normalized.reasonForChange
+          reasonForChange: normalized.reasonForChange,
+          expectedUpdatedAt
         })
       }));
     }
@@ -1157,8 +1171,28 @@ export default function App() {
      */
     void (async () => {
       try {
+        // What this save was based on. `original` is the copy that was on
+        // screen when the form was opened, so its timestamp is exactly the
+        // claim the server has to check. Absent (a record this session has
+        // never read) means no claim, and the write behaves as it always did.
+        let expected: string | null = typeof (original as any)?.updatedAt === 'string'
+          ? (original as any).updatedAt
+          : null;
         for (const send of syncQueue) {
-          await send();
+          const saved = await send(expected);
+          // Each PATCH answers with the row it wrote, so the next one in this
+          // queue claims that instead of the copy we started from.
+          const next = saved?.vendor?.updatedAt;
+          expected = typeof next === 'string' ? next : null;
+        }
+        // Carry the row's new timestamp into the copy on screen. Without this
+        // the next edit in this session would claim the timestamp from before
+        // this save and be refused as stale — a conflict with nobody on the
+        // other side of it.
+        if (expected) {
+          const stamp = expected;
+          setDb(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
+          updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
         }
       } catch (err: any) {
         const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
