@@ -56,6 +56,10 @@ export function auditRoutes(): express.Router {
       }
       if (req.query.action && req.query.action !== "all") filters.action = req.query.action as string;
       if (req.query.severity && req.query.severity !== "all") filters.severity = req.query.severity as string;
+      // Outcome: Success, Failed or Blocked. A refusal is the most interesting
+      // record in the trail and used to be findable only by knowing that the
+      // word "Blocked" had been spelled into the free-text action column.
+      if (req.query.result && req.query.result !== "all") filters.result = req.query.result as string;
       if (req.query.entityId) filters.entityId = req.query.entityId as string;
       if (req.query.correlationId) filters.correlationId = req.query.correlationId as string;
       // An unparseable date used to become `Invalid Date` and blow up the query

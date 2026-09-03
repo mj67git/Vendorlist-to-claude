@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { AuditService } from "../../utils/auditService.js";
 import { effectivePermissions, hasCustomPermissions } from "../../utils/permissions.js";
@@ -270,8 +271,11 @@ export function authRoutes(): express.Router {
     }
 
     // Sign the JWT securely
+    // `sid` names this sign-in. It is what lets the trail say that a run of
+    // changes came from one session rather than only from one account, and it
+    // is minted here because that is the only moment a session begins.
     const token = jwt.sign(
-      { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name },
+      { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, sid: crypto.randomUUID() },
       JWT_SECRET,
       { expiresIn: "7d" }
     );

@@ -26,6 +26,8 @@ import crypto from "node:crypto";
  */
 interface RequestContext {
   correlationId: string;
+  /** The sign-in behind the request, once a token has been verified. */
+  sessionId?: string;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -52,4 +54,18 @@ export function requestContext(req: any, res: any, next: () => void): void {
  */
 export function currentCorrelationId(): string | null {
   return storage.getStore()?.correlationId ?? null;
+}
+
+/**
+ * Record which sign-in this request came from. Called by `requireAuth` once the
+ * token verifies, so an unauthenticated request never carries one.
+ */
+export function setCurrentSession(sessionId: string | null | undefined): void {
+  const store = storage.getStore();
+  if (store && sessionId) store.sessionId = sessionId;
+}
+
+/** The sign-in behind the current request, or `null` if there is none. */
+export function currentSessionId(): string | null {
+  return storage.getStore()?.sessionId ?? null;
 }

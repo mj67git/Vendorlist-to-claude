@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { severityMatches } from "./auditTaxonomy.js";
-import { currentCorrelationId } from "../server/http/requestContext.js";
+import { currentCorrelationId, currentSessionId } from "../server/http/requestContext.js";
 
 // Types for Audit Log Service
 export interface AuditLogFilters {
@@ -15,6 +15,8 @@ export interface AuditLogFilters {
   eventType?: string;
   action?: 'Create' | 'Update' | 'Delete' | 'Restore' | 'Archive' | 'System Update' | 'System Calculation' | 'LOGIN' | 'LOGOUT' | 'FAILED_LOGIN' | 'ROLE_CHANGE' | 'PERMISSION_CHANGE' | 'CREATE_USER' | 'UPDATE_USER' | 'DELETE_USER' | string;
   severity?: 'Information' | 'Warning' | 'Critical' | string;
+  /** Did the action happen: `Success`, `Failed` or `Blocked`. */
+  result?: 'Success' | 'Failed' | 'Blocked' | string;
   entityId?: string;
   correlationId?: string;
   startDate?: Date;
@@ -41,6 +43,11 @@ export interface CreateAuditInput {
   reasonForChange?: string;
   beforeData?: any;
   afterData?: any;
+  /**
+   * Did it happen? Omit it and the outcome is derived from the action, which is
+   * where it used to be expressed by convention — see `resultFor`.
+   */
+  result?: 'Success' | 'Failed' | 'Blocked' | string;
 }
 
 function isValidPostgresUrl(url?: string | null): boolean {
@@ -144,6 +151,27 @@ function saveJsonLogs(logs: any[]): void {
   }
 }
 
+/**
+ * The outcome of an action, from the vocabulary the action is written in.
+ *
+ * The trail recorded refusals — a delete stopped by a business rule, a sign-in
+ * with the wrong password — but said so only inside the free text of `action`:
+ * "Delete - Blocked", "FAILED_LOGIN". A reviewer filtering for refusals had to
+ * know that convention and spell it exactly, and any new handler was free to
+ * invent a different wording. Derived in one place so the 47 write sites keep
+ * saying what happened in the way they already do, and a caller that knows
+ * better passes `result` explicitly.
+ */
+export function resultFor(action: string, explicit?: string): string {
+  if (explicit) return explicit;
+  const a = (action || "").toLowerCase();
+  if (a.includes("blocked")) return "Blocked";
+  // `Reject` is deliberately absent: a QC rejection is an action that
+  // succeeded and whose subject is a rejection, not an action that failed.
+  if (a.includes("failed")) return "Failed";
+  return "Success";
+}
+
 export class AuditService {
   /**
    * Create a new audit log record
@@ -196,6 +224,8 @@ export class AuditService {
           // Falls back to the request's own identifier, so every record written
           // while handling one call shares one chain. See requestContext.ts.
           correlationId: input.correlationId || currentCorrelationId(),
+          sessionId: currentSessionId(),
+          result: resultFor(input.action, input.result),
           userId: input.userId || null,
           userName: input.userName || null,
           role: input.role || null,
@@ -281,6 +311,7 @@ export class AuditService {
       if (filters.module && filters.module !== "all") where.module = filters.module;
       else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
       if (filters.action && filters.action !== "all") where.action = filters.action;
+      if (filters.result && filters.result !== "all") where.result = filters.result;
       // `Info` and `Information` are the same level; see auditTaxonomy.ts.
       if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
       if (filters.entityId) where.entityId = filters.entityId;
