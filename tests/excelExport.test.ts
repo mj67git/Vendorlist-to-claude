@@ -23,6 +23,7 @@ function cell(ws: XLSX.WorkSheet, r: number, c: number): any {
 }
 
 const COL_SCORE = 13, COL_RISK = 14, COL_SCORE_NUM = 20;
+const COL_ROLE = 4;
 const HEADER = 0, FIRST_ROW = 1; // no filter caption in these fixtures
 
 test('the grade and risk columns are the ones that get coloured', () => {
@@ -128,4 +129,42 @@ test('the generated workbook really opens right-to-left', () => {
   const xml = String(XL.write(wb, { bookType: 'xlsx', type: 'buffer' }).toString('latin1'));
   assert.ok(xml.includes('rightToLeft'), 'the workbook must declare RTL');
   assert.ok(xml.includes('autoFilter'), 'and carry the AutoFilter');
+});
+
+test('the role column reads the way the form reads, not the way the column stores', () => {
+  // `Reagent / Reactant` and `Packaging Item` are persisted spellings that must
+  // not be renamed — every generated standard name uses them — but the whole
+  // interface calls them «Reagent» and «Packaging». The export printed the
+  // stored value, so one sheet disagreed with every screen in the application.
+  const material = {
+    id: 'M-1', nameFa: 'استون', nameEn: 'Acetone', cas: '67-64-1',
+    role: 'Reagent / Reactant',
+  } as any;
+
+  const { ws } = buildCategoryWorksheet(
+    [vendor({ materialId: 'M-1', material: 'استون', materialEn: 'Acetone', cas: '67-64-1' })],
+    'all', [], [material],
+  );
+
+  assert.equal(cell(ws, HEADER, COL_ROLE).v, 'نقش ماده');
+  assert.equal(cell(ws, FIRST_ROW, COL_ROLE).v, 'Reagent');
+});
+
+test('a legacy role spelling still exports as the label, and a missing one is not invented', () => {
+  const legacy = { id: 'M-2', nameFa: 'کارتن', nameEn: 'Carton', cas: 'N/A', role: 'packaging' } as any;
+  const unset = { id: 'M-3', nameFa: 'ماده', nameEn: 'Thing', cas: 'N/A' } as any;
+
+  const { ws } = buildCategoryWorksheet(
+    [
+      vendor({ id: 'v2', materialId: 'M-2', material: 'کارتن', materialEn: 'Carton' }),
+      vendor({ id: 'v3', materialId: 'M-3', material: 'ماده', materialEn: 'Thing' }),
+    ],
+    'all', [], [legacy, unset],
+  );
+
+  const rows = [cell(ws, FIRST_ROW, COL_ROLE).v, cell(ws, FIRST_ROW + 1, COL_ROLE).v];
+  assert.ok(rows.includes('Packaging'), 'an older spelling maps onto its label');
+  // A material with no role recorded must say so rather than defaulting to API,
+  // which is what the role lookup returns for an empty value.
+  assert.ok(rows.includes('ثبت‌نشده'), 'an unrecorded role stays unrecorded');
 });
