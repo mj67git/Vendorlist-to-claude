@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, CheckCircle, KeyRound, Loader2,
+  AlertCircle, AlertTriangle, CheckCircle, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -1139,6 +1139,21 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   );
                 })}
               </div>
+
+              {/* Saving nothing is not "no access": an empty list is how the
+                  record says "follow the role", so this would come back looking
+                  unchanged. Say it here rather than let the dialog appear to
+                  lose the change. */}
+              {permDraft.length === 0 && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <p className="text-2xs leading-relaxed text-amber-800 dark:text-amber-200">
+                    هیچ اختیاری انتخاب نشده است. ذخیره در این حالت یعنی «پیروی از الگوی سمت
+                    {' '}({ROLE_LABELS[permTarget.role] || permTarget.role})»، نه سلب کامل دسترسی.
+                    برای قطع دسترسی، حساب کاربری را غیرفعال کنید.
+                  </p>
+                </div>
+              )}
 
               <p className="text-2xs text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
                 خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
