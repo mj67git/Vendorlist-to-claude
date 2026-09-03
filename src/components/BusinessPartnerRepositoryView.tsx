@@ -2002,29 +2002,39 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
                 </div>
 
-                {/* 2. Supplier Evaluation Summary Card */}
-                <div className="p-4 bg-foreground text-background rounded-2xl border border-border shadow-lg space-y-3">
-                  <div className="flex items-center justify-between border-b border-background/20 pb-2">
+                {/* 2. Supplier Evaluation Summary Card
+
+                    This card is deliberately inverted — a dark plate that
+                    lifts the grade out of the page. It used to say
+                    `bg-foreground text-background`, which inverts with the
+                    theme: in dark mode `foreground` is near-white, so the
+                    plate turned light and the text on it dark, and the one
+                    block meant to stand out was the only bright thing on a
+                    dark page. Fixed slate values keep the same plate in both
+                    themes; this is the exception rule 7 allows for a surface
+                    that is not supposed to follow the theme. */}
+                <div className="p-4 bg-slate-900 text-slate-50 rounded-2xl border border-border shadow-lg space-y-3">
+                  <div className="flex items-center justify-between border-b border-white/20 pb-2">
                     <span className="text-xs font-bold flex items-center gap-1.5">
                       <Award className="w-4 h-4 shrink-0" />
                       <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
                     </span>
-                    <span className="text-2xs text-background/70 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
+                    <span className="text-2xs text-slate-300 font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
 
                   {selectedPartner.evaluation && selectedPartner.evaluation.grade !== 'Not Evaluated' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
+                      <div className="bg-white/10 border border-white/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-slate-300 font-bold block">مجموع امتیاز ارزیابی (Score)</span>
                         <div className="text-2xl font-black font-mono">
-                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
+                          {selectedPartner.evaluation.totalScore} <span className="text-xs text-slate-300">/ ۱۰۰</span>
                         </div>
                       </div>
 
                       {/* Grade */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
+                      <div className="bg-white/10 border border-white/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-slate-300 font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-3 py-0.5 rounded-lg font-mono font-black text-sm border ${getGradeBadgeClass(selectedPartner.evaluation.grade)}`}>
                             {selectedPartner.evaluation.grade === 'Pending Review' ? '🟡 Pending Review' :
@@ -2035,8 +2045,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
 
                       {/* Supplier Status */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">وضعیت Supplier Status</span>
+                      <div className="bg-white/10 border border-white/20 p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-slate-300 font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${describeGrade(selectedPartner.evaluation.grade).tone}`}>
                             {describeGrade(selectedPartner.evaluation.grade).en} ({describeGrade(selectedPartner.evaluation.grade).fa})
@@ -2045,9 +2055,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 bg-background/10 border border-background/20 rounded-xl text-center space-y-1">
+                    <div className="p-4 bg-white/10 border border-white/20 rounded-xl text-center space-y-1">
                       <span className="font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
-                      <p className="text-2xs text-background/70">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
+                      <p className="text-2xs text-slate-300">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
                 </div>

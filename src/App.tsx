@@ -1929,8 +1929,14 @@ export default function App() {
                 </Button>
               )}
 
-              {/* Live clock, in the top-left beside the account box. */}
-              <div className="hidden sm:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
+              {/* Live clock, in the top-left beside the account box.
+                  Shown from `lg` up, not `sm`: from `md` the fixed 272px
+                  sidebar leaves the header roughly 460–650px, and this chip
+                  alone is 276px of it. None of the items in this row can
+                  shrink, so between 768px and ~950px the whole cluster —
+                  account box included — was pushed off the left edge of the
+                  window and clipped, unreachable. */}
+              <div className="hidden lg:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
                 <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
                 <span className="text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
