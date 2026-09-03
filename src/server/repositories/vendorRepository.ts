@@ -154,6 +154,44 @@ export async function countVendors(): Promise<number> {
   return requirePrisma().vendor.count();
 }
 
+/**
+ * Which sources changed since a moment, and how many exist now.
+ *
+ * The client holds the whole register in memory and, until this existed, only
+ * ever re-read it on a failed write — so a second operator worked from the
+ * snapshot they logged in with and never saw anybody else's edits without
+ * pressing reload. This is the cheap question a poll can ask every half minute:
+ * two indexed reads, ids and timestamps only, no vendor bodies.
+ *
+ * `total` covers what `updatedAt` cannot. A deleted row leaves no timestamp
+ * behind, so a caller whose count no longer matches knows to re-read the list
+ * even when nothing came back as changed.
+ *
+ * `take` is capped because the answer is a signal, not a payload: a caller that
+ * has been away long enough to miss more than this needs a full re-read anyway,
+ * which `total` and the sheer size of the list already tell it.
+ */
+export async function getVendorChangesSince(
+  since: Date | null,
+): Promise<{ changed: { id: string; updatedAt: string }[]; total: number }> {
+  const prisma = requirePrisma();
+  const [rows, total] = await Promise.all([
+    since
+      ? prisma.vendor.findMany({
+          where: { updatedAt: { gt: since } },
+          select: { id: true, updatedAt: true },
+          orderBy: { updatedAt: "asc" },
+          take: 500,
+        })
+      : Promise.resolve([] as { id: string; updatedAt: Date }[]),
+    prisma.vendor.count(),
+  ]);
+  return {
+    changed: rows.map(r => ({ id: r.id, updatedAt: r.updatedAt.toISOString() })),
+    total,
+  };
+}
+
 export async function getVendorsList(vendorId?: string, window?: VendorPage): Promise<any[]> {
   const prisma = requirePrisma();
   {

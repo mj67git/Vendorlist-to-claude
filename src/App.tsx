@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
@@ -674,6 +674,20 @@ export default function App() {
       setToastAction(null);
     }, life);
   };
+  /**
+   * How many changes other people made while a form on this screen was dirty.
+   * Zero means there is nothing to offer; the bar under the header shows the
+   * rest. See the background-sync effect below.
+   */
+  const [remoteChangeCount, setRemoteChangeCount] = useState(0);
+  /** The server's clock at the last poll — the `since` of the next one. */
+  const syncCursorRef = useRef<string | null>(null);
+  /** How many sources the server had at the last poll, which is how a deletion is noticed. */
+  const knownTotalRef = useRef<number | null>(null);
+  /** Sources this session wrote since the last poll, so we are not told about our own work. */
+  const ownWritesRef = useRef<Set<string>>(new Set());
+  /** Set below, next to the function itself — the effect above runs before it is defined. */
+  const resyncRef = useRef<((focusVendorId?: string) => Promise<void>) | null>(null);
   const [isSyncing, setIsSyncing] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // In local/demo mode the backend is intentionally absent — never show the
@@ -740,6 +754,92 @@ export default function App() {
     if (!isLocalMode()) return 0;
     try { return readLocalAudit().filter((l: any) => l.severity === 'Critical').length; } catch { return 0; }
   }, [db, businessPartners, materials]);
+
+  /**
+   * Background sync — how a second operator sees the first one's work.
+   *
+   * The register is fetched once at sign-in and, before this, re-read only
+   * after a refused write, so two people working at the same time each saw the
+   * snapshot they arrived with until somebody pressed reload. Every half minute
+   * this asks the server the cheap question (`GET /api/vendors/changes`: ids,
+   * timestamps and a count) and acts on the answer.
+   *
+   * Two rules govern what it does with it, and they are the point of the
+   * design:
+   *
+   *   1. **An edit in progress is never thrown away.** When the unsaved-changes
+   *      guard says a form is dirty, nothing is refetched: a bar appears
+   *      offering the update, and the operator takes it when they are ready.
+   *      Refreshing under a half-typed evaluation would lose real work.
+   *   2. **The page never jumps.** A silent refetch replaces the data behind
+   *      the current view — including the record open on screen, refreshed in
+   *      place through the history stack — and navigates nowhere.
+   *
+   * Our own writes are filtered out by id: they come back as changes like any
+   * other, and without this the operator who just saved would be told their own
+   * record changed. The set is cleared each poll, so somebody else's later
+   * change to the same record is still seen.
+   *
+   * `since` is always the server's clock, never the browser's — two machines
+   * disagree, and a browser running fast would ask for a window that has not
+   * happened yet and miss every write inside it.
+   */
+  useEffect(() => {
+    if (!currentUser || isLocalMode() || !can(currentUser, 'vendor.read')) return;
+
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || document.hidden) return;
+      try {
+        const since = syncCursorRef.current;
+        const res = await authFetch(`/api/vendors/changes${since ? `?since=${encodeURIComponent(since)}` : ''}`);
+        if (!res.ok || stopped) return;
+        const data = await res.json();
+        const firstPoll = syncCursorRef.current === null;
+        syncCursorRef.current = typeof data.serverTime === 'string' ? data.serverTime : syncCursorRef.current;
+
+        const previousTotal = knownTotalRef.current;
+        knownTotalRef.current = typeof data.total === 'number' ? data.total : previousTotal;
+
+        // The first poll only establishes the cursor. Without this, everything
+        // written before the session started would count as "new".
+        if (firstPoll) { ownWritesRef.current.clear(); return; }
+
+        const mine = ownWritesRef.current;
+        const changed = (Array.isArray(data.changed) ? data.changed : [])
+          .filter((c: any) => c && typeof c.id === 'string' && !mine.has(c.id));
+        ownWritesRef.current = new Set();
+
+        // A deletion leaves no timestamp behind, so the count is what reveals
+        // it — and a creation by someone else moves both.
+        const countMoved = previousTotal !== null && typeof data.total === 'number' && data.total !== previousTotal;
+        if (changed.length === 0 && !countMoved) return;
+
+        if (navGuardRef.current?.()) {
+          setRemoteChangeCount(n => n + Math.max(changed.length, countMoved ? 1 : 0));
+          return;
+        }
+        const stack = historyRef.current;
+        await resyncRef.current?.(stack[stack.length - 1]?.selectedVendor?.id);
+      } catch {
+        // A poll that fails changes nothing on screen: the cursor is untouched,
+        // so the next one asks for the same window again.
+      }
+    };
+
+    const timer = window.setInterval(poll, 30000);
+    // A tab that was in the background missed every tick; ask once on return
+    // rather than waiting out another interval.
+    const onVisible = () => { if (!document.hidden) void poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    void poll();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [currentUser]);
 
   if (!currentUser) {
     return <LoginView onLogin={setCurrentUser} />;
@@ -880,6 +980,9 @@ export default function App() {
 
   const handleUpdateVendor = (updatedVendor: Vendor, msg?: string | null) => {
     const normalized = normalizeAndCleanVendor(updatedVendor);
+    // Ours, so the next background poll does not announce this record back to
+    // the person who just saved it.
+    ownWritesRef.current.add(normalized.id);
     const original = db.find(v => v.id === normalized.id);
 
     setDb(db.map(v => v.id === normalized.id ? normalized : v));
@@ -1097,11 +1200,25 @@ export default function App() {
       if (focused) updateCurrentVendorInHistory(focused);
     } catch (err) {
       console.error('Could not re-read sources after a failed write:', err);
+    } finally {
+      // Whatever the outcome, the offer on screen is answered: either the list
+      // now matches the server, or the failure is logged and a later poll will
+      // ask again.
+      setRemoteChangeCount(0);
     }
   };
 
+  // The background-sync effect is declared above the sign-in early return, so
+  // it cannot see this function directly (hooks may not move below a return).
+  resyncRef.current = resyncVendorsFromServer;
+
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
     const removed = db.find(v => v.id === vendorId);
+    // Ours, so the next background poll does not announce this record back to
+    // the person who just saved it.
+    ownWritesRef.current.add(vendorId);
+    // Our own removal moves the register size too; re-baseline on the next poll.
+    knownTotalRef.current = null;
     setDb(db.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
     setToastMsg('سورس با موفقیت حذف شد!');
@@ -1138,6 +1255,10 @@ export default function App() {
    */
   const handleAddVendor = (newVendor: Vendor) => {
     const normalized = normalizeAndCleanVendor(newVendor);
+    // Ours: skip it in the next poll, and drop the count baseline so our own
+    // new row is not read as somebody else's change to the register size.
+    ownWritesRef.current.add(normalized.id);
+    knownTotalRef.current = null;
     setDb([normalized, ...db]);
     notify(
       `سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`,
@@ -2166,6 +2287,35 @@ export default function App() {
             <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--warning-main)]" />
             <span className="font-medium text-xs font-sans text-right">{loadError}</span>
             <button onClick={() => setLoadError(null)} className="mr-1 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)]" aria-label="بستن">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Somebody else changed the register while a form here was dirty.
+
+            An offer, not an action: refreshing under a half-finished
+            evaluation would throw away real work, so the operator decides when
+            to take it. Once no form is dirty the background sync goes back to
+            refreshing silently and this never appears. */}
+        {remoteChangeCount > 0 && (
+          <div
+            role="status"
+            className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] fade-in flex items-center gap-3 max-w-[92vw] bg-card border border-primary/40 text-card-foreground px-4 py-2.5 rounded-xl shadow-lg"
+          >
+            <RefreshCw className="w-4 h-4 shrink-0 text-primary" />
+            <span className="font-medium text-xs font-sans text-right">
+              {remoteChangeCount.toLocaleString('fa-IR')} تغییر تازه توسط کاربران دیگر ثبت شده است.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-2xs font-bold shrink-0"
+              onClick={() => { const stack = historyRef.current; void resyncVendorsFromServer(stack[stack.length - 1]?.selectedVendor?.id); }}
+            >
+              نمایش تغییرات
+            </Button>
+            <button onClick={() => setRemoteChangeCount(0)} className="text-muted-foreground hover:text-card-foreground" aria-label="بستن">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>

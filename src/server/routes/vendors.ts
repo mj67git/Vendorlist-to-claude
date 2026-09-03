@@ -21,7 +21,7 @@ import { getUserByUsername } from "../repositories/userRepository.js";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampInt } from "../http/query.js";
 import {
   countVendors, deleteVendorFromDb, getRankingSnapshot, getVendorById, getVendorRank,
-  getVendorsList, saveVendorToDb, serializeVendorWrites,
+  getVendorChangesSince, getVendorsList, saveVendorToDb, serializeVendorWrites,
 } from "../repositories/vendorRepository.js";
 
 /**
@@ -78,6 +78,34 @@ export function vendorRoutes(): express.Router {
     } catch (error: any) {
       console.error("Failed to fetch vendors:", error);
       res.status(500).json({ error: "Failed to fetch vendors" });
+    }
+  });
+
+  /**
+   * What changed since a moment — the poll that keeps a second operator's copy
+   * fresh without a page reload.
+   *
+   * Deliberately tiny: ids, timestamps and a count. The client decides what to
+   * do with the answer, because only the client knows whether somebody is in
+   * the middle of typing into a form (rule 8: an edit in progress is never
+   * thrown away by a background refresh).
+   *
+   * A missing or unparseable `since` answers with the count and an empty list
+   * rather than 400: the caller's next poll carries `serverTime` from this one,
+   * so a bad clock or a first call self-corrects instead of failing.
+   */
+  router.get("/api/vendors/changes", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
+    try {
+      const raw = typeof req.query.since === "string" ? new Date(req.query.since) : null;
+      const since = raw && !Number.isNaN(raw.getTime()) ? raw : null;
+      const { changed, total } = await getVendorChangesSince(since);
+      // The client's next `since` comes from here, not from its own clock: the
+      // two machines disagree, and a browser running a minute fast would ask
+      // for a window that has not happened yet and miss every write inside it.
+      res.json({ serverTime: new Date().toISOString(), total, changed });
+    } catch (error: any) {
+      console.error("Failed to read vendor changes:", error);
+      res.status(500).json({ error: "Failed to read vendor changes" });
     }
   });
 
