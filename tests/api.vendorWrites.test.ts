@@ -216,7 +216,15 @@ test('a refused write is itself recorded', SKIP, async () => {
   await api(`/api/vendors/${FIXTURE.vendorId}/profile`, {
     method: 'PATCH', token, body: profileBody({ irc: '99' }),
   });
-  const entries = await db().auditLog.count({ where: { entityId: FIXTURE.vendorId } });
+  // The audit write is dispatched without being awaited by the handler (a
+  // failure to log must not fail the request), so the row can land a moment
+  // after the response. Wait for it rather than racing it — this test failed
+  // roughly one run in ten for exactly that reason.
+  let entries = 0;
+  for (let attempt = 0; attempt < 20 && entries === 0; attempt++) {
+    entries = await db().auditLog.count({ where: { entityId: FIXTURE.vendorId } });
+    if (entries === 0) await new Promise(resolve => setTimeout(resolve, 50));
+  }
   assert.ok(entries >= 1, 'the attempt left a trace');
 });
 
