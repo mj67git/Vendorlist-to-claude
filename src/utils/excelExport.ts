@@ -17,6 +17,7 @@ import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } f
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
 import { calculateOverallScore } from './vendorUtils';
 import { canSupplySources } from './sopEvaluation';
+import { getMaterialRole } from '../constants/materialRoles';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
 
 /**
@@ -235,7 +236,13 @@ export function buildCategoryWorksheet(
       (m.nameEn && v.materialEn && m.nameEn.trim().toLowerCase() === v.materialEn.trim().toLowerCase())
     );
 
-    const roleStr = matItem?.role || NOT_RECORDED;
+    // The label the operator picked in the form, not the value the column
+    // stores. `Reagent / Reactant` and `Packaging Item` are persisted spellings
+    // that must not be renamed (every generated standard name uses them), and
+    // the whole interface shows them as «Reagent» and «Packaging». The export
+    // was the one place that leaked the stored form, so a sheet said
+    // "Reagent / Reactant" for a source the form calls "Reagent".
+    const roleStr = matItem?.role ? getMaterialRole(matItem.role).labelEn : NOT_RECORDED;
     const finalProductStr = matItem?.finalProduct || NOT_RECORDED;
     const standardNameFaStr = matItem?.standardNameFa || v.material || NOT_RECORDED;
     const standardNameEnStr = matItem?.standardNameEn || v.materialEn || NOT_RECORDED;
