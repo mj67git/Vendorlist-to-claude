@@ -29,6 +29,8 @@ export const SKIP = DATABASE_AVAILABLE
 export interface ApiResponse<T = any> {
   status: number;
   body: T;
+  /** Response headers, for the few facts the server states there rather than in the body. */
+  headers: Headers;
 }
 
 let server: http.Server | null = null;
@@ -78,13 +80,19 @@ export function db() {
 /** One request, with the token attached the way the client attaches it. */
 export async function api<T = any>(
   path: string,
-  options: { method?: string; token?: string | null; body?: unknown } = {},
+  options: {
+    method?: string;
+    token?: string | null;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<ApiResponse<T>> {
   const res = await fetch(`${baseUrl}${path}`, {
     method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      ...(options.headers || {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -94,7 +102,7 @@ export async function api<T = any>(
   } catch {
     body = null;
   }
-  return { status: res.status, body };
+  return { status: res.status, body, headers: res.headers };
 }
 
 export async function login(username: string, password = '123'): Promise<string> {

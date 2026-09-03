@@ -101,7 +101,6 @@ export function partnerRoutes(): express.Router {
 
       await AuditService.createAuditRecord({
         auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -144,7 +143,6 @@ export function partnerRoutes(): express.Router {
 
       await AuditService.createAuditRecord({
         auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -182,7 +180,6 @@ export function partnerRoutes(): express.Router {
       }
 
       const auditBase = {
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,

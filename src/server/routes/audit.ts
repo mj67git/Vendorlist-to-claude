@@ -115,6 +115,21 @@ export function auditRoutes(): express.Router {
     }
   });
 
+  /*
+   * The rest of the chain this event belongs to. See requestContext.ts: every
+   * record written while handling one request carries that request's id, so
+   * "what else happened because of this?" is a lookup rather than a guess.
+   *
+   * Registered before `/:id` so the more specific path is not swallowed by it.
+   */
+  router.get("/api/audit-logs/:id/related", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
+    try {
+      res.json({ data: await AuditService.getRelatedEvents(req.params.id) });
+    } catch (err: any) {
+      sendHandlerError(res, err);
+    }
+  });
+
   router.get("/api/audit-logs/:id", requireAuth, requirePermission("audit.read"), async (req: any, res) => {
     try {
 

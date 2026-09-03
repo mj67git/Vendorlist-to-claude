@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { severityMatches } from "./auditTaxonomy.js";
+import { currentCorrelationId } from "../server/http/requestContext.js";
 
 // Types for Audit Log Service
 export interface AuditLogFilters {
@@ -192,7 +193,9 @@ export class AuditService {
       const record = await prisma.auditLog.create({
         data: {
           auditId: input.auditId,
-          correlationId: input.correlationId || null,
+          // Falls back to the request's own identifier, so every record written
+          // while handling one call shares one chain. See requestContext.ts.
+          correlationId: input.correlationId || currentCorrelationId(),
           userId: input.userId || null,
           userName: input.userName || null,
           role: input.role || null,
@@ -533,6 +536,32 @@ export class AuditService {
    * showed a number that was not the number of matches. Text search is now a
    * parameter of `getAuditLogs`, which pages in SQL like every other read.
    */
+
+  /**
+   * The other records written by the same request as this one.
+   *
+   * This is what `correlationId` is for: a risk assessment saved by hand, the
+   * score recalculated from it and the grade that follows are three records of
+   * one action, and a reviewer asking "what else did this change?" should not
+   * have to guess from timestamps.
+   *
+   * Returned oldest first, because the answer is a sequence. The record asked
+   * about is left out — the caller already has it — and a record with no
+   * correlation id returns nothing rather than every other uncorrelated record
+   * in the table.
+   */
+  public static async getRelatedEvents(id: string, limit: number = 50): Promise<any[]> {
+    const prisma = requirePrisma();
+
+    const log = await this.getAuditById(id);
+    if (!log?.correlationId) return [];
+
+    return prisma.auditLog.findMany({
+      where: { correlationId: log.correlationId, NOT: { id: log.id } },
+      orderBy: { timestamp: "asc" },
+      take: Math.min(Math.max(1, limit), 200),
+    });
+  }
 
   /**
    * The three numbers above the table, counted in SQL.

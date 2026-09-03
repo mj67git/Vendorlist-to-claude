@@ -3,6 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 
 import { isValidPostgresUrl } from "./src/server/db/prisma.js";
+import { requestContext } from "./src/server/http/requestContext.js";
 import { securityHeaders } from "./src/server/http/securityHeaders.js";
 import { seedDefaultUsers } from "./src/server/repositories/userRepository.js";
 import { seedDefaultBusinessPartners } from "./src/server/repositories/partnerRepository.js";
@@ -37,6 +38,10 @@ async function startServer() {
   const app = express();
 
   securityHeaders(app);
+
+  // Before anything that could write an audit record: every record produced
+  // while handling one request shares that request's identifier.
+  app.use(requestContext);
 
   app.use(express.json({ limit: "10mb" }));
 

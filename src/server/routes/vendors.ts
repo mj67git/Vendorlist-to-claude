@@ -767,7 +767,6 @@ export function vendorRoutes(): express.Router {
         const now = new Date();
         await AuditService.createAuditRecord({
           auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-          correlationId: crypto.randomUUID(),
           userId: userObj.username || 'system',
           userName: userObj.name || userObj.username || 'کاربر سیستم',
           role: userObj.role || 'user',
