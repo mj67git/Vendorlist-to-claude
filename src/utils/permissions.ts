@@ -71,6 +71,21 @@ export type Permission =
    *  licence, signatory authorisation, legalisation — and seeing that a partner
    *  is graded B is a different thing from taking its licence off the system. */
   | 'partner.files'
+  /**
+   * Take data out of the system: the Excel exports and the printable forms.
+   *
+   * A house rule, and honest about being one. Every export is assembled in the
+   * browser from data the account can already read — the archive sheet from the
+   * source list, the audit sheet from records the trail already returned — so
+   * no endpoint can enforce this the way `vendor.create` is enforced. What it
+   * does is stop a file leaving the building by accident from a screen someone
+   * opened to look something up, which is what the request was.
+   *
+   * It is a real setting rather than a hard-coded `role === 'admin'` test for
+   * the usual reason: an administrator can hand it to the one person who
+   * prepares the regulator's pack without making them an administrator.
+   */
+  | 'data.export'
   /** Read the audit trail. */
   | 'audit.read'
   /** Administer user accounts, including their permissions. */
@@ -87,7 +102,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files',
   'vendor.analysis', 'vendor.risk',
   'score.commercial', 'score.qa', 'score.planning', 'score.finance',
-  'audit.read', 'users.manage',
+  'data.export', 'audit.read', 'users.manage',
 ];
 
 /**
@@ -133,6 +148,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'score.qa': 'امتیازدهی تضمین کیفیت (QA)',
   'score.planning': 'امتیازدهی برنامه‌ریزی و انبار',
   'score.finance': 'امتیازدهی مالی و حسابداری',
+  'data.export': 'خروجی اکسل و چاپ (PDF)',
   'audit.read': 'مشاهدهٔ ردیابی تغییرات',
   'users.manage': 'مدیریت کاربران',
 };
@@ -237,6 +253,13 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     note: 'این نما سورس‌ها را بر اساس شرکت گروه‌بندی می‌کند و داده‌ای جز همان‌ها ندارد، پس از «مشاهدهٔ سورس‌ها» پیروی می‌کند. امتیازهای نمایش‌داده‌شده تابع دپارتمان‌هایی است که کاربر اجازهٔ امتیازدهی‌شان را دارد.',
   },
   {
+    key: 'export',
+    title: 'خروجی و چاپ',
+    single: 'data.export',
+    actions: { view: 'data.export', create: 'data.export', edit: 'data.export', delete: 'data.export' },
+    note: 'خروجی اکسل همهٔ ماژول‌ها و چاپ فرم‌ها و فهرست‌ها (PDF). دادهٔ خروجی همان چیزی است که کاربر روی صفحه می‌بیند، پس این تنظیم بردن فایل به بیرون را محدود می‌کند، نه دیدن داده را.',
+  },
+  {
     key: 'audit',
     title: 'ردیابی تغییرات (Audit)',
     single: 'audit.read',
@@ -272,6 +295,10 @@ export const LOCKED_REASONS = {
  * them — commercial, who collects them, and QA, who grades them — and not to
  * planning or finance, whose work needs the list and the grade. An admin can
  * still grant it to one person.
+ *
+ * `data.export` is in no working template. Taking a file out of the system is
+ * an administrator's act by default; an administrator can still grant it to one
+ * person, which is what per-user exceptions are for.
  *
  * `lab` used to hold nothing at all — an account with that role saw no page in
  * the application while the user form still offered the role. It now carries

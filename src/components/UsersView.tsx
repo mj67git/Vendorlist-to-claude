@@ -586,6 +586,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
               className="pr-9 pl-3 w-full sm:w-56"
             />
           </div>
+          {/* Administering accounts and taking a file of them out of the
+              system are two different permissions. */}
+          {can(currentUser, 'data.export') && (
           <Button
             type="button"
             size="sm"
@@ -597,6 +600,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
             {isExporting ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
             <span>خروجی Excel</span>
           </Button>
+          )}
           <Button
             type="button"
             size="sm"

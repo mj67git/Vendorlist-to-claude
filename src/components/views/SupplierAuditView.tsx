@@ -14,7 +14,7 @@ import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtil
 import { isVendorRejected } from '../../utils/vendorState';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
-import { canScoreDepartment, scorableDepartments } from '../../utils/permissions';
+import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
@@ -117,6 +117,8 @@ interface SourceSelection {
 
   export function SupplierAuditView({ db, onSelectVendor, currentUser, partners = [], materials = [], onNavigate, isLoading = false }: SupplierAuditViewProps) {
     const excel = useExcelExport();
+    /** Taking a file out of the system, as opposed to reading it on screen. */
+    const canExport = can(currentUser, 'data.export');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null);
 
@@ -772,6 +774,7 @@ interface SourceSelection {
                  </p>
                </div>
 
+               {canExport && (
                <Button
                  type="button"
                  variant="success"
@@ -789,6 +792,7 @@ interface SourceSelection {
                  <Briefcase />
                  {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}
                </Button>
+               )}
                {excel.error && (
                  <p className="mt-2 text-2xs text-rose-600 dark:text-rose-400">{excel.error}</p>
                )}
@@ -978,6 +982,7 @@ interface SourceSelection {
                  quality review starts from had to be retyped off the screen.
                  It exports what the search has narrowed to, in the order the
                  table is sorted, so the file matches what is on screen. */}
+             {canExport && (
              <Button
                type="button"
                variant="success"
@@ -999,6 +1004,7 @@ interface SourceSelection {
                {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
                <span>خروجی Excel فهرست</span>
              </Button>
+             )}
            </div>
            {excel.error && (
              <p role="alert" className="text-2xs text-rose-600 dark:text-rose-400 font-bold">{excel.error}</p>

@@ -1693,7 +1693,7 @@ export default function App() {
 
       if (can(currentUser, 'audit.read')) {
         keyName = 'audit-trail';
-        content = <AuditTrailView />;
+        content = <AuditTrailView currentUser={currentUser} />;
       } else {
         keyName = 'audit-denied';
         content = (

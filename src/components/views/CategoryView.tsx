@@ -245,6 +245,9 @@ export function CategoryView({
           </h2>
 
           <div className="flex items-center gap-2 lg:mr-auto shrink-0 order-last lg:order-none">
+            {/* Taking the category out as a file is `data.export`; reading it
+                on screen is `vendor.read`. */}
+            {can(currentUser, 'data.export') && (
             <Button 
               type="button" 
               onClick={() => excel.run(xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections))}
@@ -255,6 +258,7 @@ export function CategoryView({
               <Download className="w-4 h-4" />
               <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
             </Button>
+            )}
             {excel.error && (
               <p className="text-xs text-rose-600 dark:text-rose-400 max-w-xs">{excel.error}</p>
             )}

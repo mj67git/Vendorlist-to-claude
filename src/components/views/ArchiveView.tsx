@@ -16,6 +16,7 @@ import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
+import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { getDisplayCountry } from '../../utils/vendorUtils';
@@ -61,6 +62,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * that could not be ordered at all — a register you can only read in insert
    * order is not a register anyone can review.
    */
+  /**
+   * May this account take a file out of the system?
+   *
+   * Guards both kinds of export the archive offers — the spreadsheets and the
+   * printable forms — because a printed register and an exported one leave the
+   * building the same way.
+   */
+  const canExport = can(currentUser, 'data.export');
+
   const [sortField, setSortField] = useState<ArchiveSortField>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
@@ -286,7 +296,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           subtitle="لیست جامع تمامی تامین‌کنندگان ارزیابی شده"
         />
 
-        {/* Exports, on the left. */}
+        {/* Exports, on the left — offered only to an account allowed to take
+            data out of the system. The data itself is already on screen for
+            anyone who can open this page; what `data.export` governs is the
+            file leaving the building. */}
+        {canExport && (
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
           <Button
@@ -388,6 +402,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             <p className="text-xs text-rose-600 dark:text-rose-400 self-center max-w-sm">{excel.error}</p>
           )}
         </div>
+        )}
 
       </div>
 
@@ -655,15 +670,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                             left the building through the export button next to
                             it — while making QA ask an admin to print a form
                             they are entitled to read. */}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setPrintingVendor(v)}
-                          className="text-muted-foreground hover:text-primary border border-transparent hover:border-border"
-                          title="چاپ فرم ارزیابی"
-                        >
-                          <Printer />
-                        </Button>
+                        {canExport && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setPrintingVendor(v)}
+                            className="text-muted-foreground hover:text-primary border border-transparent hover:border-border"
+                            title="چاپ فرم ارزیابی"
+                          >
+                            <Printer />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

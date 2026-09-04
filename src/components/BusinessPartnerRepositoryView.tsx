@@ -832,6 +832,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               />
             </div>
 
+            {can(currentUser, 'data.export') && (
             <Button
               variant="secondary"
               disabled={excel.busy}
@@ -842,6 +843,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               <Download />
               <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
             </Button>
+            )}
             {excel.error && (
               <p className="text-xs text-rose-600 dark:text-rose-400 self-center">{excel.error}</p>
             )}
