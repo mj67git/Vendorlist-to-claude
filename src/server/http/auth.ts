@@ -3,6 +3,7 @@ import { can, type Permission } from "../../utils/permissions.js";
 import { JWT_SECRET } from "../security/jwtSecret.js";
 import { getAllUsers, getUserByUsername } from "../repositories/userRepository.js";
 import { requirePrisma } from "../db/prisma.js";
+import { setCurrentSession } from "./requestContext.js";
 
 /**
  * Who may do what, enforced.
@@ -31,6 +32,10 @@ export function requireAuth(req: any, res: any, next: any) {
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
+    // Which sign-in this request belongs to, for the audit records it writes.
+    // Tokens issued before sessions were identified carry no `sid`, and those
+    // requests stay unattributed rather than being given an invented one.
+    setCurrentSession(decoded?.sid);
     next();
   } catch (err) {
     // 401, not 403: the token is missing or no longer verifies, which is a

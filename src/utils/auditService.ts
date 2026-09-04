@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { severityMatches } from "./auditTaxonomy.js";
+import { currentCorrelationId, currentSessionId } from "../server/http/requestContext.js";
 
 // Types for Audit Log Service
 export interface AuditLogFilters {
@@ -14,6 +15,8 @@ export interface AuditLogFilters {
   eventType?: string;
   action?: 'Create' | 'Update' | 'Delete' | 'Restore' | 'Archive' | 'System Update' | 'System Calculation' | 'LOGIN' | 'LOGOUT' | 'FAILED_LOGIN' | 'ROLE_CHANGE' | 'PERMISSION_CHANGE' | 'CREATE_USER' | 'UPDATE_USER' | 'DELETE_USER' | string;
   severity?: 'Information' | 'Warning' | 'Critical' | string;
+  /** Did the action happen: `Success`, `Failed` or `Blocked`. */
+  result?: 'Success' | 'Failed' | 'Blocked' | string;
   entityId?: string;
   correlationId?: string;
   startDate?: Date;
@@ -40,6 +43,11 @@ export interface CreateAuditInput {
   reasonForChange?: string;
   beforeData?: any;
   afterData?: any;
+  /**
+   * Did it happen? Omit it and the outcome is derived from the action, which is
+   * where it used to be expressed by convention — see `resultFor`.
+   */
+  result?: 'Success' | 'Failed' | 'Blocked' | string;
 }
 
 function isValidPostgresUrl(url?: string | null): boolean {
@@ -143,6 +151,27 @@ function saveJsonLogs(logs: any[]): void {
   }
 }
 
+/**
+ * The outcome of an action, from the vocabulary the action is written in.
+ *
+ * The trail recorded refusals — a delete stopped by a business rule, a sign-in
+ * with the wrong password — but said so only inside the free text of `action`:
+ * "Delete - Blocked", "FAILED_LOGIN". A reviewer filtering for refusals had to
+ * know that convention and spell it exactly, and any new handler was free to
+ * invent a different wording. Derived in one place so the 47 write sites keep
+ * saying what happened in the way they already do, and a caller that knows
+ * better passes `result` explicitly.
+ */
+export function resultFor(action: string, explicit?: string): string {
+  if (explicit) return explicit;
+  const a = (action || "").toLowerCase();
+  if (a.includes("blocked")) return "Blocked";
+  // `Reject` is deliberately absent: a QC rejection is an action that
+  // succeeded and whose subject is a rejection, not an action that failed.
+  if (a.includes("failed")) return "Failed";
+  return "Success";
+}
+
 export class AuditService {
   /**
    * Create a new audit log record
@@ -192,7 +221,11 @@ export class AuditService {
       const record = await prisma.auditLog.create({
         data: {
           auditId: input.auditId,
-          correlationId: input.correlationId || null,
+          // Falls back to the request's own identifier, so every record written
+          // while handling one call shares one chain. See requestContext.ts.
+          correlationId: input.correlationId || currentCorrelationId(),
+          sessionId: currentSessionId(),
+          result: resultFor(input.action, input.result),
           userId: input.userId || null,
           userName: input.userName || null,
           role: input.role || null,
@@ -254,11 +287,63 @@ export class AuditService {
     }
   }
 
+  /**
+   * The `where` for a read, built once.
+   *
+   * The list read and the text search used to build this twice, side by side,
+   * and they had already drifted: only one of them applied the date range. A
+   * filter that works on the plain list and quietly widens to "everything" as
+   * soon as the user also types a word is worse than no filter at all in a GxP
+   * trail, so both paths now come through here.
+   *
+   * `query` is ANDed with the filters, never ORed with them: `where.OR` belongs
+   * to the text search, so the filters that need an OR of their own (user id or
+   * user name) go into `where.AND`.
+   */
+  private static whereForPrisma(filters?: AuditLogFilters, query?: string): any {
+    const where: any = {};
+
+    if (filters) {
+      if (filters.userId) where.userId = filters.userId;
+      if (filters.user) {
+        where.AND = [{ OR: [{ userId: filters.user }, { userName: filters.user }] }];
+      }
+      if (filters.module && filters.module !== "all") where.module = filters.module;
+      else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
+      if (filters.action && filters.action !== "all") where.action = filters.action;
+      if (filters.result && filters.result !== "all") where.result = filters.result;
+      // `Info` and `Information` are the same level; see auditTaxonomy.ts.
+      if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
+      if (filters.entityId) where.entityId = filters.entityId;
+      if (filters.correlationId) where.correlationId = filters.correlationId;
+
+      if (filters.startDate || filters.endDate) {
+        where.timestamp = {};
+        if (filters.startDate) where.timestamp.gte = filters.startDate;
+        if (filters.endDate) where.timestamp.lte = filters.endDate;
+      }
+    }
+
+    const text = (query || "").trim();
+    if (text) {
+      where.OR = [
+        { userName: { contains: text, mode: "insensitive" } },
+        { module: { contains: text, mode: "insensitive" } },
+        { entityName: { contains: text, mode: "insensitive" } },
+        { description: { contains: text, mode: "insensitive" } },
+        { reasonForChange: { contains: text, mode: "insensitive" } },
+      ];
+    }
+
+    return where;
+  }
+
   public static async getAuditLogs(
     filters?: AuditLogFilters,
     page: number = 1,
     limit: number = 20,
-    sort?: { by?: string; dir?: string }
+    sort?: { by?: string; dir?: string },
+    query?: string
   ): Promise<{ data: any[]; total: number }> {
     const prisma = requirePrisma();
     if (!prisma) {
@@ -397,25 +482,7 @@ export class AuditService {
 
     try {
       const skip = (page - 1) * limit;
-      const where: any = {};
-
-      if (filters) {
-        if (filters.userId) where.userId = filters.userId;
-        if (filters.user) where.OR = [{ userId: filters.user }, { userName: filters.user }];
-        if (filters.module && filters.module !== "all") where.module = filters.module;
-        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
-        if (filters.action && filters.action !== "all") where.action = filters.action;
-        // `Info` and `Information` are the same level; see auditTaxonomy.ts.
-        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
-        if (filters.entityId) where.entityId = filters.entityId;
-        if (filters.correlationId) where.correlationId = filters.correlationId;
-
-        if (filters.startDate || filters.endDate) {
-          where.timestamp = {};
-          if (filters.startDate) where.timestamp.gte = filters.startDate;
-          if (filters.endDate) where.timestamp.lte = filters.endDate;
-        }
-      }
+      const where = this.whereForPrisma(filters, query);
 
       const [data, total] = await Promise.all([
         prisma.auditLog.findMany({
@@ -492,87 +559,120 @@ export class AuditService {
     }
   }
 
-  /**
-   * Search audit logs with a search text query and filters
+  /*
+   * `searchAuditLogs` is gone. It was a second copy of the read path — its own
+   * filter translation, its own `where` — that fetched a hard-capped 100 rows
+   * and left the route to slice them in memory. The cap became the reported
+   * total, so the pager under a search that matched more than 100 records
+   * showed a number that was not the number of matches. Text search is now a
+   * parameter of `getAuditLogs`, which pages in SQL like every other read.
    */
-  public static async searchAuditLogs(
-    query: string,
-    filters?: AuditLogFilters,
-    sort?: { by?: string; dir?: string }
-  ): Promise<any[]> {
+
+  /**
+   * The other records written by the same request as this one.
+   *
+   * This is what `correlationId` is for: a risk assessment saved by hand, the
+   * score recalculated from it and the grade that follows are three records of
+   * one action, and a reviewer asking "what else did this change?" should not
+   * have to guess from timestamps.
+   *
+   * Returned oldest first, because the answer is a sequence. The record asked
+   * about is left out — the caller already has it — and a record with no
+   * correlation id returns nothing rather than every other uncorrelated record
+   * in the table.
+   */
+  public static async getRelatedEvents(id: string, limit: number = 50): Promise<any[]> {
     const prisma = requirePrisma();
-    if (!prisma) {
-      let logs = getJsonLogs();
 
-      if (filters) {
-        if (filters.userId) logs = logs.filter(l => l.userId === filters.userId);
-        if (filters.module && filters.module !== "all") logs = logs.filter(l => l.module === filters.module);
-        if (filters.action && filters.action !== "all") logs = logs.filter(l => l.action === filters.action);
-        if (filters.severity && filters.severity !== "all") logs = logs.filter(l => l.severity.toLowerCase() === filters.severity.toLowerCase());
-        if (filters.entityId) logs = logs.filter(l => l.entityId === filters.entityId);
-        if (filters.correlationId) logs = logs.filter(l => l.correlationId === filters.correlationId);
-      }
+    const log = await this.getAuditById(id);
+    if (!log?.correlationId) return [];
 
-      if (query && query.trim()) {
-        const q = query.toLowerCase();
-        logs = logs.filter(l => 
-          (l.userName && l.userName.toLowerCase().includes(q)) ||
-          (l.module && l.module.toLowerCase().includes(q)) ||
-          (l.entityName && l.entityName.toLowerCase().includes(q)) ||
-          (l.description && l.description.toLowerCase().includes(q)) ||
-          (l.reasonForChange && l.reasonForChange.toLowerCase().includes(q))
-        );
-      }
+    return prisma.auditLog.findMany({
+      where: { correlationId: log.correlationId, NOT: { id: log.id } },
+      orderBy: { timestamp: "asc" },
+      take: Math.min(Math.max(1, limit), 200),
+    });
+  }
 
-      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return logs.slice(0, 100);
+  /**
+   * The numbers above the table, counted in SQL.
+   *
+   * They used to be derived by reading ten thousand full rows — both JSON
+   * payloads of every one of them — into memory and calling `.filter()` on the
+   * array. Counting is what the database is for, and an audit trail only grows.
+   *
+   * `today`, `blocked` and `failed` were added with the overview strip. They
+   * are three more counts against indexed columns rather than three more
+   * passes over the rows, which is the whole reason the strip can exist.
+   */
+  public static async getStats(): Promise<{
+    total: number;
+    critical: number;
+    warning: number;
+    activeUsers: number;
+    lastUpdated: string;
+    today: number;
+    blocked: number;
+    failed: number;
+  }> {
+    const prisma = requirePrisma();
+
+    // Midnight of the current day in the server's own zone, which is the day
+    // the person reading the page is having.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [total, critical, warning, blocked, failed, today, actors, lastLog] = await Promise.all([
+      prisma.auditLog.count(),
+      prisma.auditLog.count({ where: { severity: { in: severityMatches("Critical") } } }),
+      prisma.auditLog.count({ where: { severity: { in: severityMatches("Warning") } } }),
+      prisma.auditLog.count({ where: { result: "Blocked" } }),
+      prisma.auditLog.count({ where: { result: "Failed" } }),
+      prisma.auditLog.count({ where: { timestamp: { gte: startOfToday } } }),
+      prisma.auditLog.groupBy({ by: ["userId"], where: { userId: { not: null } } }),
+      prisma.auditLog.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
+    ]);
+
+    let lastUpdated = "-";
+    if (lastLog?.timestamp) {
+      const d = new Date(lastLog.timestamp);
+      lastUpdated = d.toLocaleTimeString("fa-IR", { hour12: false }) || d.toLocaleTimeString("en-US", { hour12: false });
     }
 
-    try {
-      const where: any = {};
+    return {
+      total,
+      critical,
+      warning,
+      // `|| 1` is kept from the previous implementation: the chip reads "active
+      // users" and zero of them is never the honest answer on a live system.
+      activeUsers: actors.length || 1,
+      lastUpdated,
+      today,
+      blocked,
+      failed,
+    };
+  }
 
-      if (filters) {
-        if (filters.userId) where.userId = filters.userId;
-        // AND, not OR: the free-text search below claims `where.OR` for itself,
-        // and the two conditions must both hold rather than either one.
-        if (filters.user) {
-          where.AND = [{ OR: [{ userId: filters.user }, { userName: filters.user }] }];
-        }
-        if (filters.module && filters.module !== "all") where.module = filters.module;
-        else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
-        if (filters.action && filters.action !== "all") where.action = filters.action;
-        if (filters.severity && filters.severity !== "all") where.severity = { in: severityMatches(filters.severity) };
-        if (filters.entityId) where.entityId = filters.entityId;
-        if (filters.correlationId) where.correlationId = filters.correlationId;
-        // The date range used to be dropped here, so searching by text inside a
-        // date range quietly widened the range to "everything".
-        if (filters.startDate || filters.endDate) {
-          where.timestamp = {};
-          if (filters.startDate) where.timestamp.gte = filters.startDate;
-          if (filters.endDate) where.timestamp.lte = filters.endDate;
-        }
-      }
+  /**
+   * The distinct values the filter dropdowns offer, taken from the index rather
+   * than from a full table read.
+   *
+   * The user option matches the same way the filter does — `userId` OR
+   * `userName` — so the label offered is the label that will match.
+   */
+  public static async getFilterOptions(): Promise<{ uniqueUsers: string[]; uniqueModules: string[] }> {
+    const prisma = requirePrisma();
 
-      if (query && query.trim()) {
-        where.OR = [
-          { userName: { contains: query, mode: "insensitive" } },
-          { module: { contains: query, mode: "insensitive" } },
-          { entityName: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
-          { reasonForChange: { contains: query, mode: "insensitive" } },
-        ];
-      }
+    const [actors, modules] = await Promise.all([
+      prisma.auditLog.groupBy({ by: ["userName", "userId"] }),
+      prisma.auditLog.groupBy({ by: ["module"] }),
+    ]);
 
-      const logs = await prisma.auditLog.findMany({
-        where,
-        orderBy: this.orderFor(sort?.by, sort?.dir) as any,
-        take: 100,
-      });
+    const uniqueUsers = Array.from(
+      new Set(actors.map((a: any) => a.userName || a.userId).filter(Boolean) as string[]),
+    );
+    const uniqueModules = modules.map((m: any) => m.module).filter(Boolean) as string[];
 
-      return logs;
-    } catch (err: any) {
-      console.error("[AuditService] Failed to search audit logs from PostgreSQL:", err.message);
-      throw err;
-    }
+    return { uniqueUsers, uniqueModules };
   }
 }

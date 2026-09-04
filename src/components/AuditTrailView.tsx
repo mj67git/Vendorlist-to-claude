@@ -45,6 +45,10 @@ export interface AuditLog {
   eventType?: string;
   ipAddress?: string;
   userAgent?: string;
+  /** Did the action happen: Success, Failed or Blocked. Absent on older rows. */
+  result?: string;
+  /** The sign-in the action came from. Absent for tokens issued before sessions were identified. */
+  sessionId?: string;
 }
 
 // Persian helper maps
@@ -77,10 +81,44 @@ const actionLabels: Record<string, { label: string; bg: string; text: string }> 
 };
 
 
+/**
+ * How to print an action, whatever it is.
+ *
+ * `actionLabels` above carries the colours, but it is a partial list: three
+ * refusal actions were added on the server without it, and the table printed
+ * the raw English `Update - Blocked` in a Persian column. The shared taxonomy
+ * knows every action the code writes, so it is the fallback, and the raw value
+ * is the last resort — a record is never shown without a name.
+ */
+function actionMeta(action: string): { label: string; bg: string; text: string } {
+  const known = actionLabels[action];
+  if (known) return known;
+  return {
+    label: AUDIT_ACTION_LABELS[action] || action,
+    bg: 'bg-muted text-foreground border-border',
+    text: 'text-foreground',
+  };
+}
+
 const severityLabels: Record<string, { label: string; bg: string; text: string; icon: any }> = {
   Info: { label: 'عادی (Info)', bg: 'bg-muted text-foreground border-border', text: 'text-foreground', icon: InfoIcon },
   Warning: { label: 'هشدار (Warning)', bg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900', text: 'text-amber-700', icon: AlertTriangle },
   Critical: { label: 'بحرانی (Critical)', bg: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900', text: 'text-rose-700', icon: ShieldAlert }
+};
+
+/**
+ * Did the action happen?
+ *
+ * Kept apart from severity on purpose: severity says how much this matters,
+ * result says whether it took effect. A blocked delete of a critical record is
+ * both critical and refused, and reading either one off the other loses half
+ * the fact. Older records carry no result and show nothing rather than a
+ * guessed "success".
+ */
+const resultLabels: Record<string, { label: string; className: string }> = {
+  Success: { label: 'انجام شد', className: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900' },
+  Failed: { label: 'ناموفق', className: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900' },
+  Blocked: { label: 'مسدود شد', className: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900' },
 };
 
 function InfoIcon(props: any) {
@@ -342,6 +380,41 @@ export function computeFieldDiff(before: any, after: any, prefix = ''): FieldDif
   return computeFieldDiffDetailed(before, after, prefix).rows;
 }
 
+/**
+ * One audit row as the API returns it, in the shape this view renders.
+ *
+ * Written once and used by both readers: the table's page of rows, and a
+ * related event opened from inside the detail panel. Two copies of this
+ * mapping would be two chances for the panel to describe a record differently
+ * depending on which list it was reached from.
+ */
+export function toAuditLog(l: any): AuditLog {
+  const d = new Date(l.timestamp || l.createdAt);
+  return {
+    id: l.id,
+    date: d.toLocaleDateString('fa-IR'),
+    time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    user: l.userName || l.userId || 'سیستم',
+    role: l.role || 'user',
+    module: l.module,
+    action: l.action,
+    recordName: l.entityName || l.entityId || 'مشخصات',
+    severity: l.severity === 'Critical' ? 'Critical' : l.severity === 'Warning' ? 'Warning' : 'Info',
+    description: l.description || '',
+    before: l.beforeData,
+    after: l.afterData,
+    reason: l.reasonForChange || 'تایید فرآیندی',
+    correlationId: l.correlationId || 'N/A',
+    eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
+    // Read from the record's own columns; the `afterData` lookups are the
+    // fallback for rows written before those columns existed.
+    ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '—',
+    userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || '—',
+    result: l.result || '',
+    sessionId: l.sessionId || '',
+  };
+}
+
 export const AuditTrailView: React.FC = () => {
   // Navigation & view states
   const [searchQuery, setSearchQuery] = useState('');
@@ -353,12 +426,14 @@ export const AuditTrailView: React.FC = () => {
   const [filterGroup, setFilterGroup] = useState('all');
   const [filterAction, setFilterAction] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
+  /** Did the action happen: Success, Failed or Blocked. */
+  const [filterResult, setFilterResult] = useState('all');
   // Kept as Jalali `YYYY/MM/DD` — what the user reads — and converted to a real
   // instant only on the way to the API.
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const advancedFilterCount = [filterUser, filterModule, filterGroup, filterAction, filterSeverity].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
+  const advancedFilterCount = [filterUser, filterModule, filterGroup, filterAction, filterSeverity, filterResult].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
 
   // Sorting States
   const [sortField, setSortField] = useState<'date' | 'user'>('date');
@@ -370,7 +445,22 @@ export const AuditTrailView: React.FC = () => {
 
   // Quick Action selection helper
   const [quickSeverityFilter, setQuickSeverityFilter] = useState<string | null>(null);
-  const [quickCategoryFilter, setQuickCategoryFilter] = useState<string>('all');
+  /**
+   * Table or timeline, over the same page of the same query.
+   *
+   * The table is the primary view and stays the default: it is the one that
+   * shows every column side by side and can be sorted and exported. The
+   * timeline answers a different question — what happened, in what order,
+   * during this stretch of time — and reads the same rows, so switching never
+   * changes what is being looked at, only how it is arranged.
+   */
+  const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
+  /*
+   * The "quick category" filter is gone. It was a piece of state that nothing
+   * ever set — no control in this view called its setter — and it was sent on
+   * every request as a `quickFilter` parameter that the PostgreSQL read path
+   * ignored outright. Two dead ends pointing at each other.
+   */
 
   // Backend integration states
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -379,12 +469,25 @@ export const AuditTrailView: React.FC = () => {
   const [apiUsers, setApiUsers] = useState<string[]>([]);
   const [apiModules, setApiModules] = useState<string[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  /**
+   * The rest of the chain the open record belongs to.
+   *
+   * One save routinely writes several records — the edit, the risk assessment
+   * it carried, the recalculation that followed — and until every record
+   * written for one request started sharing that request's identifier, this
+   * question had no answer in the data. `null` means "not asked yet", an empty
+   * array means "asked, and this event stands alone".
+   */
+  const [relatedEvents, setRelatedEvents] = useState<any[] | null>(null);
   const [stats, setStats] = useState({
     total: 0,
     critical: 0,
     warning: 0,
     activeUsers: 0,
-    lastUpdated: "-"
+    lastUpdated: "-",
+    today: 0,
+    blocked: 0,
+    failed: 0,
   });
 
   // Dynamic filter lists for select options.
@@ -468,7 +571,7 @@ export const AuditTrailView: React.FC = () => {
         group: filterGroup !== 'all' ? filterGroup : '',
         action: filterAction !== 'all' ? filterAction : '',
         severity: activeSeverity !== 'all' ? activeSeverity : '',
-        quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
+        result: filterResult !== 'all' ? filterResult : '',
         startDate: startDate ? jalaliToIso(startDate, 'start') : '',
         endDate: endDate ? jalaliToIso(endDate, 'end') : '',
         query: searchQuery,
@@ -483,37 +586,7 @@ export const AuditTrailView: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
         
-        const formattedData = result.data.map((l: any) => {
-          const d = new Date(l.timestamp || l.createdAt);
-          const persianDate = d.toLocaleDateString('fa-IR');
-          const persianTime = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          
-          let cleanSeverity = 'Info';
-          if (l.severity === 'Critical') cleanSeverity = 'Critical';
-          if (l.severity === 'Warning') cleanSeverity = 'Warning';
-
-          return {
-            id: l.id,
-            date: persianDate,
-            time: persianTime,
-            user: l.userName || l.userId || 'سیستم',
-            role: l.role || 'user',
-            module: l.module,
-            action: l.action,
-            recordName: l.entityName || l.entityId || 'مشخصات',
-            severity: cleanSeverity,
-            description: l.description || '',
-            before: l.beforeData,
-            after: l.afterData,
-            reason: l.reasonForChange || 'تایید فرآیندی',
-            correlationId: l.correlationId || 'N/A',
-            eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
-            // Read from the record's own columns; the `afterData` lookups are
-            // the fallback for rows written before those columns existed.
-            ipAddress: l.ipAddress || l.afterData?.ipAddress || l.afterData?.ip || '—',
-            userAgent: l.userAgent || l.afterData?.userAgent || l.afterData?.device || '—',
-          };
-        });
+        const formattedData = result.data.map(toAuditLog);
 
         setLogs(formattedData);
         setTotalItems(result.total || 0);
@@ -523,7 +596,7 @@ export const AuditTrailView: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, quickSeverityFilter, quickCategoryFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
+  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, filterResult, quickSeverityFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
 
   // Fetch metrics and filters
   const fetchStatsAndFilters = useCallback(async () => {
@@ -536,6 +609,9 @@ export const AuditTrailView: React.FC = () => {
           warning: all.filter((l: any) => l.severity === 'Warning').length,
           activeUsers: new Set(all.map((l: any) => l.userName)).size,
           lastUpdated: all[0] ? new Date(all[0].timestamp).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '—',
+          today: all.filter((l: any) => new Date(l.timestamp).toDateString() === new Date().toDateString()).length,
+          blocked: all.filter((l: any) => l.result === 'Blocked').length,
+          failed: all.filter((l: any) => l.result === 'Failed').length,
         });
         setApiUsers(Array.from(new Set(all.map((l: any) => l.userName).filter(Boolean))));
         setApiModules(Array.from(new Set(all.map((l: any) => l.module).filter(Boolean))));
@@ -555,13 +631,16 @@ export const AuditTrailView: React.FC = () => {
             warning: statsData.warning,
             activeUsers: statsData.activeUsers,
             lastUpdated: statsData.lastUpdated,
+            today: statsData.today || 0,
+            blocked: statsData.blocked || 0,
+            failed: statsData.failed || 0,
           });
         } else {
           // An empty log is a fact worth showing, not something to paper over:
           // this module is the GMP audit trail, and inventing records here — as
           // the old demo fallback did, complete with a fabricated OOS batch
           // rejection — makes them indistinguishable from real ones.
-          setStats({ total: 0, critical: 0, warning: 0, activeUsers: 0, lastUpdated: '—' });
+          setStats({ total: 0, critical: 0, warning: 0, activeUsers: 0, lastUpdated: '—', today: 0, blocked: 0, failed: 0 });
         }
       }
 
@@ -593,6 +672,13 @@ export const AuditTrailView: React.FC = () => {
   const handleOpenDrawer = async (log: AuditLog) => {
     setSelectedLog(log);
     setIsLoadingDetail(true);
+    setRelatedEvents(null);
+    // The chain is a second, independent read: a failure to load it must not
+    // take the change itself down with it.
+    authFetch(`/api/audit-logs/${log.id}/related`)
+      .then(res => (res.ok ? res.json() : { data: [] }))
+      .then(j => setRelatedEvents(Array.isArray(j.data) ? j.data : []))
+      .catch(() => setRelatedEvents([]));
     try {
       const response = await authFetch(`/api/audit-logs/${log.id}`);
       if (response.ok) {
@@ -604,7 +690,9 @@ export const AuditTrailView: React.FC = () => {
             before: l.beforeData,
             after: l.afterData,
             reason: l.reasonForChange || prev.reason,
-            correlationId: l.correlationId || prev.correlationId
+            correlationId: l.correlationId || prev.correlationId,
+            result: l.result || prev.result,
+            sessionId: l.sessionId || prev.sessionId,
           };
         });
       }
@@ -634,10 +722,10 @@ export const AuditTrailView: React.FC = () => {
     setFilterGroup('all');
     setFilterAction('all');
     setFilterSeverity('all');
+    setFilterResult('all');
     setStartDate('');
     setEndDate('');
     setQuickSeverityFilter(null);
-    setQuickCategoryFilter('all');
     setCurrentPage(1);
   };
 
@@ -650,6 +738,12 @@ export const AuditTrailView: React.FC = () => {
    * finding, not a failure, so the two are told apart.
    */
   const [exportNotice, setExportNotice] = useState<{ kind: 'empty' | 'error'; text: string } | null>(null);
+  /**
+   * Set when the export stopped at the row ceiling before reaching the end of
+   * the result. The spreadsheet is still produced — a partial export is useful
+   * — but it is never handed over as if it were complete.
+   */
+  const [truncatedExport, setTruncatedExport] = useState<{ taken: number; total: number } | null>(null);
   const handleExport = async () => {
     setIsExporting(true);
     try {
@@ -685,20 +779,48 @@ export const AuditTrailView: React.FC = () => {
           return true;
         });
       } else {
-        const params = new URLSearchParams({
-          page: '1', limit: '10000',
-          userId: filterUser !== 'all' ? filterUser : '',
-          module: filterModule !== 'all' ? filterModule : '',
-          group: filterGroup !== 'all' ? filterGroup : '',
-          action: filterAction !== 'all' ? filterAction : '',
-          severity: activeSev !== 'all' ? activeSev : '',
-          quickFilter: quickCategoryFilter !== 'all' ? quickCategoryFilter : '',
-          startDate: startDate ? jalaliToIso(startDate, 'start') : '',
-          endDate: endDate ? jalaliToIso(endDate, 'end') : '',
-          query: searchQuery,
-        });
-        const res = await authFetch(`/api/audit-logs?${params.toString()}`);
-        if (res.ok) { const j = await res.json(); rows = (j.data || []).map(mapRow); }
+        /*
+         * Paged, because the server clamps `limit` to 200.
+         *
+         * This asked for `limit=10000` in one request and treated whatever came
+         * back as the whole result. The clamp is deliberate — one request must
+         * not pull a year of audit data into memory — so the export was silently
+         * capped at 200 rows and the spreadsheet claimed to be everything that
+         * matched the filters. In a GxP trail a short export that does not say
+         * it is short is the worst of the three possible outcomes.
+         */
+        const PAGE = 200;
+        const MAX_ROWS = 10000;
+        let page = 1;
+        let total = Infinity;
+        while (rows.length < Math.min(total, MAX_ROWS)) {
+          const params = new URLSearchParams({
+            page: String(page), limit: String(PAGE),
+            userId: filterUser !== 'all' ? filterUser : '',
+            module: filterModule !== 'all' ? filterModule : '',
+            group: filterGroup !== 'all' ? filterGroup : '',
+            action: filterAction !== 'all' ? filterAction : '',
+            severity: activeSev !== 'all' ? activeSev : '',
+            result: filterResult !== 'all' ? filterResult : '',
+            startDate: startDate ? jalaliToIso(startDate, 'start') : '',
+            endDate: endDate ? jalaliToIso(endDate, 'end') : '',
+            query: searchQuery,
+          });
+          const res = await authFetch(`/api/audit-logs?${params.toString()}`);
+          if (!res.ok) break;
+          const j = await res.json();
+          const batch = (j.data || []).map(mapRow);
+          rows = rows.concat(batch);
+          total = typeof j.total === 'number' ? j.total : rows.length;
+          // A short page means the end, whatever the reported total says.
+          if (batch.length < PAGE) break;
+          page += 1;
+        }
+        if (rows.length < total) {
+          setTruncatedExport({ taken: rows.length, total });
+        } else {
+          setTruncatedExport(null);
+        }
       }
       if (rows.length === 0) {
         setExportNotice({ kind: 'empty', text: 'با فیلترهای فعلی رکوردی برای خروجی پیدا نشد.' });
@@ -718,6 +840,19 @@ export const AuditTrailView: React.FC = () => {
       setIsExporting(false);
     }
   };
+
+  /**
+   * Today, written the way the date filter reads it.
+   *
+   * The filter keeps Jalali `YYYY/MM/DD` and converts on the way to the API, so
+   * the overview tile has to speak the same dialect rather than an ISO date the
+   * conversion would reject.
+   */
+  const todayJalali = useMemo(() => {
+    const now = new Date();
+    const { jy, jm, jd } = jalaali.toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    return `${jy}/${String(jm).padStart(2, '0')}/${String(jd).padStart(2, '0')}`;
+  }, []);
 
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -749,16 +884,20 @@ export const AuditTrailView: React.FC = () => {
             {isExporting ? <Loader2 className="animate-spin" /> : <FileText />}
             خروجی Excel
           </Button>
-          <div className="bg-card border border-border px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-2xs text-muted-foreground font-medium">کل لاگ‌ها:</span>
-            <span className="text-xs font-bold font-mono text-foreground">{stats.total}</span>
-          </div>
-          <div className="bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 px-3 py-1.5 rounded-xl flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-            <span className="text-2xs text-rose-500 font-medium">خطای بحرانی:</span>
-            <span className="text-xs font-bold font-mono text-rose-700">{stats.critical}</span>
-          </div>
+
+          {truncatedExport && (
+            <div
+              role="status"
+              className="w-full md:w-auto flex items-start gap-2 px-3 py-1.5 rounded-xl text-2xs font-bold border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>
+                خروجی شامل {truncatedExport.taken.toLocaleString('fa-IR')} رکورد از
+                {' '}{truncatedExport.total.toLocaleString('fa-IR')} رکورد منطبق است. برای دریافت
+                کامل، بازهٔ تاریخ را باریک‌تر کنید.
+              </span>
+            </div>
+          )}
 
           {exportNotice && (
             <div
@@ -774,6 +913,77 @@ export const AuditTrailView: React.FC = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* OVERVIEW STRIP
+
+          Five counts over the whole trail, not over the page on screen, and
+          each one a control: clicking a tile applies the filter it describes,
+          so a number and the records behind it are never two separate errands.
+          The two that were here before — total and critical — sat in the header
+          as decoration next to the export button and could not be acted on.
+
+          Counted in SQL against indexed columns (see AuditService.getStats), so
+          this strip costs five counts rather than a pass over the table.
+
+          Deliberately not a dashboard: no charts, no trend arrows, no colour
+          for its own sake. This module is an investigation tool, and a number
+          whose meaning is "how many records match this filter" is the only kind
+          it needs. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        {([
+          {
+            key: 'all', label: 'کل رویدادها', value: stats.total,
+            hint: `آخرین ثبت ${stats.lastUpdated}`,
+            active: quickSeverityFilter === null && filterResult === 'all' && !startDate,
+            apply: () => { setQuickSeverityFilter(null); setFilterResult('all'); setStartDate(''); },
+          },
+          {
+            key: 'today', label: 'امروز', value: stats.today,
+            hint: 'از نیمه‌شب تا این لحظه',
+            active: !!startDate && startDate === todayJalali,
+            apply: () => { setStartDate(todayJalali); setEndDate(''); },
+          },
+          {
+            key: 'critical', label: 'بحرانی', value: stats.critical,
+            hint: 'سطح بحرانیت Critical',
+            active: quickSeverityFilter === 'Critical',
+            apply: () => { setQuickSeverityFilter('Critical'); setFilterSeverity('all'); },
+            tone: 'text-rose-700 dark:text-rose-300',
+          },
+          {
+            key: 'blocked', label: 'مسدودشده', value: stats.blocked,
+            hint: 'اقدامی که سامانه اجازه نداد',
+            active: filterResult === 'Blocked',
+            apply: () => setFilterResult('Blocked'),
+            tone: 'text-amber-700 dark:text-amber-300',
+          },
+          {
+            key: 'failed', label: 'ناموفق', value: stats.failed,
+            hint: 'ورود ناموفق و اقدام شکست‌خورده',
+            active: filterResult === 'Failed',
+            apply: () => setFilterResult('Failed'),
+            tone: 'text-rose-700 dark:text-rose-300',
+          },
+        ] as const).map(tile => (
+          <button
+            key={tile.key}
+            type="button"
+            onClick={() => { tile.apply(); setCurrentPage(1); }}
+            aria-pressed={tile.active}
+            className={`text-right rounded-xl border p-3 transition-colors ${
+              tile.active
+                ? 'bg-accent border-foreground/30'
+                : 'bg-card border-border hover:bg-accent/60'
+            }`}
+          >
+            <span className="text-2xs font-bold text-muted-foreground block">{tile.label}</span>
+            <span className={`text-xl font-black font-mono block leading-tight ${(tile as any).tone || 'text-foreground'}`}>
+              {tile.value.toLocaleString('fa-IR')}
+            </span>
+            <span className="text-2xs text-muted-foreground block truncate">{tile.hint}</span>
+          </button>
+        ))}
       </div>
 
       {/* SEARCH AND QUICK FILTER CONTROLS */}
@@ -934,6 +1144,27 @@ export const AuditTrailView: React.FC = () => {
             </select>
           </div>
 
+          {/* Result filter.
+
+              Kept apart from severity because they answer different questions:
+              severity is how much a record matters, result is whether the
+              action took effect. Before the column existed, finding refused
+              attempts meant knowing that the word "Blocked" had been spelled
+              into the free-text action of certain handlers. */}
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-2xs font-bold">نتیجهٔ عملیات (Result)</label>
+            <select
+              value={filterResult}
+              onChange={e => { setFilterResult(e.target.value); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'w-full font-medium')}
+            >
+              <option value="all">همه نتایج</option>
+              <option value="Success">انجام شد (Success)</option>
+              <option value="Blocked">مسدود شد (Blocked)</option>
+              <option value="Failed">ناموفق (Failed)</option>
+            </select>
+          </div>
+
           {/* Date range — a real Jalali picker instead of free text. */}
           <div className="space-y-1">
             <label className="text-muted-foreground text-2xs font-bold">از تاریخ</label>
@@ -956,8 +1187,139 @@ export const AuditTrailView: React.FC = () => {
         )}
       </div>
 
+      {/* VIEW SWITCH
+
+          Two arrangements of one query. The table stays the primary view — it
+          is the one with every column, the sort headers and the export — and
+          the timeline is the complement, for reading a stretch of time in
+          order. Both render the same page of the same result, so switching
+          never changes what is being looked at. */}
+      <div className="flex items-center gap-1.5">
+        {([
+          { key: 'table', label: 'نمای جدول' },
+          { key: 'timeline', label: 'خط زمانی' },
+        ] as const).map(v => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setViewMode(v.key)}
+            aria-pressed={viewMode === v.key}
+            className={`px-3 py-1.5 rounded-xl text-2xs font-bold border transition-colors ${
+              viewMode === v.key
+                ? 'bg-foreground border-foreground text-background'
+                : 'bg-card border-border text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
       {/* TABLE DATA LIST CONTAINER */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs relative">
+        {viewMode === 'timeline' ? (
+          /* The same rows, grouped by day and read top to bottom.
+             The change itself is summarised on the line — the first field that
+             moved, and how many others did — so the order of events can be read
+             without opening five panels. */
+          <div className="p-5">
+            {isLoading ? (
+              <div className="flex items-center gap-1.5 text-muted-foreground py-6 text-xs">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span className="italic">در حال بارگذاری…</span>
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="py-8 text-center space-y-1">
+                <p className="text-xs font-bold text-foreground">رویدادی با این فیلترها پیدا نشد.</p>
+                <p className="text-2xs text-muted-foreground">فیلترها را بازتر کنید یا بازهٔ تاریخ را بردارید.</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {Object.entries(
+                  logs.reduce((acc: Record<string, AuditLog[]>, l) => {
+                    (acc[l.date] ||= []).push(l);
+                    return acc;
+                  }, {}),
+                ).map(([day, entries]) => (
+                  <div key={day} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xs font-black text-foreground font-mono">{day}</span>
+                      <span className="h-px flex-1 bg-border" />
+                      <span className="text-2xs text-muted-foreground font-bold">
+                        {entries.length.toLocaleString('fa-IR')} رویداد
+                      </span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {entries.map(l => {
+                        const meta = actionMeta(l.action);
+                        const sev = severityLabels[l.severity];
+                        const diff = isNonDataEvent(l) ? [] : computeFieldDiffDetailed(l.before, l.after).rows;
+                        const first = diff[0];
+                        return (
+                          <li key={l.id}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDrawer(l)}
+                              className="w-full text-right bg-muted/40 hover:bg-accent border border-border rounded-xl p-3 transition-colors flex items-start gap-3"
+                            >
+                              <span className="text-2xs font-mono text-muted-foreground shrink-0 pt-0.5">{l.time}</span>
+                              {/* `space-y-*` needs block children; these are
+                                  spans (a button may not contain a div), so the
+                                  column is a flex column with a gap instead —
+                                  otherwise the three lines drift apart. */}
+                              <span className="min-w-0 flex-1 flex flex-col gap-1">
+                                <span className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-2xs font-black text-foreground">{l.user}</span>
+                                  <span className="text-2xs text-muted-foreground">·</span>
+                                  <span className="text-2xs font-bold text-foreground">
+                                    {meta.label}
+                                  </span>
+                                  <span className="text-2xs text-muted-foreground truncate">{l.recordName}</span>
+                                  {l.result && resultLabels[l.result] && l.result !== 'Success' && (
+                                    <span className={`px-1.5 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${resultLabels[l.result].className}`}>
+                                      {resultLabels[l.result].label}
+                                    </span>
+                                  )}
+                                  {l.severity === 'Critical' && (
+                                    <span className={`px-1.5 py-0.5 rounded-md text-2xs font-bold border shrink-0 ${sev?.bg || ''} ${sev?.text || ''}`}>
+                                      {sev?.label || l.severity}
+                                    </span>
+                                  )}
+                                </span>
+                                {first && (
+                                  <span className="flex items-center gap-1.5 text-2xs font-mono text-muted-foreground" dir="ltr">
+                                    <span className="shrink-0 font-sans font-bold text-foreground" dir="rtl">{first.label}</span>
+                                    {first.note ? (
+                                      <span className="truncate">{first.kind === 'removed' ? first.from : first.to}</span>
+                                    ) : (
+                                      <>
+                                        <span className="truncate line-through">{first.from}</span>
+                                        <span className="shrink-0">→</span>
+                                        <span className="truncate font-bold text-foreground">{first.to}</span>
+                                      </>
+                                    )}
+                                    {diff.length > 1 && (
+                                      <span className="shrink-0 font-sans" dir="rtl">
+                                        و {(diff.length - 1).toLocaleString('fa-IR')} فیلد دیگر
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                                <span className="text-2xs text-muted-foreground block truncate">
+                                  {AUDIT_MODULE_LABELS[l.module] || l.module}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse" aria-busy={isLoading}>
             <caption className="sr-only">فهرست رویدادهای ثبت‌شده در ردیابی تغییرات</caption>
@@ -988,7 +1350,7 @@ export const AuditTrailView: React.FC = () => {
                 />
               ) : logs.length > 0 ? (
                 logs.map((log) => {
-                  const actMeta = actionLabels[log.action] || { label: log.action, bg: 'bg-muted', text: 'text-foreground' };
+                  const actMeta = actionMeta(log.action);
                   const sevMeta = severityLabels[log.severity] || { label: log.severity, bg: 'bg-muted', text: 'text-foreground', icon: InfoIcon };
                   const SevIcon = sevMeta.icon;
 
@@ -1059,8 +1421,9 @@ export const AuditTrailView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        )}
 
-        {/* PAGINATION PANEL */}
+        {/* PAGINATION PANEL — shared by both views: they page the same query. */}
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row sm:items-center gap-3">
           <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
             <span>تعداد در هر صفحه</span>
@@ -1115,20 +1478,30 @@ export const AuditTrailView: React.FC = () => {
             <div className="p-5 border-b border-border flex items-center justify-between gap-3 bg-muted/50">
               <div className="min-w-0 space-y-1">
                 <h3 id="audit-detail-title" className="text-sm font-black text-foreground">
-                  {(actionLabels[selectedLog.action]?.label) || selectedLog.action} · {selectedLog.recordName}
+                  {actionMeta(selectedLog.action).label} · {selectedLog.recordName}
                 </h3>
                 <span className="text-2xs text-muted-foreground block">
                   {selectedLog.user} · <span className="font-mono">{selectedLog.date} {selectedLog.time}</span>
                 </span>
               </div>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setSelectedLog(null)}
-                className="bg-card text-muted-foreground"
-              >
-                <X />
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Whether it took effect, next to what was attempted. A refused
+                    attempt used to be readable only by noticing the wording of
+                    the action label. */}
+                {selectedLog.result && resultLabels[selectedLog.result] && (
+                  <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border ${resultLabels[selectedLog.result].className}`}>
+                    {resultLabels[selectedLog.result].label}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => setSelectedLog(null)}
+                  className="bg-card text-muted-foreground"
+                >
+                  <X />
+                </Button>
+              </div>
             </div>
 
             {/* Drawer Content */}
@@ -1245,6 +1618,55 @@ export const AuditTrailView: React.FC = () => {
               </div>
 
 
+              {/* What else happened because of the same action.
+
+                  One save writes several records: the edit, the risk assessment
+                  it carried, the recalculation that followed. They now share the
+                  identifier of the request that produced them, so the sequence
+                  is a lookup rather than a guess from adjacent timestamps.
+                  Shown oldest first, because the answer is an order of events.
+
+                  Rendered only when there is something to show — an event that
+                  stands alone should not get an empty heading explaining that it
+                  stands alone. */}
+              {relatedEvents !== null && relatedEvents.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-foreground">در پی همین اقدام</span>
+                    <span className="text-2xs font-bold text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-md">
+                      {relatedEvents.length.toLocaleString('fa-IR')} رویداد دیگر
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {relatedEvents.map((r: any) => {
+                      const when = new Date(r.timestamp || r.createdAt);
+                      const meta = actionMeta(r.action);
+                      return (
+                        <li key={r.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDrawer(toAuditLog(r))}
+                            className="w-full text-right bg-muted/40 hover:bg-accent border border-border rounded-lg p-2.5 transition-colors flex items-center justify-between gap-2"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="text-2xs font-bold text-foreground block truncate">
+                                {meta.label} · {r.entityName || r.entityId || 'مشخصات'}
+                              </span>
+                              <span className="text-2xs text-muted-foreground block truncate">
+                                {AUDIT_MODULE_LABELS[r.module] || r.module}
+                              </span>
+                            </span>
+                            <span className="text-2xs font-mono text-muted-foreground shrink-0">
+                              {when.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
               {/* Context, folded away: the same facts, one click from the change. */}
               <details className="group border border-border rounded-xl bg-muted/30">
                 <summary className="cursor-pointer select-none px-4 py-2.5 text-2xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-2">
@@ -1274,8 +1696,17 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                   {hasRecordedValue(selectedLog.correlationId) && (
                     <div className="space-y-0.5 pt-2 border-t border-border/50 col-span-2">
-                      <span className="text-2xs text-muted-foreground font-bold block">شناسه همبستگی (Correlation):</span>
+                      <span className="text-2xs text-muted-foreground font-bold block">شناسهٔ درخواست (Correlation):</span>
                       <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.correlationId}</span>
+                    </div>
+                  )}
+                  {/* Which sign-in this came from. Empty on records written
+                      before sessions carried an identifier — those really had
+                      none, so the row is not printed at all. */}
+                  {hasRecordedValue(selectedLog.sessionId) && (
+                    <div className="space-y-0.5 pt-2 border-t border-border/50 col-span-2">
+                      <span className="text-2xs text-muted-foreground font-bold block">شناسهٔ نشست (Session):</span>
+                      <span className="text-xs font-mono font-bold text-muted-foreground break-all">{selectedLog.sessionId}</span>
                     </div>
                   )}
                 </div>
@@ -1298,8 +1729,8 @@ export const AuditTrailView: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-bold">نوع اکشن:</span>
-                    <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border ${actionLabels[selectedLog.action]?.bg || 'bg-muted text-foreground'}`}>
-                      {actionLabels[selectedLog.action]?.label || selectedLog.action}
+                    <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border ${actionMeta(selectedLog.action).bg}`}>
+                      {actionMeta(selectedLog.action).label}
                     </span>
                   </div>
                   {/* Recorded, or absent — never guessed.

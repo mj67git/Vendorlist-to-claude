@@ -67,7 +67,6 @@ export function materialRoutes(): express.Router {
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       await AuditService.createAuditRecord({
         auditId,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -154,7 +153,6 @@ export function materialRoutes(): express.Router {
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       await AuditService.createAuditRecord({
         auditId,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -200,7 +198,6 @@ export function materialRoutes(): express.Router {
         const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
         await AuditService.createAuditRecord({
           auditId,
-          correlationId: crypto.randomUUID(),
           userId: req.user.username,
           userName: req.user.name,
           role: req.user.role,
@@ -228,7 +225,6 @@ export function materialRoutes(): express.Router {
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       await AuditService.createAuditRecord({
         auditId,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -298,7 +294,6 @@ export function materialRoutes(): express.Router {
       const now = new Date();
       await AuditService.createAuditRecord({
         auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -359,7 +354,6 @@ export function materialRoutes(): express.Router {
       const now = new Date();
       await AuditService.createAuditRecord({
         auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,
@@ -404,7 +398,6 @@ export function materialRoutes(): express.Router {
       const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       await AuditService.createAuditRecord({
         auditId,
-        correlationId: crypto.randomUUID(),
         userId: req.user.username,
         userName: req.user.name,
         role: req.user.role,

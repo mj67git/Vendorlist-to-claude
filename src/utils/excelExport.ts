@@ -1056,3 +1056,111 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
   const safeName = supplierName.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40);
   XL.writeFile(wb, `پرونده_تامین‌کننده_${safeName}_${dateStr}.xlsx`);
 }
+
+/**
+ * Who holds what, in the shape an inspector asks for it.
+ *
+ * Access is the one thing in the system that cannot be reconstructed by
+ * looking at the data afterwards, and producing this list by hand meant opening
+ * every account's dialog one at a time. One row per account, one column per
+ * module, in the same CRUD shorthand the screen uses — plus the effective
+ * permission names in full, so the sheet stands on its own away from the app.
+ */
+export interface UserAccessExportRow {
+  name: string;
+  username: string;
+  roleLabel: string;
+  status: string;
+  accessSource: string;
+  lastLogin: string;
+  /** Module title → the letters that module grants, e.g. `RCU`. */
+  modules: Record<string, string>;
+  permissionNames: string[];
+}
+
+export function exportUserAccessToExcel(rows: UserAccessExportRow[], moduleTitles: string[]) {
+  const headers = [
+    'ردیف', 'نام و نام خانوادگی', 'نام کاربری', 'سمت سازمانی', 'وضعیت حساب',
+    'منبع دسترسی', 'آخرین ورود', ...moduleTitles, 'مجوزهای مؤثر',
+  ];
+  const body = rows.map((r, i) => [
+    i + 1, r.name, r.username, r.roleLabel, r.status, r.accessSource, r.lastLogin,
+    ...moduleTitles.map(t => r.modules[t] || '—'),
+    r.permissionNames.join('، ') || '—',
+  ]);
+
+  const ws = XL.utils.aoa_to_sheet([headers, ...body]);
+  const firstModuleCol = 7;
+  const lastModuleCol = firstModuleCol + moduleTitles.length - 1;
+
+  for (const key of Object.keys(ws)) {
+    if (key[0] === '!') continue;
+    const match = key.match(/^([A-Z]+)(\d+)$/);
+    if (!match) continue;
+    const cell = ws[key];
+    const colIndex = XL.utils.decode_col(match[1]);
+    const rowIndex = parseInt(match[2], 10) - 1;
+
+    if (rowIndex === 0) {
+      cell.s = {
+        fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
+        font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: {
+          top: { style: 'thin', color: { rgb: '475569' } },
+          bottom: { style: 'medium', color: { rgb: '0F172A' } },
+          left: { style: 'thin', color: { rgb: '475569' } },
+          right: { style: 'thin', color: { rgb: '475569' } },
+        },
+      };
+      continue;
+    }
+
+    cell.s = {
+      fill: { patternType: 'solid', fgColor: { rgb: rowIndex % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+      font: { name: 'Segoe UI', sz: 9, color: { rgb: '1E293B' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        right: { style: 'thin', color: { rgb: 'E2E8F0' } },
+      },
+    };
+
+    // Names and the permission list read right to left; the shorthand does not.
+    if ([1, 2, 3, headers.length - 1].includes(colIndex)) cell.s.alignment.horizontal = 'right';
+    if (colIndex >= firstModuleCol && colIndex <= lastModuleCol) {
+      cell.s.font = { name: 'Consolas', sz: 9, color: { rgb: '1E293B' } };
+      // A module the account cannot touch at all is greyed rather than left to
+      // look like a value; on a sheet of forty accounts that is what the eye
+      // needs to skip.
+      if (String(cell.v || '') === '—') {
+        cell.s.font.color = { rgb: '94A3B8' };
+      }
+    }
+    // A closed account is the first thing to notice on an access review.
+    if (colIndex === 4 && String(cell.v || '').includes('غیرفعال')) {
+      cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEE2E2' } };
+      cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'DC2626' } };
+    }
+    // So is an account whose access was adjusted away from its role template.
+    if (colIndex === 5 && String(cell.v || '').includes('سفارشی')) {
+      cell.s.fill = { patternType: 'solid', fgColor: { rgb: 'FEF3C7' } };
+      cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'D97706' } };
+    }
+  }
+
+  ws['!cols'] = [
+    { wch: 6 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 14 },
+    { wch: 16 }, { wch: 20 },
+    ...moduleTitles.map(() => ({ wch: 12 })),
+    { wch: 60 },
+  ];
+
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XL.utils.book_append_sheet(wb, ws, 'سطوح دسترسی');
+  const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
+  XL.writeFile(wb, `سطوح_دسترسی_کاربران_${dateStr}.xlsx`);
+}

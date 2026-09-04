@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, AlertTriangle, CheckCircle, KeyRound, Loader2,
+  AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, History, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -17,9 +17,10 @@ import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
-  ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
+  ALL_PERMISSIONS, can, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
+import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from '../utils/auditTaxonomy';
 
 /**
  * The four columns of the module grid, right to left as the page reads.
@@ -37,6 +38,14 @@ const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string; letter: string }
 
 /** Scoring is listed separately: it is per department, not per action. */
 const SCORE_PERMISSIONS: Permission[] = ['score.commercial', 'score.qa', 'score.planning', 'score.finance'];
+
+/** Department names short enough for a matrix cell. */
+const SCORE_SHORT: Record<string, string> = {
+  'score.commercial': 'بازرگانی',
+  'score.qa': 'کیفیت',
+  'score.planning': 'برنامه‌ریزی',
+  'score.finance': 'مالی',
+};
 
 /** Whether two permission lists grant the same thing, order aside. */
 function samePermissions(a: Permission[], b: Permission[]): boolean {
@@ -155,6 +164,25 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  /**
+   * Three filters, because the questions an access review asks are always the
+   * same three: who is in this department, whose account is still open, and
+   * whose access was adjusted away from their role.
+   */
+  const [filterRole, setFilterRole] = useState<'all' | Role>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'never'>('all');
+  const [filterAccess, setFilterAccess] = useState<'all' | 'template' | 'custom'>('all');
+  /**
+   * The list or the matrix, over the same filtered set of accounts.
+   *
+   * The list answers "tell me about this person"; the matrix answers "who can
+   * do this", which is the question an access review actually starts from and
+   * which the list can only answer by opening every account in turn.
+   */
+  const [view, setView] = useState<'list' | 'matrix'>('list');
+  // Reading the trail is its own permission; administering accounts does not
+  // grant it, so the activity button is only offered to someone who holds both.
+  const canReadAudit = can(currentUser, 'audit.read');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -174,6 +202,18 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [permDraft, setPermDraft] = useState<Permission[]>([]);
   const [permError, setPermError] = useState<string | null>(null);
   const [permSaving, setPermSaving] = useState(false);
+
+  /**
+   * The account's own recent history, read from the change trail.
+   *
+   * No new storage and no new endpoint: every write already records who made
+   * it, so "what has this person been doing" is a filter over data that exists.
+   * Only offered to an administrator who can read the trail — `users.manage`
+   * and `audit.read` are separate permissions and one does not imply the other.
+   */
+  const [activityTarget, setActivityTarget] = useState<ManagedUser | null>(null);
+  const [activityRows, setActivityRows] = useState<any[] | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -215,12 +255,22 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const rows = q
-      ? users.filter(u =>
-          u.username.toLowerCase().includes(q) ||
-          u.name.toLowerCase().includes(q) ||
-          (ROLE_LABELS[u.role] || '').includes(q))
-      : users;
+    const rows = users.filter(u => {
+      if (q && !(
+        u.username.toLowerCase().includes(q) ||
+        u.name.toLowerCase().includes(q) ||
+        (ROLE_LABELS[u.role] || '').includes(q)
+      )) return false;
+      if (filterRole !== 'all' && u.role !== filterRole) return false;
+      if (filterStatus === 'active' && !u.isActive) return false;
+      if (filterStatus === 'inactive' && u.isActive) return false;
+      if (filterStatus === 'never' && u.lastLoginAt) return false;
+      // An empty exception list means "follow the role" — that is the whole
+      // rule the dialog warns about, so the filter reads it the same way.
+      if (filterAccess === 'custom' && u.permissions.length === 0) return false;
+      if (filterAccess === 'template' && u.permissions.length > 0) return false;
+      return true;
+    });
 
     const dir = sortOrder === 'asc' ? 1 : -1;
     const value = (u: ManagedUser): string | number => {
@@ -246,7 +296,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
       // Ties fall back to the name so the order never shuffles between renders.
       return (cmp || collator.compare(a.name, b.name)) * dir;
     });
-  }, [users, search, sortField, sortOrder]);
+  }, [users, search, filterRole, filterStatus, filterAccess, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(visible.length / perPage));
   const pageRows = useMemo(
@@ -271,6 +321,55 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const activeCount = users.filter(u => u.isActive).length;
   const customCount = users.filter(u => u.permissions.length > 0).length;
   const neverSignedIn = users.filter(u => !u.lastLoginAt).length;
+
+  /**
+   * The access list as a spreadsheet, for the review that happens away from
+   * the screen. It exports what is on screen — the filters applied — because a
+   * review is normally of one department or of the closed accounts, and a file
+   * that silently widens to everyone is the wrong answer to that.
+   */
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const moduleTitles = PERMISSION_MODULES.map(m => m.title);
+      const rows = visible.map(u => ({
+        name: u.name,
+        username: u.username,
+        roleLabel: ROLE_LABELS[u.role] || u.role,
+        status: u.isActive ? 'فعال' : 'غیرفعال',
+        accessSource: u.permissions.length > 0 ? 'سفارشی (استثنای کاربر)' : 'الگوی سمت سازمانی',
+        lastLogin: formatLastLogin(u.lastLoginAt),
+        modules: Object.fromEntries(
+          PERMISSION_MODULES.map(m => [m.title, moduleLetters(m, u.effectivePermissions) || '—']),
+        ),
+        permissionNames: u.effectivePermissions.map(p => PERMISSION_LABELS[p] || p),
+      }));
+      // Loaded on demand: the spreadsheet writer is the largest dependency in
+      // the bundle and this page is not an export tool until the button is used.
+      const { exportUserAccessToExcel } = await import('../utils/excelExport');
+      exportUserAccessToExcel(rows, moduleTitles);
+    } catch (err: any) {
+      setActionError('تهیهٔ خروجی Excel ناموفق بود. دوباره تلاش کنید.');
+      console.error('User access export failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const openActivity = (u: ManagedUser) => {
+    setActivityTarget(u);
+    setActivityRows(null);
+    setActivityError(null);
+    authFetch(`/api/audit-logs?userId=${encodeURIComponent(u.username)}&limit=10&page=1`)
+      .then(async res => {
+        if (res.status === 403) throw new Error('برای دیدن فعالیت کاربران، دسترسی «مشاهدهٔ ردیابی تغییرات» لازم است.');
+        if (!res.ok) throw new Error('دریافت فعالیت این کاربر ناموفق بود.');
+        return res.json();
+      })
+      .then(data => setActivityRows(Array.isArray(data.data) ? data.data : []))
+      .catch(err => { setActivityRows([]); setActivityError(err.message); });
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -486,6 +585,17 @@ export function UsersView({ currentUser }: UsersViewProps) {
           <Button
             type="button"
             size="sm"
+            variant="success"
+            onClick={handleExport}
+            disabled={isExporting || visible.length === 0}
+            className="font-bold shrink-0"
+          >
+            {isExporting ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+            <span>خروجی Excel</span>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             onClick={openCreate}
             className="font-bold shrink-0"
           >
@@ -515,6 +625,63 @@ export function UsersView({ currentUser }: UsersViewProps) {
         ))}
       </div>
 
+      {/* FILTER BAR — the three questions an access review asks. Native selects
+          styled from `inputBaseClass`, like every other filter in the app. */}
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">سمت سازمانی</span>
+          <select
+            value={filterRole}
+            onChange={e => { setFilterRole(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-44')}
+          >
+            <option value="all">همهٔ سمت‌ها</option>
+            {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">وضعیت حساب</span>
+          <select
+            value={filterStatus}
+            onChange={e => { setFilterStatus(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-44')}
+          >
+            <option value="all">همه</option>
+            <option value="active">فعال</option>
+            <option value="inactive">غیرفعال</option>
+            <option value="never">هرگز وارد نشده</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">منبع دسترسی</span>
+          <select
+            value={filterAccess}
+            onChange={e => { setFilterAccess(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-52')}
+          >
+            <option value="all">همه</option>
+            <option value="template">پیروی از الگوی سمت</option>
+            <option value="custom">دسترسی سفارشی</option>
+          </select>
+        </label>
+        {(filterRole !== 'all' || filterStatus !== 'all' || filterAccess !== 'all' || search) && (
+          <div className="flex items-center gap-2 pb-0.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { setFilterRole('all'); setFilterStatus('all'); setFilterAccess('all'); setSearch(''); setPage(1); }}
+              className="font-bold"
+            >
+              حذف فیلترها
+            </Button>
+            <span className="text-2xs text-muted-foreground">
+              {visible.length.toLocaleString('fa-IR')} از {users.length.toLocaleString('fa-IR')} حساب
+            </span>
+          </div>
+        )}
+      </div>
+
       {toast && (
         <div role="status" className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 rounded-xl px-4 py-2.5 text-xs font-bold fade-in">
           <CheckCircle className="w-4 h-4 shrink-0" />
@@ -529,6 +696,127 @@ export function UsersView({ currentUser }: UsersViewProps) {
         </div>
       )}
 
+      {/* VIEW SWITCH — two arrangements of the same filtered accounts. */}
+      <div className="flex items-center gap-1.5">
+        {([
+          { key: 'list', label: 'فهرست کاربران' },
+          { key: 'matrix', label: 'ماتریس دسترسی' },
+        ] as const).map(v => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setView(v.key)}
+            aria-pressed={view === v.key}
+            className={`px-3 py-1.5 rounded-xl text-2xs font-bold border transition-colors ${
+              view === v.key
+                ? 'bg-foreground border-foreground text-background'
+                : 'bg-card border-border text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'matrix' ? (
+        /* THE MATRIX — every account against every module, in the same CRUD
+           shorthand the dialog and the export use.
+           Every account on one page, deliberately: paging an access review
+           hides exactly the row you are looking for. The name column and the
+           header both stay put while the grid scrolls sideways. */
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs">
+          <div className="overflow-auto max-h-[70vh]">
+            <table className="w-full text-xs text-right border-separate border-spacing-0">
+              <caption className="sr-only">ماتریس دسترسی همهٔ کاربران به همهٔ ماژول‌ها</caption>
+              <thead>
+                <tr className="bg-muted text-muted-foreground">
+                  <th scope="col" className="sticky top-0 right-0 z-30 bg-muted py-3 px-4 font-bold border-b border-l border-border min-w-[190px]">
+                    کاربر
+                  </th>
+                  {PERMISSION_MODULES.map(m => (
+                    <th key={m.key} scope="col" className="sticky top-0 z-20 bg-muted py-3 px-3 font-bold border-b border-border whitespace-nowrap text-center">
+                      {m.title}
+                    </th>
+                  ))}
+                  <th scope="col" className="sticky top-0 z-20 bg-muted py-3 px-3 font-bold border-b border-border whitespace-nowrap text-center">
+                    امتیازدهی
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 ? (
+                  <tr>
+                    <td colSpan={PERMISSION_MODULES.length + 2} className="py-10 text-center text-muted-foreground">
+                      با این فیلترها حسابی پیدا نشد.
+                    </td>
+                  </tr>
+                ) : visible.map(u => {
+                  const scores = SCORE_PERMISSIONS.filter(p => u.effectivePermissions.includes(p));
+                  return (
+                    <tr key={u.username} className="hover:bg-accent/50 transition-colors">
+                      <th scope="row" className="sticky right-0 z-10 bg-card py-2.5 px-4 text-right font-bold border-b border-l border-border">
+                        <button
+                          type="button"
+                          onClick={() => openPermissions(u)}
+                          className="text-right hover:text-primary transition-colors"
+                          title={`ویرایش سطح دسترسی ${u.name}`}
+                        >
+                          <span className="block text-xs font-bold text-foreground">{u.name}</span>
+                          <span className="block text-2xs font-medium text-muted-foreground">
+                            {ROLE_LABELS[u.role] || u.role}
+                            {!u.isActive && ' · غیرفعال'}
+                            {u.permissions.length > 0 && ' · سفارشی'}
+                          </span>
+                        </button>
+                      </th>
+                      {PERMISSION_MODULES.map(m => {
+                        const letters = moduleLetters(m, u.effectivePermissions);
+                        return (
+                          <td key={m.key} className="py-2.5 px-3 text-center border-b border-border">
+                            {letters ? (
+                              <span className="font-mono text-2xs font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                {letters}
+                              </span>
+                            ) : (
+                              /* A dash, not an empty cell: an empty cell reads
+                                 as "not filled in", and on an access review the
+                                 difference between "no access" and "unknown"
+                                 is the whole point. */
+                              <span className="text-muted-foreground/50">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="py-2.5 px-3 text-center border-b border-border">
+                        {scores.length > 0 ? (
+                          /* Short department names, not the full permission
+                             labels: four of those wrap into a paragraph and
+                             stretch the whole row to five lines, which on a
+                             matrix costs every other row its legibility. */
+                          <span className="text-2xs font-bold text-foreground whitespace-nowrap">
+                            {scores.map(p => SCORE_SHORT[p] || p).join('، ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-3 border-t border-border flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground">
+            <span className="font-bold text-foreground">راهنما:</span>
+            {ACTION_COLUMNS.map(c => (
+              <span key={c.key}><span className="font-mono font-bold">{c.letter}</span> {c.label}</span>
+            ))}
+            <span><span className="font-mono font-bold">F</span> دانلود مدارک SOP</span>
+            <span>روی نام هر کاربر بزنید تا سطح دسترسی‌اش را ویرایش کنید.</span>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* TABLE */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -671,6 +959,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         className="text-muted-foreground hover:text-primary">
                         <SlidersHorizontal />
                       </Button>
+                      {canReadAudit && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="فعالیت اخیر"
+                          onClick={() => openActivity(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <History />
+                        </Button>
+                      )}
                       <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
                         onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
                         className="text-muted-foreground hover:text-amber-600">
@@ -739,6 +1034,90 @@ export function UsersView({ currentUser }: UsersViewProps) {
           </>
         )}
       </div>
+      </>
+      )}
+
+      {/* RECENT ACTIVITY — read from the change trail, never stored twice. */}
+      <FormModal
+        open={!!activityTarget}
+        onClose={() => setActivityTarget(null)}
+        size="md"
+        labelledBy="users-activity-title"
+      >
+        {activityTarget && (
+          <div className="flex flex-col max-h-full">
+            <div className="px-6 py-4 border-b border-border bg-muted/50">
+              <h3 id="users-activity-title" className="text-sm font-black text-foreground">
+                فعالیت اخیر «{activityTarget.name}»
+              </h3>
+              <p className="text-2xs text-muted-foreground mt-0.5">
+                ده رویداد آخر این حساب در ردیابی تغییرات. سوابق کامل در ماژول «ردیابی تغییرات» با فیلتر کاربر دیده می‌شود.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-3 overflow-y-auto flex-1">
+              {activityError && (
+                <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{activityError}</span>
+                </div>
+              )}
+
+              {activityRows === null ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-xs py-4">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="italic">در حال خواندن ردیابی تغییرات…</span>
+                </div>
+              ) : activityRows.length === 0 && !activityError ? (
+                <p className="text-2xs text-muted-foreground bg-muted border border-border rounded-xl px-3.5 py-3">
+                  از این حساب هنوز هیچ تغییری ثبت نشده است. ورود به سامانه هم رویداد ثبت‌شده‌ای است، پس یعنی این حساب هرگز وارد نشده یا فقط پیش از راه‌اندازی ردیابی فعال بوده است.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {activityRows.map((r: any) => {
+                    const when = new Date(r.timestamp || r.createdAt);
+                    const blocked = r.result && r.result !== 'Success';
+                    return (
+                      <li key={r.id} className="bg-muted/40 border border-border rounded-xl p-3 flex items-start gap-3">
+                        <span className="text-2xs font-mono text-muted-foreground shrink-0 leading-5">
+                          {when.toLocaleDateString('fa-IR')}
+                          <span className="block">{when.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </span>
+                        <span className="min-w-0 flex-1 flex flex-col gap-1">
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-2xs font-black text-foreground">
+                              {AUDIT_ACTION_LABELS[r.action] || r.action}
+                            </span>
+                            <span className="text-2xs text-muted-foreground truncate">
+                              {r.entityName || r.entityId || 'مشخصات'}
+                            </span>
+                            {/* A refused attempt is the row an administrator is
+                                looking for, so it is the one that is marked. */}
+                            {blocked && (
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-md text-2xs font-bold border bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900">
+                                {r.result === 'Blocked' ? 'مسدود شد' : 'ناموفق'}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-2xs text-muted-foreground truncate">
+                            {AUDIT_MODULE_LABELS[r.module] || r.module}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="px-6 py-3.5 border-t border-border bg-muted/30 flex justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => setActivityTarget(null)} className="font-bold">
+                بستن
+              </Button>
+            </div>
+          </div>
+        )}
+      </FormModal>
 
       {/* CREATE / EDIT */}
       <FormModal
@@ -801,8 +1180,20 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 onChange={e => setDraft({ ...draft, role: e.target.value as Role })}
                 className={cn(inputBaseClass, 'w-full')}
               >
-                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                {/* The `admin` role is offered only to an administrator. The
+                    module itself is open to anyone holding `users.manage`, but
+                    handing out the role that counts as "still has an
+                    administrator" is a decision for someone who already holds
+                    it — the server refuses it either way (rule 14), and this
+                    keeps the form from offering a choice that will be refused. */}
+                {ROLE_OPTIONS.filter(r => r !== 'admin' || currentUser.role === 'admin' || editing?.role === 'admin')
+                  .map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
+              {currentUser.role !== 'admin' && (
+                <p className="text-2xs text-muted-foreground pt-1">
+                  تعیین سمت «مدیر سیستم» فقط از حساب مدیر سیستم امکان‌پذیر است.
+                </p>
+              )}
               {editing && editing.permissions.length > 0 && draft.role !== editing.role && (
                 <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   با تغییر سمت، دسترسی‌های سفارشی این کاربر پاک می‌شود و الگوی سمت جدید اعمال می‌گردد.
@@ -922,6 +1313,52 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   <span>{permError}</span>
                 </div>
               )}
+
+              {/* How far this account has been moved from its role.
+                  The dialog already marked each deviating tick with a tiny +/−,
+                  which is precise and easy to miss on a table of seven rows.
+                  The count says it once, in words, before the table — and the
+                  legend explains the marks rather than leaving them to be
+                  guessed at. */}
+              {(() => {
+                const template = roleTemplate(permTarget.role);
+                const added = permDraft.filter(p => !template.includes(p));
+                const removed = template.filter(p => !permDraft.includes(p));
+                if (added.length === 0 && removed.length === 0) {
+                  return (
+                    <div className="text-2xs text-muted-foreground bg-muted border border-border rounded-xl px-3.5 py-2.5">
+                      این فهرست دقیقاً همان الگوی سمت «{ROLE_LABELS[permTarget.role] || permTarget.role}» است.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-muted border border-border rounded-xl px-3.5 py-2.5 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-bold">
+                      <span className="text-foreground">تفاوت با الگوی سمت:</span>
+                      {added.length > 0 && (
+                        <span className="text-emerald-700 dark:text-emerald-400">
+                          + {added.length.toLocaleString('fa-IR')} مجوز اضافه‌شده
+                        </span>
+                      )}
+                      {removed.length > 0 && (
+                        <span className="text-rose-700 dark:text-rose-400">
+                          − {removed.length.toLocaleString('fa-IR')} مجوز کم‌شده
+                        </span>
+                      )}
+                    </div>
+                    {added.length > 0 && (
+                      <p className="text-2xs text-muted-foreground leading-relaxed">
+                        اضافه‌شده: {added.map(p => PERMISSION_LABELS[p] || p).join('، ')}
+                      </p>
+                    )}
+                    {removed.length > 0 && (
+                      <p className="text-2xs text-muted-foreground leading-relaxed">
+                        کم‌شده: {removed.map(p => PERMISSION_LABELS[p] || p).join('، ')}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* One row per module, one cell per action. A cell is a real
                   checkbox only where the server can tell that action apart;

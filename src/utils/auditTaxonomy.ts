@@ -66,7 +66,14 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   Create: 'ایجاد رکورد',
   Update: 'ویرایش رکورد',
   Delete: 'حذف رکورد',
+  // Three refusals, three names. All three used to be written as
+  // `Delete - Blocked`, including the ones that refused a *creation* and an
+  // *edit* — so the trail said a deletion had been stopped when nobody had
+  // tried to delete anything. Older records keep the old value, which is why
+  // its label stays here.
   'Delete - Blocked': 'حذف ناموفق (مسدودشده)',
+  'Create - Blocked': 'ثبت ناموفق (مسدودشده)',
+  'Update - Blocked': 'ویرایش ناموفق (مسدودشده)',
   'System Update': 'به‌روزرسانی خودکار سیستم',
   'System Calculation': 'محاسبهٔ خودکار سیستم',
   LOGIN: 'ورود موفق',

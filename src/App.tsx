@@ -48,7 +48,7 @@ import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
-import { can, effectivePermissions } from './utils/permissions';
+import { can, effectivePermissions, type Permission } from './utils/permissions';
 import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
@@ -1538,6 +1538,24 @@ export default function App() {
       // overlay.
       const editing = formMode === 'edit' ? selectedVendor ?? undefined : undefined;
       keyName = `source-form-${formMode}-${editing?.id ?? categoryId ?? 'new'}`;
+      // The form is a route, so hiding the button that opens it is not enough:
+      // `#/category/foreign/new` is a link someone can be sent or can keep in
+      // their history. Refusing here means an account without the permission
+      // meets the refusal before filling the form in, rather than after — the
+      // server has always refused the save itself (rule 14).
+      const formPermission: Permission = formMode === 'edit' ? 'vendor.edit' : 'vendor.create';
+      if (!can(currentUser, formPermission)) {
+        keyName = `source-form-denied-${formMode}`;
+        content = (
+          <AccessDenied
+            title={formMode === 'edit' ? 'عدم دسترسی به ویرایش سورس' : 'عدم دسترسی به ثبت سورس'}
+            detail={formMode === 'edit'
+              ? 'حساب کاربری شما مجوز «ویرایش سورس» را ندارد.'
+              : 'حساب کاربری شما مجوز «ثبت سورس جدید» را ندارد. این مجوز در ماژول مدیریت کاربران، ستون «ثبت» ردیف سورس‌ها تعیین می‌شود.'}
+            onHome={() => navigate('home')}
+          />
+        );
+      } else {
       content = (
         <VendorForm
           db={db}
@@ -1554,6 +1572,7 @@ export default function App() {
           registerNavGuard={registerNavGuard}
         />
       );
+      }
     } else if (vendorLinkPending) {
       // Deep link into a source: wait for the dataset, then report honestly if
       // the id is not in it.

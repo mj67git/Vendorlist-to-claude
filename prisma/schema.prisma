@@ -406,6 +406,14 @@ model AuditLog {
   ipAddress       String?  @map("ip_address") @db.VarChar(64)
   userAgent       String?  @map("user_agent") @db.Text
   eventType       String?  @map("event_type") @db.VarChar(50)
+  // Did the recorded action happen? `Success`, `Failed` or `Blocked`. Before
+  // this column the answer lived only in the wording of `action`, which no
+  // filter could depend on. Derived centrally — see `resultFor` in
+  // auditService.ts — so it cannot drift between the 47 write sites.
+  result          String?  @map("result") @db.VarChar(20)
+  // The sign-in the action came from. NULL for tokens issued before sessions
+  // carried an identifier; those really had none.
+  sessionId       String?  @map("session_id") @db.VarChar(50)
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([timestamp])
@@ -415,6 +423,8 @@ model AuditLog {
   @@index([severity])
   @@index([entityId])
   @@index([correlationId])
+  @@index([result])
+  @@index([sessionId])
   @@map("audit_log")
 }
 
