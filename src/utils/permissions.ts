@@ -30,6 +30,16 @@ export type Permission =
   | 'vendor.edit'
   /** Remove a source entirely. */
   | 'vendor.delete'
+  /**
+   * Record the chosen source for a material — the decision, not the data.
+   *
+   * Separate from `vendor.edit` because they are different acts: editing keeps
+   * a record accurate, choosing says which supplier the company buys this
+   * material from, carries a mandatory reason and is what an inspector asks
+   * about. Under one permission, anyone who could fix a phone number could
+   * also change the winning source of a material.
+   */
+  | 'vendor.select'
   /** Record or edit laboratory analysis results. */
   | 'vendor.analysis'
   /** Record or edit the FMEA risk assessment. */
@@ -72,7 +82,7 @@ export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 
 /** Every permission there is, in the order the admin screen groups them. */
 export const ALL_PERMISSIONS: Permission[] = [
-  'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete',
+  'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete', 'vendor.select',
   'material.read', 'material.create', 'material.edit', 'material.delete',
   'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files',
   'vendor.analysis', 'vendor.risk',
@@ -107,6 +117,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'vendor.create': 'ثبت سورس جدید',
   'vendor.edit': 'ویرایش سورس',
   'vendor.delete': 'حذف سورس',
+  'vendor.select': 'ثبت سورس منتخب هر ماده',
   'material.read': 'مشاهدهٔ مخزن مواد',
   'material.create': 'ثبت مادهٔ جدید',
   'material.edit': 'ویرایش ماده',
@@ -179,6 +190,13 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     }],
   },
   {
+    key: 'selection',
+    title: 'انتخاب سورس منتخب',
+    single: 'vendor.select',
+    actions: { view: 'vendor.read', create: 'vendor.select', edit: 'vendor.select', delete: null },
+    note: 'تصمیم «این ماده از کدام سورس خریداری می‌شود» با دلیل الزامی ثبت می‌شود و روی همان رکورد به‌روزرسانی می‌گردد، پس ثبت و ویرایش یکی است و حذفی ندارد. مشاهدهٔ تصمیم همان «مشاهدهٔ سورس‌ها» است.',
+  },
+  {
     key: 'analysis',
     title: 'نتایج آزمایشگاهی',
     single: 'vendor.analysis',
@@ -228,9 +246,9 @@ export const LOCKED_REASONS = {
  * planning or finance, whose work needs the list and the grade. An admin can
  * still grant it to one person.
  *
- * `lab` intentionally holds nothing, reads included. It exists in the database
- * enum, no account uses it, and it is left alone because removing it would mean
- * a schema migration for a role nobody has.
+ * `lab` used to hold nothing at all — an account with that role saw no page in
+ * the application while the user form still offered the role. It now carries
+ * the reads and `vendor.analysis`, which is the QC bench's actual work.
  */
 const READ_ALL = ['vendor.read', 'material.read', 'partner.read'] as const;
 
@@ -243,6 +261,9 @@ const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
     // and the grade to do their work, not the legal documents themselves.
     'partner.files',
     'vendor.create', 'vendor.edit',
+    // Commercial buys the material, so commercial records which source it is
+    // bought from. QA grades and analyses; it does not place the order.
+    'vendor.select',
     'partner.create', 'partner.edit', 'partner.delete',
     'score.commercial',
   ],
@@ -262,7 +283,17 @@ const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   ],
   planning: [...READ_ALL, 'score.planning'],
   finance: [...READ_ALL, 'score.finance'],
-  lab: [],
+  /**
+   * The QC bench: sees what it tests, records the result, changes nothing else.
+   *
+   * This template used to be empty, so every account with this role could open
+   * no page at all while the form still offered the role — a trap for whoever
+   * created the next laboratory account. It holds the reads and
+   * `vendor.analysis`, which is exactly the work: the results are entered
+   * against a source, so the source list has to be visible. No `partner.files`
+   * — the bench does not need a supplier's legal papers to run a test.
+   */
+  lab: [...READ_ALL, 'vendor.analysis'],
 };
 
 /** What a role grants before any per-user adjustment. */

@@ -19,11 +19,11 @@ const LEGACY_READS: Permission[] = [...READ_ALL, 'partner.files'];
 
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
-  commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
+  commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'vendor.select', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
   qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'vendor.risk', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
   planning: [...READ_ALL, 'score.planning'],
   finance: [...READ_ALL, 'score.finance'],
-  lab: [],
+  lab: [...READ_ALL, 'vendor.analysis'],
 };
 
 test('every role holds exactly the permissions in the approved matrix', () => {
@@ -69,10 +69,33 @@ test('the score-only roles may read everything but write only their own score', 
   }
 });
 
-test('lab holds nothing at all', () => {
+test('the laboratory role can do the laboratory work, and nothing beyond it', () => {
+  // It used to hold nothing at all — every account with this role could open no
+  // page in the application, while the user form still offered the role. The
+  // results are entered against a source, so the reads come with the job.
+  assert.equal(can('lab', 'vendor.analysis'), true);
+  for (const permission of READ_ALL) {
+    assert.equal(can('lab', permission), true, `lab needs ${permission} to do its work`);
+  }
   for (const permission of ALL_PERMISSIONS) {
+    if (permission === 'vendor.analysis' || READ_ALL.includes(permission)) continue;
     assert.equal(can('lab', permission), false, `lab unexpectedly holds ${permission}`);
   }
+  // The bench does not need a supplier's legal papers to run a test.
+  assert.equal(can('lab', 'partner.files'), false);
+});
+
+test('choosing the source for a material is not the same right as editing one', () => {
+  // Under one permission, anyone who could fix a phone number could also change
+  // which supplier the company buys a material from.
+  assert.equal(can('commercial', 'vendor.select'), true, 'commercial places the order');
+  assert.equal(can('admin', 'vendor.select'), true);
+  for (const role of ['qa', 'lab', 'planning', 'finance'] as Role[]) {
+    assert.equal(can(role, 'vendor.select'), false, `${role} must not choose the source`);
+  }
+  // QA edits and analyses, but does not decide the purchase.
+  assert.equal(can('qa', 'vendor.analysis'), true);
+  assert.equal(can('qa', 'vendor.select'), false);
 });
 
 test('an unknown or missing role holds nothing', () => {

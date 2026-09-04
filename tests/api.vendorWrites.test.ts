@@ -249,6 +249,40 @@ test('the chosen-source decision requires a reason and is audited', SKIP, async 
   assert.equal(audited.severity, 'Warning', 'a purchasing decision is not routine noise');
 });
 
+test('choosing the source needs the choosing permission, not the editing one', SKIP, async () => {
+  // The decision used to run under `vendor.edit`, so anyone who could correct a
+  // source's phone number could also change which supplier a material is bought
+  // from. QA can edit sources and cannot choose them.
+  const qaToken = await login('qa');
+  await db().user.update({
+    where: { username: 'qa' },
+    data: { permissions: ['vendor.read', 'material.read', 'partner.read', 'vendor.edit'] },
+  });
+  const refused = await api('/api/source-selections', {
+    method: 'PUT', token: qaToken,
+    body: {
+      materialKey: 'Paracetamol', category: 'foreign',
+      vendorId: FIXTURE.vendorId, reason: 'تلاش بدون مجوز',
+    },
+  });
+  assert.equal(refused.status, 403);
+  assert.equal(await db().sourceSelection.count(), 0, 'nothing was recorded');
+
+  // With the permission, the same request goes through.
+  await db().user.update({
+    where: { username: 'qa' },
+    data: { permissions: ['vendor.read', 'material.read', 'partner.read', 'vendor.select'] },
+  });
+  const allowed = await api('/api/source-selections', {
+    method: 'PUT', token: qaToken,
+    body: {
+      materialKey: 'Paracetamol', category: 'foreign',
+      vendorId: FIXTURE.vendorId, reason: 'تصمیم ثبت‌شده',
+    },
+  });
+  assert.equal(allowed.status, 200);
+});
+
 test('reading is a permission too', SKIP, async () => {
   // Nine GET routes enforce a read permission, so a "view only on partners"
   // account is expressible. Strip the reads and the endpoints must refuse.

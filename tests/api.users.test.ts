@@ -123,6 +123,38 @@ test('the migration gives the pre-read lists their reads, and leaves every other
   assert.deepEqual(rows.planning, [], 'an empty list still means "follow the role"');
 });
 
+test('the source-selection migration keeps everyone who could already choose', SKIP, async () => {
+  // Splitting `vendor.select` out of `vendor.edit` would silently take the
+  // decision away from every account whose stored list names the old
+  // permission, so 20260903160000 expands those lists once.
+  const sql = readFileSync(
+    new URL('../prisma/migrations/20260903160000_source_selection_permission/migration.sql', import.meta.url),
+    'utf8',
+  );
+
+  await db().user.update({ where: { username: 'commercial' }, data: { permissions: ['vendor.read', 'vendor.edit'] } });
+  // The retired name that means create plus edit had the same access.
+  await db().user.update({ where: { username: 'qa' }, data: { permissions: ['vendor.read', 'vendor.write'] } });
+  await db().user.update({ where: { username: 'finance' }, data: { permissions: ['vendor.read', 'score.finance'] } });
+  await db().user.update({ where: { username: 'planning' }, data: { permissions: [] } });
+
+  await db().$executeRawUnsafe(sql);
+
+  const rows = Object.fromEntries(
+    (await db().user.findMany({ select: { username: true, permissions: true } }))
+      .map((u: any) => [u.username, u.permissions]),
+  );
+  assert.deepEqual(rows.commercial, ['vendor.read', 'vendor.edit', 'vendor.select']);
+  assert.deepEqual(rows.qa, ['vendor.read', 'vendor.write', 'vendor.select']);
+  assert.deepEqual(rows.finance, ['vendor.read', 'score.finance'], 'a list that never had the edit is untouched');
+  assert.deepEqual(rows.planning, [], 'an empty list still means "follow the role"');
+
+  // Running it twice does not double the entry.
+  await db().$executeRawUnsafe(sql);
+  const again = await db().user.findUnique({ where: { username: 'commercial' } });
+  assert.deepEqual(again.permissions, ['vendor.read', 'vendor.edit', 'vendor.select']);
+});
+
 test('changing a role clears the exceptions of the old job', SKIP, async () => {
   const token = await login('admin');
   await savePermissions(token, 'finance', ['score.finance']);

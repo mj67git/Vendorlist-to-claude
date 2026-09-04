@@ -48,7 +48,7 @@ export function sourceSelectionRoutes(): express.Router {
    * decision anyone made, and "why this supplier" is exactly what an auditor
    * asks. Requires vendor.write — the same permission as registering a source.
    */
-  router.put("/api/source-selections", requireAuth, requirePermission("vendor.edit"), async (req: any, res) => {
+  router.put("/api/source-selections", requireAuth, requirePermission("vendor.select"), async (req: any, res) => {
     let release: (() => void) | null = null;
     try {
       const { materialKey, category, vendorId, reason } = req.body || {};
