@@ -697,6 +697,24 @@ export default function App() {
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  /**
+   * Escape closes the header popovers.
+   *
+   * Both could only be dismissed by clicking the invisible scrim behind them —
+   * every other layer in the application (the modals, the command palette)
+   * closes on Escape, and a keyboard user had no way out of these two at all.
+   */
+  useEffect(() => {
+    if (!showUserMenu && !showNotificationPanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setShowUserMenu(false);
+      setShowNotificationPanel(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showUserMenu, showNotificationPanel]);
+
   // Session facts for the user menu. The remaining time is recomputed each time
   // the menu opens rather than ticking, since it is a coarse label.
   const [myActivity, setMyActivity] = useState<any[] | null>(null);
@@ -1945,18 +1963,42 @@ export default function App() {
           
           {/* Sticky Topbar */}
           <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
-            <div className="flex items-center gap-3 sm:gap-4">
+            {/* `min-w-0` on the group and a capped title: without it the row
+                cannot shrink below its content, and on a deep page at ~900px
+                the breadcrumbs pushed the header into horizontal overflow. */}
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden text-muted-foreground"
+                className="md:hidden text-muted-foreground shrink-0"
                 onClick={() => setSidebarOpen(true)}
               >
                 <Menu />
               </Button>
 
+              {/* Where the reader is.
+
+                  On the home page the whole right half of the bar was empty:
+                  the back button and the breadcrumbs only exist once the stack
+                  is deeper than one, so every control sat in the left corner
+                  and roughly 460px on the right — the first place a Persian
+                  reader looks — said nothing. The current page's name fills it
+                  on every screen, and the breadcrumbs continue the sentence
+                  when there is a path to show. */}
               {/* Navigation History & Back Handler */}
               <div className="flex items-center gap-2.5 min-w-0">
+                {/* The page's name, and only where nothing else says it.
+
+                    Once the breadcrumbs appear (from `md`, with a path to show)
+                    the last crumb already names this page, and printing both
+                    made the two compete for the same strip — measured at 900px,
+                    the title truncated to «خرید …» while the first crumb was
+                    clipped to a single letter. So the heading yields to the
+                    trail exactly where the trail exists, and stands alone on
+                    the home page and on narrow screens. */}
+                <h1 className={`text-sm font-black text-foreground truncate max-w-[180px] lg:max-w-[260px] ${viewHistory.length > 1 ? 'md:hidden' : ''}`}>
+                  {getViewStateLabel(currentViewState) || 'سامانهٔ ارزیابی تأمین‌کنندگان'}
+                </h1>
                 {viewHistory.length > 1 && (
                   <Button
                     variant="outline"
@@ -1971,9 +2013,15 @@ export default function App() {
                 )}
 
                 {/* Breadcrumb trail — shows the full path and allows jumping
-                    directly to any earlier level. */}
+                    directly to any earlier level.
+
+                    Shown from `md`, not `lg`: between 768px and 1024px the only
+                    thing left was a "back" button, so a tablet user had a way
+                    out of the page but no statement of where they were. The
+                    crumbs that made the row too wide were the long entity name
+                    on the last crumb, which now truncates with its tooltip. */}
                 {viewHistory.length > 1 && (
-                  <nav aria-label="مسیر ناوبری" className="hidden lg:flex items-center gap-1 min-w-0 text-xs">
+                  <nav aria-label="مسیر ناوبری" className="hidden md:flex items-center gap-1 min-w-0 overflow-hidden text-xs">
                     {viewHistory.map((state, idx) => {
                       const label = getViewStateLabel(state);
                       if (!label) return null;
@@ -2028,6 +2076,11 @@ export default function App() {
                   variant="outline"
                   size="icon"
                   onClick={() => setShowNotificationPanel(!showNotificationPanel)}
+                  aria-haspopup="dialog"
+                  aria-expanded={showNotificationPanel}
+                  aria-label={expiringVendors.length > 0
+                    ? `مرکز اعلان‌ها، ${expiringVendors.length} هشدار انقضای مجوز`
+                    : 'مرکز اعلان‌های سیستم'}
                   className={`relative ${
                     expiringVendors.length > 0
                       ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 hover:text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
@@ -2108,46 +2161,41 @@ export default function App() {
                 )}
               </div>
 
-              {/* `users.manage` is the policy table's name for "administers the
-                  system", so this is the same audience as the old
-                  `role === 'admin'` test — but read from the one table both the
-                  UI and the server use, and it follows a per-user exception
-                  instead of ignoring it (rule 14).
+              {/* Backing up the database is an administrator's occasional
+                  errand, and it used to sit in the bar with the same weight as
+                  the notification bell and the account box — controls that are
+                  there on every screen for everyone. It moved into the account
+                  menu, beside the other things done once in a while.
 
-                  Note this gate is a deliberate house rule, not a security
+                  Note its gate is a deliberate house rule, not a security
                   boundary: the file is built in the browser from `db`, which
                   `GET /api/vendors` already serves to every signed-in user. A
                   server permission cannot be added for it without inventing one
                   no endpoint enforces — the mistake `archive.read` was deleted
                   for. */}
-              {can(currentUser, 'users.manage') && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadBackup}
-                  className="h-8 gap-1.5 text-xs font-bold text-foreground bg-background hover:bg-accent border-border shadow-2xs"
-                  title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
-                >
-                  <Download className="w-3.5 h-3.5 text-primary" />
-                  <span className="hidden md:inline">پشتیبان‌گیری</span>
-                </Button>
-              )}
 
               {/* Live clock, in the top-left beside the account box.
-                  Shown from `lg` up, not `sm`: from `md` the fixed 272px
-                  sidebar leaves the header roughly 460–650px, and this chip
-                  alone is 276px of it. None of the items in this row can
-                  shrink, so between 768px and ~950px the whole cluster —
-                  account box included — was pushed off the left edge of the
-                  window and clipped, unreachable. */}
-              <div className="hidden lg:flex items-center gap-2.5 px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans">
-                <span className="font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
-                <span className="text-border">|</span>
+
+                  Two facts, not three. It used to print the Jalali date, the
+                  time and the Gregorian date side by side and stood 276px wide
+                  — the largest single item in a row where nothing shrinks,
+                  which is why it had to be hidden below `lg` to stop the whole
+                  cluster being pushed off the left edge. The Gregorian date is
+                  for foreign correspondence, which is a "look it up" fact, so
+                  it moved into the chip's tooltip and the chip came back at
+                  `md`. */}
+              <div
+                className="hidden md:flex items-center gap-2.5 px-2.5 lg:px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans shrink-0"
+                title={`تاریخ میلادی: ${systemTime.isoDate}`}
+              >
+                {/* Measured, not guessed: with the date in it the chip is wide
+                    enough to overflow the header at 820px — the width where the
+                    272px sidebar leaves the bar about 548px and nothing here
+                    shrinks. So the clock alone appears from `md` and the date
+                    joins it at `lg`, where there is room for both. */}
+                <span className="hidden lg:inline font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
+                <span className="hidden lg:inline text-border">|</span>
                 <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
-                <span className="text-border">|</span>
-                <span className="font-mono text-2xs text-muted-foreground leading-none" dir="ltr" title="تاریخ میلادی، برای مکاتبات خارجی">
-                  {systemTime.isoDate}
-                </span>
               </div>
 
               {/* This used to be a permanently green, permanently pulsing
@@ -2167,6 +2215,9 @@ export default function App() {
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(v => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={showUserMenu}
+                    aria-label={`منوی حساب کاربری ${currentUser.name || currentUser.username}`}
                     className="flex items-center gap-2 pr-1 pl-2 py-1 rounded-xl border border-border bg-background hover:bg-accent transition-colors cursor-pointer"
                     title={currentUser.name || currentUser.username}
                   >
@@ -2246,17 +2297,24 @@ export default function App() {
                           )}
                         </div>
 
+                        {/* The theme switch is not repeated here.
+
+                            It had a permanent icon button in the bar and a row
+                            in this menu: one setting, two controls, and the two
+                            never agreed about which state they were showing.
+                            The bar keeps it, because it is used several times a
+                            day; the menu keeps the things that are not. */}
                         <div className="p-1.5">
-                          <button
-                            onClick={toggleTheme}
-                            className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                          >
-                            <span className="flex items-center gap-2.5">
-                              {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                              {isDark ? 'حالت روز (روشن)' : 'حالت شب (تیره)'}
-                            </span>
-                            <span className={`text-2xs font-mono px-1.5 py-0.5 rounded-full ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-muted text-muted-foreground'}`}>{isDark ? 'DARK' : 'LIGHT'}</span>
-                          </button>
+                          {can(currentUser, 'users.manage') && (
+                            <button
+                              onClick={() => { setShowUserMenu(false); handleDownloadBackup(); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
+                              title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
+                            >
+                              <Download className="w-4 h-4 text-primary" />
+                              پشتیبان‌گیری کامل
+                            </button>
+                          )}
                           {can(currentUser, 'users.manage') && (
                             <button
                               onClick={() => { setShowUserMenu(false); navigate('users'); }}
