@@ -14,6 +14,7 @@ import { PERMISSION_MODULES, effectivePermissions, roleTemplate, type Permission
 /** The same shorthand the screen and the export print, e.g. `RCU`. */
 function moduleLetters(moduleKey: string, permissions: Permission[]): string {
   const module = PERMISSION_MODULES.find(m => m.key === moduleKey)!;
+  if (module.derivedFrom) return permissions.includes(module.derivedFrom) ? 'R' : '';
   const cols: Array<['view' | 'create' | 'edit' | 'delete', string]> = [
     ['view', 'R'], ['create', 'C'], ['edit', 'U'], ['delete', 'D'],
   ];
@@ -57,6 +58,31 @@ test('the export follows the exception list, not the role, when one is set', () 
   assert.deepEqual(effective, ['vendor.read', 'score.commercial']);
   assert.equal(moduleLetters('partners', effective), '', 'the sheet must not print access the account lost');
   assert.equal(moduleLetters('vendors', effective), 'R');
+});
+
+test('a view over another module follows that module, in the matrix and the sheet', () => {
+  // The archive and the supplier directory have no permission of their own —
+  // both read `GET /api/vendors` like every source view — so they report the
+  // read they follow rather than claiming a switch of their own.
+  const finance = roleTemplate('finance');
+  assert.equal(moduleLetters('archive', finance), 'R');
+  assert.equal(moduleLetters('supplier-audit', finance), 'R');
+
+  // …and report nothing once that read is taken away.
+  const noReads = effectivePermissions({ role: 'finance', permissions: ['score.finance'] });
+  assert.equal(moduleLetters('archive', noReads), '');
+  assert.equal(moduleLetters('supplier-audit', noReads), '');
+});
+
+test('the derived rows offer no permission of their own', () => {
+  // A tick the server cannot enforce is the mistake `archive.read` was deleted
+  // for, so these rows must not introduce one.
+  for (const key of ['archive', 'supplier-audit']) {
+    const module = PERMISSION_MODULES.find(m => m.key === key)!;
+    assert.equal(module.derivedFrom, 'vendor.read');
+    assert.deepEqual(Object.values(module.actions), [null, null, null, null]);
+    assert.ok(module.note, 'the row explains why it cannot be set');
+  }
 });
 
 test('an empty exception list means the role, and the sheet says the role', () => {

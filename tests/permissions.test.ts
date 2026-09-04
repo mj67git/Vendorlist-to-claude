@@ -85,6 +85,26 @@ test('the laboratory role can do the laboratory work, and nothing beyond it', ()
   assert.equal(can('lab', 'partner.files'), false);
 });
 
+test('taking data out of the system is an administrator act by default', () => {
+  // Reading a page and exporting it are different acts: every export is built
+  // in the browser from data the account can already read, so this setting
+  // governs the file leaving the building rather than the reading.
+  assert.equal(can('admin', 'data.export'), true);
+  for (const role of ['commercial', 'qa', 'lab', 'planning', 'finance'] as Role[]) {
+    assert.equal(can(role, 'data.export'), false, `${role} must not export by default`);
+  }
+});
+
+test('export can be granted to one person without making them an administrator', () => {
+  // Which is the whole reason it is a permission and not a `role === admin`
+  // test: the person who prepares the regulator's pack needs the file, not the
+  // user-administration module.
+  const preparer = { role: 'qa', permissions: ['vendor.read', 'material.read', 'partner.read', 'data.export'] };
+  assert.equal(can(preparer, 'data.export'), true);
+  assert.equal(can(preparer, 'users.manage'), false);
+  assert.equal(can(preparer, 'vendor.delete'), false);
+});
+
 test('choosing the source for a material is not the same right as editing one', () => {
   // Under one permission, anyone who could fix a phone number could also change
   // which supplier the company buys a material from.

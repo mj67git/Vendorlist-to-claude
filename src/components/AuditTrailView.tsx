@@ -15,6 +15,8 @@ import {
   AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
 } from '../utils/auditTaxonomy';
 import { authFetch, isLocalMode } from '../services/authFetch';
+import { can } from '../utils/permissions';
+import type { User } from '../types';
 import { EntityName } from './EntityName';
 import { readLocalAudit } from '../services/localAudit';
 import { PERMISSION_LABELS, type Permission } from '../utils/permissions';
@@ -415,7 +417,7 @@ export function toAuditLog(l: any): AuditLog {
   };
 }
 
-export const AuditTrailView: React.FC = () => {
+export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ currentUser }) => {
   // Navigation & view states
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
@@ -874,6 +876,9 @@ export const AuditTrailView: React.FC = () => {
 
         {/* TOP METRIC CHIPS */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          {/* The audit sheet carries the same records the table shows, so this
+              governs the file leaving, not the reading. */}
+          {can(currentUser, 'data.export') && (
           <Button
             variant="success"
             size="sm"
@@ -884,6 +889,7 @@ export const AuditTrailView: React.FC = () => {
             {isExporting ? <Loader2 className="animate-spin" /> : <FileText />}
             خروجی Excel
           </Button>
+          )}
 
           {truncatedExport && (
             <div

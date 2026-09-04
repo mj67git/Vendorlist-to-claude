@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { Vendor, Grade, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
-import { resolveVendorPartner } from '../utils/vendorPartner';
+import { getPartnerDetails } from '../utils/printablePartner';
+import { criterionCell, departmentNote, earnedCell } from '../utils/printableScores';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { selectionForVendor } from '../utils/sourceSelection';
@@ -16,55 +17,14 @@ import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
 
-function getRawScoreValue(vendor: Vendor, deptId: string, critKey: string): number {
-  if (!vendor) return 5;
-  let raw = vendor.rawScores;
-  if (typeof raw === 'string') {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      raw = null;
-    }
-  }
-  if (raw && (raw as any)[deptId] && (raw as any)[deptId][critKey] !== undefined) {
-    return Number((raw as any)[deptId][critKey]);
-  }
-  
-  const scoreVal = vendor.scores && (vendor.scores as any)[deptId];
-  if (scoreVal > 0) {
-    return Math.max(1, Math.min(5, Math.round(scoreVal / 20)));
-  }
-  return 5;
-}
-
-/**
- * Fill the form's two fixed cells from the source's single partner.
- *
- * The printed form is a controlled document with a fixed grid, so both the
- * manufacturer cell and the seller cell stay — but only the one matching the
- * partner's actual role carries its name. The other says so plainly instead of
- * repeating the same company under a second heading.
+/*
+ * `getRawScoreValue` is gone. It returned 5 — full marks — for any criterion
+ * with nothing recorded against it, so an unevaluated source printed a perfect
+ * scorecard, and it derived per-criterion figures by dividing a department's
+ * total by 20, which made an estimate look like a recorded score. Both now live
+ * in utils/printableScores.ts, where "not recorded" is an answer rather than a
+ * value to be filled in.
  */
-function getPartnerDetails(v: Vendor, partners: BusinessPartner[] = []) {
-  const p = resolveVendorPartner(v, partners);
-  const country = p.country || 'ثبت\u200cنشده';
-
-  if (p.role === 'supplier') {
-    return {
-      mfgName: 'ثبت\u200cنشده',
-      mfgCountry: '-',
-      supName: p.name,
-      supCountry: country,
-    };
-  }
-
-  return {
-    mfgName: p.name,
-    mfgCountry: country,
-    supName: 'خرید بی\u200cواسطه از تولیدکننده',
-    supCountry: 'مستقیم',
-  };
-}
 
 function getMaterialTypeLabel(v: Vendor) {
   if (v.category === 'packaging') return 'اقلام بسته‌بندی';
@@ -756,6 +716,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
              <div className="flex border-2 border-slate-300 rounded-xl mb-4 overflow-hidden text-right">
                 <div className="w-1/5 bg-slate-100 flex flex-col items-center justify-center p-2 border-l border-slate-300 text-center">
                    <div className="text-xs text-center font-bold text-slate-700 mb-2">واحد ارزیابی کننده: بازرگانی</div>
+                   {/* Says plainly when a unit recorded nothing, or recorded
+                       only a total: a reader of the printed form should not
+                       have to infer from a column of dashes. */}
+                   {departmentNote(vendor, 'commercial') && (
+                     <div className="text-[9px] leading-snug text-amber-700 font-semibold mb-2 px-1">
+                       {departmentNote(vendor, 'commercial')}
+                     </div>
+                   )}
                    <div className="w-8 h-8 bg-blue-100 text-[#0071E3] rounded-full flex items-center justify-center mb-1">
                      <Handshake className="w-4 h-4" />
                    </div>
@@ -777,20 +745,20 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">تحویل به موقع</td>
                            <td className="py-2 px-1 font-mono">40</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'delivery')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'delivery')) / 5 * 40)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'commercial', 'delivery')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'commercial', 'delivery', 40)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">پاسخگویی و جبران سازی</td>
                            <td className="py-2 px-1 font-mono">30</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'responsiveness')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'responsiveness')) / 5 * 30)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'commercial', 'responsiveness')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'commercial', 'responsiveness', 30)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">سابقه همکاری و تعداد دفعات خرید</td>
                            <td className="py-2 px-1 font-mono">30</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'commercial', 'history')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'commercial', 'history')) / 5 * 30)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'commercial', 'history')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'commercial', 'history', 30)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
                            <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
@@ -807,6 +775,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
              <div className="flex border-2 border-slate-300 rounded-xl mb-4 overflow-hidden text-right">
                 <div className="w-1/5 bg-slate-100 flex flex-col items-center justify-center p-2 border-l border-slate-300 text-center">
                    <div className="text-xs text-center font-bold text-slate-700 mb-2">واحد ارزیابی کننده: کیفیت</div>
+                   {/* Says plainly when a unit recorded nothing, or recorded
+                       only a total: a reader of the printed form should not
+                       have to infer from a column of dashes. */}
+                   {departmentNote(vendor, 'qa') && (
+                     <div className="text-[9px] leading-snug text-amber-700 font-semibold mb-2 px-1">
+                       {departmentNote(vendor, 'qa')}
+                     </div>
+                   )}
                    <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-1">
                      <Shield className="w-4 h-4" />
                    </div>
@@ -828,26 +804,26 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">کیفیت و تطابق با مشخصات</td>
                            <td className="py-2 px-1 font-mono">35</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'quality')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'quality')) / 5 * 35)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'qa', 'quality')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'qa', 'quality', 35)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">تداوم کیفیت</td>
                            <td className="py-2 px-1 font-mono">25</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'consistency')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'consistency')) / 5 * 25)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'qa', 'consistency')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'qa', 'consistency', 25)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">نتایج Deviation, OOS</td>
                            <td className="py-2 px-1 font-mono">25</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'ncr')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'ncr')) / 5 * 25)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'qa', 'ncr')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'qa', 'ncr', 25)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">ارائه مستندات درخواستی</td>
                            <td className="py-2 px-1 font-mono">15</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'qa', 'documents')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'qa', 'documents')) / 5 * 15)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'qa', 'documents')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'qa', 'documents', 15)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
                            <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
@@ -864,6 +840,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
              <div className="flex border-2 border-slate-300 rounded-xl mb-4 overflow-hidden text-right">
                 <div className="w-1/5 bg-slate-100 flex flex-col items-center justify-center p-2 border-l border-slate-300 text-center">
                    <div className="text-xs text-center font-bold text-slate-700 mb-2">واحد ارزیابی کننده: برنامه‌ریزی و انبار</div>
+                   {/* Says plainly when a unit recorded nothing, or recorded
+                       only a total: a reader of the printed form should not
+                       have to infer from a column of dashes. */}
+                   {departmentNote(vendor, 'planning') && (
+                     <div className="text-[9px] leading-snug text-amber-700 font-semibold mb-2 px-1">
+                       {departmentNote(vendor, 'planning')}
+                     </div>
+                   )}
                    <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-1">
                      <Warehouse className="w-4 h-4" />
                    </div>
@@ -885,14 +869,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">راندمان</td>
                            <td className="py-2 px-1 font-mono">60</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'planning', 'efficiency')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'planning', 'efficiency')) / 5 * 60)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'planning', 'efficiency')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'planning', 'efficiency', 60)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">تطابق کالا با مشخصات فنی پکینگ لیست</td>
                            <td className="py-2 px-1 font-mono">40</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'planning', 'conformance')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'planning', 'conformance')) / 5 * 40)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'planning', 'conformance')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'planning', 'conformance', 40)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
                            <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>
@@ -909,6 +893,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
              <div className="flex border-2 border-slate-300 rounded-xl mb-8 overflow-hidden text-right">
                 <div className="w-1/5 bg-slate-100 flex flex-col items-center justify-center p-2 border-l border-slate-300 text-center">
                    <div className="text-xs text-center font-bold text-slate-700 mb-2">واحد ارزیابی کننده: مالی</div>
+                   {/* Says plainly when a unit recorded nothing, or recorded
+                       only a total: a reader of the printed form should not
+                       have to infer from a column of dashes. */}
+                   {departmentNote(vendor, 'finance') && (
+                     <div className="text-[9px] leading-snug text-amber-700 font-semibold mb-2 px-1">
+                       {departmentNote(vendor, 'finance')}
+                     </div>
+                   )}
                    <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-1">
                      <DollarSign className="w-4 h-4" />
                    </div>
@@ -930,14 +922,14 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">قیمت</td>
                            <td className="py-2 px-1 font-mono">60</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'finance', 'price')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'finance', 'price')) / 5 * 60)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'finance', 'price')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'finance', 'price', 60)}</td>
                          </tr>
                          <tr>
                            <td className="py-2 px-1 text-right pr-3 text-xs font-semibold">نوع پرداخت</td>
                            <td className="py-2 px-1 font-mono">40</td>
-                           <td className="py-2 px-1 font-mono">{getRawScoreValue(vendor, 'finance', 'payment')}</td>
-                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{Math.round((getRawScoreValue(vendor, 'finance', 'payment')) / 5 * 40)}</td>
+                           <td className="py-2 px-1 font-mono">{criterionCell(vendor, 'finance', 'payment')}</td>
+                           <td className="py-2 px-1 bg-slate-50 font-bold font-mono">{earnedCell(vendor, 'finance', 'payment', 40)}</td>
                          </tr>
                          <tr className="bg-slate-100 font-bold">
                            <td className="py-2 px-1 text-right pr-3 text-xs">جمع</td>

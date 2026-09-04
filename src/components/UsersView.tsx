@@ -73,6 +73,10 @@ const MODULE_SHORT: Record<string, string> = {
  * An always-open cell counts as granted, since nothing can take it away.
  */
 function moduleLetters(module: PermissionModule, draft: Permission[]): string {
+  // A view over another module's data has no permission of its own; it reports
+  // the read it follows, so the matrix and the export say plainly whether the
+  // page is reachable.
+  if (module.derivedFrom) return draft.includes(module.derivedFrom) ? 'R' : '';
   const crud = ACTION_COLUMNS
     .filter(col => {
       const cell = module.actions[col.key];
@@ -582,6 +586,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
               className="pr-9 pl-3 w-full sm:w-56"
             />
           </div>
+          {/* Administering accounts and taking a file of them out of the
+              system are two different permissions. */}
+          {can(currentUser, 'data.export') && (
           <Button
             type="button"
             size="sm"
@@ -593,6 +600,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
             {isExporting ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
             <span>خروجی Excel</span>
           </Button>
+          )}
           <Button
             type="button"
             size="sm"
@@ -1440,6 +1448,34 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
                           {ACTION_COLUMNS.map(col => {
                             const cell = module.actions[col.key];
+                            // A view over another module's data: one locked
+                            // tick across the row, reflecting the permission it
+                            // follows. An enabled checkbox here would promise a
+                            // control the server cannot enforce — both pages
+                            // read `GET /api/vendors` like every source view —
+                            // and an empty row would leave an administrator
+                            // wondering whether the page is reachable at all.
+                            if (module.derivedFrom) {
+                              if (col.key !== 'view') return null;
+                              const follows = permDraft.includes(module.derivedFrom);
+                              return (
+                                <td key={col.key} colSpan={4} className="py-2.5 px-1 text-center border-t border-border/70">
+                                  <span className="inline-flex flex-col items-center gap-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={follows}
+                                      disabled
+                                      aria-label={`${module.title} — ${LOCKED_REASONS.derived}`}
+                                      title={`${LOCKED_REASONS.derived} (${PERMISSION_LABELS[module.derivedFrom]})`}
+                                      className="w-4 h-4 accent-primary opacity-60 cursor-not-allowed"
+                                    />
+                                    <span className="text-2xs text-muted-foreground">
+                                      تابع «{PERMISSION_LABELS[module.derivedFrom]}»
+                                    </span>
+                                  </span>
+                                </td>
+                              );
+                            }
                             // A module whose every action is the same permission
                             // gets one checkbox across the whole row, rather
                             // than the same tick repeated in four columns.
@@ -1523,6 +1559,18 @@ export function UsersView({ currentUser }: UsersViewProps) {
                           })}
 
                           <td className="py-2.5 px-1 text-center border-t border-border/70">
+                            {/* A derived row has nothing to select all of, and
+                                an empty disabled box beside a ticked locked one
+                                reads as a contradiction. It gets the same dash
+                                every other unavailable cell gets. */}
+                            {module.derivedFrom ? (
+                              <span
+                                className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-2xs cursor-help"
+                                title={LOCKED_REASONS.derived}
+                              >
+                                —
+                              </span>
+                            ) : (
                             <input
                               type="checkbox"
                               checked={allOn}
@@ -1533,6 +1581,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               title={owned.length === 0 ? LOCKED_REASONS.none : `دسترسی کامل به ${module.title}`}
                               className="w-4 h-4 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             />
+                            )}
                           </td>
                         </tr>
                       );
