@@ -38,6 +38,14 @@ const ACTION_COLUMNS: Array<{ key: ModuleAction; label: string; letter: string }
 /** Scoring is listed separately: it is per department, not per action. */
 const SCORE_PERMISSIONS: Permission[] = ['score.commercial', 'score.qa', 'score.planning', 'score.finance'];
 
+/** Department names short enough for a matrix cell. */
+const SCORE_SHORT: Record<string, string> = {
+  'score.commercial': 'بازرگانی',
+  'score.qa': 'کیفیت',
+  'score.planning': 'برنامه‌ریزی',
+  'score.finance': 'مالی',
+};
+
 /** Whether two permission lists grant the same thing, order aside. */
 function samePermissions(a: Permission[], b: Permission[]): boolean {
   if (a.length !== b.length) return false;
@@ -163,6 +171,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [filterRole, setFilterRole] = useState<'all' | Role>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'never'>('all');
   const [filterAccess, setFilterAccess] = useState<'all' | 'template' | 'custom'>('all');
+  /**
+   * The list or the matrix, over the same filtered set of accounts.
+   *
+   * The list answers "tell me about this person"; the matrix answers "who can
+   * do this", which is the question an access review actually starts from and
+   * which the list can only answer by opening every account in turn.
+   */
+  const [view, setView] = useState<'list' | 'matrix'>('list');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -650,6 +666,127 @@ export function UsersView({ currentUser }: UsersViewProps) {
         </div>
       )}
 
+      {/* VIEW SWITCH — two arrangements of the same filtered accounts. */}
+      <div className="flex items-center gap-1.5">
+        {([
+          { key: 'list', label: 'فهرست کاربران' },
+          { key: 'matrix', label: 'ماتریس دسترسی' },
+        ] as const).map(v => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setView(v.key)}
+            aria-pressed={view === v.key}
+            className={`px-3 py-1.5 rounded-xl text-2xs font-bold border transition-colors ${
+              view === v.key
+                ? 'bg-foreground border-foreground text-background'
+                : 'bg-card border-border text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'matrix' ? (
+        /* THE MATRIX — every account against every module, in the same CRUD
+           shorthand the dialog and the export use.
+           Every account on one page, deliberately: paging an access review
+           hides exactly the row you are looking for. The name column and the
+           header both stay put while the grid scrolls sideways. */
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs">
+          <div className="overflow-auto max-h-[70vh]">
+            <table className="w-full text-xs text-right border-separate border-spacing-0">
+              <caption className="sr-only">ماتریس دسترسی همهٔ کاربران به همهٔ ماژول‌ها</caption>
+              <thead>
+                <tr className="bg-muted text-muted-foreground">
+                  <th scope="col" className="sticky top-0 right-0 z-30 bg-muted py-3 px-4 font-bold border-b border-l border-border min-w-[190px]">
+                    کاربر
+                  </th>
+                  {PERMISSION_MODULES.map(m => (
+                    <th key={m.key} scope="col" className="sticky top-0 z-20 bg-muted py-3 px-3 font-bold border-b border-border whitespace-nowrap text-center">
+                      {m.title}
+                    </th>
+                  ))}
+                  <th scope="col" className="sticky top-0 z-20 bg-muted py-3 px-3 font-bold border-b border-border whitespace-nowrap text-center">
+                    امتیازدهی
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 ? (
+                  <tr>
+                    <td colSpan={PERMISSION_MODULES.length + 2} className="py-10 text-center text-muted-foreground">
+                      با این فیلترها حسابی پیدا نشد.
+                    </td>
+                  </tr>
+                ) : visible.map(u => {
+                  const scores = SCORE_PERMISSIONS.filter(p => u.effectivePermissions.includes(p));
+                  return (
+                    <tr key={u.username} className="hover:bg-accent/50 transition-colors">
+                      <th scope="row" className="sticky right-0 z-10 bg-card py-2.5 px-4 text-right font-bold border-b border-l border-border">
+                        <button
+                          type="button"
+                          onClick={() => openPermissions(u)}
+                          className="text-right hover:text-primary transition-colors"
+                          title={`ویرایش سطح دسترسی ${u.name}`}
+                        >
+                          <span className="block text-xs font-bold text-foreground">{u.name}</span>
+                          <span className="block text-2xs font-medium text-muted-foreground">
+                            {ROLE_LABELS[u.role] || u.role}
+                            {!u.isActive && ' · غیرفعال'}
+                            {u.permissions.length > 0 && ' · سفارشی'}
+                          </span>
+                        </button>
+                      </th>
+                      {PERMISSION_MODULES.map(m => {
+                        const letters = moduleLetters(m, u.effectivePermissions);
+                        return (
+                          <td key={m.key} className="py-2.5 px-3 text-center border-b border-border">
+                            {letters ? (
+                              <span className="font-mono text-2xs font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                {letters}
+                              </span>
+                            ) : (
+                              /* A dash, not an empty cell: an empty cell reads
+                                 as "not filled in", and on an access review the
+                                 difference between "no access" and "unknown"
+                                 is the whole point. */
+                              <span className="text-muted-foreground/50">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="py-2.5 px-3 text-center border-b border-border">
+                        {scores.length > 0 ? (
+                          /* Short department names, not the full permission
+                             labels: four of those wrap into a paragraph and
+                             stretch the whole row to five lines, which on a
+                             matrix costs every other row its legibility. */
+                          <span className="text-2xs font-bold text-foreground whitespace-nowrap">
+                            {scores.map(p => SCORE_SHORT[p] || p).join('، ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-3 border-t border-border flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground">
+            <span className="font-bold text-foreground">راهنما:</span>
+            {ACTION_COLUMNS.map(c => (
+              <span key={c.key}><span className="font-mono font-bold">{c.letter}</span> {c.label}</span>
+            ))}
+            <span><span className="font-mono font-bold">F</span> دانلود مدارک SOP</span>
+            <span>روی نام هر کاربر بزنید تا سطح دسترسی‌اش را ویرایش کنید.</span>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* TABLE */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -860,6 +997,8 @@ export function UsersView({ currentUser }: UsersViewProps) {
           </>
         )}
       </div>
+      </>
+      )}
 
       {/* CREATE / EDIT */}
       <FormModal
