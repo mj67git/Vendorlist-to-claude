@@ -332,3 +332,16 @@ test('saving scores on a source with no IRC expiry date actually saves them', SK
   const stored = await db().evaluation.findFirst({ where: { vendorId: FIXTURE.vendorId } });
   assert.equal(stored.qaScore, 80, 'the department score reached the database');
 });
+
+test('registering a source is refused without the create permission', SKIP, async () => {
+  // The button is hidden and the form route refuses in the browser, but the
+  // control is here: a department without `vendor.create` cannot register a
+  // source however the request is made.
+  const token = await login('planning');
+  const res = await api('/api/vendors', {
+    method: 'POST', token,
+    body: { ...profileBody({}), id: 'V-NEW-DENIED' },
+  });
+  assert.equal(res.status, 403);
+  assert.equal(await db().vendor.count({ where: { id: 'V-NEW-DENIED' } }), 0);
+});

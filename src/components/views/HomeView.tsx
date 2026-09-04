@@ -133,7 +133,12 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           that is opened several times a day. */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
         <h2 className="text-lg font-black text-foreground tracking-tight">خلاصهٔ وضعیت تامین‌کنندگان</h2>
-        {currentUser && (
+        {/* Offered only to an account that may actually register a source.
+            The endpoint has always refused the save without `vendor.create`;
+            showing the button to everyone meant a department without the
+            permission could fill in the longest form in the application and
+            learn at the last step that it was never allowed to. */}
+        {can(currentUser, 'vendor.create') && (
           <Button onClick={onOpenSourceForm} className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0">
             <Plus className="w-4 h-4" />
             ثبت سورس جدید
