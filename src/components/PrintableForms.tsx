@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Vendor, Grade, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
-import { resolveVendorPartner } from '../utils/vendorPartner';
+import { getPartnerDetails } from '../utils/printablePartner';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { selectionForVendor } from '../utils/sourceSelection';
@@ -35,35 +35,6 @@ function getRawScoreValue(vendor: Vendor, deptId: string, critKey: string): numb
     return Math.max(1, Math.min(5, Math.round(scoreVal / 20)));
   }
   return 5;
-}
-
-/**
- * Fill the form's two fixed cells from the source's single partner.
- *
- * The printed form is a controlled document with a fixed grid, so both the
- * manufacturer cell and the seller cell stay — but only the one matching the
- * partner's actual role carries its name. The other says so plainly instead of
- * repeating the same company under a second heading.
- */
-function getPartnerDetails(v: Vendor, partners: BusinessPartner[] = []) {
-  const p = resolveVendorPartner(v, partners);
-  const country = p.country || 'ثبت\u200cنشده';
-
-  if (p.role === 'supplier') {
-    return {
-      mfgName: 'ثبت\u200cنشده',
-      mfgCountry: '-',
-      supName: p.name,
-      supCountry: country,
-    };
-  }
-
-  return {
-    mfgName: p.name,
-    mfgCountry: country,
-    supName: 'خرید بی\u200cواسطه از تولیدکننده',
-    supCountry: 'مستقیم',
-  };
 }
 
 function getMaterialTypeLabel(v: Vendor) {
