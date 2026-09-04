@@ -158,6 +158,18 @@ export interface PermissionModule {
   /** Shown under the module name to explain a locked or merged row. */
   note?: string;
   /**
+   * This module has no permission of its own: it is a view over another
+   * module's data and follows that module's permission.
+   *
+   * The dialog shows it as a locked tick that reflects the permission it
+   * follows, so an administrator can see that the page is reachable without
+   * being offered a switch that would do nothing. A separate permission here
+   * would be the mistake `archive.read` was deleted for: no endpoint could
+   * enforce it, because both pages read `GET /api/vendors` like every other
+   * source view.
+   */
+  derivedFrom?: Permission;
+  /**
    * Abilities of this module that are not one of the four CRUD actions, each
    * with its own letter for the summary badge. Downloading a partner's SOP
    * papers is the first: it is a read, but not the read that opens the list, so
@@ -211,6 +223,20 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     note: 'ارزیابی ریسک یک رکورد واحد است که جایگزین می‌شود؛ مشاهده‌اش همان «مشاهدهٔ سورس‌ها» است.',
   },
   {
+    key: 'archive',
+    title: 'آرشیو کامل داده‌ها',
+    derivedFrom: 'vendor.read',
+    actions: { view: null, create: null, edit: null, delete: null },
+    note: 'آرشیو، نمایی از همان سورس‌هاست و مجوز جدا ندارد؛ با «مشاهدهٔ سورس‌ها» باز می‌شود. خروجی اکسل و چاپ فهرست هم همان داده را می‌دهند، پس محدودکردنشان جداگانه معنا ندارد.',
+  },
+  {
+    key: 'supplier-audit',
+    title: 'بررسی یکپارچه تأمین‌کنندگان',
+    derivedFrom: 'vendor.read',
+    actions: { view: null, create: null, edit: null, delete: null },
+    note: 'این نما سورس‌ها را بر اساس شرکت گروه‌بندی می‌کند و داده‌ای جز همان‌ها ندارد، پس از «مشاهدهٔ سورس‌ها» پیروی می‌کند. امتیازهای نمایش‌داده‌شده تابع دپارتمان‌هایی است که کاربر اجازهٔ امتیازدهی‌شان را دارد.',
+  },
+  {
     key: 'audit',
     title: 'ردیابی تغییرات (Audit)',
     single: 'audit.read',
@@ -230,6 +256,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
 export const LOCKED_REASONS = {
   open: 'این بخش برای هر کاربر واردشده باز است و تنظیمی آن را محدود نمی‌کند.',
   none: 'این عملیات در این ماژول وجود ندارد.',
+  derived: 'این نما مجوز جداگانه ندارد و از مجوز ماژولی که داده‌اش را نشان می‌دهد پیروی می‌کند.',
 } as const;
 
 /**
