@@ -5,6 +5,7 @@ import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { PageTitle } from '../ui/page-title';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
 import { isVendorRejected } from '../../utils/vendorState';
@@ -417,10 +418,10 @@ interface SourceSelection {
          <div className="space-y-6">
            {/* Supplier Profile Banner Card */}
            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-             <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-teal-600" />
+             <div className="absolute right-0 top-0 bottom-0 w-1.5 bg-primary" />
              <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-right">
                <div
-                 className="bg-teal-50 border border-teal-100 text-teal-600 p-3 rounded-xl shrink-0 self-start sm:self-center"
+                 className="bg-primary/10 border border-primary/20 text-primary p-3 rounded-xl shrink-0 self-start sm:self-center"
                  title={ROLE_LABEL[activeSupplier.role]}
                >
                  {React.createElement(roleIcon(activeSupplier.role), { className: 'w-7 h-7' })}
@@ -433,7 +434,7 @@ interface SourceSelection {
                           or a manufacturer, never both (rule 4) — so for most
                           companies only one of these two lines appears. */}
                       {activePartnerDetails.mfgPartner ? (
-                        <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
+                        <div className="font-bold text-foreground text-xl leading-tight mb-1">
                           <span>تولیدکننده : {activePartnerDetails.mfgName}</span>
                           {activePartnerDetails.mfgCountry && (
                             <>
@@ -446,7 +447,7 @@ interface SourceSelection {
                         /* No partner record at all: name the company without
                            claiming what it does. Saying "تولید کننده" here was
                            a guess printed as a fact. */
-                        <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div className="font-bold text-foreground text-xl leading-tight mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                           <span>{activeSupplier.name}</span>
                           {activeSupplier.country && (
                             <span className="font-normal text-muted-foreground text-sm">کشور : {activeSupplier.country}</span>
@@ -464,7 +465,7 @@ interface SourceSelection {
                            instead of reading as a footnote to a missing line. */
                         <div className={activePartnerDetails.mfgPartner
                           ? 'font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1'
-                          : 'font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1'}>
+                          : 'font-bold text-foreground text-xl leading-tight mb-1'}>
                           <span>فروشنده : {activePartnerDetails.supName}</span>
                           {activePartnerDetails.supCountry && (
                             <>
@@ -480,7 +481,7 @@ interface SourceSelection {
                       )}
                     </>
                   ) : (
-                    <div className="text-lg font-bold text-foreground flex items-center justify-start gap-2.5">
+                    <div className="text-sm font-bold text-foreground flex items-center justify-start gap-2.5">
                       <span>{activeSupplier.name}</span>
                       {activeSupplier.country && (
                         <span className="bg-muted border border-border text-muted-foreground text-2xs font-bold px-2 py-0.5 rounded-md font-mono max-w-[200px] truncate" title={activeSupplier.country}>
@@ -522,7 +523,7 @@ interface SourceSelection {
                </div>
                {stats.lab.total > 0 ? (
                  <>
-                   <div className={`text-2xl font-black font-mono leading-none ${stats.lab.reject > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                   <div className={`text-xl font-black font-mono leading-none ${stats.lab.reject > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                      {stats.lab.rate}<span className="text-sm">٪</span>
                    </div>
                    <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -546,7 +547,7 @@ interface SourceSelection {
                </div>
                {stats.highestRisk ? (
                  <>
-                   <div className={`text-2xl font-black leading-none ${
+                   <div className={`text-xl font-black leading-none ${
                      stats.highestRisk === 'High' ? 'text-rose-600'
                      : stats.highestRisk === 'Medium' ? 'text-amber-600' : 'text-emerald-600'
                    }`}>
@@ -574,7 +575,7 @@ interface SourceSelection {
                </div>
                {stats.licences.expired + stats.licences.expiring > 0 ? (
                  <>
-                   <div className="text-2xl font-black font-mono leading-none text-rose-600">
+                   <div className="text-xl font-black font-mono leading-none text-rose-600">
                      {stats.licences.expired + stats.licences.expiring}
                    </div>
                    <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -585,7 +586,7 @@ interface SourceSelection {
                  </>
                ) : (
                  <>
-                   <div className="text-2xl font-black font-mono leading-none text-emerald-600">۰</div>
+                   <div className="text-xl font-black font-mono leading-none text-emerald-600">۰</div>
                    <p className="text-2xs text-muted-foreground mt-1.5">هیچ مجوزی منقضی یا نزدیک انقضا نیست.</p>
                  </>
                )}
@@ -594,10 +595,10 @@ interface SourceSelection {
              {/* Supply continuity */}
              <div className="bg-card border border-border rounded-2xl p-4">
                <div className="flex items-center gap-2 mb-2">
-                 <Warehouse className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                 <Warehouse className="w-3.5 h-3.5 text-primary shrink-0" />
                  <span className="text-2xs font-bold text-muted-foreground">تک‌منبع</span>
                </div>
-               <div className={`text-2xl font-black font-mono leading-none ${stats.soleSource.length > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+               <div className={`text-xl font-black font-mono leading-none ${stats.soleSource.length > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
                  {stats.soleSource.length}
                </div>
                <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -681,7 +682,7 @@ interface SourceSelection {
                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                    <span className="text-2xs font-bold text-muted-foreground">سورس منتخب</span>
                  </div>
-                 <div className="text-2xl font-black font-mono leading-none text-foreground">
+                 <div className="text-xl font-black font-mono leading-none text-foreground">
                    {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.totalItems}</span>
                  </div>
                  <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -731,7 +732,7 @@ interface SourceSelection {
            {/* Elegant summary callout instead of the 4 boxes */}
             <div className="bg-muted border border-border/50 rounded-2xl p-4 flex items-center justify-between gap-4 text-right mb-4">
               <div className="flex items-center gap-3 w-full justify-start">
-                <div className="bg-teal-50 border border-teal-100 text-teal-600 p-2.5 rounded-xl shrink-0">
+                <div className="bg-primary/10 border border-primary/20 text-primary p-2.5 rounded-xl shrink-0">
                   <Briefcase className="w-5 h-5" />
                 </div>
                 <div>
@@ -747,7 +748,7 @@ interface SourceSelection {
                <div className="w-full sm:w-auto uppercase font-bold text-muted-foreground text-xs tracking-wider text-right">
                  جدول مقایسه نمرات مواد تامین شده (Materials Performance Matrix)
                </div>
-               <span className="text-2xs text-teal-600 font-bold bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-md">
+               <span className="text-2xs text-primary font-bold bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md">
                  تعداد اقلام ممیزی شده: <span className="font-mono">{stats.totalItems}</span> ماده فعال یا نمونه
                </span>
              </div>
@@ -775,7 +776,7 @@ interface SourceSelection {
                                <CatIcon className="w-3.5 h-3.5" />
                              </div>
                              <div className="min-w-0">
-                               <div className="font-bold text-foreground text-2xs sm:text-[12px] whitespace-nowrap" title={v.material}>{v.material || 'N/A'}</div>
+                               <div className="font-bold text-foreground text-2xs whitespace-nowrap" title={v.material}>{v.material || 'N/A'}</div>
                                <div className="text-muted-foreground text-2xs font-mono mt-0.5 whitespace-nowrap" dir="ltr" style={{ textAlign: 'right' }} title={v.materialEn}>{v.materialEn || 'N/A'}</div>
                              </div>
                            </div>
@@ -789,7 +790,7 @@ interface SourceSelection {
                                 </div>
                               )}
                              {v.isSample && (
-                               <div className="text-2xs text-teal-600 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded font-bold mt-1 block">
+                               <div className="text-2xs text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded font-bold mt-1 block">
                                  نمونه ارزیابی اولیه / سمپل
                                </div>
                              )}
@@ -804,7 +805,7 @@ interface SourceSelection {
                              variant="ghost"
                              size="sm"
                              onClick={() => onSelectVendor(v)}
-                             className="text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100/80 border border-teal-200/50 font-bold"
+                             className="text-primary hover:text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 font-bold"
                            >
                              <Pencil />
                              <span>پرونده ممیزی</span>
@@ -820,9 +821,9 @@ interface SourceSelection {
  
            {/* Multi-Dimensional Audit Score Breakdown (CSS Infographics Column Charts) */}
            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-             <h3 className="text-base text-foreground font-bold mb-6 flex items-center justify-start gap-2.5">
+             <h3 className="text-sm text-foreground font-bold mb-6 flex items-center justify-start gap-2.5">
                <span>شاخص میانگین عملکرد تفکیک شده دپارتمانی (Departmental Performance)</span>
-               <div className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-ping" />
+               <div className="w-1.5 h-1.5 bg-primary rounded-full animate-ping" />
              </h3>
  
              <div className={`grid grid-cols-1 ${myDepartments.length > 1 ? 'md:grid-cols-4' : 'max-w-md mx-auto'} gap-6`}>
@@ -859,19 +860,35 @@ interface SourceSelection {
        ) : (
          /* GLOBAL SEARCH & DISCOVERY DIRECTORY OF ALL UNIQUE SUPPLIERS */
          <div className="space-y-6">
-           {/* Large Elegant Search Panel */}
-           <div className="bg-card/75 backdrop-blur-md border border-border rounded-2xl p-6 shadow-sm flex flex-col md:flex-row gap-4 items-center focus-within:ring-2 focus-within:ring-teal-500/20 transition-all">
-             <div className="flex-1 flex items-center gap-3 w-full">
-               <Search className="w-5 h-5 text-muted-foreground shrink-0" />
-               <input
+           {/* The search field every other repository uses.
+
+               It was a bare `<input>` with hand-written classes inside a
+               frosted panel — its own placeholder colour, its own focus ring in
+               a colour found nowhere else, and no shared focus treatment. The
+               icon and the clear button stay inline (the design system allows
+               those inside a field); the field itself is `ui/input`, so its
+               height, radius and focus ring are the same ones the material and
+               partner repositories draw. */}
+           <div className="bg-card border border-border rounded-2xl p-4 shadow-xs">
+             <div className="relative">
+               <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
+                 <Search className="w-4 h-4" />
+               </span>
+               <Input
                  type="text"
-                 className="flex-1 bg-transparent text-sm text-foreground placeholder-slate-400 focus:outline-none text-right"
-                 placeholder="نام تامین‌کننده، نام داروی شیمیایی، کد CAS یا کشور را جستجو کنید..."
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
+                 placeholder="نام تامین‌کننده، نام دارو، کد CAS یا کشور را جستجو کنید…"
+                 className="pr-10 pl-10 w-full"
+                 aria-label="جستجوی تامین‌کننده"
                />
                {searchQuery && (
-                 <button onClick={() => setSearchQuery('')} className="text-muted-foreground hover:text-muted-foreground">
+                 <button
+                   type="button"
+                   onClick={() => setSearchQuery('')}
+                   aria-label="پاک کردن جستجو"
+                   className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground hover:text-foreground transition-colors"
+                 >
                    <X className="w-4 h-4" />
                  </button>
                )}
@@ -882,8 +899,8 @@ interface SourceSelection {
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              {filteredSuppliers.length === 0 ? (
                <div className="col-span-full bg-card border border-border p-16 rounded-2xl text-center text-muted-foreground flex flex-col items-center">
-                 <Building className="w-12 h-12 opacity-20 mb-4 text-teal-600" />
-                 <span className="font-bold text-muted-foreground text-lg">هیچ تامین‌کننده‌ای یافت نشد.</span>
+                 <Building className="w-12 h-12 opacity-20 mb-4 text-primary" />
+                 <span className="font-bold text-muted-foreground text-sm">هیچ تامین‌کننده‌ای یافت نشد.</span>
                  <p className="text-muted-foreground text-sm mt-1">تغییر کوئری بدهید یا نام انگلیسی دقیق یا فارسی را وارد نمایید.</p>
                </div>
              ) : (
@@ -915,12 +932,12 @@ interface SourceSelection {
                          setSelectedSupplierKey(supplier.key);
                        }
                      }}
-                     className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-teal-500/20 transition-all cursor-pointer group flex flex-col justify-between text-right"
+                     className="bg-card border border-border rounded-2xl p-5 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group flex flex-col justify-between text-right"
                    >
                      <div>
                        <div className="flex items-start justify-between gap-3 mb-4">
                          <div
-                           className="bg-teal-50 border border-teal-100 text-teal-600 p-2.5 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-colors"
+                           className="bg-primary/10 border border-primary/20 text-primary p-2.5 rounded-xl group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                            title={ROLE_LABEL[supplier.role]}
                          >
                            {React.createElement(roleIcon(supplier.role), { className: 'w-5 h-5' })}
@@ -932,7 +949,7 @@ interface SourceSelection {
                          )}
                        </div>
  
-                       <h3 className="font-bold text-foreground text-base leading-snug tracking-tight group-hover:text-teal-600 transition-colors">
+                       <h3 className="font-bold text-foreground text-sm leading-snug tracking-tight group-hover:text-primary transition-colors">
                          {supplier.name}
                        </h3>
                        {supplier.nameEn && (
@@ -967,7 +984,7 @@ interface SourceSelection {
                            {avgScore !== null ? `${avgScore}%` : 'N/A'}
                          </span>
                        </div>
-                       <span className="text-teal-600 group-hover:translate-x-[-4px] transition-transform text-xs font-bold flex items-center gap-1 font-mono">
+                       <span className="text-primary group-hover:translate-x-[-4px] transition-transform text-xs font-bold flex items-center gap-1 font-mono">
                          بررسی ممیزی
                          <ChevronLeft className="w-3.5 h-3.5" />
                        </span>
