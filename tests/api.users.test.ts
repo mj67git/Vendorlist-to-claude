@@ -156,13 +156,93 @@ test('nobody may strip the last account that administers users', SKIP, async () 
   assert.deepEqual(row.permissions, [], 'the refused change left nothing behind');
 });
 
-test('only an administrator may see or change accounts', SKIP, async () => {
+test('an account without the permission may not see or change accounts', SKIP, async () => {
   const financeToken = await login('finance');
   assert.equal((await api('/api/users', { token: financeToken })).status, 403);
   assert.equal(
     (await api('/api/users/qa/permissions', { method: 'PUT', token: financeToken, body: { permissions: [] } })).status,
     403,
   );
+});
+
+/**
+ * The module is guarded by the permission, not by the role.
+ *
+ * It used to be `requireRole("admin")`, which made `users.manage` decorative:
+ * granting it changed nothing, and the sidebar meanwhile showed the module to
+ * whoever held it — a page the server then refused.
+ */
+test('the permission itself opens the module, for an account that is not an administrator', SKIP, async () => {
+  const adminToken = await login('admin');
+  const granted = await savePermissions(adminToken, 'commercial', [
+    'vendor.read', 'material.read', 'partner.read', 'users.manage',
+  ]);
+  assert.equal(granted.status, 200);
+
+  const delegateToken = await login('commercial');
+  const list = await api('/api/users', { token: delegateToken });
+  assert.equal(list.status, 200);
+  assert.ok(list.body.length > 0);
+
+  // And can do the work the module exists for.
+  const saved = await api('/api/users/planning/permissions', {
+    method: 'PUT', token: delegateToken,
+    body: { permissions: ['vendor.read', 'score.planning'], reasonForChange: 'تست تفویض' },
+  });
+  assert.equal(saved.status, 200);
+  const planning = await db().user.findUnique({ where: { username: 'planning' } });
+  assert.deepEqual(planning.permissions, ['vendor.read', 'score.planning']);
+});
+
+test('taking the permission away closes the module for an administrator too', SKIP, async () => {
+  const adminToken = await login('admin');
+  // A second administrator, so the last-holder guard is not what refuses this.
+  await api('/api/users', {
+    method: 'POST', token: adminToken,
+    body: { username: 'admin2', name: 'مدیر دوم', role: 'admin', password: 'secret123' },
+  });
+  const stripped = await savePermissions(adminToken, 'admin2', ['vendor.read']);
+  assert.equal(stripped.status, 200);
+
+  await db().user.update({ where: { username: 'admin2' }, data: { mustChangePassword: false } });
+  const strippedToken = await login('admin2', 'secret123');
+  assert.equal((await api('/api/users', { token: strippedToken })).status, 403);
+});
+
+test('a delegate may not mint an administrator', SKIP, async () => {
+  const adminToken = await login('admin');
+  await savePermissions(adminToken, 'commercial', [
+    'vendor.read', 'material.read', 'partner.read', 'users.manage',
+  ]);
+  const delegateToken = await login('commercial');
+
+  // Not by creating one,
+  const created = await api('/api/users', {
+    method: 'POST', token: delegateToken,
+    body: { username: 'newadmin', name: 'حساب تازه', role: 'admin', password: 'secret123' },
+  });
+  assert.equal(created.status, 403);
+  assert.equal(await db().user.count({ where: { username: 'newadmin' } }), 0);
+
+  // nor by promoting one,
+  const promoted = await api('/api/users/planning/role', {
+    method: 'PUT', token: delegateToken, body: { role: 'admin', reasonForChange: 'تست' },
+  });
+  assert.equal(promoted.status, 403);
+
+  // nor through the general edit route.
+  const patched = await api('/api/users/planning', {
+    method: 'PATCH', token: delegateToken, body: { role: 'admin', reasonForChange: 'تست' },
+  });
+  assert.equal(patched.status, 403);
+  const planning = await db().user.findUnique({ where: { username: 'planning' } });
+  assert.equal(planning.role, 'planning');
+
+  // A real administrator still can.
+  const byAdmin = await api('/api/users/planning/role', {
+    method: 'PUT', token: adminToken, body: { role: 'admin', reasonForChange: 'تست' },
+  });
+  assert.equal(byAdmin.status, 200);
 });
 
 test('the permission change is written to the audit trail with before and after', SKIP, async () => {

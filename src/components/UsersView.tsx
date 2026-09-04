@@ -801,8 +801,20 @@ export function UsersView({ currentUser }: UsersViewProps) {
                 onChange={e => setDraft({ ...draft, role: e.target.value as Role })}
                 className={cn(inputBaseClass, 'w-full')}
               >
-                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                {/* The `admin` role is offered only to an administrator. The
+                    module itself is open to anyone holding `users.manage`, but
+                    handing out the role that counts as "still has an
+                    administrator" is a decision for someone who already holds
+                    it — the server refuses it either way (rule 14), and this
+                    keeps the form from offering a choice that will be refused. */}
+                {ROLE_OPTIONS.filter(r => r !== 'admin' || currentUser.role === 'admin' || editing?.role === 'admin')
+                  .map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
+              {currentUser.role !== 'admin' && (
+                <p className="text-2xs text-muted-foreground pt-1">
+                  تعیین سمت «مدیر سیستم» فقط از حساب مدیر سیستم امکان‌پذیر است.
+                </p>
+              )}
               {editing && editing.permissions.length > 0 && draft.role !== editing.role && (
                 <p className="text-2xs text-amber-700 dark:text-amber-400 font-semibold pt-1">
                   با تغییر سمت، دسترسی‌های سفارشی این کاربر پاک می‌شود و الگوی سمت جدید اعمال می‌گردد.

@@ -5,7 +5,7 @@ import {
 } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import {
-  checkAdminSafety, checkPermissionSafety, requireAuth, requireRole,
+  checkAdminSafety, checkPermissionSafety, requireAuth, requirePermission,
 } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
@@ -18,19 +18,47 @@ import { generateSalt, hashPassword } from "../security/passwordService.js";
 /**
  * Account administration.
  *
- * Every route here is admin-only, and the role is read from the database
- * rather than the token — a seven-day token would otherwise keep a demoted
+ * Guarded by the `users.manage` permission, read from the database rather than
+ * from the token — a seven-day token would otherwise keep a demoted
  * administrator in charge for a week.
+ *
+ * It used to be `requireRole("admin")`, which made the permission decorative:
+ * granting `users.manage` to a department head did nothing, and removing it
+ * from an administrator did not shut the door. Meanwhile the sidebar showed the
+ * module to anyone holding the permission, so the screen offered a page the
+ * server refused — the exact divergence the shared policy table exists to
+ * prevent (rule 14).
  *
  * `checkAdminSafety` and `checkPermissionSafety` are the reason an
  * organisation cannot lock itself out: nobody can delete, deactivate or demote
  * the last administrator, or take `users.manage` from its last holder.
+ *
+ * One power stays with the role: only an account whose own role is `admin` may
+ * hand out the `admin` role (see `refuseAdminGrant`). Delegating account
+ * administration should not be a way to mint administrators.
  */
+
+/**
+ * Only an administrator may make another administrator.
+ *
+ * `users.manage` can now be delegated, and a delegate can already grant
+ * individual permissions — but the `admin` role is more than the sum of them:
+ * a handful of checks still read the role itself, and `checkAdminSafety`
+ * counts admins to decide whether the organisation still has one. Handing that
+ * out is a decision for someone who already holds it.
+ *
+ * Returns the refusal message, or null when the change is allowed.
+ */
+function refuseAdminGrant(actor: any, nextRole: string | undefined): string | null {
+  if (nextRole !== "admin") return null;
+  if (actor?.role === "admin") return null;
+  return "تعیین نقش «مدیر سیستم» فقط از حساب مدیر سیستم امکان‌پذیر است.";
+}
 
 export function userRoutes(): express.Router {
   const router = express.Router();
 
-  router.get("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.get("/api/users", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const usersList = (await getAllUsers()).map(u => ({
         username: u.username,
@@ -48,7 +76,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.post("/api/users", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.post("/api/users", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const { username, name, role, password, permissions, reasonForChange } = req.body;
       if (!username || !name || !role) {
@@ -83,6 +111,9 @@ export function userRoutes(): express.Router {
       if (permissions !== undefined && !Array.isArray(permissions)) {
         return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
       }
+
+      const refusedOnCreate = refuseAdminGrant(req.account, role);
+      if (refusedOnCreate) return res.status(403).json({ error: refusedOnCreate });
 
       if (await getUserByUsername(key)) {
         return res.status(400).json({ error: "کاربری با این نام کاربری قبلاً تعریف شده است." });
@@ -154,7 +185,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.patch("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.patch("/api/users/:username", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -169,6 +200,9 @@ export function userRoutes(): express.Router {
         permissions: current.permissions || [],
         isActive: current.isActive !== false,
       };
+
+      const refusedOnPatch = refuseAdminGrant(req.account, role);
+      if (refusedOnPatch) return res.status(403).json({ error: refusedOnPatch });
 
       const unsafe = await checkAdminSafety(req.user, targetUsername, { role, isActive });
       if (unsafe) return res.status(400).json({ error: unsafe });
@@ -236,7 +270,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.delete("/api/users/:username", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.delete("/api/users/:username", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -281,7 +315,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.put("/api/users/:username/role", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.put("/api/users/:username/role", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -298,6 +332,9 @@ export function userRoutes(): express.Router {
           error: `سمت سازمانی نامعتبر است. مقادیر مجاز: ${ALLOWED_USER_ROLES.join("، ")}`,
         });
       }
+
+      const refusedOnRole = refuseAdminGrant(req.account, role);
+      if (refusedOnRole) return res.status(403).json({ error: refusedOnRole });
 
       const unsafeRole = await checkAdminSafety(req.user, targetUsername, { role });
       if (unsafeRole) return res.status(400).json({ error: unsafeRole });
@@ -350,7 +387,7 @@ export function userRoutes(): express.Router {
   // An admin sets a temporary password for someone who is locked out. The
   // account is flagged to change it on the next sign-in, so the admin never
   // ends up knowing a password the user keeps using.
-  router.post("/api/users/:username/reset-password", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.post("/api/users/:username/reset-password", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -406,7 +443,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.put("/api/users/:username/permissions", requireAuth, requireRole("admin"), async (req: any, res) => {
+  router.put("/api/users/:username/permissions", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
