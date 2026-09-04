@@ -1628,7 +1628,7 @@ export default function App() {
       );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <SupplierAuditView db={db} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <SupplierAuditView db={db} isLoading={isSyncing && db.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, 'material.read') ? (

@@ -1164,3 +1164,97 @@ export function exportUserAccessToExcel(rows: UserAccessExportRow[], moduleTitle
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
   XL.writeFile(wb, `سطوح_دسترسی_کاربران_${dateStr}.xlsx`);
 }
+
+/**
+ * The supplier directory: one row per company, as the list shows it.
+ *
+ * The dossier export answers "show me this company"; this answers "show me the
+ * companies", which is the list a purchasing or quality review starts from and
+ * which until now had to be retyped from the screen.
+ */
+export interface SupplierDirectoryRow {
+  name: string;
+  nameEn: string;
+  role: string;
+  country: string;
+  materialCount: number;
+  materials: string[];
+  averageScore: number | null;
+}
+
+export function exportSupplierDirectoryToExcel(rows: SupplierDirectoryRow[]) {
+  const headers = [
+    'ردیف', 'نام تأمین‌کننده', 'نام لاتین', 'نقش', 'کشور',
+    'تعداد مواد', 'مواد عرضه‌شده', 'میانگین امتیاز',
+  ];
+  const body = rows.map((r, i) => [
+    i + 1, r.name, r.nameEn || '—', r.role, r.country || '—',
+    r.materialCount, r.materials.join('، ') || '—',
+    // Never printed as a zero: "not scored" and "scored zero" are different
+    // findings, and a spreadsheet cannot show a tooltip to tell them apart.
+    r.averageScore === null ? 'ارزیابی نشده' : r.averageScore,
+  ]);
+
+  const ws = XL.utils.aoa_to_sheet([headers, ...body]);
+  const SCORE_COL = 7;
+
+  for (const key of Object.keys(ws)) {
+    if (key[0] === '!') continue;
+    const match = key.match(/^([A-Z]+)(\d+)$/);
+    if (!match) continue;
+    const cell = ws[key];
+    const colIndex = XL.utils.decode_col(match[1]);
+    const rowIndex = parseInt(match[2], 10) - 1;
+
+    if (rowIndex === 0) {
+      cell.s = {
+        fill: { patternType: 'solid', fgColor: { rgb: '1E3A8A' } },
+        font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: {
+          top: { style: 'thin', color: { rgb: '475569' } },
+          bottom: { style: 'medium', color: { rgb: '0F172A' } },
+          left: { style: 'thin', color: { rgb: '475569' } },
+          right: { style: 'thin', color: { rgb: '475569' } },
+        },
+      };
+      continue;
+    }
+
+    cell.s = {
+      fill: { patternType: 'solid', fgColor: { rgb: rowIndex % 2 === 0 ? 'F8FAFC' : 'FFFFFF' } },
+      font: { name: 'Segoe UI', sz: 9, color: { rgb: '1E293B' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        right: { style: 'thin', color: { rgb: 'E2E8F0' } },
+      },
+    };
+    // Names and the material list read right to left.
+    if ([1, 4, 6].includes(colIndex)) cell.s.alignment.horizontal = 'right';
+    if (colIndex === 2) cell.s.alignment.horizontal = 'left';
+
+    if (colIndex === SCORE_COL) {
+      const v = cell.v;
+      if (typeof v === 'number') {
+        const rgb = v >= 80 ? '059669' : v >= 60 ? 'D97706' : 'DC2626';
+        cell.s.font = { name: 'Segoe UI', sz: 9, bold: true, color: { rgb } };
+      } else {
+        cell.s.font = { name: 'Segoe UI', sz: 9, color: { rgb: '94A3B8' } };
+      }
+    }
+  }
+
+  ws['!cols'] = [
+    { wch: 6 }, { wch: 30 }, { wch: 26 }, { wch: 16 }, { wch: 16 },
+    { wch: 12 }, { wch: 60 }, { wch: 16 },
+  ];
+
+  const wb = XL.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XL.utils.book_append_sheet(wb, ws, 'فهرست تأمین‌کنندگان');
+  const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
+  XL.writeFile(wb, `فهرست_تامین‌کنندگان_${dateStr}.xlsx`);
+}
