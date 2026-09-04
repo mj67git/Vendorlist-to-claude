@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, AlertTriangle, CheckCircle, KeyRound, Loader2,
+  AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -155,6 +155,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  /**
+   * Three filters, because the questions an access review asks are always the
+   * same three: who is in this department, whose account is still open, and
+   * whose access was adjusted away from their role.
+   */
+  const [filterRole, setFilterRole] = useState<'all' | Role>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'never'>('all');
+  const [filterAccess, setFilterAccess] = useState<'all' | 'template' | 'custom'>('all');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -215,12 +223,22 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const rows = q
-      ? users.filter(u =>
-          u.username.toLowerCase().includes(q) ||
-          u.name.toLowerCase().includes(q) ||
-          (ROLE_LABELS[u.role] || '').includes(q))
-      : users;
+    const rows = users.filter(u => {
+      if (q && !(
+        u.username.toLowerCase().includes(q) ||
+        u.name.toLowerCase().includes(q) ||
+        (ROLE_LABELS[u.role] || '').includes(q)
+      )) return false;
+      if (filterRole !== 'all' && u.role !== filterRole) return false;
+      if (filterStatus === 'active' && !u.isActive) return false;
+      if (filterStatus === 'inactive' && u.isActive) return false;
+      if (filterStatus === 'never' && u.lastLoginAt) return false;
+      // An empty exception list means "follow the role" — that is the whole
+      // rule the dialog warns about, so the filter reads it the same way.
+      if (filterAccess === 'custom' && u.permissions.length === 0) return false;
+      if (filterAccess === 'template' && u.permissions.length > 0) return false;
+      return true;
+    });
 
     const dir = sortOrder === 'asc' ? 1 : -1;
     const value = (u: ManagedUser): string | number => {
@@ -246,7 +264,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
       // Ties fall back to the name so the order never shuffles between renders.
       return (cmp || collator.compare(a.name, b.name)) * dir;
     });
-  }, [users, search, sortField, sortOrder]);
+  }, [users, search, filterRole, filterStatus, filterAccess, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(visible.length / perPage));
   const pageRows = useMemo(
@@ -271,6 +289,41 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const activeCount = users.filter(u => u.isActive).length;
   const customCount = users.filter(u => u.permissions.length > 0).length;
   const neverSignedIn = users.filter(u => !u.lastLoginAt).length;
+
+  /**
+   * The access list as a spreadsheet, for the review that happens away from
+   * the screen. It exports what is on screen — the filters applied — because a
+   * review is normally of one department or of the closed accounts, and a file
+   * that silently widens to everyone is the wrong answer to that.
+   */
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const moduleTitles = PERMISSION_MODULES.map(m => m.title);
+      const rows = visible.map(u => ({
+        name: u.name,
+        username: u.username,
+        roleLabel: ROLE_LABELS[u.role] || u.role,
+        status: u.isActive ? 'فعال' : 'غیرفعال',
+        accessSource: u.permissions.length > 0 ? 'سفارشی (استثنای کاربر)' : 'الگوی سمت سازمانی',
+        lastLogin: formatLastLogin(u.lastLoginAt),
+        modules: Object.fromEntries(
+          PERMISSION_MODULES.map(m => [m.title, moduleLetters(m, u.effectivePermissions) || '—']),
+        ),
+        permissionNames: u.effectivePermissions.map(p => PERMISSION_LABELS[p] || p),
+      }));
+      // Loaded on demand: the spreadsheet writer is the largest dependency in
+      // the bundle and this page is not an export tool until the button is used.
+      const { exportUserAccessToExcel } = await import('../utils/excelExport');
+      exportUserAccessToExcel(rows, moduleTitles);
+    } catch (err: any) {
+      setActionError('تهیهٔ خروجی Excel ناموفق بود. دوباره تلاش کنید.');
+      console.error('User access export failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -486,6 +539,17 @@ export function UsersView({ currentUser }: UsersViewProps) {
           <Button
             type="button"
             size="sm"
+            variant="success"
+            onClick={handleExport}
+            disabled={isExporting || visible.length === 0}
+            className="font-bold shrink-0"
+          >
+            {isExporting ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+            <span>خروجی Excel</span>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             onClick={openCreate}
             className="font-bold shrink-0"
           >
@@ -513,6 +577,63 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <span className="text-2xs text-muted-foreground block mt-0.5">{card.hint}</span>
           </div>
         ))}
+      </div>
+
+      {/* FILTER BAR — the three questions an access review asks. Native selects
+          styled from `inputBaseClass`, like every other filter in the app. */}
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">سمت سازمانی</span>
+          <select
+            value={filterRole}
+            onChange={e => { setFilterRole(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-44')}
+          >
+            <option value="all">همهٔ سمت‌ها</option>
+            {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">وضعیت حساب</span>
+          <select
+            value={filterStatus}
+            onChange={e => { setFilterStatus(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-44')}
+          >
+            <option value="all">همه</option>
+            <option value="active">فعال</option>
+            <option value="inactive">غیرفعال</option>
+            <option value="never">هرگز وارد نشده</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-bold text-muted-foreground">منبع دسترسی</span>
+          <select
+            value={filterAccess}
+            onChange={e => { setFilterAccess(e.target.value as any); setPage(1); }}
+            className={cn(inputBaseClass, 'w-52')}
+          >
+            <option value="all">همه</option>
+            <option value="template">پیروی از الگوی سمت</option>
+            <option value="custom">دسترسی سفارشی</option>
+          </select>
+        </label>
+        {(filterRole !== 'all' || filterStatus !== 'all' || filterAccess !== 'all' || search) && (
+          <div className="flex items-center gap-2 pb-0.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { setFilterRole('all'); setFilterStatus('all'); setFilterAccess('all'); setSearch(''); setPage(1); }}
+              className="font-bold"
+            >
+              حذف فیلترها
+            </Button>
+            <span className="text-2xs text-muted-foreground">
+              {visible.length.toLocaleString('fa-IR')} از {users.length.toLocaleString('fa-IR')} حساب
+            </span>
+          </div>
+        )}
       </div>
 
       {toast && (
@@ -934,6 +1055,52 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   <span>{permError}</span>
                 </div>
               )}
+
+              {/* How far this account has been moved from its role.
+                  The dialog already marked each deviating tick with a tiny +/−,
+                  which is precise and easy to miss on a table of seven rows.
+                  The count says it once, in words, before the table — and the
+                  legend explains the marks rather than leaving them to be
+                  guessed at. */}
+              {(() => {
+                const template = roleTemplate(permTarget.role);
+                const added = permDraft.filter(p => !template.includes(p));
+                const removed = template.filter(p => !permDraft.includes(p));
+                if (added.length === 0 && removed.length === 0) {
+                  return (
+                    <div className="text-2xs text-muted-foreground bg-muted border border-border rounded-xl px-3.5 py-2.5">
+                      این فهرست دقیقاً همان الگوی سمت «{ROLE_LABELS[permTarget.role] || permTarget.role}» است.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-muted border border-border rounded-xl px-3.5 py-2.5 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-bold">
+                      <span className="text-foreground">تفاوت با الگوی سمت:</span>
+                      {added.length > 0 && (
+                        <span className="text-emerald-700 dark:text-emerald-400">
+                          + {added.length.toLocaleString('fa-IR')} مجوز اضافه‌شده
+                        </span>
+                      )}
+                      {removed.length > 0 && (
+                        <span className="text-rose-700 dark:text-rose-400">
+                          − {removed.length.toLocaleString('fa-IR')} مجوز کم‌شده
+                        </span>
+                      )}
+                    </div>
+                    {added.length > 0 && (
+                      <p className="text-2xs text-muted-foreground leading-relaxed">
+                        اضافه‌شده: {added.map(p => PERMISSION_LABELS[p] || p).join('، ')}
+                      </p>
+                    )}
+                    {removed.length > 0 && (
+                      <p className="text-2xs text-muted-foreground leading-relaxed">
+                        کم‌شده: {removed.map(p => PERMISSION_LABELS[p] || p).join('، ')}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* One row per module, one cell per action. A cell is a real
                   checkbox only where the server can tell that action apart;
