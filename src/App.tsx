@@ -1628,7 +1628,7 @@ export default function App() {
       // retired rather than renamed — see LEGACY_PERMISSIONS.)
       keyName = 'archive';
       content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
-        <ArchiveView db={db} currentUser={currentUser} partners={businessPartners} materials={materials} />
+        <ArchiveView db={db} isLoading={isSyncing && db.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
       );
     } else if (view === 'tasks') {
       const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;

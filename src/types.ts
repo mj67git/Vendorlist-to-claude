@@ -86,6 +86,15 @@ export interface Vendor {
   analysisRecords?: AnalysisRecord[];
   manufacturerId?: string | null;
   supplierId?: string | null;
+  /**
+   * When the record was last written, as the server returns it.
+   *
+   * It has always been on the wire — the optimistic-concurrency claim
+   * (`expectedUpdatedAt`) is built from it — but the type did not name it, so
+   * every reader reached for it through `as any`. Optional, because a record
+   * built in the browser before its first save does not have one yet.
+   */
+  updatedAt?: string;
 }
 
 export type MaterialRole = 'API' | 'Intermediate' | 'Excipient' | 'Solvent' | 'Reagent / Reactant' | 'Packaging Item' | 'Other';
