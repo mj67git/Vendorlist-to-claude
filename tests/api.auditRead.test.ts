@@ -161,6 +161,26 @@ test('the filter options list every distinct value once', SKIP, async () => {
   assert.equal(new Set(res.body.uniqueModules).size, res.body.uniqueModules.length);
 });
 
+/**
+ * What the user module's "recent activity" panel reads. It has no endpoint of
+ * its own — every write already records who made it — so the only thing that
+ * has to hold is that filtering by an account returns that account's rows.
+ */
+test('the trail can be narrowed to one account', SKIP, async () => {
+  const res = await api(`/api/audit-logs?userId=${encodeURIComponent('u-even')}&limit=10`, { token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.total, ROWS / 2);
+  assert.equal(res.body.data.length, 10, 'the panel asks for ten and gets ten');
+  assert.ok(res.body.data.every((r: any) => r.userId === 'u-even'));
+});
+
+test('the account filter matches the stored name as well as the id', SKIP, async () => {
+  // The list offers user *names*; the panel passes the username. Both resolve.
+  const byName = await api(`/api/audit-logs?userId=${encodeURIComponent('کاربر فرد')}`, { token });
+  assert.equal(byName.body.total, ROWS / 2);
+  assert.ok(byName.body.data.every((r: any) => r.userName === 'کاربر فرد'));
+});
+
 test('reading the trail requires the audit permission', SKIP, async () => {
   const anon = await api('/api/audit-logs');
   assert.equal(anon.status, 401);

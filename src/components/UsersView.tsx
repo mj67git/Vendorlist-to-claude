@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, KeyRound, Loader2,
+  AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, History, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -17,9 +17,10 @@ import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
-  ALL_PERMISSIONS, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
+  ALL_PERMISSIONS, can, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
   roleTemplate, type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
+import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from '../utils/auditTaxonomy';
 
 /**
  * The four columns of the module grid, right to left as the page reads.
@@ -179,6 +180,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
    * which the list can only answer by opening every account in turn.
    */
   const [view, setView] = useState<'list' | 'matrix'>('list');
+  // Reading the trail is its own permission; administering accounts does not
+  // grant it, so the activity button is only offered to someone who holds both.
+  const canReadAudit = can(currentUser, 'audit.read');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -198,6 +202,18 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [permDraft, setPermDraft] = useState<Permission[]>([]);
   const [permError, setPermError] = useState<string | null>(null);
   const [permSaving, setPermSaving] = useState(false);
+
+  /**
+   * The account's own recent history, read from the change trail.
+   *
+   * No new storage and no new endpoint: every write already records who made
+   * it, so "what has this person been doing" is a filter over data that exists.
+   * Only offered to an administrator who can read the trail — `users.manage`
+   * and `audit.read` are separate permissions and one does not imply the other.
+   */
+  const [activityTarget, setActivityTarget] = useState<ManagedUser | null>(null);
+  const [activityRows, setActivityRows] = useState<any[] | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -339,6 +355,20 @@ export function UsersView({ currentUser }: UsersViewProps) {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const openActivity = (u: ManagedUser) => {
+    setActivityTarget(u);
+    setActivityRows(null);
+    setActivityError(null);
+    authFetch(`/api/audit-logs?userId=${encodeURIComponent(u.username)}&limit=10&page=1`)
+      .then(async res => {
+        if (res.status === 403) throw new Error('برای دیدن فعالیت کاربران، دسترسی «مشاهدهٔ ردیابی تغییرات» لازم است.');
+        if (!res.ok) throw new Error('دریافت فعالیت این کاربر ناموفق بود.');
+        return res.json();
+      })
+      .then(data => setActivityRows(Array.isArray(data.data) ? data.data : []))
+      .catch(err => { setActivityRows([]); setActivityError(err.message); });
   };
 
   const openCreate = () => {
@@ -929,6 +959,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
                         className="text-muted-foreground hover:text-primary">
                         <SlidersHorizontal />
                       </Button>
+                      {canReadAudit && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="فعالیت اخیر"
+                          onClick={() => openActivity(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <History />
+                        </Button>
+                      )}
                       <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
                         onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
                         className="text-muted-foreground hover:text-amber-600">
@@ -999,6 +1036,88 @@ export function UsersView({ currentUser }: UsersViewProps) {
       </div>
       </>
       )}
+
+      {/* RECENT ACTIVITY — read from the change trail, never stored twice. */}
+      <FormModal
+        open={!!activityTarget}
+        onClose={() => setActivityTarget(null)}
+        size="md"
+        labelledBy="users-activity-title"
+      >
+        {activityTarget && (
+          <div className="flex flex-col max-h-full">
+            <div className="px-6 py-4 border-b border-border bg-muted/50">
+              <h3 id="users-activity-title" className="text-sm font-black text-foreground">
+                فعالیت اخیر «{activityTarget.name}»
+              </h3>
+              <p className="text-2xs text-muted-foreground mt-0.5">
+                ده رویداد آخر این حساب در ردیابی تغییرات. سوابق کامل در ماژول «ردیابی تغییرات» با فیلتر کاربر دیده می‌شود.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-3 overflow-y-auto flex-1">
+              {activityError && (
+                <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{activityError}</span>
+                </div>
+              )}
+
+              {activityRows === null ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-xs py-4">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="italic">در حال خواندن ردیابی تغییرات…</span>
+                </div>
+              ) : activityRows.length === 0 && !activityError ? (
+                <p className="text-2xs text-muted-foreground bg-muted border border-border rounded-xl px-3.5 py-3">
+                  از این حساب هنوز هیچ تغییری ثبت نشده است. ورود به سامانه هم رویداد ثبت‌شده‌ای است، پس یعنی این حساب هرگز وارد نشده یا فقط پیش از راه‌اندازی ردیابی فعال بوده است.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {activityRows.map((r: any) => {
+                    const when = new Date(r.timestamp || r.createdAt);
+                    const blocked = r.result && r.result !== 'Success';
+                    return (
+                      <li key={r.id} className="bg-muted/40 border border-border rounded-xl p-3 flex items-start gap-3">
+                        <span className="text-2xs font-mono text-muted-foreground shrink-0 leading-5">
+                          {when.toLocaleDateString('fa-IR')}
+                          <span className="block">{when.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </span>
+                        <span className="min-w-0 flex-1 flex flex-col gap-1">
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-2xs font-black text-foreground">
+                              {AUDIT_ACTION_LABELS[r.action] || r.action}
+                            </span>
+                            <span className="text-2xs text-muted-foreground truncate">
+                              {r.entityName || r.entityId || 'مشخصات'}
+                            </span>
+                            {/* A refused attempt is the row an administrator is
+                                looking for, so it is the one that is marked. */}
+                            {blocked && (
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-md text-2xs font-bold border bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900">
+                                {r.result === 'Blocked' ? 'مسدود شد' : 'ناموفق'}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-2xs text-muted-foreground truncate">
+                            {AUDIT_MODULE_LABELS[r.module] || r.module}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="px-6 py-3.5 border-t border-border bg-muted/30 flex justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => setActivityTarget(null)} className="font-bold">
+                بستن
+              </Button>
+            </div>
+          </div>
+        )}
+      </FormModal>
 
       {/* CREATE / EDIT */}
       <FormModal
