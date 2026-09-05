@@ -29,6 +29,30 @@ export function hasQcReject(v: AnyVendor): boolean {
  *  independent fact — they must not outlive the record they came from. */
 const QC_REASON_PREFIX = 'مردود در آزمون QC';
 
+/**
+ * The opening words of the line an explicit «رد سورس» decision writes into
+ * `rejectionReasons`. It was a bare literal in the reject handler, matched by
+ * `startsWith` to replace an earlier decision; the decision box then had no way
+ * to find that same line back and so could only say the source *is* blacklisted,
+ * never why. One constant, two readers.
+ */
+export const ADMIN_REJECT_PREFIX = 'رد توسط';
+
+/**
+ * The recorded human decision that blacklisted this source, or null.
+ *
+ * There is at most one: the handler replaces any earlier decision line rather
+ * than appending, so a restore-then-reject cycle leaves the current reason and
+ * not a stack of superseded ones.
+ */
+export function adminRejectionReason(v: AnyVendor): string | null {
+  if (!Array.isArray(v?.rejectionReasons)) return null;
+  const line = v.rejectionReasons.find(
+    (r: any) => typeof r === 'string' && r.startsWith(ADMIN_REJECT_PREFIX),
+  );
+  return typeof line === 'string' && line.trim() ? line.trim() : null;
+}
+
 function manualReasons(v: AnyVendor): string[] {
   if (!Array.isArray(v?.rejectionReasons)) return [];
   return v.rejectionReasons.filter((r: any) => typeof r === 'string' && !r.startsWith(QC_REASON_PREFIX));
