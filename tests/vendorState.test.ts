@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject } from '../src/utils/vendorState';
+import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX } from '../src/utils/vendorState';
 
 const sample = (over: any = {}) => ({
   id: 'S1', isSample: true, category: 'sample',
@@ -117,4 +117,16 @@ test('a manual admin reason still keeps a sample blacklisted', () => {
     analysisRecords: [], rejectionReasons: ['رد توسط مدیر کیفیت — تصمیم دستی'], scores: null,
   });
   assert.equal(isVendorRejected(v), true);
+});
+
+test('the recorded rejection decision is readable back, so the box can show it', () => {
+  const line = `${ADMIN_REJECT_PREFIX} مدیر کیفیت بر اساس نتایج آزمایشگاهی — ناخالصی بالاتر از حد فارماکوپه`;
+  const v = source({ status: 'rejected', rejectionReasons: ['مردود در آزمون QC (QC-9)', line] });
+  assert.equal(adminRejectionReason(v), line);
+});
+
+test('a blacklisting that came only from lab results has no decision line to show', () => {
+  const v = source({ status: 'rejected', rejectionReasons: ['مردود در آزمون QC (QC-9)'] });
+  assert.equal(adminRejectionReason(v), null);
+  assert.equal(adminRejectionReason(source()), null);
 });

@@ -9,8 +9,8 @@ import { categoryLabels } from '../constants/categories';
 import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
-  CheckCircle, CheckCircle2, XCircle, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
-  FileText, Upload, Download, FileCheck, Award, ShieldCheck, AlertCircle, Paperclip,
+  CheckCircle, CheckCircle2, XCircle, Filter, Globe, ExternalLink,
+  Upload, Download, Award, ShieldCheck, AlertCircle, Paperclip,
   RefreshCw, AlertTriangle, Package
 } from 'lucide-react';
 import { 
@@ -22,7 +22,6 @@ import {
   SOPDocumentEval,
   SupplierEvaluation,
   SOPGrade,
-  SOPSupplierStatus,
   Vendor
 } from '../types';
 import { 
@@ -35,6 +34,7 @@ import {
   canSupplySources
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
+import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
@@ -102,7 +102,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const [typeFilter, setTypeFilter] = useState<BusinessPartnerType | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'Blacklisted' | 'All'>('All');
   const [gradeFilter, setGradeFilter] = useState<SOPGrade | 'All'>('All');
-  const [sopStatusFilter, setSopStatusFilter] = useState<SOPSupplierStatus | 'All'>('All');
+  /*
+   * The SOP-status filter is gone at the user's request. It offered six English
+   * status strings for a fact the grade filter already expresses — the status is
+   * derived from the same rubric as the grade (`calculateGradeAndStatus`), so
+   * "Approved Supplier" and "Grade A" select the same rows. One control for one
+   * question.
+   */
   /** «فقط قابل اتصال» / «فقط غیرمجاز» — the same rule the server enforces. */
   const [sourceLinkFilter, setSourceLinkFilter] = useState<'All' | 'Allowed' | 'Blocked'>('All');
   const [countryFilter, setCountryFilter] = useState<string>('All');
@@ -320,18 +326,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       typeFilter !== 'All' ||
       statusFilter !== 'All' ||
       gradeFilter !== 'All' ||
-      sopStatusFilter !== 'All' ||
       sourceLinkFilter !== 'All' ||
       countryFilter !== 'All'
     );
-  }, [search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter]);
+  }, [search, typeFilter, statusFilter, gradeFilter, sourceLinkFilter, countryFilter]);
 
   const handleResetFilters = () => {
     setSearch('');
     setTypeFilter('All');
     setStatusFilter('All');
     setGradeFilter('All');
-    setSopStatusFilter('All');
     setSourceLinkFilter('All');
     setCountryFilter('All');
     setCurrentPage(1);
@@ -352,13 +356,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         if (p.evaluation?.grade !== gradeFilter) return false;
       }
 
-      // 4. SOP Status filter (Supplier only)
-      if (sopStatusFilter !== 'All') {
-        if (p.type !== 'Supplier') return false;
-        if (p.evaluation?.status !== sopStatusFilter) return false;
-      }
-
-      // 5. May this partner be attached to a source? Read from the same helper
+      // 4. May this partner be attached to a source? Read from the same helper
       // the server refuses with, so the filter cannot drift from the rule.
       if (sourceLinkFilter !== 'All') {
         const allowed = canSupplySources(p).allowed;
@@ -407,7 +405,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       // Dates are ISO strings, which the collator orders correctly as text.
       return dir * collator.compare(String(a[sortField] ?? ''), String(b[sortField] ?? ''));
     });
-  }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter, sortField, sortOrder]);
+  }, [partners, search, typeFilter, statusFilter, gradeFilter, sourceLinkFilter, countryFilter, sortField, sortOrder]);
 
   // Pagination calculations
   const totalPages = Math.max(1, Math.ceil(filteredPartners.length / itemsPerPage));
@@ -880,24 +878,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 flex-1">
-            <div>
-              <label className="text-2xs font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
-              <select
-                value={sopStatusFilter}
-                onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
-                className={cn(inputBaseClass, 'w-full font-medium')}
-              >
-                <option value="All">همه وضعیت‌های SOP</option>
-                <option value="Approved Supplier">Approved Supplier (تاییدشده)</option>
-                <option value="Approved with Monitoring">Approved with Monitoring (با پایش)</option>
-                <option value="Conditional Supplier">Conditional Supplier (مشروط)</option>
-                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
-                <option value="Blacklist">Blacklist (لیست سیاه)</option>
-                <option value="Not Evaluated">Not Evaluated (ارزیابی نشده)</option>
-              </select>
-            </div>
-
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
             <div>
               <label className="text-2xs font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
               <select
@@ -1207,16 +1188,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
         {/* Table Footer / Pagination */}
         <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-            <span>تعداد در هر صفحه</span>
-            <select
-              value={itemsPerPage}
-              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className={`bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+          <PerPageSelect value={itemsPerPage} onChange={n => { setItemsPerPage(n); setCurrentPage(1); }} />
           <div className="flex-1 min-w-0">
             <Pagination
               currentPage={page}
@@ -1827,30 +1799,51 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         {selectedPartner && (<>
             {/* Sticky Top Header */}
             <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-2xl ${
-                  selectedPartner.type === 'Manufacturer' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+              {/* Who this is, and nothing the page repeats below.
+
+                  The header used to carry a second line with the country, the
+                  city and «وضعیت سیستم: فعال (Active)». The country and city are
+                  printed again a few centimetres lower in the record's own grid,
+                  and "Active" is the state every partner is in unless something
+                  is wrong — so the line said, on almost every record, two things
+                  the reader already had and one that carried no news.
+
+                  What remains is identity: the name, and whether this is a
+                  manufacturer or a seller. A status badge appears only when the
+                  status is *not* Active, because that is the case worth
+                  interrupting for; a blacklisted partner also keeps its full
+                  banner at the top of the body. */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2.5 rounded-2xl shrink-0 ${
+                  selectedPartner.type === 'Manufacturer'
+                    ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900'
+                    : 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
                 }`}>
                   {selectedPartner.type === 'Manufacturer' ? <Factory className="w-6 h-6" /> : <Handshake className="w-6 h-6" />}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-black text-foreground">{selectedPartner.name}</h2>
-                    <span className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
-                      selectedPartner.type === 'Manufacturer' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <EntityName
+                    as="div"
+                    name={selectedPartner.name}
+                    lines={1}
+                    className="text-sm font-black text-foreground max-w-[260px] sm:max-w-[360px]"
+                  />
+                  <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
+                    selectedPartner.type === 'Manufacturer'
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-900'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900'
+                  }`}>
+                    {selectedPartner.type === 'Manufacturer' ? 'تولیدکننده' : 'فروشنده'}
+                  </span>
+                  {selectedPartner.status !== 'Active' && (
+                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
+                      selectedPartner.status === 'Blacklisted'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900'
+                        : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900'
                     }`}>
-                      {selectedPartner.type === 'Manufacturer' ? 'Manufacturer (تولیدکننده)' : 'Supplier (فروشنده)'}
+                      {selectedPartner.status === 'Blacklisted' ? 'لیست سیاه' : 'غیرفعال'}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" />{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
-                    <span>•</span>
-                    <span>وضعیت سیستم: {
-                      selectedPartner.status === 'Active' ? <strong className="text-teal-600">فعال (Active)</strong> :
-                      selectedPartner.status === 'Blacklisted' ? <strong className="text-rose-600">⛔ لیست سیاه (Blacklisted)</strong> :
-                      <strong className="text-amber-600">غیرفعال (Inactive)</strong>
-                    }</span>
-                  </div>
+                  )}
                 </div>
               </div>
 

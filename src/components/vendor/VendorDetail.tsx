@@ -17,6 +17,7 @@ import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -290,7 +291,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
     }
     setRejectError(null);
     const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
-    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
+    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith(ADMIN_REJECT_PREFIX));
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
       action: `رد سورس "${vendor.material}" (${vendor.name}) و انتقال به لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
@@ -901,9 +902,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     ))}
                   </ul>
 
-                  <div className="mt-6 border-t border-rose-200 dark:border-rose-800 pt-4 flex items-center text-xs text-rose-600 dark:text-rose-400/70 font-mono">
-                    <Info className="w-4 h-4 mr-2" /> {vendor.category === 'veterinary' ? 'IVC' : 'IRC'}_ISSUE_DATE: {vendor.lastAudit || 'N/A'}
-                  </div>
+                  {/* The banner used to end with a machine-shaped footer line —
+                      «IRC_ISSUE_DATE: N/A» — and it was wrong three times over.
+                      It printed a raw snake_case key in an interface that is
+                      Persian everywhere else; it printed «N/A» where the rest of
+                      the application prints «ثبت نشده»; and the licence issue
+                      date has nothing to do with why a source was rejected. The
+                      same value already appears a few centimetres above, in the
+                      licence card, labelled «تاریخ دریافت / صدور» — so the line
+                      repeated a fact the page already carried, in the one place
+                      it could only distract from the reasons. */}
                 </>
               )}
             </div>
@@ -1534,7 +1542,34 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <h4 className="font-bold text-foreground text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-muted-foreground font-normal font-mono">(QA Decision)</span></h4>
                     </div>
                     {vendor.status === 'rejected' ? (
-                      <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                      /* Why it is blacklisted, not only that it is.
+                         The box demands a written reason before it will reject a
+                         source, records it in the audit trail and in the source's
+                         own history — and then showed none of it back. The person
+                         deciding whether to restore the source was reading «این
+                         سورس در لیست سیاه است» and had to go looking elsewhere
+                         for the decision they are being asked to reverse. */
+                      <div className="mb-3 space-y-2">
+                        <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                        {(() => {
+                          const decision = adminRejectionReason(vendor);
+                          if (decision) {
+                            return (
+                              <blockquote className="bg-card border border-rose-200 dark:border-rose-800 rounded-lg px-3 py-2">
+                                <span className="block text-2xs font-bold text-rose-900 dark:text-rose-300 mb-0.5">دلیل ثبت‌شدهٔ رد:</span>
+                                <p className="text-2xs text-foreground leading-relaxed whitespace-pre-wrap">{decision}</p>
+                              </blockquote>
+                            );
+                          }
+                          /* No decision line means the blacklisting came from the
+                             laboratory records themselves, which the banner at the
+                             top of the page already lists one by one — so point
+                             there instead of inventing a reason. */
+                          return (
+                            <p className="text-2xs text-muted-foreground leading-relaxed">دلیل رد، از نتایج آزمایشگاهی ثبت‌شده می‌آید و در بنر بالای همین صفحه فهرست شده است.</p>
+                          );
+                        })()}
+                      </div>
                     ) : (
                       <p className="text-2xs text-muted-foreground leading-relaxed mb-3">
                         وجود {rej > 0 ? <strong className="text-rose-600 dark:text-rose-400">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).
