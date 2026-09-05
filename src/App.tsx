@@ -935,15 +935,12 @@ export default function App() {
     setViewHistory(popForm);
   };
 
-  // Jump directly to a given depth of the navigation stack (breadcrumb click).
-  const goToHistoryIndex = (index: number) => {
-    const steps = viewHistory.length - 1 - index;
-    if (index < 0 || steps <= 0) return;
-    runGuarded(() => {
-      if (canPopBrowserRef.current) window.history.go(-steps);
-      else setViewHistory(prev => truncateTo(prev, index));
-    });
-  };
+  /*
+   * `goToHistoryIndex` is gone with the stack-derived breadcrumb. The trail is
+   * a path now, not a visit log, so a crumb names a location rather than a
+   * depth — `goToCrumb` navigates to it and lets `navigate` decide whether that
+   * unwinds the stack or pushes onto it.
+   */
 
   const getViewStateLabel = (state: ViewState) => {
     if (state.formMode === 'create') return 'سورس جدید';
@@ -964,6 +961,69 @@ export default function App() {
     }
     return '';
   };
+
+  /**
+   * The breadcrumb trail, derived from the address rather than from the visit
+   * history.
+   *
+   * These are two different things and the header used to print one while
+   * calling it the other. `viewHistory` is the order pages were visited, so
+   * clicking through four modules produced «صفحه اصلی › خرید خارجی › مخزن مواد
+   * اولیه › مخزن شرکای تجاری» — a claim that the partner repository sits inside
+   * the foreign-purchase category. The modules are siblings; nothing is inside
+   * anything. Worse, the same page got two different trails depending on how it
+   * was reached: a fresh link to `#/materials` showed two crumbs, clicking there
+   * from another module showed three.
+   *
+   * `buildStackFromRoute` already models the real shape — home, then the
+   * module, then the record, then its edit page — and it is what a deep link
+   * and a forward navigation already build. Reading the trail from there makes
+   * the path a path, at most four levels deep, and identical however the reader
+   * arrived. The back button keeps its own meaning (the previous page visited)
+   * and its own label, which is history and stays history.
+   */
+  const breadcrumbTrail = ((): Array<{ key: string; label: string; route: RouteState }> => {
+    const here = viewStateToRoute(currentViewState);
+    return buildStackFromRoute(here).map(route => {
+      const asState = routeToViewState(route);
+      // The route carries only a source id; the name lives on the record. Use
+      // the one being shown when it matches, otherwise look it up, otherwise
+      // fall back to the generic label rather than printing an id.
+      const named = route.vendorId
+        ? (currentViewState.selectedVendor?.id === route.vendorId
+            ? currentViewState.selectedVendor
+            : db.find(v => v.id === route.vendorId) || null)
+        : null;
+      return {
+        key: routeKey(route),
+        label: getViewStateLabel(named ? { ...asState, selectedVendor: named } : asState),
+        route,
+      };
+    }).filter(crumb => !!crumb.label);
+    // Not a `useMemo`: this component early-returns for the login screen, so a
+    // hook here would be called conditionally (rule 10). The work is a walk over
+    // at most four route entries.
+  })();
+
+  /**
+   * Go to a crumb.
+   *
+   * `navigate` unwinds the stack when the destination is already on it and
+   * pushes when it is not, which is exactly right here: the trail is a path,
+   * and a path entry is somewhere the reader is entitled to be regardless of
+   * how the history happens to look.
+   */
+  const goToCrumb = (route: RouteState) => {
+    if (route.vendorId) {
+      const record = currentViewState.selectedVendor?.id === route.vendorId
+        ? currentViewState.selectedVendor
+        : db.find(v => v.id === route.vendorId) || null;
+      if (record) handleSelectVendor(record);
+      return;
+    }
+    navigate(route.view as ViewState['view'], (route.categoryId as Category | null) ?? null, route.taskKey ?? null);
+  };
+
 
   const updateCurrentVendorInHistory = (vendor: Vendor | null) => {
     setViewHistory(prev => {
@@ -1994,10 +2054,19 @@ export default function App() {
                     made the two compete for the same strip — measured at 900px,
                     the title truncated to «خرید …» while the first crumb was
                     clipped to a single letter. So the heading yields to the
-                    trail exactly where the trail exists, and stands alone on
-                    the home page and on narrow screens. */}
-                <h1 className={`text-sm font-black text-foreground truncate max-w-[180px] lg:max-w-[260px] ${viewHistory.length > 1 ? 'md:hidden' : ''}`}>
-                  {getViewStateLabel(currentViewState) || 'سامانهٔ ارزیابی تأمین‌کنندگان'}
+                    trail exactly where the trail is shown — from `xl` — and
+                    stands alone everywhere else, including the whole tablet
+                    band where the trail does not fit. */}
+                {/* `EntityName`, not a bare `truncate`: this heading carries a
+                    source's name on a detail page, and a name cut without a
+                    tooltip is exactly what rule 15 forbids — measured at 768px
+                    and 390px, where it does run out of room. */}
+                <h1 className={`min-w-0 ${breadcrumbTrail.length > 1 ? 'xl:hidden' : ''}`}>
+                  <EntityName
+                    name={getViewStateLabel(currentViewState) || 'سامانهٔ ارزیابی تأمین‌کنندگان'}
+                    lines={1}
+                    className="text-sm font-black text-foreground max-w-[180px] sm:max-w-[240px] lg:max-w-[320px]"
+                  />
                 </h1>
                 {viewHistory.length > 1 && (
                   <Button
@@ -2012,45 +2081,81 @@ export default function App() {
                   </Button>
                 )}
 
-                {/* Breadcrumb trail — shows the full path and allows jumping
-                    directly to any earlier level.
+                {/* Breadcrumb trail — the path to this page, and a way back up
+                    to any level of it. Built from the address (see
+                    `breadcrumbTrail`), so it is the same trail however the
+                    reader arrived and never claims that one module sits inside
+                    another.
 
-                    Shown from `md`, not `lg`: between 768px and 1024px the only
-                    thing left was a "back" button, so a tablet user had a way
-                    out of the page but no statement of where they were. The
-                    crumbs that made the row too wide were the long entity name
-                    on the last crumb, which now truncates with its tooltip. */}
-                {viewHistory.length > 1 && (
-                  <nav aria-label="مسیر ناوبری" className="hidden md:flex items-center gap-1 min-w-0 overflow-hidden text-xs">
-                    {viewHistory.map((state, idx) => {
-                      const label = getViewStateLabel(state);
-                      if (!label) return null;
-                      const isLast = idx === viewHistory.length - 1;
-                      return (
-                        <React.Fragment key={idx}>
+                    Shown from `xl`, and the page's own name takes its place
+                    below that. Measured, not guessed: with the sidebar and the
+                    action cluster taking their share, the strip left for the
+                    trail is about 185px at 1024 and 441px at 1280, while a
+                    three-crumb path («صفحه اصلی › خرید خارجی › نام سورس») needs
+                    roughly 250px. Rendering it at `md` — where it was until now
+                    — meant the row overflowed and the crumb that got cut was
+                    the last one, the page you are on, with no ellipsis and no
+                    tooltip. A heading that fits beats a path that does not. */}
+                {breadcrumbTrail.length > 1 && (
+                  <nav aria-label="مسیر ناوبری" className="hidden xl:flex items-center gap-1 min-w-0 text-xs">
+                    {(() => {
+                      /* Collapse the middle, never the ends.
+                         The trail is at most four levels now, but a long source
+                         name can still outgrow the row — and the crumb that used
+                         to lose was the last one, the page you are actually on,
+                         cut without an ellipsis or a tooltip. The first crumb
+                         and the last two always render; anything between them
+                         becomes one «…» that names what it hides. */
+                      // Four is the deepest real path (home › module › record
+                      // › its edit page), so the whole trail normally shows;
+                      // the collapse is what keeps a longer one honest rather
+                      // than letting it cut the current page off the end.
+                      const MAX_VISIBLE = 4;
+                      const collapse = breadcrumbTrail.length > MAX_VISIBLE;
+                      const hidden = collapse ? breadcrumbTrail.slice(1, -2) : [];
+                      const shown = collapse
+                        ? [breadcrumbTrail[0], null, ...breadcrumbTrail.slice(-2)]
+                        : breadcrumbTrail;
+
+                      return shown.map((crumb, idx) => (
+                        <React.Fragment key={crumb ? crumb.key : 'collapsed'}>
                           {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
-                          {isLast ? (
-                            <EntityName name={label} lines={1} aria-current="page" className="font-bold text-foreground max-w-[180px]" />
+                          {crumb === null ? (
+                            <span
+                              className="font-semibold text-muted-foreground shrink-0 px-0.5 cursor-help"
+                              title={`سطوح میانی: ${hidden.map(h => h!.label).join(' › ')}`}
+                            >
+                              …
+                            </span>
+                          ) : idx === shown.length - 1 ? (
+                            /* The page itself: it truncates with a tooltip
+                               rather than being cut silently (rule 15). */
+                            <EntityName
+                              name={crumb.label}
+                              lines={1}
+                              aria-current="page"
+                              className="font-bold text-foreground max-w-[120px] lg:max-w-[220px]"
+                            />
                           ) : (
                             <button
-                              onClick={() => goToHistoryIndex(idx)}
+                              onClick={() => goToCrumb(crumb.route)}
                               // `shrink-0`, because these are short fixed labels
                               // («صفحه اصلی», «خرید خارجی») and the flex row was
                               // squeezing them below their own width — at 13.5px
                               // even those two clipped, and a breadcrumb whose
                               // own labels are cut tells the reader nothing
                               // about where they are. The squeeze belongs on the
-                              // last crumb, which is the entity name and carries
-                              // a tooltip when it truncates (rule 15).
+                              // last crumb, which carries a tooltip when it
+                              // truncates (rule 15).
                               className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[160px] shrink-0 transition-colors cursor-pointer"
-                              title={`رفتن به ${label}`}
+                              title={`رفتن به ${crumb.label}`}
                             >
-                              {label}
+                              {crumb.label}
                             </button>
                           )}
                         </React.Fragment>
-                      );
-                    })}
+                      ));
+                    })()}
                   </nav>
                 )}
               </div>
