@@ -901,9 +901,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     ))}
                   </ul>
 
-                  <div className="mt-6 border-t border-rose-200 dark:border-rose-800 pt-4 flex items-center text-xs text-rose-600 dark:text-rose-400/70 font-mono">
-                    <Info className="w-4 h-4 mr-2" /> {vendor.category === 'veterinary' ? 'IVC' : 'IRC'}_ISSUE_DATE: {vendor.lastAudit || 'N/A'}
-                  </div>
+                  {/* The banner used to end with a machine-shaped footer line —
+                      «IRC_ISSUE_DATE: N/A» — and it was wrong three times over.
+                      It printed a raw snake_case key in an interface that is
+                      Persian everywhere else; it printed «N/A» where the rest of
+                      the application prints «ثبت نشده»; and the licence issue
+                      date has nothing to do with why a source was rejected. The
+                      same value already appears a few centimetres above, in the
+                      licence card, labelled «تاریخ دریافت / صدور» — so the line
+                      repeated a fact the page already carried, in the one place
+                      it could only distract from the reasons. */}
                 </>
               )}
             </div>
