@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
@@ -45,6 +46,8 @@ export function CategoryView({
   const excel = useExcelExport();
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  /** Groups per page. Same control and same sizes as every other paged module. */
+  const [perPage, setPerPage] = useState(20);
   const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
@@ -117,7 +120,7 @@ export function CategoryView({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, sortBy, activeFilter]);
+  }, [query, sortBy, activeFilter, perPage]);
 
   const meta = categoryLabels[categoryId];
   
@@ -214,7 +217,7 @@ export function CategoryView({
     return sorted;
   }, [grouped, sortBy]);
 
-  const ITEMS_PER_PAGE = 20;
+  const ITEMS_PER_PAGE = perPage;
   const totalItems = groupsList.length;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -428,14 +431,19 @@ export function CategoryView({
           </div>
         )}
 
-        <Pagination 
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          startIndex={startIndex}
-          endIndex={endIndex}
-          onPageChange={setCurrentPage}
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <PerPageSelect value={perPage} onChange={n => setPerPage(n)} />
+          <div className="flex-1 min-w-0">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Record which source is bought for a material. Rendered unconditionally

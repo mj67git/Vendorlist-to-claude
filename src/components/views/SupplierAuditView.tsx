@@ -4,6 +4,7 @@ import { BusinessPartner, Material, User, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { PageTitle } from '../ui/page-title';
@@ -123,6 +124,8 @@ interface SourceSelection {
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null);
 
     const [currentPage, setCurrentPage] = useState(1);
+    /** Suppliers per page. Same control and same sizes as every other paged module. */
+    const [perPage, setPerPage] = useState(20);
     /**
      * The list is a table now, so it sorts like the other repositories do.
      * Kept here rather than inside the row loop because the page slice is taken
@@ -148,7 +151,7 @@ interface SourceSelection {
 
     useEffect(() => {
       setCurrentPage(1);
-    }, [searchQuery]);
+    }, [searchQuery, perPage]);
 
     // Group vendors list by supplier name
     const supplierGroups = useMemo(() => {
@@ -260,14 +263,18 @@ interface SourceSelection {
       setCurrentPage(1);
     };
 
-    const ITEMS_PER_PAGE = 20;
+    const ITEMS_PER_PAGE = perPage;
     const totalItems = sortedSuppliers.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-   const endIndex = startIndex + ITEMS_PER_PAGE;
-   const paginatedSuppliers = useMemo(() => {
-     return sortedSuppliers.slice(startIndex, endIndex);
-   }, [sortedSuppliers, startIndex, endIndex]);
+    const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+    // Clamped on render, not corrected afterwards: the list shrinks under the
+    // user during a background sync (rule 11a), and a page number left past the
+    // end would render an empty table with no hint of why.
+    const page = Math.min(currentPage, totalPages);
+    const startIndex = (page - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const paginatedSuppliers = useMemo(() => {
+      return sortedSuppliers.slice(startIndex, endIndex);
+    }, [sortedSuppliers, startIndex, endIndex]);
 
    // Find active supplier details
    const activeSupplier = useMemo(() => {
@@ -1154,14 +1161,19 @@ interface SourceSelection {
              </div>
            </div>
 
-           <Pagination 
-             currentPage={currentPage}
-             totalPages={totalPages}
-             totalItems={totalItems}
-             startIndex={startIndex}
-             endIndex={endIndex}
-             onPageChange={setCurrentPage}
-           />
+           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+             <PerPageSelect value={perPage} onChange={n => setPerPage(n)} />
+             <div className="flex-1 min-w-0">
+               <Pagination
+                 currentPage={page}
+                 totalPages={totalPages}
+                 totalItems={totalItems}
+                 startIndex={startIndex}
+                 endIndex={endIndex}
+                 onPageChange={setCurrentPage}
+               />
+             </div>
+           </div>
          </div>
        )}
      </div>

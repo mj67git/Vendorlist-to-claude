@@ -10,6 +10,7 @@ import jalaali from 'jalaali-js';
 import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import { Pagination } from './Pagination';
+import { PerPageSelect } from './ui/per-page-select';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import {
   AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
@@ -1431,16 +1432,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
 
         {/* PAGINATION PANEL — shared by both views: they page the same query. */}
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-            <span>تعداد در هر صفحه</span>
-            <select
-              value={itemsPerPage}
-              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+          <PerPageSelect value={itemsPerPage} onChange={n => { setItemsPerPage(n); setCurrentPage(1); }} />
           {totalPages > 1 && (
             <div className="flex-1 min-w-0">
               <Pagination

@@ -34,6 +34,7 @@ import {
   canSupplySources
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
+import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
@@ -1187,16 +1188,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
         {/* Table Footer / Pagination */}
         <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-            <span>تعداد در هر صفحه</span>
-            <select
-              value={itemsPerPage}
-              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className={`bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+          <PerPageSelect value={itemsPerPage} onChange={n => { setItemsPerPage(n); setCurrentPage(1); }} />
           <div className="flex-1 min-w-0">
             <Pagination
               currentPage={page}

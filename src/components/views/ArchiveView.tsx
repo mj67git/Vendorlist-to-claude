@@ -4,6 +4,7 @@ import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { cn } from '../../lib/utils';
 import { Pagination } from '../../components/Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { PageTitle } from '../../components/ui/page-title';
@@ -225,8 +226,12 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   const ITEMS_PER_PAGE = perPage;
   const totalItems = filteredDb.length;
-  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  // Clamped on render, not corrected afterwards: the list shrinks under the
+  // user during a background sync (rule 11a), and a page number left past the
+  // end would render an empty table with no hint of why.
+  const page = Math.min(currentPage, totalPages);
+  const startIndex = (page - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
   const paginatedDb = useMemo(() => {
     return sortedDb.slice(startIndex, endIndex);
@@ -692,19 +697,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-          <span>تعداد در هر صفحه</span>
-          <select
-            value={perPage}
-            onChange={e => { setPerPage(Number(e.target.value)); setCurrentPage(1); }}
-            className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          >
-            {[20, 50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </label>
+        <PerPageSelect value={perPage} onChange={n => { setPerPage(n); setCurrentPage(1); }} />
         <div className="flex-1">
           <Pagination
-            currentPage={currentPage}
+            currentPage={page}
             totalPages={totalPages}
             totalItems={totalItems}
             startIndex={startIndex}
