@@ -811,8 +811,26 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <option value="foreign">خرید خارجی</option>
                   <option value="veterinary">دامی</option>
                   <option value="packaging">اقلام بسته‌بندی</option>
-                  <option value="blacklist">لیست سیاه</option>
+                  {/* «لیست سیاه» is not a category anybody picks.
+                      It offered a way to file a source straight into the
+                      blacklist from a creation form, with no decision, no
+                      reason and nobody's name on it — while the rest of the
+                      application treats blacklisting as a recorded decision
+                      (rule 11) and the source form itself cannot even reach
+                      that state: a new record always starts as 'new'.
+                      An existing blacklisted record still needs the value to
+                      render, so the option appears only for that record and
+                      only to keep the select honest about where it already
+                      is; the category is preserved on save either way. */}
+                  {sourceType === 'blacklist' && (
+                    <option value="blacklist">لیست سیاه</option>
+                  )}
                 </select>
+                {sourceType === 'blacklist' && (
+                  <p className="text-2xs text-muted-foreground leading-relaxed">
+                    این سورس در لیست سیاه است. خروج از لیست سیاه با «بازگردانی» در بخش تصمیم کیفی صفحهٔ سورس انجام می‌شود، نه از این کشو.
+                  </p>
+                )}
               </div>
               
               <div className="flex flex-col gap-2">
