@@ -19,7 +19,7 @@ import { Textarea } from '../ui/textarea';
 // extracted from App.tsx
 
 // --- View: Vendor Form (Add / Edit) ---
-export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: () => void }) {
+export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void | Promise<Vendor | null | void>, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: (saved?: Vendor | null) => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
   // Create autocomplete suggestions
@@ -248,6 +248,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
 
   const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType }));
   const savedRef = useRef(false);
+  /** True while a save is in flight, so a second click cannot start another. */
+  const [isSaving, setIsSaving] = useState(false);
+  /** A refused save, shown where the buttons are rather than as a toast. */
+  const [submitError, setSubmitError] = useState<string | null>(null);
   useEffect(() => {
     if (!registerNavGuard) return;
     registerNavGuard(() => {
@@ -336,8 +340,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     target?.querySelector<HTMLElement>('button, input, select')?.focus();
   };
 
-  const handleSubmit = (e: React.FormEvent, keepGoing = false) => {
+  const handleSubmit = async (e: React.FormEvent, keepGoing = false) => {
     e.preventDefault();
+    if (isSaving) return;
+    setSubmitError(null);
 
     if (!formData.materialId) {
       focusMissingField('material');
@@ -474,9 +480,28 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       activityLogs: [...(existingVendor?.activityLogs || []), newLog]
     } as Vendor;
 
+    /* One save, two endings.
+       The record is written first and the same way for both buttons; only what
+       happens next differs. Nothing is torn down before the database has
+       answered: the dirty-form guard stays armed and the fields stay filled, so
+       a refused save leaves the user exactly where they were, with what they
+       typed, instead of on a list page with the work gone. */
+    setIsSaving(true);
+    let saved: Vendor | null | void;
+    try {
+      saved = await onSave(vendorContext, null);
+    } catch {
+      saved = null;
+    }
+    setIsSaving(false);
+
+    if (saved === null) {
+      setSubmitError('ثبت انجام نشد. متن خطا در بالای صفحه آمده است؛ پس از رفع آن دوباره تلاش کنید.');
+      return;
+    }
+
     savedRef.current = true;
     registerNavGuard?.(null);
-    onSave(vendorContext, null);
 
     // "Save and add the next one": the record is stored and the form empties in
     // place, so someone transcribing a stack of sources from an old file never
@@ -493,9 +518,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       return;
     }
 
+    // A registration goes straight to its own page, so the celebration card
+    // would only stand between the user and the work waiting there. An edit
+    // keeps it: it returns to a page that already exists and the card is the
+    // only confirmation that the change landed.
+    if (!existingVendor) {
+      (onSaved ?? onClose)(saved || vendorContext);
+      return;
+    }
+
     setIsSuccess(true);
     setTimeout(() => {
-      (onSaved ?? onClose)();
+      (onSaved ?? onClose)(saved || vendorContext);
     }, 1000);
   };
 
@@ -1176,14 +1210,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             </div>
           )}
 
+          {submitError && (
+            <p role="alert" className="flex items-start gap-2 pt-4 text-2xs font-bold text-rose-600 dark:text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>{submitError}</span>
+            </p>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
-            <Button type="button" variant="outline" onClick={onClose} className="px-4 text-xs font-semibold">
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving} className="px-4 text-xs font-semibold">
               {savedCount > 0 ? 'پایان و بازگشت به فهرست' : 'انصراف'}
             </Button>
             {!existingVendor && (
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSaving}
                 onClick={e => handleSubmit(e, true)}
                 title="ذخیره می‌کند، فرم را خالی می‌کند و در همین صفحه می‌مانید"
                 className="px-4 text-xs font-semibold"
@@ -1191,8 +1233,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 ذخیره و ثبت بعدی
               </Button>
             )}
-            <Button type="button" onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
-              {existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
+            <Button type="button" disabled={isSaving} onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
+              {isSaving ? 'در حال ثبت…' : existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
             </Button>
           </div>
         </div>

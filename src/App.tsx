@@ -1365,19 +1365,27 @@ export default function App() {
    * again. The record is offered on the toast instead, so reaching it is one
    * click for whoever wants it and none for whoever does not.
    */
-  const handleAddVendor = (newVendor: Vendor) => {
+  /**
+   * Register a source, and report whether the database accepted it.
+   *
+   * The row is still inserted optimistically — the register redraws at once —
+   * but the promise settles on the server's answer, so a caller can wait before
+   * it navigates or clears a form. It resolves with the stored record, or with
+   * `null` once the refusal has been rolled back and shown; it never rejects,
+   * because callers that do not care about the outcome (the dashboard's quick
+   * add) would otherwise raise an unhandled rejection.
+   */
+  const handleAddVendor = (newVendor: Vendor): Promise<Vendor | null> => {
     const normalized = normalizeAndCleanVendor(newVendor);
     // Ours: skip it in the next poll, and drop the count baseline so our own
     // new row is not read as somebody else's change to the register size.
     ownWritesRef.current.add(normalized.id);
     knownTotalRef.current = null;
     setDb([normalized, ...db]);
-    notify(
-      `سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`,
-      'success',
-      3000,
-      { label: 'مشاهده و امتیازدهی', run: () => handleSelectVendor(normalized) },
-    );
+    // No action button on the toast any more: the form now takes the user to
+    // the new source's own page, so «مشاهده و امتیازدهی» would point at the
+    // page they are already standing on.
+    notify(`سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`, 'success', 3000);
     if (isLocalMode()) {
       const isSource = !!(normalized.isSample || normalized.category === 'sample');
       appendLocalAudit({
@@ -1395,17 +1403,18 @@ export default function App() {
      * next person to open the register saw a source that did not exist. The
      * optimistic row is withdrawn and the server's reason is shown instead.
      */
-    authWrite('/api/vendors', {
+    return authWrite('/api/vendors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalized)
-    }).catch((err: any) => {
+    }).then(() => normalized).catch((err: any) => {
       console.error('Failed to sync new vendor to DB:', err);
       setDb(prev => prev.filter(v => v.id !== normalized.id));
       notify(
         err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
         'error', 8000,
       );
+      return null;
     });
   };
 
@@ -1642,8 +1651,17 @@ export default function App() {
           categoryId={(editing?.category as Category) || (categoryId as Category) || 'domestic'}
           existingVendor={editing}
           onClose={goBack}
-          onSaved={closeSourceForm}
-          onSave={(v, msg) => { if (editing) handleUpdateVendor(v, msg); else handleAddVendor(v); }}
+          /* Where the two footer buttons part company.
+             They share one save; only what happens afterwards differs. A
+             registration lands on the new source's own page, because that is
+             where the work continues — department scores, risk assessment, the
+             rest of the evaluation. «ذخیره و ثبت بعدی» never gets here: the
+             form keeps itself and empties in place. An edit returns where it
+             came from, which for a form opened off a record is that record.
+             (This is why rule 8a now reads "a registration lands on its record":
+             the batch button is what keeps bulk entry painless.) */
+          onSaved={(saved) => { if (saved && !editing) handleSelectVendor(saved); else closeSourceForm(); }}
+          onSave={(v, msg) => (editing ? handleUpdateVendor(v, msg) : handleAddVendor(v))}
           currentUser={currentUser}
           partners={businessPartners}
           onAddPartner={handleAddBusinessPartner}
