@@ -890,8 +890,17 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <option value="A">Grade A (تاییدشده: ۸۰-۱۰۰)</option>
                 <option value="B">Grade B (با پایش: ۶۰-۷۹)</option>
                 <option value="C">Grade C (مشروط: ۴۰-۵۹)</option>
-                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
-                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
+                {/* «Pending Review» removed from this filter at the user's
+                    request. The grade itself still exists — the SOP rubric
+                    gives it to a supplier scoring 30-39 (rule 13) — so such a
+                    partner keeps its badge everywhere else and is reached
+                    through «همه گریدها».
+
+                    The Blacklist range beside it said ۰-۳۹, which was never
+                    true: the rubric blacklists below 30 and only below 30. Left
+                    as it was, this list would now read as covering every score
+                    while quietly dropping the 30-39 band. */}
+                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۲۹)</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
