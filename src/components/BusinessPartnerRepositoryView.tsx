@@ -83,6 +83,8 @@ const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' })
 
 /** Worst first when descending: the order a quality reviewer reads in. */
 const GRADE_RANK: Record<string, number> = {
+  // «Pending Review» is retired but kept in the order so a row stored under it
+  // still sorts between C and Blacklist instead of falling to the bottom.
   'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
 };
 type SortOrder = 'asc' | 'desc';
@@ -900,7 +902,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     true: the rubric blacklists below 30 and only below 30. Left
                     as it was, this list would now read as covering every score
                     while quietly dropping the 30-39 band. */}
-                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۲۹)</option>
+                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>

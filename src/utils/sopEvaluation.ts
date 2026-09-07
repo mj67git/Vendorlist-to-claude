@@ -60,11 +60,13 @@ export function calculateGradeAndStatus(totalScore: number, isEvaluated: boolean
     return { grade: 'B', status: 'Approved with Monitoring' };
   } else if (totalScore >= 40) {
     return { grade: 'C', status: 'Conditional Supplier' };
-  } else if (totalScore >= 30) {
-    return { grade: 'Pending Review', status: 'Pending Review' };
-  } else {
-    return { grade: 'Blacklist', status: 'Blacklist' };
   }
+  // Below 40 is the blacklist. There used to be a «Pending Review» band from 30
+  // to 39, retired at the business's request: it named an intention («somebody
+  // will decide about this supplier») rather than a result, and nothing in the
+  // application ever acted on it — a Pending Review supplier was refused a
+  // source link exactly like a blacklisted one. Three boundaries now, 80/60/40.
+  return { grade: 'Blacklist', status: 'Blacklist' };
 }
 
 /**
@@ -93,8 +95,16 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
     en: 'Conditional Supplier', fa: 'مشروط',
     tone: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-900',
   },
+  /**
+   * Retired: the rubric no longer produces this grade (below 40 is Blacklist).
+   * The label stays so an evaluation stored before the change still renders as
+   * something a reader recognises instead of an empty badge, the same way the
+   * retired permission names are still expanded rather than dropped.
+   * `reconcileSupplierEvaluation` rewrites such a row from its documents on the
+   * next load, so this is a fallback, not a second live grade.
+   */
   'Pending Review': {
-    en: 'Pending Review', fa: 'در انتظار تصمیم',
+    en: 'Pending Review (بازنشسته)', fa: 'در انتظار تصمیم (بازنشسته)',
     tone: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-950/60 dark:text-yellow-200 dark:border-yellow-900',
   },
   'Blacklist': {
