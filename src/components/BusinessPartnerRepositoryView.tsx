@@ -1991,12 +1991,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">ایمیل</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
@@ -2006,7 +2006,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
+                          dir="ltr"
+                          className="text-blue-600 hover:underline font-mono inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />
@@ -2059,12 +2060,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">ایمیل رسمی</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
@@ -2074,7 +2075,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
+                          dir="ltr"
+                          className="text-blue-600 hover:underline font-mono inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />

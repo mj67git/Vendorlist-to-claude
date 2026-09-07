@@ -1741,7 +1741,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                   {hasRecordedValue(selectedLog.ipAddress) && (
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
-                      <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress}</span>
+                      <span dir="ltr" className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{selectedLog.ipAddress}</span>
                     </div>
                   )}
                   {hasRecordedValue(selectedLog.userAgent) && (
