@@ -579,7 +579,7 @@ export function buildPartnersWorksheet(
   const connectedCount = (p: BusinessPartner) =>
     (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
 
-  // نتیجهٔ ارزیابی SOP بر اساس گرید (هم‌راستا با ستون لیست شرکا)
+  // نتیجهٔ ارزیابی فروشنده بر اساس گرید (هم‌راستا با ستون لیست شرکا)
   const sopResultLabel = (grade?: string) => {
     switch (grade) {
       case 'A': return 'Approved';
@@ -603,9 +603,9 @@ export function buildPartnersWorksheet(
     'ایمیل',
     'وبسایت',
     'وضعیت سیستم',
-    'امتیاز SOP (فروشنده)',
+    'امتیاز ارزیابی فروشنده',
     'گرید ارزیابی',
-    'نتیجهٔ ارزیابی SOP',
+    'نتیجهٔ ارزیابی فروشنده',
     // The same rule the table and the server apply, so a printed report cannot
     // promise a seller the form will refuse.
     'امکان اتصال به سورس',
@@ -1002,17 +1002,17 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
       ['بدون ارزیابی ریسک', riskCounts.none],
     ]),
     [],
-    [titleCell('ارزیابی مدارک SOP (فروشنده)')],
+    [titleCell('ارزیابی فروشنده (مدارک)')],
     ...labelValueRows(
       sop
         ? [
             ['شریک تجاری مرتبط', linkedPartner?.name || '-'],
-            ['امتیاز کل SOP', sop.totalScore],
+            ['امتیاز کل ارزیابی', sop.totalScore],
             ['گرید ارزیابی', sop.grade],
             ['آخرین به‌روزرسانی', sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('fa-IR') : '-'],
             ['ثبت‌کننده', sop.updatedBy || '-'],
           ]
-        : [['ارزیابی SOP', 'این تأمین‌کننده به رکورد شریک تجاری متصل نیست یا ارزیابی نشده است.']]),
+        : [['ارزیابی فروشنده', 'این تأمین‌کننده به رکورد شریک تجاری متصل نیست یا ارزیابی نشده است.']]),
     [],
     [titleCell('تداوم تأمین')],
     ...labelValueRows([

@@ -6,6 +6,8 @@ import { Badge } from '../../components/ui/badge';
 import { Card } from '../../components/ui/card';
 import { BusinessPartner, Category, Scores, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
+import { RankBadge } from '../../components/RankBadge';
+import { describeSampleStatus } from '../../utils/sampleStatus';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { MaterialsComparisonSection, type SourceSelectionRecord } from './MaterialsComparisonSection';
@@ -200,21 +202,14 @@ export const MaterialGroup: React.FC<{
                           which left a phone showing only the name and country. The
                           same values, inline, rather than nothing. */}
                       <div className="sm:hidden flex items-center gap-2 flex-wrap pt-0.5">
-                        {categoryId !== 'blacklist' && (
-                          vendor.isSample ? (
-                            <Badge
-                              variant={
-                                vendor.status === 'approved' ? 'gradeA' :
-                                vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
-                              }
-                              className="text-2xs font-bold px-2 py-0"
-                            >
-                              {vendor.status === 'approved' ? 'Approved' :
-                               vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
-                            </Badge>
-                          ) : (
-                            <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
-                          )
+                        {vendor.isSample ? (
+                          <Badge variant={describeSampleStatus(vendor).variant} className="text-2xs font-bold px-2 py-0">
+                            {describeSampleStatus(vendor).label}
+                          </Badge>
+                        ) : isVendorRejected(vendor) ? (
+                          <RankBadge vendor={vendor} />
+                        ) : (
+                          <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
                         )}
                         {(() => {
                           const shown = currentUser?.role === 'admin'
@@ -227,7 +222,7 @@ export const MaterialGroup: React.FC<{
                             </span>
                           );
                         })()}
-                        {categoryId !== 'blacklist' && vendor.riskAssessment && (
+                        {vendor.riskAssessment && (
                           <Badge
                             variant={
                               vendor.riskAssessment.riskLevel === 'Low' ? 'gradeA' :
@@ -247,13 +242,18 @@ export const MaterialGroup: React.FC<{
                       One shared grid template rather than three independent fixed
                       widths, so the columns line up from row to row. */}
                   <div className="flex items-center gap-4 shrink-0">
-                    <div className={`hidden sm:grid items-center gap-4 ${
-                      // Wider tracks once the page itself is wide, so the metric
-                      // block breathes instead of hugging the right edge.
-                      categoryId === 'blacklist'
-                        ? 'grid-cols-[8rem] xl:grid-cols-[10rem]'
-                        : 'grid-cols-[8rem_7rem_7rem] xl:grid-cols-[10rem_9rem_9rem]'
-                    }`}>
+                    {/* Wider tracks once the page itself is wide, so the metric
+                        block breathes instead of hugging the right edge.
+
+                        The blacklist page used to collapse this to a single
+                        track: risk and rank were hidden there, so a rejected
+                        source reported a bare number and nothing else. It shows
+                        the same three cells as every other category now — the
+                        rank cell reading the earned rank rather than the stored
+                        `grade`, which for a rejected source has been stamped
+                        «rejected» and would have repeated the page's own name on
+                        every row. */}
+                    <div className="hidden sm:grid items-center gap-4 grid-cols-[8rem_7rem_7rem] xl:grid-cols-[10rem_9rem_9rem]">
                     {/* Column 1: Score */}
                     <div className="flex flex-col items-center justify-center text-center">
                       {currentUser?.role === 'admin' ? (
@@ -282,8 +282,7 @@ export const MaterialGroup: React.FC<{
                     </div>
 
                     {/* Column 2: Risk Level */}
-                    {categoryId !== 'blacklist' && (
-                      <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex flex-col items-center justify-center text-center">
                         <div className="text-2xs text-muted-foreground mb-0.5">سطح ریسک</div>
                         {vendor.riskAssessment ? (
                           <Badge 
@@ -299,34 +298,26 @@ export const MaterialGroup: React.FC<{
                         ) : (
                           <span className="text-2xs text-muted-foreground">-</span>
                         )}
-                      </div>
-                    )}
+                    </div>
 
                     {/* Column 3: Grade / Status */}
-                    {categoryId !== 'blacklist' && (
-                      <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex flex-col items-center justify-center text-center">
                         {vendor.isSample ? (
                           <>
                             <div className="text-2xs text-muted-foreground mb-0.5">وضعیت نمونه</div>
-                            <Badge 
-                              variant={
-                                vendor.status === 'approved' ? 'gradeA' :
-                                vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
-                              }
-                              className="text-2xs font-bold px-2 py-0"
-                            >
-                              {vendor.status === 'approved' ? 'Approved' :
-                               vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
+                            <Badge variant={describeSampleStatus(vendor).variant} className="text-2xs font-bold px-2 py-0">
+                              {describeSampleStatus(vendor).label}
                             </Badge>
                           </>
                         ) : (
                           <>
                             <div className="text-2xs text-muted-foreground mb-0.5">رتبه نهایی</div>
-                            <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                            {isVendorRejected(vendor)
+                              ? <RankBadge vendor={vendor} />
+                              : <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />}
                           </>
                         )}
-                      </div>
-                    )}
+                    </div>
                     </div>
 
                     <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transform group-hover:-translate-x-0.5 transition-all shrink-0" />

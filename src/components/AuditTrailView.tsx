@@ -10,6 +10,7 @@ import jalaali from 'jalaali-js';
 import { Button } from './ui/button';
 import { FormModal } from './FormModal';
 import { Pagination } from './Pagination';
+import { PerPageSelect } from './ui/per-page-select';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import {
   AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
@@ -132,8 +133,8 @@ const fieldKeyLabels: Record<string, string> = {
   // Collections. These are compared item by item (see computeFieldDiff), so the
   // label names the collection and the value names what actually moved.
   activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
-  documents: 'مدارک SOP', sopDocuments: 'مدارک SOP', permissions: 'دسترسی‌ها',
-  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی SOP',
+  documents: 'مدارک', sopDocuments: 'مدارک', permissions: 'دسترسی‌ها',
+  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی فروشنده',
   // Accounts and partners.
   isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
   address: 'آدرس', website: 'وبسایت', contactPerson: 'مسئول تماس', type: 'نوع شریک',
@@ -243,7 +244,7 @@ export interface DiffResult {
  * One line describing a record inside a collection.
  *
  * A lab result is its QC code and decision; an activity entry is what was done
- * and when; an SOP document is its name and status. Falling back to an id is
+ * and when; a partner document is its name and status. Falling back to an id is
  * still better than the JSON — but a record that offers nothing recognisable is
  * reported by position, and the raw data below the panel carries the rest.
  */
@@ -1431,16 +1432,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
 
         {/* PAGINATION PANEL — shared by both views: they page the same query. */}
         <div className="px-5 pb-5 pt-1 flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-            <span>تعداد در هر صفحه</span>
-            <select
-              value={itemsPerPage}
-              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className="bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+          <PerPageSelect value={itemsPerPage} onChange={n => { setItemsPerPage(n); setCurrentPage(1); }} />
           {totalPages > 1 && (
             <div className="flex-1 min-w-0">
               <Pagination
@@ -1749,7 +1741,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                   {hasRecordedValue(selectedLog.ipAddress) && (
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-muted-foreground font-bold">آدرس IP کاربر:</span>
-                      <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md dir-ltr">{selectedLog.ipAddress}</span>
+                      <span dir="ltr" className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded-md">{selectedLog.ipAddress}</span>
                     </div>
                   )}
                   {hasRecordedValue(selectedLog.userAgent) && (

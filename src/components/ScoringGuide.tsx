@@ -34,19 +34,19 @@ export function ScoringGuide({ currentUser }: ScoringGuideProps) {
       <div className="flex flex-wrap gap-4 items-center mt-2 border-t border-border pt-4 justify-end">
         <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
           <span className="font-mono text-emerald-700 font-bold">Grade A</span>
-          <span className="text-emerald-600 text-xs mx-1">امتیاز ۸۰ تا ۱۰۰</span>
+          <span className="text-emerald-600 text-xs mx-1">امتیاز ۸۰ – ۱۰۰</span>
         </div>
         <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
           <span className="font-mono text-[#0071E3] font-bold">Grade B</span>
-          <span className="text-blue-600 text-xs mx-1">امتیاز ۶۰ تا ۷۹</span>
+          <span className="text-blue-600 text-xs mx-1">امتیاز ۶۰ – ۷۹٫۹</span>
         </div>
         <div className="flex items-center gap-2 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
           <span className="font-mono text-amber-700 font-bold">Grade C</span>
-          <span className="text-amber-600 text-xs mx-1">امتیاز ۴۰ تا ۵۹</span>
+          <span className="text-amber-600 text-xs mx-1">امتیاز ۴۰ – ۵۹٫۹</span>
         </div>
         <div className="flex items-center gap-2 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100">
           <span className="font-mono text-rose-700 font-bold">لیست سیاه</span>
-          <span className="text-rose-600 text-xs mx-1">امتیاز ۰ تا ۳۹</span>
+          <span className="text-rose-600 text-xs mx-1">امتیاز زیر ۴۰</span>
         </div>
       </div>
     </div>

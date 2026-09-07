@@ -214,10 +214,10 @@ export function vendorRoutes(): express.Router {
           action: "Create - Blocked",
           severity: "Warning",
           description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
           beforeData: null,
           afterData: { supplierId: (v as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
         return res.status(422).json({ error: sopError });
       }
 
@@ -422,10 +422,10 @@ export function vendorRoutes(): express.Router {
           action: "Update - Blocked",
           severity: "Warning",
           description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
           beforeData: null,
           afterData: { supplierId: (updatedVendor as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
         return res.status(422).json({ error: sopError });
       }
 
@@ -830,25 +830,22 @@ export function vendorRoutes(): express.Router {
       const prevCounters = countDecisions(prevRecords);
       const newCounters = countDecisions(newRecords);
 
-      let finalStatus = current.status;
-      let isSystemAutoReject = false;
-      let isSystemAutoRestore = false;
+      // Saving a laboratory record no longer moves a sample's status.
+      //
+      // This endpoint used to stamp a sample 'rejected' as soon as one Reject
+      // record arrived, and — worse — restore it to `initialSampleStatus ||
+      // "approved"` as soon as that record was deleted, so a sample could be
+      // approved by nobody twice over. A record is evidence; the verdict is a
+      // decision a person records with a reason (the sample decision box), and
+      // it reaches the server as an ordinary status change with its own audit
+      // entry. The counters below are still computed: they are what the general
+      // analysis audit entry reports.
+      const finalStatus = current.status;
+      const isSystemAutoReject = false;
+      const isSystemAutoRestore = false;
 
-      const isSource = !!(current.isSample || current.category === "sample");
-
-      if (isSource) {
-        if (newCounters.reject >= 1) {
-          finalStatus = "rejected";
-          if (current.status !== "rejected" || prevCounters.reject === 0) {
-            isSystemAutoReject = true;
-          }
-        } else {
-          finalStatus = current.initialSampleStatus || "approved";
-          if (current.status === "rejected" || prevCounters.reject >= 1) {
-            isSystemAutoRestore = true;
-          }
-        }
-      }
+      /** Samples are named by their material on the audit trail, sources by company. */
+      const isSampleRecord = !!(current.isSample || current.category === "sample");
 
       const updatedVendor = {
         ...current,
@@ -860,7 +857,7 @@ export function vendorRoutes(): express.Router {
       const result = await getVendorById(id);
 
       const userObj = req.user || {};
-      const entityName = isSource ? (result.material || result.name) : result.name;
+      const entityName = isSampleRecord ? (result.material || result.name) : result.name;
       const reasonInput = req.body.reasonForChange || req.body.reason || null;
 
       // 1. Audit Laboratory Result Events (Create, Update, Delete)

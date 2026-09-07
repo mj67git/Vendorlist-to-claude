@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
@@ -8,6 +9,7 @@ import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
 import type { SourceSelectionRecord } from './MaterialsComparisonSection';
@@ -45,6 +47,8 @@ export function CategoryView({
   const excel = useExcelExport();
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  /** Groups per page. Same control and same sizes as every other paged module. */
+  const [perPage, setPerPage] = useState(20);
   const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
@@ -117,7 +121,7 @@ export function CategoryView({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, sortBy, activeFilter]);
+  }, [query, sortBy, activeFilter, perPage]);
 
   const meta = categoryLabels[categoryId];
   
@@ -150,6 +154,9 @@ export function CategoryView({
     switch (activeFilter) {
       case 'approved': return v.status === 'approved';
       case 'conditional': return v.status === 'conditional';
+      // «آزمایش نشده» is a real population now, not an empty edge case: a sample
+      // enters the category with no verdict and waits for one.
+      case 'untested': return isUntestedSample(v);
       case 'rejected': return isVendorRejected(v);
       case 'A': return v.grade === 'A';
       case 'B': return v.grade === 'B';
@@ -214,7 +221,7 @@ export function CategoryView({
     return sorted;
   }, [grouped, sortBy]);
 
-  const ITEMS_PER_PAGE = 20;
+  const ITEMS_PER_PAGE = perPage;
   const totalItems = groupsList.length;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -347,6 +354,13 @@ export function CategoryView({
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', categoryVendors.filter(isVendorRejected).length)}>
                       مردود: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
                     </Badge>
+                    {/* Without this chip the three above no longer add up to the
+                        total, and the samples waiting on a decision — the ones
+                        somebody actually has to act on — are the ones you cannot
+                        filter for. */}
+                    <Badge variant="outline" onClick={() => toggle('untested')} className={chipCls('untested', categoryVendors.filter(isUntestedSample).length)}>
+                      آزمایش نشده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isUntestedSample).length}</span>
+                    </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? null : (
                   <>
@@ -428,14 +442,19 @@ export function CategoryView({
           </div>
         )}
 
-        <Pagination 
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          startIndex={startIndex}
-          endIndex={endIndex}
-          onPageChange={setCurrentPage}
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <PerPageSelect value={perPage} onChange={n => setPerPage(n)} />
+          <div className="flex-1 min-w-0">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Record which source is bought for a material. Rendered unconditionally

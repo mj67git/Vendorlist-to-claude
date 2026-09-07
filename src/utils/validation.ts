@@ -4,7 +4,16 @@ export const vendorSchema = z.object({
   id: z.string().min(1, "ID is required"),
   material: z.string().optional(),
   materialEn: z.string().optional(),
-  cas: z.string().regex(/^\d+-\d{2}-\d+$/, "Invalid CAS format. Expected format: xxx-xx-x").or(z.literal("N/A")).or(z.literal("")),
+  /**
+   * A source may have no CAS number at all.
+   *
+   * Packaging items and some domestic goods are not chemical substances, so
+   * there is nothing to write here. The format is still checked when a value is
+   * given — a wrong CAS is a real error — but the key itself is optional and
+   * `null` is accepted, because that is what the client sends for a field
+   * nobody filled in (the same reason `optionalText` exists below).
+   */
+  cas: z.string().regex(/^\d+-\d{2}-\d+$/, "Invalid CAS format. Expected format: xxx-xx-x").or(z.literal("N/A")).or(z.literal("")).nullish(),
   irc: z.string().regex(/^\d*$|^$/, "IRC must be numeric").or(z.literal("N/A")).or(z.literal("")),
   name: z.string().optional(),
   nameEn: z.string().optional(),

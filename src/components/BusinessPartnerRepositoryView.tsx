@@ -9,8 +9,8 @@ import { categoryLabels } from '../constants/categories';
 import { GradeBadge } from './GradeBadge';
 import { 
   Search, Plus, Edit2, Trash2, Eye, X, Building2, Factory, Handshake, 
-  CheckCircle, CheckCircle2, XCircle, Filter, Globe, Mail, Phone, User as UserIcon, ExternalLink,
-  FileText, Upload, Download, FileCheck, Award, ShieldCheck, AlertCircle, Paperclip,
+  CheckCircle, CheckCircle2, XCircle, Filter, Globe, ExternalLink,
+  Upload, Download, Award, ShieldCheck, AlertCircle, Paperclip,
   RefreshCw, AlertTriangle, Package
 } from 'lucide-react';
 import { 
@@ -22,7 +22,6 @@ import {
   SOPDocumentEval,
   SupplierEvaluation,
   SOPGrade,
-  SOPSupplierStatus,
   Vendor
 } from '../types';
 import { 
@@ -32,9 +31,11 @@ import {
   computeSupplierEvaluation, 
   validateSupplierEvaluation,
   describeGrade,
-  canSupplySources
+  canSupplySources,
+  GRADE_RANGE_FA
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
+import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
 import { openDocumentPreview } from '../utils/documentPreview';
 import { can } from '../utils/permissions';
@@ -83,6 +84,8 @@ const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' })
 
 /** Worst first when descending: the order a quality reviewer reads in. */
 const GRADE_RANK: Record<string, number> = {
+  // «Pending Review» is retired but kept in the order so a row stored under it
+  // still sorts between C and Blacklist instead of falling to the bottom.
   'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
 };
 type SortOrder = 'asc' | 'desc';
@@ -102,7 +105,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   const [typeFilter, setTypeFilter] = useState<BusinessPartnerType | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | 'Blacklisted' | 'All'>('All');
   const [gradeFilter, setGradeFilter] = useState<SOPGrade | 'All'>('All');
-  const [sopStatusFilter, setSopStatusFilter] = useState<SOPSupplierStatus | 'All'>('All');
+  /*
+   * The SOP-status filter is gone at the user's request. It offered six English
+   * status strings for a fact the grade filter already expresses — the status is
+   * derived from the same rubric as the grade (`calculateGradeAndStatus`), so
+   * "Approved Supplier" and "Grade A" select the same rows. One control for one
+   * question.
+   */
   /** «فقط قابل اتصال» / «فقط غیرمجاز» — the same rule the server enforces. */
   const [sourceLinkFilter, setSourceLinkFilter] = useState<'All' | 'Allowed' | 'Blocked'>('All');
   const [countryFilter, setCountryFilter] = useState<string>('All');
@@ -320,18 +329,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       typeFilter !== 'All' ||
       statusFilter !== 'All' ||
       gradeFilter !== 'All' ||
-      sopStatusFilter !== 'All' ||
       sourceLinkFilter !== 'All' ||
       countryFilter !== 'All'
     );
-  }, [search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter]);
+  }, [search, typeFilter, statusFilter, gradeFilter, sourceLinkFilter, countryFilter]);
 
   const handleResetFilters = () => {
     setSearch('');
     setTypeFilter('All');
     setStatusFilter('All');
     setGradeFilter('All');
-    setSopStatusFilter('All');
     setSourceLinkFilter('All');
     setCountryFilter('All');
     setCurrentPage(1);
@@ -352,13 +359,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         if (p.evaluation?.grade !== gradeFilter) return false;
       }
 
-      // 4. SOP Status filter (Supplier only)
-      if (sopStatusFilter !== 'All') {
-        if (p.type !== 'Supplier') return false;
-        if (p.evaluation?.status !== sopStatusFilter) return false;
-      }
-
-      // 5. May this partner be attached to a source? Read from the same helper
+      // 4. May this partner be attached to a source? Read from the same helper
       // the server refuses with, so the filter cannot drift from the rule.
       if (sourceLinkFilter !== 'All') {
         const allowed = canSupplySources(p).allowed;
@@ -407,7 +408,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
       // Dates are ISO strings, which the collator orders correctly as text.
       return dir * collator.compare(String(a[sortField] ?? ''), String(b[sortField] ?? ''));
     });
-  }, [partners, search, typeFilter, statusFilter, gradeFilter, sopStatusFilter, sourceLinkFilter, countryFilter, sortField, sortOrder]);
+  }, [partners, search, typeFilter, statusFilter, gradeFilter, sourceLinkFilter, countryFilter, sortField, sortOrder]);
 
   // Pagination calculations
   const totalPages = Math.max(1, Math.ceil(filteredPartners.length / itemsPerPage));
@@ -817,7 +818,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             eyebrow="Business Partner & Supplier Quality Evaluation"
             eyebrowIcon={Building2}
             title="مخزن شرکای تجاری و ارزیابی فروشنده"
-            subtitle="ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP"
+            subtitle="ثبت تولیدکنندگان و فروشندگان، و ارزیابی فروشندگان مطابق موازین GMP"
           />
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
@@ -880,24 +881,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 flex-1">
-            <div>
-              <label className="text-2xs font-bold text-muted-foreground block mb-1">وضعیت ارزیابی SOP</label>
-              <select
-                value={sopStatusFilter}
-                onChange={e => { setSopStatusFilter(e.target.value as any); setCurrentPage(1); }}
-                className={cn(inputBaseClass, 'w-full font-medium')}
-              >
-                <option value="All">همه وضعیت‌های SOP</option>
-                <option value="Approved Supplier">Approved Supplier (تاییدشده)</option>
-                <option value="Approved with Monitoring">Approved with Monitoring (با پایش)</option>
-                <option value="Conditional Supplier">Conditional Supplier (مشروط)</option>
-                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
-                <option value="Blacklist">Blacklist (لیست سیاه)</option>
-                <option value="Not Evaluated">Not Evaluated (ارزیابی نشده)</option>
-              </select>
-            </div>
-
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
             <div>
               <label className="text-2xs font-bold text-muted-foreground block mb-1">رتبه کیفی (Grade)</label>
               <select
@@ -906,11 +890,25 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه گریدها</option>
-                <option value="A">Grade A (تاییدشده: ۸۰-۱۰۰)</option>
-                <option value="B">Grade B (با پایش: ۶۰-۷۹)</option>
-                <option value="C">Grade C (مشروط: ۴۰-۵۹)</option>
-                <option value="Pending Review">Pending Review (در انتظار تصمیم)</option>
-                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
+                {/* The bands as the business states them. Written with the
+                    open upper edge («۷۹٫۹») rather than a whole number, because
+                    the boundary the code applies is «below 60», not «at most
+                    79»: a score that ever lands between the two must read as B
+                    here and not fall into a gap the label invented. */}
+                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
+                <option value="B">Grade B (با پایش: {GRADE_RANGE_FA['B']})</option>
+                <option value="C">Grade C (مشروط: {GRADE_RANGE_FA['C']})</option>
+                {/* «Pending Review» removed from this filter at the user's
+                    request. The grade itself still exists — the SOP rubric
+                    gives it to a supplier scoring 30-39 (rule 13) — so such a
+                    partner keeps its badge everywhere else and is reached
+                    through «همه گریدها».
+
+                    The Blacklist range beside it said ۰-۳۹, which was never
+                    true: the rubric blacklists below 30 and only below 30. Left
+                    as it was, this list would now read as covering every score
+                    while quietly dropping the 30-39 band. */}
+                <option value="Blacklist">Blacklist (لیست سیاه: {GRADE_RANGE_FA['Blacklist']})</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
@@ -1098,7 +1096,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           // A manufacturer is never SOP-evaluated, and the
                           // sentence saying so was repeated on every one of
                           // their rows. The dash carries it in the tooltip.
-                          <span className="text-muted-foreground font-mono" title="ارزیابی SOP فقط برای فروشنده انجام می‌شود.">—</span>
+                          <span className="text-muted-foreground font-mono" title="ارزیابی فروشنده فقط برای رکوردهای فروشنده انجام می‌شود.">—</span>
                         )}
                       </td>
 
@@ -1115,7 +1113,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           const link = canSupplySources(partner);
                           return link.allowed ? (
                             <span
-                              title={partner.type === 'Supplier' ? 'گرید A دارد و طبق دستورالعمل قابل انتخاب به‌عنوان سورس است.' : 'تولیدکننده مشمول قاعدهٔ گرید SOP نیست.'}
+                              title={partner.type === 'Supplier' ? 'گرید A دارد و طبق دستورالعمل قابل انتخاب به‌عنوان سورس است.' : 'تولیدکننده مشمول قاعدهٔ گرید فروشنده نیست.'}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900"
                             >
                               <CheckCircle2 className="w-3 h-3 shrink-0" />
@@ -1207,16 +1205,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
         {/* Table Footer / Pagination */}
         <div className="px-6 py-3 bg-muted/50 border-t border-border flex flex-col sm:flex-row sm:items-center gap-3">
-          <label className="flex items-center gap-2 text-2xs font-bold text-muted-foreground shrink-0">
-            <span>تعداد در هر صفحه</span>
-            <select
-              value={itemsPerPage}
-              onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className={`bg-card border border-border rounded-lg px-2 py-1 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
-            >
-              {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+          <PerPageSelect value={itemsPerPage} onChange={n => { setItemsPerPage(n); setCurrentPage(1); }} />
           <div className="flex-1 min-w-0">
             <Pagination
               currentPage={page}
@@ -1353,7 +1342,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         }`}
                       >
                         <ShieldCheck className="w-4 h-4" />
-                        <span>۲. ارزیابی SOP Supplier</span>
+                        <span>۲. ارزیابی فروشنده</span>
                         {computedEval.grade === 'Not Evaluated' ? (
                           <span className="px-2 py-0.5 rounded-full text-2xs font-bold bg-muted text-muted-foreground border border-border">
                             ارزیابی نشده
@@ -1516,7 +1505,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2 font-bold text-xs text-emerald-600 dark:text-emerald-400">
                         <ShieldCheck className="w-4 h-4" />
-                        <span>Supplier Evaluation (مطابق SOP شرکت)</span>
+                        <span>ارزیابی فروشنده (Supplier Evaluation) — مطابق دستورالعمل شرکت</span>
                       </div>
                       <p className="text-2xs text-muted-foreground">
                         تعیین وضعیت دقیق ۵ مدرک الزامی SOP جهت محاسبه خودکار امتیاز، Grade و وضعیت تایید Supplier.
@@ -1681,7 +1670,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-background/20 pb-2">
                       <span className="text-xs font-bold flex items-center gap-1.5">
                         <Award className="w-4 h-4 shrink-0" />
-                        <span>نتیجه ارزیابی کیفی Supplier (Live SOP Result)</span>
+                        <span>نتیجهٔ ارزیابی فروشنده (Live Result)</span>
                       </span>
                       <span className="text-2xs text-background/70 font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
@@ -1737,6 +1726,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         </div>
                       </div>
                     </div>
+
+                    {/* The scale this result was measured against.
+                        The panel reported a grade without ever saying what the
+                        bands were, so the evaluator had to know the rubric by
+                        heart to read their own number. The ranges come from the
+                        same constant the repository filter prints, so the two
+                        cannot drift apart again. */}
+                    <div className="mt-3 pt-3 border-t border-background/20 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
+                      {([
+                        { g: 'A' as const, dot: 'bg-emerald-400', label: 'Grade A' },
+                        { g: 'B' as const, dot: 'bg-blue-400', label: 'Grade B' },
+                        { g: 'C' as const, dot: 'bg-amber-400', label: 'Grade C' },
+                        { g: 'Blacklist' as const, dot: 'bg-rose-400', label: 'Blacklist' },
+                      ]).map(band => (
+                        <span key={band.g} className="flex items-center gap-1.5 text-background/80">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${band.dot}`} aria-hidden />
+                          <span className="font-bold text-background">{band.label}</span>
+                          <span>{GRADE_RANGE_FA[band.g]}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1763,7 +1773,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 text-xs font-bold"
                       >
                         <ShieldCheck className="text-emerald-600" />
-                        <span>ادامه به ارزیابی SOP Supplier</span>
+                        <span>ادامه به ارزیابی فروشنده</span>
                       </Button>
                     )}
                   </div>
@@ -1827,30 +1837,51 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         {selectedPartner && (<>
             {/* Sticky Top Header */}
             <div className="sticky top-0 z-30 px-6 py-4 border-b border-border bg-card/95 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-2xl ${
-                  selectedPartner.type === 'Manufacturer' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+              {/* Who this is, and nothing the page repeats below.
+
+                  The header used to carry a second line with the country, the
+                  city and «وضعیت سیستم: فعال (Active)». The country and city are
+                  printed again a few centimetres lower in the record's own grid,
+                  and "Active" is the state every partner is in unless something
+                  is wrong — so the line said, on almost every record, two things
+                  the reader already had and one that carried no news.
+
+                  What remains is identity: the name, and whether this is a
+                  manufacturer or a seller. A status badge appears only when the
+                  status is *not* Active, because that is the case worth
+                  interrupting for; a blacklisted partner also keeps its full
+                  banner at the top of the body. */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2.5 rounded-2xl shrink-0 ${
+                  selectedPartner.type === 'Manufacturer'
+                    ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900'
+                    : 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
                 }`}>
                   {selectedPartner.type === 'Manufacturer' ? <Factory className="w-6 h-6" /> : <Handshake className="w-6 h-6" />}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-black text-foreground">{selectedPartner.name}</h2>
-                    <span className={`px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
-                      selectedPartner.type === 'Manufacturer' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <EntityName
+                    as="div"
+                    name={selectedPartner.name}
+                    lines={1}
+                    className="text-sm font-black text-foreground max-w-[260px] sm:max-w-[360px]"
+                  />
+                  <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
+                    selectedPartner.type === 'Manufacturer'
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-900'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900'
+                  }`}>
+                    {selectedPartner.type === 'Manufacturer' ? 'تولیدکننده' : 'فروشنده'}
+                  </span>
+                  {selectedPartner.status !== 'Active' && (
+                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-2xs font-bold border ${
+                      selectedPartner.status === 'Blacklisted'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900'
+                        : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-900'
                     }`}>
-                      {selectedPartner.type === 'Manufacturer' ? 'Manufacturer (تولیدکننده)' : 'Supplier (فروشنده)'}
+                      {selectedPartner.status === 'Blacklisted' ? 'لیست سیاه' : 'غیرفعال'}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" />{selectedPartner.country} {selectedPartner.city ? `(${selectedPartner.city})` : ''}</span>
-                    <span>•</span>
-                    <span>وضعیت سیستم: {
-                      selectedPartner.status === 'Active' ? <strong className="text-teal-600">فعال (Active)</strong> :
-                      selectedPartner.status === 'Blacklisted' ? <strong className="text-rose-600">⛔ لیست سیاه (Blacklisted)</strong> :
-                      <strong className="text-amber-600">غیرفعال (Inactive)</strong>
-                    }</span>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -1960,12 +1991,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">ایمیل</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
@@ -1975,7 +2006,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
+                          dir="ltr"
+                          className="text-blue-600 hover:underline font-mono inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />
@@ -2028,12 +2060,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">شماره تماس</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.phone || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.phone || '-'}</span>
                     </div>
 
                     <div>
                       <span className="text-muted-foreground text-2xs block font-medium">ایمیل رسمی</span>
-                      <span className="font-bold font-mono text-foreground dir-ltr text-right block">{selectedPartner.email || '-'}</span>
+                      <span dir="ltr" className="font-bold font-mono text-foreground text-right block">{selectedPartner.email || '-'}</span>
                     </div>
 
                     <div>
@@ -2043,7 +2075,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           href={selectedPartner.website.startsWith('http') ? selectedPartner.website : `https://${selectedPartner.website}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-600 hover:underline font-mono dir-ltr inline-flex items-center gap-1 font-bold text-2xs"
+                          dir="ltr"
+                          className="text-blue-600 hover:underline font-mono inline-flex items-center gap-1 font-bold text-2xs"
                         >
                           {selectedPartner.website}
                           <ExternalLink className="w-3 h-3" />
@@ -2075,7 +2108,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   <div className="flex items-center justify-between border-b border-border pb-2">
                     <span className="text-xs font-bold flex items-center gap-1.5">
                       <Award className="w-4 h-4 shrink-0" />
-                      <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
+                      <span>۲. خلاصهٔ ارزیابی فروشنده (Supplier Evaluation Result)</span>
                     </span>
                     <span className="text-2xs text-muted-foreground font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
@@ -2114,7 +2147,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     </div>
                   ) : (
                     <div className="p-4 bg-card border border-border rounded-xl text-center space-y-1">
-                      <span className="font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
+                      <span className="font-bold text-xs block">ارزیابی فروشنده برای این شریک هنوز انجام نشده است.</span>
                       <p className="text-2xs text-muted-foreground">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
@@ -2126,7 +2159,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <History className="w-4 h-4 text-indigo-600" />
-                        <span>تاریخچه و روند ارزیابی SOP <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
+                        <span>تاریخچه و روند ارزیابی فروشنده <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
                       </h3>
                       <span className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{evalHistory.length} تغییر</span>
                     </div>
@@ -2188,7 +2221,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5 border-b border-border pb-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>۳. وضعیت مدارک ۵گانه الزامی SOP (SOP Documents Verification)</span>
+                    <span>۳. وضعیت مدارک ۵گانه ارزیابی فروشنده (Documents Verification)</span>
                   </h3>
 
                   {selectedPartner.evaluation ? (
@@ -2196,7 +2229,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <table className="w-full text-right text-xs">
                         <thead className="bg-muted border-b border-border font-bold text-muted-foreground">
                           <tr>
-                            <th className="py-2.5 px-3">نام مدرک SOP</th>
+                            <th className="py-2.5 px-3">نام مدرک</th>
                             <th className="py-2.5 px-3">وضعیت مدرک</th>
                             <th className="py-2.5 px-3">امتیاز مکتسبه</th>
                             <th className="py-2.5 px-3 text-center">فایل پیوست</th>
@@ -2248,7 +2281,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                       ) : (
                                         <span
                                           className="text-2xs text-muted-foreground"
-                                          title="حساب کاربری شما مجوز دریافت مدارک SOP را ندارد."
+                                          title="حساب کاربری شما مجوز دریافت مدارک را ندارد."
                                         >
                                           بدون مجوز دریافت
                                         </span>
@@ -2365,7 +2398,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </p>
               {partnerToDelete.type === 'Supplier' ? (
                 <p className="text-rose-700 bg-rose-50/50 p-2 rounded-lg font-medium border border-rose-100">
-                  ⚠️ با حذف این فروشنده، کلیه سوابق ارزیابی SOP و فایل‌های پیوست آن نیز برای همیشه از سیستم پاک خواهد شد.
+                  ⚠️ با حذف این فروشنده، کلیه سوابق ارزیابی فروشنده و فایل‌های پیوست آن نیز برای همیشه از سیستم پاک خواهد شد.
                 </p>
               ) : (
                 <p className="text-amber-700 bg-amber-50/50 p-2 rounded-lg font-medium border border-amber-100">

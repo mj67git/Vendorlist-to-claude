@@ -12,16 +12,14 @@ import { categoryLabels } from '../../constants/categories';
 import { authFetch } from '../../services/authFetch';
 import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, SOPDocumentStatus, Status, SupplierEvaluation, User, Vendor } from '../../types';
 import { SOP_DOCUMENTS_DEF, computeSupplierEvaluation } from '../../utils/sopEvaluation';
-import { hasQcReject } from '../../utils/vendorState';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
-import { Input, inputBaseClass } from '../../components/ui/input';
-import { cn } from '../../lib/utils';
+import { Input } from '../../components/ui/input';
 import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
 // --- View: Vendor Form (Add / Edit) ---
-export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: () => void }) {
+export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void | Promise<Vendor | null | void>, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: (saved?: Vendor | null) => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
   // Create autocomplete suggestions
@@ -34,18 +32,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       
   const [sourceType, setSourceType] = useState<string>(initialSourceType);
   const [isSample, setIsSample] = useState<boolean>(existingVendor ? !!existingVendor.isSample : false);
-  const [sampleStatus, setSampleStatus] = useState<string>(() => {
-    if (existingVendor) {
-      const initial = existingVendor.initialSampleStatus;
-      if (initial === 'rejected' || initial === 'reject') return 'rejected';
-      if (initial === 'conditional' || initial === 'not_approved') return 'not_approved';
-      if (initial === 'approved') return 'approved';
-      if (existingVendor.status === 'rejected') return 'rejected';
-      if (existingVendor.status === 'conditional') return 'not_approved';
-      return 'approved';
-    }
-    return 'approved';
-  });
 
   const [formData, setFormData] = useState({
     materialId: existingVendor?.materialId || '',
@@ -260,16 +246,20 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [savedCount, setSavedCount] = useState(0);
   const [recentlySaved, setRecentlySaved] = useState<Array<{ id: string; label: string }>>([]);
 
-  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
+  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType }));
   const savedRef = useRef(false);
+  /** True while a save is in flight, so a second click cannot start another. */
+  const [isSaving, setIsSaving] = useState(false);
+  /** A refused save, shown where the buttons are rather than as a toast. */
+  const [submitError, setSubmitError] = useState<string | null>(null);
   useEffect(() => {
     if (!registerNavGuard) return;
     registerNavGuard(() => {
       if (savedRef.current) return false;
-      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }) !== pristineRef.current;
+      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType }) !== pristineRef.current;
     });
     return () => registerNavGuard(null);
-  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
+  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType]);
 
   /**
    * IRC is the 16-digit IFDA code. It stays optional, but a half-typed one is
@@ -278,6 +268,17 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
    * Persian keyboard is not told their correct code is wrong.
    */
   const IRC_LENGTH = 16;
+
+  /**
+   * What this category's licence is called.
+   *
+   * Veterinary goods are registered under IVC, everything else under IRC. It is
+   * one field and one 16-digit rule; only the name differs. The source's own
+   * page has always made this distinction — the form said «IRC» to everybody,
+   * so a veterinary record was labelled with the wrong licence right up to the
+   * moment it was saved.
+   */
+  const licenceCode = sourceType === 'veterinary' ? 'IVC' : 'IRC';
   const toFaDigits = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
   const toLatinDigits = (input: string) =>
     input
@@ -322,7 +323,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           grade: 'new', status: 'new', rejectionReasonList: '',
         },
         selectedManufacturerId: '', selectedSupplierId: '',
-        isSample, sourceType, sampleStatus,
+        isSample, sourceType,
       });
       materialFieldRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       materialFieldRef.current?.querySelector<HTMLElement>('button, input, select')?.focus();
@@ -339,8 +340,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     target?.querySelector<HTMLElement>('button, input, select')?.focus();
   };
 
-  const handleSubmit = (e: React.FormEvent, keepGoing = false) => {
+  const handleSubmit = async (e: React.FormEvent, keepGoing = false) => {
     e.preventDefault();
+    if (isSaving) return;
+    setSubmitError(null);
 
     if (!formData.materialId) {
       focusMissingField('material');
@@ -369,25 +372,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     const finalIsSample = isSample;
     let finalCategory = finalIsSample ? 'sample' as Category : sourceType as Category;
     let finalGrade = existingVendor ? existingVendor.grade : (finalIsSample ? null : 'new');
-    let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'approved' : 'new');
+    let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'new' : 'new');
+    // Legacy field: this form used to ask for a sample's verdict here, before a
+    // single test had been run. It does not write one any more — the verdict is
+    // a quality decision recorded against the laboratory results — but an
+    // existing record keeps the value it already has (rule 6).
     let finalInitialSampleStatus: Status | null = null;
 
     if (finalIsSample) {
       finalCategory = 'sample';
       finalGrade = null; // samples don't have evaluation grade
+      finalInitialSampleStatus = (existingVendor?.initialSampleStatus as Status) || null;
 
-      const initialMap: Record<string, 'approved' | 'conditional' | 'rejected'> = {
-        approved: 'approved',
-        not_approved: 'conditional',
-        rejected: 'rejected'
-      };
-      finalInitialSampleStatus = initialMap[sampleStatus] || 'approved';
-
-      // A sample is blacklisted by a single failing QC result. Use the shared
-      // predicate rather than re-counting here, so this form cannot drift from
-      // the rule the rest of the app applies (applyDerivedState re-checks it on
-      // save anyway).
-      finalStatus = hasQcReject(existingVendor) ? 'rejected' : finalInitialSampleStatus;
+      // A sample arrives «آزمایش نشده» and stays there until somebody decides.
+      // A record that already carries a verdict keeps it: editing a supplier's
+      // address is not a re-evaluation of its sample.
+      finalStatus = existingVendor ? existingVendor.status : 'new';
     } else {
       finalInitialSampleStatus = null;
       if (existingVendor) {
@@ -480,9 +480,28 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       activityLogs: [...(existingVendor?.activityLogs || []), newLog]
     } as Vendor;
 
+    /* One save, two endings.
+       The record is written first and the same way for both buttons; only what
+       happens next differs. Nothing is torn down before the database has
+       answered: the dirty-form guard stays armed and the fields stay filled, so
+       a refused save leaves the user exactly where they were, with what they
+       typed, instead of on a list page with the work gone. */
+    setIsSaving(true);
+    let saved: Vendor | null | void;
+    try {
+      saved = await onSave(vendorContext, null);
+    } catch {
+      saved = null;
+    }
+    setIsSaving(false);
+
+    if (saved === null) {
+      setSubmitError('ثبت انجام نشد. متن خطا در بالای صفحه آمده است؛ پس از رفع آن دوباره تلاش کنید.');
+      return;
+    }
+
     savedRef.current = true;
     registerNavGuard?.(null);
-    onSave(vendorContext, null);
 
     // "Save and add the next one": the record is stored and the form empties in
     // place, so someone transcribing a stack of sources from an old file never
@@ -499,9 +518,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       return;
     }
 
+    // A registration goes straight to its own page, so the celebration card
+    // would only stand between the user and the work waiting there. An edit
+    // keeps it: it returns to a page that already exists and the card is the
+    // only confirmation that the change landed.
+    if (!existingVendor) {
+      (onSaved ?? onClose)(saved || vendorContext);
+      return;
+    }
+
     setIsSuccess(true);
     setTimeout(() => {
-      (onSaved ?? onClose)();
+      (onSaved ?? onClose)(saved || vendorContext);
     }, 1000);
   };
 
@@ -570,8 +598,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 </div>
                 <p className="text-2xs text-muted-foreground mt-1.5">
                   {newPartnerType === 'Supplier'
-                    ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
-                    : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
+                    ? 'فروشنده‌ها ارزیابی می‌شوند و بر اساس مدارک خود گرید کیفی می‌گیرند.'
+                    : 'تولیدکننده‌ها ارزیابی نمی‌شوند؛ فقط مشخصات عمومی ثبت می‌شود.'}
                 </p>
               </div>
 
@@ -702,7 +730,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <div className="space-y-4">
                     <div className="bg-muted p-3 rounded-xl border border-border flex items-center justify-between">
                       <div className="text-xs font-bold text-foreground">
-                        نتیجه محاسبه ارزیابی SOP: <span className="text-primary">{computeNewSupplierEval().status}</span>
+                        نتیجهٔ محاسبهٔ ارزیابی فروشنده: <span className="text-primary">{computeNewSupplierEval().status}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">امتیاز کل: <strong>{computeNewSupplierEval().totalScore} / 100</strong></span>
@@ -828,8 +856,26 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <option value="foreign">خرید خارجی</option>
                   <option value="veterinary">دامی</option>
                   <option value="packaging">اقلام بسته‌بندی</option>
-                  <option value="blacklist">لیست سیاه</option>
+                  {/* «لیست سیاه» is not a category anybody picks.
+                      It offered a way to file a source straight into the
+                      blacklist from a creation form, with no decision, no
+                      reason and nobody's name on it — while the rest of the
+                      application treats blacklisting as a recorded decision
+                      (rule 11) and the source form itself cannot even reach
+                      that state: a new record always starts as 'new'.
+                      An existing blacklisted record still needs the value to
+                      render, so the option appears only for that record and
+                      only to keep the select honest about where it already
+                      is; the category is preserved on save either way. */}
+                  {sourceType === 'blacklist' && (
+                    <option value="blacklist">لیست سیاه</option>
+                  )}
                 </select>
+                {sourceType === 'blacklist' && (
+                  <p className="text-2xs text-muted-foreground leading-relaxed">
+                    این سورس در لیست سیاه است. خروج از لیست سیاه با «بازگردانی» در بخش تصمیم کیفی صفحهٔ سورس انجام می‌شود، نه از این کشو.
+                  </p>
+                )}
               </div>
               
               <div className="flex flex-col gap-2">
@@ -843,26 +889,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <span className="text-xs font-bold text-foreground">این تامین‌کننده به عنوان یک «نمونه» ثبت می‌شود</span>
                 </label>
 
+                {/* No verdict is asked for here.
+                    This used to open a «وضعیت اولیهٔ نمونه» dropdown offering
+                    تایید شده / مشروط / رد شده — a conclusion demanded before a
+                    single test had been run, and the default («تایید شده») meant
+                    most samples were recorded as approved by nobody. The sample
+                    now enters its category labelled «آزمایش نشده», and the
+                    verdict is a quality decision taken against the laboratory
+                    results, with a name and a reason behind it. */}
                 {isSample && (
-                  <div className="space-y-1 fade-in">
-                    <label htmlFor="vf-sample-status" className="text-foreground font-semibold text-xs">وضعیت اولیهٔ نمونه</label>
-                    <select
-                      id="vf-sample-status"
-                      className={cn(inputBaseClass, 'w-full')} 
-                      value={sampleStatus} 
-                      onChange={e => setSampleStatus(e.target.value)}
-                    >
-                      <option value="approved">تایید شده</option>
-                      <option value="not_approved">تایید مشروط</option>
-                      <option value="rejected">رد شده</option>
-                    </select>
-
-                    {existingVendor && hasQcReject(existingVendor) && (
-                      <p className="text-rose-500 text-xs mt-1.5 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-100 leading-relaxed text-right">
-                        این Source دارای نتیجه آزمایشگاهی Reject است و وضعیت آن تا زمان اصلاح نتایج آزمایشگاه قابل تغییر نیست.
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-2xs text-muted-foreground leading-relaxed fade-in">
+                    نمونه با برچسب «آزمایش نشده» ثبت می‌شود. وضعیت تأیید، تأیید مشروط یا رد پس از ثبت نتایج آزمایشگاهی و با تصمیم کارشناس کیفیت مشخص می‌گردد.
+                  </p>
                 )}
               </div>
             </div>
@@ -940,7 +978,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 {selectedSupplier && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
                     <div>
-                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی SOP:</span>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی فروشنده:</span>
                       {sopEvaluated ? (
                         <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation!.totalScore} / ۱۰۰</span>
                       ) : (
@@ -1013,17 +1051,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             )}
           </div>
 
-          {/* SECTION 3: REGULATORY, IRC & INITIAL STATUS */}
+          {/* SECTION 3: REGULATORY LICENCE (IRC / IVC)
+              Veterinary goods are licensed under IVC, everything else under
+              IRC. They are the same field — the source's licence number — so
+              the heading names both and the field itself names the one that
+              applies to the category currently selected, which is what the
+              source's own page has always done. */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
               <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-2xs font-bold shrink-0">۳</span>
-              <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانهٔ IRC</h3>
+              <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانه IRC/IVC</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1" ref={ircFieldRef}>
                 <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
-                  <span>کد IRC (اختیاری)</span>
+                  <span>کد {licenceCode} (اختیاری)</span>
                   {ircDigits !== '' && (
                     <span className={`text-2xs font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                       {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
@@ -1054,7 +1097,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 />
                 {isIrcValid ? (
                   <p id="vf-irc-hint" className="text-2xs text-muted-foreground">
-                    کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
+                    کد {licenceCode} سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
                   </p>
                 ) : (
                   <p
@@ -1065,10 +1108,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                     <span>
                       {!blocksSubmitOnIrc
-                        ? `کد IRC ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
+                        ? `کد ${licenceCode} ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
                         : ircTooShort
-                          ? `کد IRC باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
-                          : `کد IRC باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
+                          ? `کد ${licenceCode} باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
+                          : `کد ${licenceCode} باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
                     </span>
                   </p>
                 )}
@@ -1167,14 +1210,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             </div>
           )}
 
+          {submitError && (
+            <p role="alert" className="flex items-start gap-2 pt-4 text-2xs font-bold text-rose-600 dark:text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>{submitError}</span>
+            </p>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
-            <Button type="button" variant="outline" onClick={onClose} className="px-4 text-xs font-semibold">
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving} className="px-4 text-xs font-semibold">
               {savedCount > 0 ? 'پایان و بازگشت به فهرست' : 'انصراف'}
             </Button>
             {!existingVendor && (
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSaving}
                 onClick={e => handleSubmit(e, true)}
                 title="ذخیره می‌کند، فرم را خالی می‌کند و در همین صفحه می‌مانید"
                 className="px-4 text-xs font-semibold"
@@ -1182,8 +1233,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 ذخیره و ثبت بعدی
               </Button>
             )}
-            <Button type="button" onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
-              {existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
+            <Button type="button" disabled={isSaving} onClick={e => handleSubmit(e)} className="px-5 text-xs font-bold">
+              {isSaving ? 'در حال ثبت…' : existingVendor ? 'ثبت تغییرات' : 'ثبت سورس'}
             </Button>
           </div>
         </div>

@@ -141,7 +141,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'partner.create': 'ثبت شریک جدید',
   'partner.edit': 'ویرایش شریک',
   'partner.delete': 'حذف شریک',
-  'partner.files': 'دانلود مدارک SOP شریک',
+  'partner.files': 'دانلود مدارک شریک',
   'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
   'vendor.risk': 'ارزیابی ریسک (FMEA)',
   'score.commercial': 'امتیازدهی بازرگانی و خرید',
@@ -213,7 +213,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     extras: [{
       permission: 'partner.files',
       letter: 'F',
-      label: 'دانلود مدارک SOP',
+      label: 'دانلود مدارک',
       note: 'مشاهدهٔ فهرست و گرید شریک با «مشاهده» داده می‌شود؛ این گزینه اجازهٔ گرفتن خودِ مدارک (مجوز کسب‌وکار، معرفی‌نامه، ترجمهٔ رسمی) را می‌دهد.',
     }],
   },

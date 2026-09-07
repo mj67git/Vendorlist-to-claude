@@ -6,7 +6,7 @@ import { calculateOverallScore } from './vendorUtils';
  *
  * There are two unrelated grade scales in this application and they were being
  * mixed up. `sopEvaluation.ts` grades a **supplier's SOP documents** on
- * 80/60/40/30 → A, B, C, Pending Review, Blacklist (rule 13). A **source** is
+ * 80/60/40 → A, B, C, Blacklist (rule 13). A **source** is
  * graded on a different scale entirely — A 80-100, B 60-79, C 40-59, D 0-39 —
  * and the Excel export had quietly copied the SOP boundaries, so a source
  * scoring 35 printed as "Grade D" on the signed form and as "Blacklist" in the

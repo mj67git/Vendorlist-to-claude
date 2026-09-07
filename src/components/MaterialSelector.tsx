@@ -125,7 +125,7 @@ export const MaterialSelector: React.FC<Props> = ({ value, onChange, materials, 
           <div className="flex-1 truncate pr-1">
             {selectedMaterial ? (
               <span className="font-bold text-foreground">
-                {selectedMaterial.nameFa} <span className="text-muted-foreground font-mono text-xs dir-ltr">({selectedMaterial.nameEn})</span>
+                {selectedMaterial.nameFa} <span dir="ltr" className="text-muted-foreground font-mono text-xs">({selectedMaterial.nameEn})</span>
               </span>
             ) : oldMaterialName ? (
               <span className="text-amber-600 font-medium">نیاز به انتخاب از مخزن (ماده قبلی: {oldMaterialName})</span>

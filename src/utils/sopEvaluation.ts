@@ -60,11 +60,13 @@ export function calculateGradeAndStatus(totalScore: number, isEvaluated: boolean
     return { grade: 'B', status: 'Approved with Monitoring' };
   } else if (totalScore >= 40) {
     return { grade: 'C', status: 'Conditional Supplier' };
-  } else if (totalScore >= 30) {
-    return { grade: 'Pending Review', status: 'Pending Review' };
-  } else {
-    return { grade: 'Blacklist', status: 'Blacklist' };
   }
+  // Below 40 is the blacklist. There used to be a «Pending Review» band from 30
+  // to 39, retired at the business's request: it named an intention («somebody
+  // will decide about this supplier») rather than a result, and nothing in the
+  // application ever acted on it — a Pending Review supplier was refused a
+  // source link exactly like a blacklisted one. Three boundaries now, 80/60/40.
+  return { grade: 'Blacklist', status: 'Blacklist' };
 }
 
 /**
@@ -93,8 +95,16 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
     en: 'Conditional Supplier', fa: 'مشروط',
     tone: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-900',
   },
+  /**
+   * Retired: the rubric no longer produces this grade (below 40 is Blacklist).
+   * The label stays so an evaluation stored before the change still renders as
+   * something a reader recognises instead of an empty badge, the same way the
+   * retired permission names are still expanded rather than dropped.
+   * `reconcileSupplierEvaluation` rewrites such a row from its documents on the
+   * next load, so this is a fallback, not a second live grade.
+   */
   'Pending Review': {
-    en: 'Pending Review', fa: 'در انتظار تصمیم',
+    en: 'Pending Review (بازنشسته)', fa: 'در انتظار تصمیم (بازنشسته)',
     tone: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-950/60 dark:text-yellow-200 dark:border-yellow-900',
   },
   'Blacklist': {
@@ -105,6 +115,25 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
     en: 'Not Evaluated', fa: 'ارزیابی نشده',
     tone: 'bg-muted text-foreground border-border',
   },
+};
+
+/**
+ * The score band each grade stands for, written once.
+ *
+ * The filter dropdown and the evaluation form each printed their own copy, and
+ * they had already drifted — one of them still claimed the blacklist began at
+ * 39 while the rubric had moved. The upper edge is written open («۷۹٫۹») rather
+ * than as a whole number because the boundary the rubric applies is «below 60»,
+ * not «at most 79»: a score that lands between them must read as B and not fall
+ * into a gap the label invented.
+ */
+export const GRADE_RANGE_FA: Record<SOPGrade, string> = {
+  'A': '۸۰ – ۱۰۰',
+  'B': '۶۰ – ۷۹٫۹',
+  'C': '۴۰ – ۵۹٫۹',
+  'Blacklist': 'زیر ۴۰',
+  'Pending Review': '—',
+  'Not Evaluated': '—',
 };
 
 export const describeGrade = (grade?: string | null) =>
@@ -237,7 +266,7 @@ export function canSupplySources(
 
   const grade = partner.evaluation?.grade;
   if (!grade || grade === 'Not Evaluated') {
-    return { allowed: false, reason: 'ارزیابی SOP این فروشنده انجام نشده است.' };
+    return { allowed: false, reason: 'ارزیابی این فروشنده انجام نشده است.' };
   }
   if (grade !== 'A') {
     return { allowed: false, reason: `گرید ارزیابی این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };

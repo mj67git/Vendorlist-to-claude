@@ -17,6 +17,7 @@ import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -79,34 +80,19 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
     comments: ''
   });
 
-  // Reject → status automation.
-  // Samples: a single Reject QC result auto-flags 'rejected' (→ Black List); this is
-  // acceptable because a sample is a one-shot go/no-go decision.
-  // Sources/suppliers: NO automatic status change — a source can have many results and
-  // one failure should not blacklist it automatically. The QA/admin decides manually via
-  // the decision box, with a mandatory explanation (logged to audit + source).
-  const deriveQcOutcome = (records: AnalysisRecord[]): { status: Status; rejectionReasons: string[] | null } => {
-    const isSampleVendor = vendor.isSample || vendor.category === 'sample';
-    if (!isSampleVendor) {
-      return { status: vendor.status, rejectionReasons: vendor.rejectionReasons || null };
-    }
-    const existingReasons = vendor.rejectionReasons ? [...vendor.rejectionReasons] : [];
-    const rejectRecords = records.filter(r => r.decision === 'Reject');
-    if (rejectRecords.length >= 1) {
-      const qcReasons = rejectRecords.map(r =>
-        `مردود در آزمون QC [کد: ${r.qcCode} | تاریخ: ${r.date}]${r.deviationReason && r.deviationReason !== 'None' ? ` - انحراف: ${r.deviationReason}` : ''}${r.comments ? ` - شرح: ${r.comments}` : ''}`
-      );
-      const existingNonQc = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-      const merged = [...existingNonQc, ...qcReasons];
-      return { status: 'rejected', rejectionReasons: merged.length > 0 ? merged : null };
-    }
-    // No Reject results remain → drop QC reasons, and restore status if it was auto-rejected by QC.
-    const nonQcReasons = existingReasons.filter(r => !r.startsWith('مردود در آزمون QC'));
-    let status = vendor.status;
-    if (vendor.status === 'rejected' && nonQcReasons.length === 0) {
-      status = (vendor.initialSampleStatus === 'not_approved' || vendor.initialSampleStatus === 'conditional') ? 'conditional' : 'approved';
-    }
-    return { status, rejectionReasons: nonQcReasons.length > 0 ? nonQcReasons : null };
+  /**
+   * Laboratory records no longer move any status by themselves.
+   *
+   * A sample used to be stamped 'rejected' the moment one Reject record was
+   * saved, with nobody deciding it — and deleting that record silently restored
+   * the sample to «تأیید شده». A record states what the analysis found; the
+   * organisation's conclusion is a separate act that carries a name, a date and
+   * a reason, and it is taken in the quality decision box below (the same way a
+   * source's rejection already worked). So this returns what the record already
+   * says and changes nothing.
+   */
+  const deriveQcOutcome = (_records: AnalysisRecord[]): { status: Status; rejectionReasons: string[] | null } => {
+    return { status: vendor.status, rejectionReasons: vendor.rejectionReasons || null };
   };
 
   const handleAddAnalysisSubmit = (e?: React.MouseEvent) => {
@@ -290,7 +276,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
     }
     setRejectError(null);
     const reasonLine = `رد توسط ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${rejectDecisionReason.trim()}`;
-    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith('رد توسط'));
+    const existingNonQc = (vendor.rejectionReasons || []).filter(r => !r.startsWith(ADMIN_REJECT_PREFIX));
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
       action: `رد سورس "${vendor.material}" (${vendor.name}) و انتقال به لیست سیاه توسط ${currentUser?.name || 'ادمین'} — دلیل: ${rejectDecisionReason.trim()}`,
@@ -304,6 +290,55 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       reasonForChange: `رد سورس بر اساس تصمیم کیفی: ${rejectDecisionReason.trim()}`,
       activityLogs: [...(vendor.activityLogs || []), newLog]
     }, 'سورس به لیست سیاه منتقل شد.');
+    setShowRejectBox(false);
+    setRejectDecisionReason('');
+  };
+
+  /**
+   * The sample verdict: تأیید / تأیید مشروط / رد.
+   *
+   * Deliberately three explicit outcomes rather than one «reject» switch,
+   * because that is the decision a sample actually receives. The reason is
+   * mandatory for all three — an approval with no stated basis is exactly the
+   * record the removed dropdown used to produce — and it is written into the
+   * activity log behind `SAMPLE_DECISION_PREFIX` so the box can read the
+   * standing decision back. A rejection additionally writes the reason into
+   * `rejectionReasons`, which is what keeps the blacklist banner truthful.
+   */
+  const [sampleDecision, setSampleDecision] = useState<'approved' | 'conditional' | 'rejected'>('approved');
+
+  const SAMPLE_VERDICT_LABELS: Record<string, string> = {
+    approved: 'تأیید شده',
+    conditional: 'تأیید مشروط',
+    rejected: 'رد شده',
+  };
+
+  const handleSampleDecision = () => {
+    if (!rejectDecisionReason.trim()) {
+      setRejectError('ثبت دلیل برای این تصمیم الزامی است.');
+      return;
+    }
+    setRejectError(null);
+    const verdict = sampleDecision;
+    const reason = rejectDecisionReason.trim();
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `${SAMPLE_DECISION_PREFIX}: ${SAMPLE_VERDICT_LABELS[verdict]} — ${reason}`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
+    // Reasons carried over from a previous verdict are dropped: a sample that
+    // has just been approved must not keep the sentence that once rejected it.
+    const rejectionReasons = verdict === 'rejected'
+      ? [`${ADMIN_REJECT_PREFIX} ${currentUser?.name || 'ادمین'} بر اساس نتایج آزمایشگاهی — ${reason}`]
+      : null;
+    onSave({
+      ...vendor,
+      status: verdict,
+      rejectionReasons,
+      reasonForChange: `${SAMPLE_DECISION_PREFIX}: ${SAMPLE_VERDICT_LABELS[verdict]} — ${reason}`,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, `وضعیت نمونه ثبت شد: ${SAMPLE_VERDICT_LABELS[verdict]}`);
     setShowRejectBox(false);
     setRejectDecisionReason('');
   };
@@ -901,9 +936,16 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     ))}
                   </ul>
 
-                  <div className="mt-6 border-t border-rose-200 dark:border-rose-800 pt-4 flex items-center text-xs text-rose-600 dark:text-rose-400/70 font-mono">
-                    <Info className="w-4 h-4 mr-2" /> {vendor.category === 'veterinary' ? 'IVC' : 'IRC'}_ISSUE_DATE: {vendor.lastAudit || 'N/A'}
-                  </div>
+                  {/* The banner used to end with a machine-shaped footer line —
+                      «IRC_ISSUE_DATE: N/A» — and it was wrong three times over.
+                      It printed a raw snake_case key in an interface that is
+                      Persian everywhere else; it printed «N/A» where the rest of
+                      the application prints «ثبت نشده»; and the licence issue
+                      date has nothing to do with why a source was rejected. The
+                      same value already appears a few centimetres above, in the
+                      licence card, labelled «تاریخ دریافت / صدور» — so the line
+                      repeated a fact the page already carried, in the one place
+                      it could only distract from the reasons. */}
                 </>
               )}
             </div>
@@ -1526,6 +1568,91 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   </div>
                 </div>
 
+                {/* The sample's verdict, decided against these records.
+                    Only rendered once at least one laboratory record exists —
+                    this block is inside `analysisRecords.length > 0` — so the
+                    control cannot become the old dropdown under a new name and
+                    approve a sample nobody has tested. */}
+                {(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                  <div className={`rounded-xl p-4 border ${
+                    vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800'
+                    : vendor.status === 'approved' ? 'bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
+                    : vendor.status === 'conditional' ? 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'
+                    : 'bg-muted/50 border-border'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+                      <h4 className="font-bold text-foreground text-xs">تصمیم کیفی دربارهٔ نمونه <span className="text-muted-foreground font-normal font-mono">(Sample Decision)</span></h4>
+                    </div>
+
+                    {(() => {
+                      const decided = vendor.status === 'approved' || vendor.status === 'conditional' || vendor.status === 'rejected';
+                      const log = sampleDecisionLog(vendor);
+                      if (!decided) {
+                        return (
+                          <p className="text-2xs text-muted-foreground leading-relaxed mb-3">
+                            این نمونه هنوز <strong>آزمایش نشده</strong> علامت خورده است. با توجه به نتایج بالا، وضعیت آن را تعیین کنید. دلیل تصمیم الزامی است و در سابقهٔ نمونه و ردیابی تغییرات ثبت می‌شود.
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="mb-3 space-y-2">
+                          <p className="text-2xs text-foreground leading-relaxed">
+                            وضعیت ثبت‌شدهٔ این نمونه: <strong>{SAMPLE_VERDICT_LABELS[vendor.status] || vendor.status}</strong>
+                          </p>
+                          {log && (
+                            <blockquote className="bg-card border border-border rounded-lg px-3 py-2">
+                              <span className="block text-2xs font-bold text-muted-foreground mb-0.5">دلیل ثبت‌شده{log.user ? ` — ${log.user}` : ''}{log.date ? ` · ${log.date}` : ''}:</span>
+                              <p className="text-2xs text-foreground leading-relaxed whitespace-pre-wrap">{log.action.replace(new RegExp(`^${SAMPLE_DECISION_PREFIX}:\\s*`), '')}</p>
+                            </blockquote>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {showRejectBox ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          {(['approved', 'conditional', 'rejected'] as const).map(v => (
+                            <Button
+                              key={v}
+                              type="button"
+                              size="sm"
+                              variant={sampleDecision === v ? (v === 'rejected' ? 'destructive' : v === 'conditional' ? 'outline' : 'success') : 'outline'}
+                              aria-pressed={sampleDecision === v}
+                              onClick={() => setSampleDecision(v)}
+                              className="font-bold"
+                            >
+                              {SAMPLE_VERDICT_LABELS[v]}
+                            </Button>
+                          ))}
+                        </div>
+                        <Textarea
+                          value={rejectDecisionReason}
+                          onChange={e => setRejectDecisionReason(e.target.value)}
+                          rows={2}
+                          className="min-h-0 bg-card"
+                          placeholder="دلیل تصمیم بر اساس نتایج آزمایشگاهی (الزامی)..."
+                        />
+                        {rejectError && (
+                          <div role="alert" className="flex items-start gap-2 text-2xs font-bold text-rose-600 dark:text-rose-400">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                            <span>{rejectError}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="secondary" size="sm" onClick={() => { setShowRejectBox(false); setRejectDecisionReason(''); setRejectError(null); }} className="font-bold text-muted-foreground">انصراف</Button>
+                          <Button type="button" size="sm" onClick={handleSampleDecision} className="px-4 font-bold">ثبت تصمیم</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowRejectBox(true)} className="px-4 font-bold">
+                        {vendor.status === 'new' ? 'تعیین وضعیت نمونه' : 'تغییر وضعیت نمونه'}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {/* Admin decision box for sources/suppliers (not samples) */}
                 {!(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
                   <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'}`}>
@@ -1534,7 +1661,34 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                       <h4 className="font-bold text-foreground text-xs">تصمیم‌گیری کیفی دربارهٔ سورس <span className="text-muted-foreground font-normal font-mono">(QA Decision)</span></h4>
                     </div>
                     {vendor.status === 'rejected' ? (
-                      <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed mb-3">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                      /* Why it is blacklisted, not only that it is.
+                         The box demands a written reason before it will reject a
+                         source, records it in the audit trail and in the source's
+                         own history — and then showed none of it back. The person
+                         deciding whether to restore the source was reading «این
+                         سورس در لیست سیاه است» and had to go looking elsewhere
+                         for the decision they are being asked to reverse. */
+                      <div className="mb-3 space-y-2">
+                        <p className="text-2xs text-rose-700 dark:text-rose-300 leading-relaxed">این سورس در حال حاضر در <strong>لیست سیاه</strong> است. در صورت رفع مشکل می‌توانید آن را بازگردانی کنید (با ذکر دلیل).</p>
+                        {(() => {
+                          const decision = adminRejectionReason(vendor);
+                          if (decision) {
+                            return (
+                              <blockquote className="bg-card border border-rose-200 dark:border-rose-800 rounded-lg px-3 py-2">
+                                <span className="block text-2xs font-bold text-rose-900 dark:text-rose-300 mb-0.5">دلیل ثبت‌شدهٔ رد:</span>
+                                <p className="text-2xs text-foreground leading-relaxed whitespace-pre-wrap">{decision}</p>
+                              </blockquote>
+                            );
+                          }
+                          /* No decision line means the blacklisting came from the
+                             laboratory records themselves, which the banner at the
+                             top of the page already lists one by one — so point
+                             there instead of inventing a reason. */
+                          return (
+                            <p className="text-2xs text-muted-foreground leading-relaxed">دلیل رد، از نتایج آزمایشگاهی ثبت‌شده می‌آید و در بنر بالای همین صفحه فهرست شده است.</p>
+                          );
+                        })()}
+                      </div>
                     ) : (
                       <p className="text-2xs text-muted-foreground leading-relaxed mb-3">
                         وجود {rej > 0 ? <strong className="text-rose-600 dark:text-rose-400">{rej} نتیجهٔ مردود</strong> : 'نتایج آزمایشگاهی'} به‌تنهایی سورس را رد نمی‌کند. تصمیم نهایی رد سورس با کارشناس کیفیت است و باید با ذکر دلیل ثبت شود (در audit و سابقهٔ سورس ثبت می‌گردد).

@@ -76,7 +76,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     return [
       { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, icon: ClipboardList, tone: 'amber' },
       { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, icon: ShieldAlert, tone: 'orange' },
-      { key: 'sop', label: 'ارزیابی SOP معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
+      { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
       { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: expiringVendors.length, icon: Calendar, tone: 'rose' },
     ];
   }, [sourceVendors, partners, expiringVendors]);

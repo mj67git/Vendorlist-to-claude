@@ -29,6 +29,30 @@ export function hasQcReject(v: AnyVendor): boolean {
  *  independent fact — they must not outlive the record they came from. */
 const QC_REASON_PREFIX = 'مردود در آزمون QC';
 
+/**
+ * The opening words of the line an explicit «رد سورس» decision writes into
+ * `rejectionReasons`. It was a bare literal in the reject handler, matched by
+ * `startsWith` to replace an earlier decision; the decision box then had no way
+ * to find that same line back and so could only say the source *is* blacklisted,
+ * never why. One constant, two readers.
+ */
+export const ADMIN_REJECT_PREFIX = 'رد توسط';
+
+/**
+ * The recorded human decision that blacklisted this source, or null.
+ *
+ * There is at most one: the handler replaces any earlier decision line rather
+ * than appending, so a restore-then-reject cycle leaves the current reason and
+ * not a stack of superseded ones.
+ */
+export function adminRejectionReason(v: AnyVendor): string | null {
+  if (!Array.isArray(v?.rejectionReasons)) return null;
+  const line = v.rejectionReasons.find(
+    (r: any) => typeof r === 'string' && r.startsWith(ADMIN_REJECT_PREFIX),
+  );
+  return typeof line === 'string' && line.trim() ? line.trim() : null;
+}
+
 function manualReasons(v: AnyVendor): string[] {
   if (!Array.isArray(v?.rejectionReasons)) return [];
   return v.rejectionReasons.filter((r: any) => typeof r === 'string' && !r.startsWith(QC_REASON_PREFIX));
@@ -46,19 +70,22 @@ function hasManualRejection(v: AnyVendor): boolean {
 export function isVendorRejected(v: AnyVendor): boolean {
   if (!v) return false;
   if (isSampleVendor(v)) {
-    // Samples auto-blacklist on one Reject; a manual reason also counts.
-    return hasQcReject(v) || hasManualRejection(v);
+    // A sample is no longer blacklisted by a lab result on its own.
+    //
+    // It used to be: one Reject record stamped the sample rejected with nobody
+    // deciding it. A laboratory record is evidence — it says what the analysis
+    // found, not what the organisation concluded — and in a GxP setting the
+    // conclusion is supposed to carry a name, a date and a reason. The quality
+    // decision box does that now, exactly as it already did for sources.
+    //
+    // `status === 'rejected'` stays in the test so that samples rejected under
+    // the old automatic rule keep the verdict they were given; nothing is
+    // silently un-rejected by this change.
+    return hasManualRejection(v) || v.status === 'rejected';
   }
   // A source is never auto-rejected by a single lab failure — only by an
   // explicit decision (the admin reject box, or the vendor form).
   return v.category === 'blacklist' || hasManualRejection(v) || v.status === 'rejected';
-}
-
-/** Status a vendor should return to once its rejection cause is gone. */
-function restoredStatus(v: AnyVendor): string {
-  return (v?.initialSampleStatus === 'not_approved' || v?.initialSampleStatus === 'conditional')
-    ? 'conditional'
-    : 'approved';
 }
 
 /**
@@ -73,8 +100,13 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
   }
 
   // Not rejected: clear any stale rejection stamp left by a cause that is gone.
+  //
+  // Only `grade` can be stale now. A rejected `status` *is* the verdict — for a
+  // sample as much as for a source — so this branch is only reached when the
+  // status already says something else, and there is no status to restore. The
+  // helper that used to guess one back from `initialSampleStatus` is gone with
+  // the dropdown that wrote that field.
   const next: AnyVendor = { ...v };
-  if (next.status === 'rejected') next.status = restoredStatus(next);
   if (next.grade === 'rejected') next.grade = 'new';
 
   if (isSampleVendor(next)) return next as T;
@@ -95,4 +127,24 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
 /** Blacklist membership for the category view (samples live in their own list). */
 export function isInBlacklistCategory(v: AnyVendor): boolean {
   return !isSampleVendor(v) && isVendorRejected(v);
+}
+
+/**
+ * The opening words of the activity-log line a sample's quality decision writes.
+ *
+ * A sample's verdict lives in `status`, which says *what* was decided but not
+ * why or by whom. The reason is written into the source's own activity log with
+ * this prefix so the decision box can read the current decision back — the same
+ * arrangement `ADMIN_REJECT_PREFIX` gives a source's rejection.
+ */
+export const SAMPLE_DECISION_PREFIX = 'تصمیم کیفی نمونه';
+
+/** The most recent recorded sample verdict, or null. */
+export function sampleDecisionLog(v: AnyVendor): { action: string; date?: string; user?: string } | null {
+  const logs = Array.isArray(v?.activityLogs) ? v.activityLogs : [];
+  for (let i = logs.length - 1; i >= 0; i -= 1) {
+    const entry = logs[i];
+    if (entry && typeof entry.action === 'string' && entry.action.startsWith(SAMPLE_DECISION_PREFIX)) return entry;
+  }
+  return null;
 }
