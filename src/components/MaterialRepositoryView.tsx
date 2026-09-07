@@ -216,8 +216,21 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   const handleSave = (keepGoing = false) => {
     setFormError(null);
 
-    if (!formData.nameFa?.trim() || !formData.nameEn?.trim() || !formData.cas?.trim() || !formData.role || !formData.finalProduct?.trim() || !formData.finalProductEn?.trim() || !formData.pharmacopoeia) {
-      setFormError("لطفاً کلیه فیلدهای الزامی ستاره‌دار (نام فارسی، نام لاتین، CAS، نقش ماده، فارماکوپه و محصول نهایی) را تکمیل فرمایید.");
+    // CAS is deliberately not in this list.
+    //
+    // A CAS number identifies a *chemical substance*, and the repository also
+    // holds things that are not one: packaging items, and locally sourced goods
+    // that were never registered under a CAS. Demanding it globally meant those
+    // items could not be registered at all, and the way round it was to type a
+    // placeholder — which is worse than an empty field, because a made-up CAS
+    // reads like a real one on a printed form.
+    //
+    // Nothing downstream needed it either: the server already stores «N/A» for
+    // a missing CAS, `generateMaterialId` falls back to a name-derived id, and
+    // `findDuplicateMaterial` treats a placeholder CAS as no signal at all — so
+    // two CAS-less items are not mistaken for each other.
+    if (!formData.nameFa?.trim() || !formData.nameEn?.trim() || !formData.role || !formData.finalProduct?.trim() || !formData.finalProductEn?.trim() || !formData.pharmacopoeia) {
+      setFormError("لطفاً کلیه فیلدهای الزامی ستاره‌دار (نام فارسی، نام لاتین، نقش ماده، فارماکوپه و محصول نهایی) را تکمیل فرمایید.");
       return;
     }
 
@@ -831,11 +844,10 @@ export const MaterialRepositoryView: React.FC<Props> = ({
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-foreground block">
-                          شماره CAS <span className="text-rose-500 dark:text-rose-400">*</span>
+                          شماره CAS <span className="text-muted-foreground font-medium">(اختیاری)</span>
                         </label>
                         <Input 
                           type="text" 
-                          required
                           value={formData.cas || ''} 
                           onChange={e => setFormData({ ...formData, cas: e.target.value })} 
                           className="w-full text-left font-mono"

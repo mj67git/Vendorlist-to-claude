@@ -345,3 +345,32 @@ test('registering a source is refused without the create permission', SKIP, asyn
   assert.equal(res.status, 403);
   assert.equal(await db().vendor.count({ where: { id: 'V-NEW-DENIED' } }), 0);
 });
+
+test('a source for an item that has no CAS number can be registered', SKIP, async () => {
+  // Packaging items and some domestic goods are not chemical substances, so
+  // there is nothing to put in the CAS field. The endpoint used to require the
+  // key to be present, and the client sends `null` for a field nobody filled
+  // in — so registering such a source failed validation with no way round it
+  // but typing a fake CAS onto a document that later gets printed and signed.
+  const token = await login('admin');
+  const res = await api('/api/vendors', {
+    method: 'POST', token,
+    body: {
+      ...profileBody({ material: 'کارتن بسته‌بندی', materialEn: 'Packaging Carton', cas: null, category: 'packaging' }),
+      id: 'V-NO-CAS',
+    },
+  });
+  assert.equal(res.status, 200, res.body?.error || 'a missing CAS is not a malformed request');
+  assert.equal(await db().vendor.count({ where: { id: 'V-NO-CAS' } }), 1);
+});
+
+test('a CAS that is present but malformed is still refused', SKIP, async () => {
+  // Optional is not unchecked: a wrong CAS is a real error and stays one.
+  const token = await login('admin');
+  const res = await api('/api/vendors', {
+    method: 'POST', token,
+    body: { ...profileBody({ cas: '12-3' }), id: 'V-BAD-CAS' },
+  });
+  assert.equal(res.status, 400);
+  assert.equal(await db().vendor.count({ where: { id: 'V-BAD-CAS' } }), 0);
+});
