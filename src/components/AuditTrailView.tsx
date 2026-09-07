@@ -134,7 +134,7 @@ const fieldKeyLabels: Record<string, string> = {
   // label names the collection and the value names what actually moved.
   activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
   documents: 'مدارک SOP', sopDocuments: 'مدارک SOP', permissions: 'دسترسی‌ها',
-  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی SOP',
+  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی فروشنده',
   // Accounts and partners.
   isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
   address: 'آدرس', website: 'وبسایت', contactPerson: 'مسئول تماس', type: 'نوع شریک',

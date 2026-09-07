@@ -64,7 +64,7 @@ export const TASK_META: Record<TaskKey, {
     readOnlyNote: 'شما مجوز ثبت ارزیابی ریسک ندارید؛ این فهرست فقط برای مشاهده است.',
   },
   sop: {
-    label: 'ارزیابی SOP معوق فروشندگان',
+    label: 'ارزیابی معوق فروشندگان',
     description: 'فروشندگانی که مدارک SOP آن‌ها هنوز ارزیابی نشده است. با کلیک روی هر ردیف وارد مخزن شرکای تجاری می‌شوید.',
     icon: Award,
     permission: 'partner.edit',

@@ -266,7 +266,7 @@ export function canSupplySources(
 
   const grade = partner.evaluation?.grade;
   if (!grade || grade === 'Not Evaluated') {
-    return { allowed: false, reason: 'ارزیابی SOP این فروشنده انجام نشده است.' };
+    return { allowed: false, reason: 'ارزیابی این فروشنده انجام نشده است.' };
   }
   if (grade !== 'A') {
     return { allowed: false, reason: `گرید ارزیابی این فروشنده ${grade} است؛ طبق دستورالعمل فقط گرید A قابل انتخاب است.` };

@@ -598,8 +598,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 </div>
                 <p className="text-2xs text-muted-foreground mt-1.5">
                   {newPartnerType === 'Supplier'
-                    ? 'فروشنده‌ها ارزیابی مدارک SOP دارند و گرید کیفی می‌گیرند.'
-                    : 'تولیدکننده‌ها ارزیابی SOP ندارند؛ فقط مشخصات عمومی ثبت می‌شود.'}
+                    ? 'فروشنده‌ها ارزیابی می‌شوند و بر اساس مدارک SOP گرید کیفی می‌گیرند.'
+                    : 'تولیدکننده‌ها ارزیابی نمی‌شوند؛ فقط مشخصات عمومی ثبت می‌شود.'}
                 </p>
               </div>
 
@@ -730,7 +730,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <div className="space-y-4">
                     <div className="bg-muted p-3 rounded-xl border border-border flex items-center justify-between">
                       <div className="text-xs font-bold text-foreground">
-                        نتیجه محاسبه ارزیابی SOP: <span className="text-primary">{computeNewSupplierEval().status}</span>
+                        نتیجهٔ محاسبهٔ ارزیابی فروشنده: <span className="text-primary">{computeNewSupplierEval().status}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">امتیاز کل: <strong>{computeNewSupplierEval().totalScore} / 100</strong></span>
@@ -978,7 +978,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 {selectedSupplier && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
                     <div>
-                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی SOP:</span>
+                      <span className="text-muted-foreground block mb-0.5 font-medium">امتیاز ارزیابی فروشنده:</span>
                       {sopEvaluated ? (
                         <span className="font-bold text-foreground font-mono text-sm">{selectedSupplier.evaluation!.totalScore} / ۱۰۰</span>
                       ) : (

@@ -1096,7 +1096,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           // A manufacturer is never SOP-evaluated, and the
                           // sentence saying so was repeated on every one of
                           // their rows. The dash carries it in the tooltip.
-                          <span className="text-muted-foreground font-mono" title="ارزیابی SOP فقط برای فروشنده انجام می‌شود.">—</span>
+                          <span className="text-muted-foreground font-mono" title="ارزیابی فروشنده فقط برای رکوردهای فروشنده انجام می‌شود.">—</span>
                         )}
                       </td>
 
@@ -1113,7 +1113,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           const link = canSupplySources(partner);
                           return link.allowed ? (
                             <span
-                              title={partner.type === 'Supplier' ? 'گرید A دارد و طبق دستورالعمل قابل انتخاب به‌عنوان سورس است.' : 'تولیدکننده مشمول قاعدهٔ گرید SOP نیست.'}
+                              title={partner.type === 'Supplier' ? 'گرید A دارد و طبق دستورالعمل قابل انتخاب به‌عنوان سورس است.' : 'تولیدکننده مشمول قاعدهٔ گرید فروشنده نیست.'}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900"
                             >
                               <CheckCircle2 className="w-3 h-3 shrink-0" />
@@ -1342,7 +1342,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         }`}
                       >
                         <ShieldCheck className="w-4 h-4" />
-                        <span>۲. ارزیابی SOP Supplier</span>
+                        <span>۲. ارزیابی فروشنده</span>
                         {computedEval.grade === 'Not Evaluated' ? (
                           <span className="px-2 py-0.5 rounded-full text-2xs font-bold bg-muted text-muted-foreground border border-border">
                             ارزیابی نشده
@@ -1505,7 +1505,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2 font-bold text-xs text-emerald-600 dark:text-emerald-400">
                         <ShieldCheck className="w-4 h-4" />
-                        <span>Supplier Evaluation (مطابق SOP شرکت)</span>
+                        <span>ارزیابی فروشنده (Supplier Evaluation) — مطابق SOP شرکت</span>
                       </div>
                       <p className="text-2xs text-muted-foreground">
                         تعیین وضعیت دقیق ۵ مدرک الزامی SOP جهت محاسبه خودکار امتیاز، Grade و وضعیت تایید Supplier.
@@ -1670,7 +1670,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-background/20 pb-2">
                       <span className="text-xs font-bold flex items-center gap-1.5">
                         <Award className="w-4 h-4 shrink-0" />
-                        <span>نتیجه ارزیابی کیفی Supplier (Live SOP Result)</span>
+                        <span>نتیجهٔ ارزیابی فروشنده (Live Result)</span>
                       </span>
                       <span className="text-2xs text-background/70 font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
@@ -1773,7 +1773,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-900 text-xs font-bold"
                       >
                         <ShieldCheck className="text-emerald-600" />
-                        <span>ادامه به ارزیابی SOP Supplier</span>
+                        <span>ادامه به ارزیابی فروشنده</span>
                       </Button>
                     )}
                   </div>
@@ -2106,7 +2106,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   <div className="flex items-center justify-between border-b border-border pb-2">
                     <span className="text-xs font-bold flex items-center gap-1.5">
                       <Award className="w-4 h-4 shrink-0" />
-                      <span>۲. خلاصه ارزیابی کیفی Supplier (SOP Quality Result)</span>
+                      <span>۲. خلاصهٔ ارزیابی فروشنده (Supplier Evaluation Result)</span>
                     </span>
                     <span className="text-2xs text-muted-foreground font-mono">آخرین به‌روزرسانی: {formatDate(selectedPartner.updatedAt)}</span>
                   </div>
@@ -2145,7 +2145,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     </div>
                   ) : (
                     <div className="p-4 bg-card border border-border rounded-xl text-center space-y-1">
-                      <span className="font-bold text-xs block">ارزیابی کیفی SOP برای این فروشنده هنوز انجام نشده است.</span>
+                      <span className="font-bold text-xs block">ارزیابی فروشنده برای این شریک هنوز انجام نشده است.</span>
                       <p className="text-2xs text-muted-foreground">می‌توانید با ویرایش اطلاعات این شریک تجاری، ارزیابی مدارک ۵گانه را ثبت و نهایی نمایید.</p>
                     </div>
                   )}
@@ -2157,7 +2157,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <History className="w-4 h-4 text-indigo-600" />
-                        <span>تاریخچه و روند ارزیابی SOP <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
+                        <span>تاریخچه و روند ارزیابی فروشنده <span className="text-muted-foreground font-normal font-mono">(Evaluation History)</span></span>
                       </h3>
                       <span className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-bold">{evalHistory.length} تغییر</span>
                     </div>
@@ -2396,7 +2396,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </p>
               {partnerToDelete.type === 'Supplier' ? (
                 <p className="text-rose-700 bg-rose-50/50 p-2 rounded-lg font-medium border border-rose-100">
-                  ⚠️ با حذف این فروشنده، کلیه سوابق ارزیابی SOP و فایل‌های پیوست آن نیز برای همیشه از سیستم پاک خواهد شد.
+                  ⚠️ با حذف این فروشنده، کلیه سوابق ارزیابی فروشنده و فایل‌های پیوست آن نیز برای همیشه از سیستم پاک خواهد شد.
                 </p>
               ) : (
                 <p className="text-amber-700 bg-amber-50/50 p-2 rounded-lg font-medium border border-amber-100">
