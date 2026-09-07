@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { startTestServer, stopTestServer, resetDatabase, api, login, db, SKIP } from './helpers/apiHarness';
+import { startTestServer, stopTestServer, resetDatabase, api, login, db, SKIP, waitForAuditQuiet } from './helpers/apiHarness';
 
 /**
  * The read path of the change trail.
@@ -47,13 +47,12 @@ before(async () => {
   if (!SKIP) {
     await startTestServer();
     token = await login('admin');
-    // The login handler writes its own record without awaiting it. Wait for it
-    // to land here, otherwise it can arrive *after* the truncation below and
-    // add a row to the trail a test is counting.
-    const deadline = Date.now() + 2000;
-    while (Date.now() < deadline && (await db().auditLog.count()) === 0) {
-      await new Promise(r => setTimeout(r, 25));
-    }
+    // The login handler writes its own record without awaiting it. Wait for the
+    // trail to settle, not merely for the first row: this used to stop at the
+    // first row it saw and give up after two seconds, so on a loaded runner the
+    // record could arrive *after* the truncation below and turn the seeded 240
+    // rows into 241. That is the intermittent CI failure of run #136.
+    await waitForAuditQuiet();
   }
 });
 after(async () => {
