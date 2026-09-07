@@ -117,6 +117,25 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
   },
 };
 
+/**
+ * The score band each grade stands for, written once.
+ *
+ * The filter dropdown and the evaluation form each printed their own copy, and
+ * they had already drifted — one of them still claimed the blacklist began at
+ * 39 while the rubric had moved. The upper edge is written open («۷۹٫۹») rather
+ * than as a whole number because the boundary the rubric applies is «below 60»,
+ * not «at most 79»: a score that lands between them must read as B and not fall
+ * into a gap the label invented.
+ */
+export const GRADE_RANGE_FA: Record<SOPGrade, string> = {
+  'A': '۸۰ – ۱۰۰',
+  'B': '۶۰ – ۷۹٫۹',
+  'C': '۴۰ – ۵۹٫۹',
+  'Blacklist': 'زیر ۴۰',
+  'Pending Review': '—',
+  'Not Evaluated': '—',
+};
+
 export const describeGrade = (grade?: string | null) =>
   GRADE_LABELS[(grade as SOPGrade)] || { en: grade || '—', fa: '', tone: 'bg-muted text-foreground border-border' };
 

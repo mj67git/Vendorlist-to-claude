@@ -31,7 +31,8 @@ import {
   computeSupplierEvaluation, 
   validateSupplierEvaluation,
   describeGrade,
-  canSupplySources
+  canSupplySources,
+  GRADE_RANGE_FA
 } from '../utils/sopEvaluation';
 import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
@@ -894,9 +895,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     the boundary the code applies is «below 60», not «at most
                     79»: a score that ever lands between the two must read as B
                     here and not fall into a gap the label invented. */}
-                <option value="A">Grade A (تاییدشده: ۸۰ – ۱۰۰)</option>
-                <option value="B">Grade B (با پایش: ۶۰ – ۷۹٫۹)</option>
-                <option value="C">Grade C (مشروط: ۴۰ – ۵۹٫۹)</option>
+                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
+                <option value="B">Grade B (با پایش: {GRADE_RANGE_FA['B']})</option>
+                <option value="C">Grade C (مشروط: {GRADE_RANGE_FA['C']})</option>
                 {/* «Pending Review» removed from this filter at the user's
                     request. The grade itself still exists — the SOP rubric
                     gives it to a supplier scoring 30-39 (rule 13) — so such a
@@ -907,7 +908,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     true: the rubric blacklists below 30 and only below 30. Left
                     as it was, this list would now read as covering every score
                     while quietly dropping the 30-39 band. */}
-                <option value="Blacklist">Blacklist (لیست سیاه: زیر ۴۰)</option>
+                <option value="Blacklist">Blacklist (لیست سیاه: {GRADE_RANGE_FA['Blacklist']})</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
@@ -1724,6 +1725,27 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           )}
                         </div>
                       </div>
+                    </div>
+
+                    {/* The scale this result was measured against.
+                        The panel reported a grade without ever saying what the
+                        bands were, so the evaluator had to know the rubric by
+                        heart to read their own number. The ranges come from the
+                        same constant the repository filter prints, so the two
+                        cannot drift apart again. */}
+                    <div className="mt-3 pt-3 border-t border-background/20 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
+                      {([
+                        { g: 'A' as const, dot: 'bg-emerald-400', label: 'Grade A' },
+                        { g: 'B' as const, dot: 'bg-blue-400', label: 'Grade B' },
+                        { g: 'C' as const, dot: 'bg-amber-400', label: 'Grade C' },
+                        { g: 'Blacklist' as const, dot: 'bg-rose-400', label: 'Blacklist' },
+                      ]).map(band => (
+                        <span key={band.g} className="flex items-center gap-1.5 text-background/80">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${band.dot}`} aria-hidden />
+                          <span className="font-bold text-background">{band.label}</span>
+                          <span>{GRADE_RANGE_FA[band.g]}</span>
+                        </span>
+                      ))}
                     </div>
                   </div>
                 </div>
