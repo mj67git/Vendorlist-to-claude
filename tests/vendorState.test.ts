@@ -15,23 +15,44 @@ const source = (over: any = {}) => ({
 const reject = (qc = 'QC-1') => ({ id: 'r-' + qc, qcCode: qc, decision: 'Reject', date: '1404/01/01' });
 const pass = (qc = 'QC-2') => ({ id: 'r-' + qc, qcCode: qc, decision: 'Pass', date: '1404/01/01' });
 
-test('a sample is blacklisted by a single Reject result', () => {
+test('a Reject result no longer blacklists a sample on its own', () => {
+  // The lab record is evidence. The verdict is a decision somebody records,
+  // exactly as it already worked for sources.
   const v = applyDerivedState(sample({ analysisRecords: [reject()] }));
-  assert.equal(isVendorRejected(v), true);
-  assert.equal(v.status, 'rejected');
-  assert.equal(v.grade, 'rejected');
+  assert.equal(isVendorRejected(v), false);
+  assert.equal(hasQcReject(v), true, 'the evidence itself is still readable');
+  assert.notEqual(v.status, 'rejected');
 });
 
-test('deleting the Reject result clears the blacklist everywhere (the reported bug)', () => {
-  let v: any = applyDerivedState(sample({ analysisRecords: [reject()] }));
+test('a sample with no recorded verdict is «آزمایش نشده», not approved', () => {
+  const v = applyDerivedState(sample({ status: 'new', initialSampleStatus: undefined }));
+  assert.equal(v.status, 'new');
+  assert.equal(isVendorRejected(v), false);
+});
+
+test('a recorded rejection of a sample takes effect and can be reversed', () => {
+  let v: any = applyDerivedState(sample({
+    status: 'rejected',
+    rejectionReasons: ['رد توسط مدیر کیفیت بر اساس نتایج آزمایشگاهی — ناخالصی'],
+    analysisRecords: [reject()],
+  }));
+  assert.equal(isVendorRejected(v), true);
+
+  // The decision box records an approval instead; the old reason goes with it.
+  v = applyDerivedState({ ...v, status: 'approved', rejectionReasons: null });
+  assert.equal(isVendorRejected(v), false);
+  assert.equal(v.status, 'approved');
+  assert.notEqual(v.grade, 'rejected');
+});
+
+test('deleting a lab result does not quietly clear a recorded rejection', () => {
+  // A sample rejected under the old automatic rule keeps its verdict: the
+  // stored status is what says so, not the record that triggered it.
+  let v: any = applyDerivedState(sample({ status: 'rejected', analysisRecords: [reject()] }));
   assert.equal(isVendorRejected(v), true, 'precondition: rejected');
 
-  // user deletes that lab result
-  v = applyDerivedState({ ...v, analysisRecords: [], rejectionReasons: null });
-
-  assert.equal(isVendorRejected(v), false, 'must no longer count as rejected');
-  assert.notEqual(v.grade, 'rejected', 'grade must not stay latched at rejected');
-  assert.notEqual(v.status, 'rejected');
+  v = applyDerivedState({ ...v, analysisRecords: [] });
+  assert.equal(isVendorRejected(v), true, 'only a recorded decision reverses a verdict');
 });
 
 test('a Pass result never blacklists a sample', () => {
@@ -39,16 +60,24 @@ test('a Pass result never blacklists a sample', () => {
   assert.equal(isVendorRejected(v), false);
 });
 
-test('removing only one of two Reject results keeps the sample blacklisted', () => {
-  let v: any = applyDerivedState(sample({ analysisRecords: [reject('A'), reject('B')] }));
-  v = applyDerivedState({ ...v, analysisRecords: [reject('B')] });
+test('an explicit rejection reason still blacklists a sample without any lab record', () => {
+  const v = applyDerivedState(sample({ rejectionReasons: ['رد توسط مدیر کیفیت — تصمیم دستی'] }));
   assert.equal(isVendorRejected(v), true);
 });
 
-test('a restored sample returns to conditional when it started conditional', () => {
-  let v: any = applyDerivedState(sample({ initialSampleStatus: 'conditional', analysisRecords: [reject()] }));
-  v = applyDerivedState({ ...v, analysisRecords: [], rejectionReasons: null });
-  assert.equal(v.status, 'conditional');
+test('a stored rejected status is the verdict and is not derived away', () => {
+  // Whether it was written by the decision box or by the old automatic rule,
+  // the only thing that reverses it is another recorded decision.
+  const v = applyDerivedState(sample({ status: 'rejected', rejectionReasons: null }));
+  assert.equal(isVendorRejected(v), true);
+  assert.equal(v.status, 'rejected');
+});
+
+test('a sample created today carries no verdict at all', () => {
+  // The form no longer asks for one, so nothing may invent «تأیید شده».
+  const v = applyDerivedState(sample({ status: 'new', grade: null, initialSampleStatus: undefined }));
+  assert.equal(v.status, 'new');
+  assert.equal(isVendorRejected(v), false);
 });
 
 test('a source is NOT auto-blacklisted by a failing lab result', () => {
@@ -76,7 +105,7 @@ test('grade never resurrects a cleared status (the old one-way latch)', () => {
 });
 
 test('applying the derivation twice changes nothing (idempotent)', () => {
-  for (const base of [sample({ analysisRecords: [reject()] }), source({ scores: { commercial: 90, qa: 90, planning: 90, finance: 90 } }), sample()]) {
+  for (const base of [sample({ status: 'rejected', analysisRecords: [reject()] }), source({ scores: { commercial: 90, qa: 90, planning: 90, finance: 90 } }), sample()]) {
     const once = applyDerivedState(base);
     const twice = applyDerivedState(once);
     assert.deepEqual(twice, once);
@@ -96,12 +125,12 @@ test('blacklist category excludes samples', () => {
   assert.equal(isInBlacklistCategory(v), true);
 });
 
-test('a stale QC reason left without its record does not keep a sample blacklisted', () => {
-  // Self-healing: the record is gone (e.g. an older cached copy), so the
-  // QC-derived reason must not hold the sample in the blacklist by itself.
+test('a QC-derived reason alone never blacklists a sample', () => {
+  // Reasons written from a laboratory record are a projection of that record,
+  // not a decision. Without a recorded verdict in `status` they hold nothing.
   const v = applyDerivedState({
     id: 'S1', isSample: true, category: 'sample',
-    status: 'rejected', grade: 'rejected',
+    status: 'new', grade: null,
     analysisRecords: [],
     rejectionReasons: ['مردود در آزمون QC [کد: QC-1 | تاریخ: 1404/01/01]'],
     scores: null,

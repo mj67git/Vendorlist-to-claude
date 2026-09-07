@@ -9,6 +9,7 @@ import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
 import type { SourceSelectionRecord } from './MaterialsComparisonSection';
@@ -153,6 +154,9 @@ export function CategoryView({
     switch (activeFilter) {
       case 'approved': return v.status === 'approved';
       case 'conditional': return v.status === 'conditional';
+      // «آزمایش نشده» is a real population now, not an empty edge case: a sample
+      // enters the category with no verdict and waits for one.
+      case 'untested': return isUntestedSample(v);
       case 'rejected': return isVendorRejected(v);
       case 'A': return v.grade === 'A';
       case 'B': return v.grade === 'B';
@@ -349,6 +353,13 @@ export function CategoryView({
                     </Badge>
                     <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', categoryVendors.filter(isVendorRejected).length)}>
                       مردود: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
+                    </Badge>
+                    {/* Without this chip the three above no longer add up to the
+                        total, and the samples waiting on a decision — the ones
+                        somebody actually has to act on — are the ones you cannot
+                        filter for. */}
+                    <Badge variant="outline" onClick={() => toggle('untested')} className={chipCls('untested', categoryVendors.filter(isUntestedSample).length)}>
+                      آزمایش نشده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isUntestedSample).length}</span>
                     </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? null : (

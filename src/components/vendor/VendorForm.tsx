@@ -12,10 +12,8 @@ import { categoryLabels } from '../../constants/categories';
 import { authFetch } from '../../services/authFetch';
 import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, SOPDocumentStatus, Status, SupplierEvaluation, User, Vendor } from '../../types';
 import { SOP_DOCUMENTS_DEF, computeSupplierEvaluation } from '../../utils/sopEvaluation';
-import { hasQcReject } from '../../utils/vendorState';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
-import { Input, inputBaseClass } from '../../components/ui/input';
-import { cn } from '../../lib/utils';
+import { Input } from '../../components/ui/input';
 import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
@@ -34,18 +32,6 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
       
   const [sourceType, setSourceType] = useState<string>(initialSourceType);
   const [isSample, setIsSample] = useState<boolean>(existingVendor ? !!existingVendor.isSample : false);
-  const [sampleStatus, setSampleStatus] = useState<string>(() => {
-    if (existingVendor) {
-      const initial = existingVendor.initialSampleStatus;
-      if (initial === 'rejected' || initial === 'reject') return 'rejected';
-      if (initial === 'conditional' || initial === 'not_approved') return 'not_approved';
-      if (initial === 'approved') return 'approved';
-      if (existingVendor.status === 'rejected') return 'rejected';
-      if (existingVendor.status === 'conditional') return 'not_approved';
-      return 'approved';
-    }
-    return 'approved';
-  });
 
   const [formData, setFormData] = useState({
     materialId: existingVendor?.materialId || '',
@@ -260,16 +246,16 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
   const [savedCount, setSavedCount] = useState(0);
   const [recentlySaved, setRecentlySaved] = useState<Array<{ id: string; label: string }>>([]);
 
-  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }));
+  const pristineRef = useRef(JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType }));
   const savedRef = useRef(false);
   useEffect(() => {
     if (!registerNavGuard) return;
     registerNavGuard(() => {
       if (savedRef.current) return false;
-      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus }) !== pristineRef.current;
+      return JSON.stringify({ formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType }) !== pristineRef.current;
     });
     return () => registerNavGuard(null);
-  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType, sampleStatus]);
+  }, [registerNavGuard, formData, selectedManufacturerId, selectedSupplierId, isSample, sourceType]);
 
   /**
    * IRC is the 16-digit IFDA code. It stays optional, but a half-typed one is
@@ -322,7 +308,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
           grade: 'new', status: 'new', rejectionReasonList: '',
         },
         selectedManufacturerId: '', selectedSupplierId: '',
-        isSample, sourceType, sampleStatus,
+        isSample, sourceType,
       });
       materialFieldRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       materialFieldRef.current?.querySelector<HTMLElement>('button, input, select')?.focus();
@@ -369,25 +355,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     const finalIsSample = isSample;
     let finalCategory = finalIsSample ? 'sample' as Category : sourceType as Category;
     let finalGrade = existingVendor ? existingVendor.grade : (finalIsSample ? null : 'new');
-    let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'approved' : 'new');
+    let finalStatus = existingVendor ? existingVendor.status : (finalIsSample ? 'new' : 'new');
+    // Legacy field: this form used to ask for a sample's verdict here, before a
+    // single test had been run. It does not write one any more — the verdict is
+    // a quality decision recorded against the laboratory results — but an
+    // existing record keeps the value it already has (rule 6).
     let finalInitialSampleStatus: Status | null = null;
 
     if (finalIsSample) {
       finalCategory = 'sample';
       finalGrade = null; // samples don't have evaluation grade
+      finalInitialSampleStatus = (existingVendor?.initialSampleStatus as Status) || null;
 
-      const initialMap: Record<string, 'approved' | 'conditional' | 'rejected'> = {
-        approved: 'approved',
-        not_approved: 'conditional',
-        rejected: 'rejected'
-      };
-      finalInitialSampleStatus = initialMap[sampleStatus] || 'approved';
-
-      // A sample is blacklisted by a single failing QC result. Use the shared
-      // predicate rather than re-counting here, so this form cannot drift from
-      // the rule the rest of the app applies (applyDerivedState re-checks it on
-      // save anyway).
-      finalStatus = hasQcReject(existingVendor) ? 'rejected' : finalInitialSampleStatus;
+      // A sample arrives «آزمایش نشده» and stays there until somebody decides.
+      // A record that already carries a verdict keeps it: editing a supplier's
+      // address is not a re-evaluation of its sample.
+      finalStatus = existingVendor ? existingVendor.status : 'new';
     } else {
       finalInitialSampleStatus = null;
       if (existingVendor) {
@@ -843,26 +826,18 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <span className="text-xs font-bold text-foreground">این تامین‌کننده به عنوان یک «نمونه» ثبت می‌شود</span>
                 </label>
 
+                {/* No verdict is asked for here.
+                    This used to open a «وضعیت اولیهٔ نمونه» dropdown offering
+                    تایید شده / مشروط / رد شده — a conclusion demanded before a
+                    single test had been run, and the default («تایید شده») meant
+                    most samples were recorded as approved by nobody. The sample
+                    now enters its category labelled «آزمایش نشده», and the
+                    verdict is a quality decision taken against the laboratory
+                    results, with a name and a reason behind it. */}
                 {isSample && (
-                  <div className="space-y-1 fade-in">
-                    <label htmlFor="vf-sample-status" className="text-foreground font-semibold text-xs">وضعیت اولیهٔ نمونه</label>
-                    <select
-                      id="vf-sample-status"
-                      className={cn(inputBaseClass, 'w-full')} 
-                      value={sampleStatus} 
-                      onChange={e => setSampleStatus(e.target.value)}
-                    >
-                      <option value="approved">تایید شده</option>
-                      <option value="not_approved">تایید مشروط</option>
-                      <option value="rejected">رد شده</option>
-                    </select>
-
-                    {existingVendor && hasQcReject(existingVendor) && (
-                      <p className="text-rose-500 text-xs mt-1.5 font-medium bg-rose-50 p-2.5 rounded-lg border border-rose-100 leading-relaxed text-right">
-                        این Source دارای نتیجه آزمایشگاهی Reject است و وضعیت آن تا زمان اصلاح نتایج آزمایشگاه قابل تغییر نیست.
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-2xs text-muted-foreground leading-relaxed fade-in">
+                    نمونه با برچسب «آزمایش نشده» ثبت می‌شود. وضعیت تأیید، تأیید مشروط یا رد پس از ثبت نتایج آزمایشگاهی و با تصمیم کارشناس کیفیت مشخص می‌گردد.
+                  </p>
                 )}
               </div>
             </div>

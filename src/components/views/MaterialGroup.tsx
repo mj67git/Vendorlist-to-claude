@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/card';
 import { BusinessPartner, Category, Scores, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
 import { RankBadge } from '../../components/RankBadge';
+import { describeSampleStatus } from '../../utils/sampleStatus';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { MaterialsComparisonSection, type SourceSelectionRecord } from './MaterialsComparisonSection';
@@ -202,15 +203,8 @@ export const MaterialGroup: React.FC<{
                           same values, inline, rather than nothing. */}
                       <div className="sm:hidden flex items-center gap-2 flex-wrap pt-0.5">
                         {vendor.isSample ? (
-                          <Badge
-                            variant={
-                              vendor.status === 'approved' ? 'gradeA' :
-                              vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
-                            }
-                            className="text-2xs font-bold px-2 py-0"
-                          >
-                            {vendor.status === 'approved' ? 'Approved' :
-                             vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
+                          <Badge variant={describeSampleStatus(vendor).variant} className="text-2xs font-bold px-2 py-0">
+                            {describeSampleStatus(vendor).label}
                           </Badge>
                         ) : isVendorRejected(vendor) ? (
                           <RankBadge vendor={vendor} />
@@ -311,15 +305,8 @@ export const MaterialGroup: React.FC<{
                         {vendor.isSample ? (
                           <>
                             <div className="text-2xs text-muted-foreground mb-0.5">وضعیت نمونه</div>
-                            <Badge 
-                              variant={
-                                vendor.status === 'approved' ? 'gradeA' :
-                                vendor.status === 'conditional' ? 'gradeC' : 'gradeReject'
-                              }
-                              className="text-2xs font-bold px-2 py-0"
-                            >
-                              {vendor.status === 'approved' ? 'Approved' :
-                               vendor.status === 'conditional' ? 'Conditional' : 'Reject'}
+                            <Badge variant={describeSampleStatus(vendor).variant} className="text-2xs font-bold px-2 py-0">
+                              {describeSampleStatus(vendor).label}
                             </Badge>
                           </>
                         ) : (

@@ -20,6 +20,7 @@ import { describeSelection, selectionForVendor, type SourceSelectionRecord } fro
 import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { describeSampleStatus } from '../../utils/sampleStatus';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
 // extracted from App.tsx
@@ -635,7 +636,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                     <td className="py-3 px-4 min-w-0 hidden sm:table-cell">
                       <span className="bg-muted border border-border text-xs text-muted-foreground rounded px-2 py-0.5 inline-block truncate max-w-full font-medium">
                         {v.isSample
-                          ? (v.status === 'rejected' ? 'نمونه تایید نشده' : 'نمونه تایید شده')
+                          ? `نمونه — ${describeSampleStatus(v).label}`
                           : (categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category)
                         }
                       </span>
