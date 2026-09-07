@@ -1002,7 +1002,7 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
       ['بدون ارزیابی ریسک', riskCounts.none],
     ]),
     [],
-    [titleCell('ارزیابی فروشنده (مدارک SOP)')],
+    [titleCell('ارزیابی فروشنده (مدارک)')],
     ...labelValueRows(
       sop
         ? [

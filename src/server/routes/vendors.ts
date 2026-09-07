@@ -214,10 +214,10 @@ export function vendorRoutes(): express.Router {
           action: "Create - Blocked",
           severity: "Warning",
           description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
           beforeData: null,
           afterData: { supplierId: (v as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
         return res.status(422).json({ error: sopError });
       }
 
@@ -422,10 +422,10 @@ export function vendorRoutes(): express.Router {
           action: "Update - Blocked",
           severity: "Warning",
           description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل SOP: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
+          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
           beforeData: null,
           afterData: { supplierId: (updatedVendor as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on SOP refusal:", err));
+        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
         return res.status(422).json({ error: sopError });
       }
 

@@ -34,13 +34,13 @@ export function openDocumentPreview(
 
   previewWindow.opener = null;
   const targetDocument = previewWindow.document;
-  targetDocument.title = previewDocument.fileName || 'SOP Document';
+  targetDocument.title = previewDocument.fileName || 'مدرک شریک تجاری';
   applyPreviewDocumentStyles(targetDocument);
 
   if (previewDocument.fileDataUrl.startsWith('data:image/')) {
     const image = targetDocument.createElement('img');
     image.src = previewDocument.fileDataUrl;
-    image.alt = previewDocument.fileName || 'SOP Document';
+    image.alt = previewDocument.fileName || 'مدرک شریک تجاری';
     image.style.maxWidth = '100%';
     image.style.maxHeight = '100vh';
     image.style.objectFit = 'contain';
@@ -50,7 +50,7 @@ export function openDocumentPreview(
 
   const frame = targetDocument.createElement('iframe');
   frame.src = previewDocument.fileDataUrl;
-  frame.title = previewDocument.fileName || 'SOP Document';
+  frame.title = previewDocument.fileName || 'مدرک شریک تجاری';
   frame.setAttribute('sandbox', 'allow-same-origin');
   frame.style.width = '100%';
   frame.style.height = '100vh';

@@ -598,7 +598,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 </div>
                 <p className="text-2xs text-muted-foreground mt-1.5">
                   {newPartnerType === 'Supplier'
-                    ? 'فروشنده‌ها ارزیابی می‌شوند و بر اساس مدارک SOP گرید کیفی می‌گیرند.'
+                    ? 'فروشنده‌ها ارزیابی می‌شوند و بر اساس مدارک خود گرید کیفی می‌گیرند.'
                     : 'تولیدکننده‌ها ارزیابی نمی‌شوند؛ فقط مشخصات عمومی ثبت می‌شود.'}
                 </p>
               </div>

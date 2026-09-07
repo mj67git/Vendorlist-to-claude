@@ -819,7 +819,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
             {ACTION_COLUMNS.map(c => (
               <span key={c.key}><span className="font-mono font-bold">{c.letter}</span> {c.label}</span>
             ))}
-            <span><span className="font-mono font-bold">F</span> دانلود مدارک SOP</span>
+            <span><span className="font-mono font-bold">F</span> دانلود مدارک</span>
             <span>روی نام هر کاربر بزنید تا سطح دسترسی‌اش را ویرایش کنید.</span>
           </div>
         </div>

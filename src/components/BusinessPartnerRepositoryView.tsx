@@ -818,7 +818,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             eyebrow="Business Partner & Supplier Quality Evaluation"
             eyebrowIcon={Building2}
             title="مخزن شرکای تجاری و ارزیابی فروشنده"
-            subtitle="ثبت تولیدکنندگان و فروشندگان، و ارزیابی کیفی فروشندگان مطابق SOP و موازین GMP"
+            subtitle="ثبت تولیدکنندگان و فروشندگان، و ارزیابی فروشندگان مطابق موازین GMP"
           />
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
@@ -1505,7 +1505,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2 font-bold text-xs text-emerald-600 dark:text-emerald-400">
                         <ShieldCheck className="w-4 h-4" />
-                        <span>ارزیابی فروشنده (Supplier Evaluation) — مطابق SOP شرکت</span>
+                        <span>ارزیابی فروشنده (Supplier Evaluation) — مطابق دستورالعمل شرکت</span>
                       </div>
                       <p className="text-2xs text-muted-foreground">
                         تعیین وضعیت دقیق ۵ مدرک الزامی SOP جهت محاسبه خودکار امتیاز، Grade و وضعیت تایید Supplier.
@@ -2219,7 +2219,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5 border-b border-border pb-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>۳. وضعیت مدارک ۵گانه الزامی SOP (SOP Documents Verification)</span>
+                    <span>۳. وضعیت مدارک ۵گانه ارزیابی فروشنده (Documents Verification)</span>
                   </h3>
 
                   {selectedPartner.evaluation ? (
@@ -2227,7 +2227,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       <table className="w-full text-right text-xs">
                         <thead className="bg-muted border-b border-border font-bold text-muted-foreground">
                           <tr>
-                            <th className="py-2.5 px-3">نام مدرک SOP</th>
+                            <th className="py-2.5 px-3">نام مدرک</th>
                             <th className="py-2.5 px-3">وضعیت مدرک</th>
                             <th className="py-2.5 px-3">امتیاز مکتسبه</th>
                             <th className="py-2.5 px-3 text-center">فایل پیوست</th>
@@ -2279,7 +2279,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                       ) : (
                                         <span
                                           className="text-2xs text-muted-foreground"
-                                          title="حساب کاربری شما مجوز دریافت مدارک SOP را ندارد."
+                                          title="حساب کاربری شما مجوز دریافت مدارک را ندارد."
                                         >
                                           بدون مجوز دریافت
                                         </span>
