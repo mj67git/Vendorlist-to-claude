@@ -133,7 +133,7 @@ const fieldKeyLabels: Record<string, string> = {
   // Collections. These are compared item by item (see computeFieldDiff), so the
   // label names the collection and the value names what actually moved.
   activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
-  documents: 'مدارک SOP', sopDocuments: 'مدارک SOP', permissions: 'دسترسی‌ها',
+  documents: 'مدارک', sopDocuments: 'مدارک', permissions: 'دسترسی‌ها',
   riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی فروشنده',
   // Accounts and partners.
   isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
@@ -244,7 +244,7 @@ export interface DiffResult {
  * One line describing a record inside a collection.
  *
  * A lab result is its QC code and decision; an activity entry is what was done
- * and when; an SOP document is its name and status. Falling back to an id is
+ * and when; a partner document is its name and status. Falling back to an id is
  * still better than the JSON — but a record that offers nothing recognisable is
  * reported by position, and the raw data below the panel carries the rest.
  */
