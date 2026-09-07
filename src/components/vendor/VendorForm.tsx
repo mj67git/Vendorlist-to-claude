@@ -264,6 +264,17 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
    * Persian keyboard is not told their correct code is wrong.
    */
   const IRC_LENGTH = 16;
+
+  /**
+   * What this category's licence is called.
+   *
+   * Veterinary goods are registered under IVC, everything else under IRC. It is
+   * one field and one 16-digit rule; only the name differs. The source's own
+   * page has always made this distinction — the form said «IRC» to everybody,
+   * so a veterinary record was labelled with the wrong licence right up to the
+   * moment it was saved.
+   */
+  const licenceCode = sourceType === 'veterinary' ? 'IVC' : 'IRC';
   const toFaDigits = (n: number | string) => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
   const toLatinDigits = (input: string) =>
     input
@@ -1006,17 +1017,22 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
             )}
           </div>
 
-          {/* SECTION 3: REGULATORY, IRC & INITIAL STATUS */}
+          {/* SECTION 3: REGULATORY LICENCE (IRC / IVC)
+              Veterinary goods are licensed under IVC, everything else under
+              IRC. They are the same field — the source's licence number — so
+              the heading names both and the field itself names the one that
+              applies to the category currently selected, which is what the
+              source's own page has always done. */}
           <div className="space-y-4 p-4 bg-muted/70 border border-border/80 rounded-2xl">
             <div className="flex items-center gap-2 pb-2 border-b border-border/60">
               <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-2xs font-bold shrink-0">۳</span>
-              <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانهٔ IRC</h3>
+              <h3 className="text-xs font-black text-foreground">اطلاعات رگولاتوری و پروانه IRC/IVC</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1" ref={ircFieldRef}>
                 <label htmlFor="vf-irc" className="text-foreground font-semibold text-xs flex items-center justify-between gap-2">
-                  <span>کد IRC (اختیاری)</span>
+                  <span>کد {licenceCode} (اختیاری)</span>
                   {ircDigits !== '' && (
                     <span className={`text-2xs font-mono ${isIrcValid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                       {ircDigits.replace(/\D/g, '').length}/{IRC_LENGTH}
@@ -1047,7 +1063,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 />
                 {isIrcValid ? (
                   <p id="vf-irc-hint" className="text-2xs text-muted-foreground">
-                    کد IRC سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
+                    کد {licenceCode} سازمان غذا و دارو دقیقاً ۱۶ رقم عددی است. اگر هنوز صادر نشده، خالی بگذارید.
                   </p>
                 ) : (
                   <p
@@ -1058,10 +1074,10 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
                     <span>
                       {!blocksSubmitOnIrc
-                        ? `کد IRC ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
+                        ? `کد ${licenceCode} ثبت‌شدهٔ این رکورد ${toFaDigits(IRC_LENGTH)} رقم عددی نیست؛ در فرصت مناسب اصلاحش کنید.`
                         : ircTooShort
-                          ? `کد IRC باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
-                          : `کد IRC باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
+                          ? `کد ${licenceCode} باید دقیقاً ${toFaDigits(IRC_LENGTH)} رقم باشد؛ ${toFaDigits(ircDigits.length)} رقم وارد شده است.`
+                          : `کد ${licenceCode} باید ${toFaDigits(IRC_LENGTH)} رقم عددی باشد.`}
                     </span>
                   </p>
                 )}
