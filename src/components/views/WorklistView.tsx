@@ -1,8 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Award, Calendar, ClipboardList, ShieldAlert } from 'lucide-react';
 import { BusinessPartner, User, Vendor } from '../../types';
 import type { TaskKey } from '../../utils/navRoutes';
 import { EntityName } from '../EntityName';
+import { Pagination } from '../Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { GradeBadge } from '../GradeBadge';
 import { categoryLabels } from '../../constants/categories';
 import { can } from '../../utils/permissions';
@@ -179,6 +181,33 @@ export function WorklistView({
     irc: buildWorklist('irc', db, partners).length,
   }), [db, partners]);
 
+  /*
+   * The backlog is paged like every other list in the application.
+   *
+   * It was the one full-page list that rendered every row at once: a category
+   * with a hundred overdue evaluations produced a hundred rows, and the only
+   * way through them was the scrollbar. Nothing here is different in kind from
+   * the archive or a category page, so it gets the same two controls.
+   */
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+
+  // Switching tab is a different backlog, so it starts at its own first page;
+  // changing the page size does too, or the reader lands mid-list.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [taskKey, perPage]);
+
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+  // Clamped on render: acting on an item removes it from the backlog, so the
+  // list shrinks under the reader and a page number past the end would show an
+  // empty panel instead of the work that is left.
+  const page = Math.min(currentPage, totalPages);
+  const startIndex = (page - 1) * perPage;
+  const endIndex = startIndex + perPage;
+  const pageItems = useMemo(() => items.slice(startIndex, endIndex), [items, startIndex, endIndex]);
+
   const mayAct = meta.permission === null || can(currentUser, meta.permission);
 
   const openItem = (item: WorklistItem) => {
@@ -248,7 +277,7 @@ export function WorklistView({
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {items.map(item => (
+            {pageItems.map(item => (
               <li key={item.id}>
                 <button
                   type="button"
@@ -274,6 +303,22 @@ export function WorklistView({
               </li>
             ))}
           </ul>
+        )}
+
+        {totalItems > 0 && (
+          <div className="px-5 py-3 border-t border-border bg-muted/40 flex flex-col sm:flex-row sm:items-center gap-3">
+            <PerPageSelect value={perPage} onChange={setPerPage} />
+            <div className="flex-1 min-w-0">
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                onPageChange={setCurrentPage}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>
