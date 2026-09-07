@@ -889,9 +889,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه گریدها</option>
-                <option value="A">Grade A (تاییدشده: ۸۰-۱۰۰)</option>
-                <option value="B">Grade B (با پایش: ۶۰-۷۹)</option>
-                <option value="C">Grade C (مشروط: ۴۰-۵۹)</option>
+                {/* The bands as the business states them. Written with the
+                    open upper edge («۷۹٫۹») rather than a whole number, because
+                    the boundary the code applies is «below 60», not «at most
+                    79»: a score that ever lands between the two must read as B
+                    here and not fall into a gap the label invented. */}
+                <option value="A">Grade A (تاییدشده: ۸۰ – ۱۰۰)</option>
+                <option value="B">Grade B (با پایش: ۶۰ – ۷۹٫۹)</option>
+                <option value="C">Grade C (مشروط: ۴۰ – ۵۹٫۹)</option>
                 {/* «Pending Review» removed from this filter at the user's
                     request. The grade itself still exists — the SOP rubric
                     gives it to a supplier scoring 30-39 (rule 13) — so such a
@@ -902,7 +907,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     true: the rubric blacklists below 30 and only below 30. Left
                     as it was, this list would now read as covering every score
                     while quietly dropping the 30-39 band. */}
-                <option value="Blacklist">Blacklist (لیست سیاه: ۰-۳۹)</option>
+                <option value="Blacklist">Blacklist (لیست سیاه: زیر ۴۰)</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
