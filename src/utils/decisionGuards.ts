@@ -132,3 +132,38 @@ export function forbiddenPartnerDecisions(
 
   return refusals;
 }
+
+/**
+ * The source rows an account is allowed to see.
+ *
+ * Samples and the blacklist are categories of source, not separate tables, so
+ * "may read the samples" can only be answered per row — and it has to be
+ * answered on the server, or the list arrives complete and the category page
+ * merely declines to draw it (rule 14).
+ *
+ * Both tests use the derived state rather than the stored columns, for the
+ * reason in rule 11: `status` and `grade` diverge, and a row that is blacklisted
+ * in every counter in the application must not be visible here because its
+ * column says something else.
+ */
+export function readableVendors<T>(
+  subject: PermissionSubject | string | undefined | null,
+  rows: T[],
+): T[] {
+  const samples = can(subject, 'sample.read');
+  const blacklist = can(subject, 'blacklist.read');
+  if (samples && blacklist) return rows;
+  return rows.filter(row => {
+    if (!samples && isSampleVendor(row)) return false;
+    // A rejected sample is filtered by whichever read is missing: it is both
+    // a sample and a blacklisted record, and either permission alone is not
+    // enough to be shown a row the other one covers.
+    if (!blacklist && isVendorRejected(row)) return false;
+    return true;
+  });
+}
+
+/** True when every source row is readable, so no filtering pass is needed. */
+export function readsEverySource(subject: PermissionSubject | string | undefined | null): boolean {
+  return can(subject, 'sample.read') && can(subject, 'blacklist.read');
+}

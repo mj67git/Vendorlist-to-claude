@@ -6,9 +6,11 @@ import {
   vendorRiskSchema, vendorSchema, vendorScoreSchema,
 } from "../../utils/validation.js";
 import {
-  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges, type Permission,
 } from "../../utils/permissions.js";
-import { forbiddenVerdictChange, VERDICT_FIELDS } from "../../utils/decisionGuards.js";
+import {
+  forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
+} from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
 import {
@@ -118,6 +120,40 @@ async function refuseUnauthorisedVerdict(
   return true;
 }
 
+/**
+ * The read-only views that are their own permission.
+ *
+ * The archive and the supplier directory read the same rows as the category
+ * pages, so there is no row filter that expresses them — what distinguishes
+ * them is the view being opened. The client names the view it is loading and
+ * the server answers whether that account may open it, which is what keeps the
+ * tick in the permission form from being decoration (rule 14).
+ */
+const VIEW_PERMISSIONS: Record<string, Permission> = {
+  archive: "archive.read",
+  "supplier-audit": "supplier-audit.read",
+};
+
+/**
+ * The same answer as `getVendorChangesSince`, for an account that is served
+ * fewer rows.
+ *
+ * Derived state cannot be filtered in SQL (rule 11), so this reads the list and
+ * filters it — one full read per poll, for restricted accounts only. It is the
+ * price of the count agreeing with the list the same account is given.
+ */
+async function visibleChangesSince(actor: any, since: Date | null) {
+  const visible = readableVendors(actor, await getVendorsList());
+  const changed = visible
+    .map(v => ({ id: v.id, updatedAt: v.updatedAt ?? null }))
+    .filter(row => {
+      if (!since) return false;
+      const at = row.updatedAt ? new Date(row.updatedAt) : null;
+      return !!at && !Number.isNaN(at.getTime()) && at > since;
+    });
+  return { changed, total: visible.length };
+}
+
 export function vendorRoutes(): express.Router {
   const router = express.Router();
 
@@ -138,9 +174,28 @@ export function vendorRoutes(): express.Router {
    */
   router.get("/api/vendors", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
+      const view = typeof req.query.view === "string" ? req.query.view : null;
+      if (view !== null) {
+        const needed = VIEW_PERMISSIONS[view];
+        if (!needed) {
+          return res.status(400).json({ error: "نمای درخواستی معتبر نیست." });
+        }
+        if (!can(req.account, needed)) {
+          return res.status(403).json({
+            error: "عدم دسترسی: سطح دسترسی شما اجازهٔ باز کردن این نما را نمی‌دهد.",
+          });
+        }
+      }
+
+      // Samples and the blacklist are categories of source rather than separate
+      // tables, so an account without those reads is served fewer rows — the
+      // permission has to be a filter here, or the whole register arrives and
+      // only the page declines to draw it.
+      const everything = readsEverySource(req.account);
       const paged = req.query.page !== undefined || req.query.limit !== undefined;
       if (!paged) {
-        res.json(await getVendorsList());
+        const rows = await getVendorsList();
+        res.json(everything ? rows : readableVendors(req.account, rows));
         return;
       }
 
@@ -149,6 +204,24 @@ export function vendorRoutes(): express.Router {
       // whole-table response paging exists to avoid.
       const page = clampInt(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
       const limit = clampInt(req.query.limit, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+
+      if (!everything) {
+        // A restricted account cannot be paged in the database, because being
+        // blacklisted is derived rather than stored (rule 11) and there is no
+        // column to filter on. The window is taken after filtering instead, so
+        // the totals it reports are the totals of what this account can see —
+        // paging over an unfiltered count would hand out short pages and a
+        // number that disagrees with them.
+        const visible = readableVendors(req.account, await getVendorsList());
+        const start = (page - 1) * limit;
+        res.json({
+          items: visible.slice(start, start + limit),
+          total: visible.length,
+          page, limit,
+          pages: Math.max(1, Math.ceil(visible.length / limit)),
+        });
+        return;
+      }
 
       const total = await countVendors();
       const items = await getVendorsList(undefined, { skip: (page - 1) * limit, take: limit });
@@ -176,7 +249,13 @@ export function vendorRoutes(): express.Router {
     try {
       const raw = typeof req.query.since === "string" ? new Date(req.query.since) : null;
       const since = raw && !Number.isNaN(raw.getTime()) ? raw : null;
-      const { changed, total } = await getVendorChangesSince(since);
+      // A restricted account is polled against what it can see. The client
+      // notices a deletion by the total changing, so a count that includes rows
+      // this account is never sent would make every sample write look like a
+      // deletion and trigger a pointless refetch on the hour.
+      const { changed, total } = readsEverySource(req.account)
+        ? await getVendorChangesSince(since)
+        : await visibleChangesSince(req.account, since);
       // The client's next `since` comes from here, not from its own clock: the
       // two machines disagree, and a browser running a minute fast would ask
       // for a window that has not happened yet and miss every write inside it.
