@@ -8,7 +8,7 @@ import { Input, inputBaseClass } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
-import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { adminRejectionReason, hasQcReject, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
@@ -158,7 +158,15 @@ export function CategoryView({
       v.materialEn.toLowerCase().includes(qt) ||
       v.cas.toLowerCase().includes(qt) ||
       (v.irc && v.irc.toLowerCase().includes(qt)) ||
-      (v.country && getDisplayCountry(v).toLowerCase().includes(qt))
+      (v.country && getDisplayCountry(v).toLowerCase().includes(qt)) ||
+      /*
+       * The recorded reasons are searchable too. On the blacklist that is the
+       * one column a reader actually wants to look through — «چرا این سورس رد
+       * شد» — and it was the only text on the row that the search could not
+       * reach.
+       */
+      (Array.isArray(v.rejectionReasons) && v.rejectionReasons.some(
+        (r: any) => typeof r === 'string' && r.toLowerCase().includes(qt)))
     );
   }, [categoryVendors, query]);
 
@@ -172,6 +180,13 @@ export function CategoryView({
       // enters the category with no verdict and waits for one.
       case 'untested': return isUntestedSample(v);
       case 'rejected': return isVendorRejected(v);
+      // How a source reached the blacklist: a person's decision, with the
+      // reason they typed, or its own score. The two ask for different things —
+      // one is reviewable by talking to whoever signed it, the other by
+      // re-scoring — so the list has to be able to separate them.
+      case 'manual': return !!adminRejectionReason(v);
+      case 'derived': return !adminRejectionReason(v);
+      case 'qc': return hasQcReject(v);
       case 'A': return v.grade === 'A';
       case 'B': return v.grade === 'B';
       case 'C': return v.grade === 'C';
@@ -292,7 +307,9 @@ export function CategoryView({
           <div className="relative w-full lg:w-80 shrink-0">
             <Input 
               type="text" 
-              placeholder="جستجو کلمه کلیدی، نام، ماده، CAS، کشور..."
+              placeholder={categoryId === 'blacklist'
+                ? "جستجو در نام، ماده، CAS، کشور یا دلیل رد…"
+                : "جستجو کلمه کلیدی، نام، ماده، CAS، کشور..."}
               className="pl-9 pr-9 text-sm bg-background"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -389,7 +406,30 @@ export function CategoryView({
                       آزمایش نشده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isUntestedSample).length}</span>
                     </Badge>
                   </>
-                ) : categoryId === 'blacklist' ? null : (
+                ) : categoryId === 'blacklist' ? (
+                  <>
+                    {/* The blacklist had no chips at all, so the only question a
+                        reader could ask of it was «which one is this», never
+                        «why is it here». */}
+                    <Badge variant="gradeReject" onClick={() => toggle('manual')} className={chipCls('manual', categoryVendors.filter(v => !!adminRejectionReason(v)).length)}
+                      title="سورس‌هایی که با تصمیم صریح کاربر و با ذکر دلیل به لیست سیاه رفته‌اند">
+                      رد صریح کاربر: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => !!adminRejectionReason(v)).length}</span>
+                    </Badge>
+                    <Badge variant="warning" onClick={() => toggle('derived')} className={chipCls('derived', categoryVendors.filter(v => !adminRejectionReason(v)).length)}
+                      title="سورس‌هایی که بدون تصمیم جداگانه و صرفاً از روی امتیاز ارزیابی به لیست سیاه رفته‌اند">
+                      امتیاز پایین: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => !adminRejectionReason(v)).length}</span>
+                    </Badge>
+                    {/* Only when there is one: a QC rejection is a fact about
+                        the laboratory record, not a route into the blacklist for
+                        a source, so on most registers this is zero. */}
+                    {categoryVendors.some(hasQcReject) && (
+                      <Badge variant="outline" onClick={() => toggle('qc')} className={chipCls('qc', categoryVendors.filter(hasQcReject).length)}
+                        title="سورس‌هایی که دست‌کم یک نتیجهٔ آزمایشگاهی مردود دارند">
+                        مردود در آزمون QC: <span className="font-bold font-mono mr-1">{categoryVendors.filter(hasQcReject).length}</span>
+                      </Badge>
+                    )}
+                  </>
+                ) : (
                   <>
                     <Badge variant="gradeA" onClick={() => toggle('A')} className={chipCls('A', categoryVendors.filter(v => v.grade === 'A').length)}>
                       Grade A: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.grade === 'A').length}</span>
