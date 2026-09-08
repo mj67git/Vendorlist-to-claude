@@ -13,7 +13,8 @@ import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import {
-  AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
+  AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_FIELD_LABELS, AUDIT_MODULE_LABELS,
+  severityMatches,
 } from '../utils/auditTaxonomy';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { can } from '../utils/permissions';
@@ -129,34 +130,6 @@ function InfoIcon(props: any) {
   return <CheckCircle className="w-3.5 h-3.5" {...props} />;
 }
 
-// Persian labels for common audit field keys (fallback: raw key).
-const fieldKeyLabels: Record<string, string> = {
-  // Collections. These are compared item by item (see computeFieldDiff), so the
-  // label names the collection and the value names what actually moved.
-  activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
-  documents: 'مدارک', sopDocuments: 'مدارک', permissions: 'دسترسی‌ها',
-  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی فروشنده',
-  // Accounts and partners.
-  isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
-  address: 'آدرس', website: 'وبسایت', contactPerson: 'مسئول تماس', type: 'نوع شریک',
-  // Sources.
-  supplierId: 'فروشنده', manufacturerId: 'تولیدکننده', isSample: 'نمونه',
-  ircExpiryDate: 'انقضای IRC', lastAudit: 'تاریخ صدور IRC', registrationDate: 'تاریخ ثبت',
-  materialId: 'مادهٔ مرتبط', comments: 'توضیحات', recordedBy: 'ثبت‌کنندهٔ نتیجه',
-  action: 'اقدام', user: 'کاربر', file: 'فایل', fileName: 'نام فایل',
-  status: 'وضعیت', grade: 'گرید', name: 'نام', nameEn: 'نام لاتین', country: 'کشور',
-  material: 'ماده', materialEn: 'ماده (لاتین)', cas: 'CAS', irc: 'IRC', category: 'دسته',
-  contactInfo: 'اطلاعات تماس', totalSPS: 'امتیاز SPS', scores: 'نمرات', riskLevel: 'سطح ریسک',
-  riskScore: 'RPN', sri: 'SRI', decision: 'تصمیم', deviationReason: 'انحراف', qcCode: 'کد QC',
-  evaluator: 'ارزیاب', role: 'نقش', username: 'نام کاربری', mustChangePassword: 'اجبار تغییر رمز',
-  initialSampleStatus: 'وضعیت اولیهٔ نمونه', rejectionReasons: 'دلایل رد', totalScore: 'امتیاز کل',
-  // Source selection (PUT /api/source-selections) and risk assessment.
-  vendorId: 'سورس منتخب', materialKey: 'ماده', reason: 'دلیل انتخاب', decidedBy: 'تصمیم‌گیرنده',
-  rpn: 'RPN', SRI: 'SRI', materialCriticality: 'بحرانیت ماده', detectability: 'قابلیت تشخیص',
-  probability: 'احتمال وقوع', sps: 'امتیاز SPS', date: 'تاریخ',
-  commercialScore: 'امتیاز بازرگانی', qualityScore: 'امتیاز کیفی',
-  planningScore: 'امتیاز برنامه‌ریزی', financeScore: 'امتیاز مالی',
-};
 
 /**
  * Jalali `YYYY/MM/DD` → an ISO instant the API can compare against.
@@ -348,7 +321,7 @@ export function computeFieldDiffDetailed(before: any, after: any, prefix = ''): 
     }
 
     const path = prefix ? `${prefix}.${k}` : k;
-    const label = fieldKeyLabels[k];
+    const label = AUDIT_FIELD_LABELS[k];
 
     if (Array.isArray(bv) || Array.isArray(av)) {
       const collection = diffCollection(
