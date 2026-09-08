@@ -1,7 +1,7 @@
 import express from "express";
 import { AuditService } from "../../utils/auditService.js";
 import {
-  ALL_PERMISSIONS, effectivePermissions, sanitizePermissions, type Permission,
+  ALL_PERMISSIONS, can, effectivePermissions, sanitizePermissions, type Permission,
 } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import {
@@ -58,7 +58,7 @@ function refuseAdminGrant(actor: any, nextRole: string | undefined): string | nu
 export function userRoutes(): express.Router {
   const router = express.Router();
 
-  router.get("/api/users", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.get("/api/users", requireAuth, requirePermission("users.read"), async (req: any, res) => {
     try {
       const usersList = (await getAllUsers()).map(u => ({
         username: u.username,
@@ -110,6 +110,16 @@ export function userRoutes(): express.Router {
       }
       if (permissions !== undefined && !Array.isArray(permissions)) {
         return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
+      }
+
+      // Creating an account with a ready-made exception list is the same act as
+      // editing one, so it is held to the same permission. An account created
+      // on its role template needs only `users.manage`.
+      if (Array.isArray(permissions) && permissions.length > 0
+        && !can(req.account, "users.permissions")) {
+        return res.status(403).json({
+          error: "عدم دسترسی: تعیین فهرست دسترسی‌ها نیازمند مجوز جداگانه است.",
+        });
       }
 
       const refusedOnCreate = refuseAdminGrant(req.account, role);
@@ -214,6 +224,14 @@ export function userRoutes(): express.Router {
       if (role) current.role = role;
 
       if (permissions) {
+        // The same list the dedicated route writes, so it needs the same
+        // permission. Otherwise `users.manage` alone would still hand out
+        // access through this endpoint and the split would only look real.
+        if (!can(req.account, "users.permissions")) {
+          return res.status(403).json({
+            error: "عدم دسترسی: تغییر فهرست دسترسی‌ها نیازمند مجوز جداگانه است.",
+          });
+        }
         current.permissions = sanitizePermissions(permissions);
       } else if (roleChanged) {
         // Moving someone to a new role clears their old exceptions. Carrying
@@ -387,7 +405,7 @@ export function userRoutes(): express.Router {
   // An admin sets a temporary password for someone who is locked out. The
   // account is flagged to change it on the next sign-in, so the admin never
   // ends up knowing a password the user keeps using.
-  router.post("/api/users/:username/reset-password", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.post("/api/users/:username/reset-password", requireAuth, requirePermission("users.password"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -443,7 +461,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.put("/api/users/:username/permissions", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.put("/api/users/:username/permissions", requireAuth, requirePermission("users.permissions"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);

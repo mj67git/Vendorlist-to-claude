@@ -2,12 +2,15 @@ import express from "express";
 import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
 import { AuditService } from "../../utils/auditService.js";
 import { requirePrisma } from "../db/prisma.js";
-import { requireAuth, requirePermission } from "../http/auth.js";
+import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import {
   buildPartnerAuditDescription, getBusinessPartnersList, mapPartnerRow, upsertBusinessPartner,
 } from "../repositories/partnerRepository.js";
+import { getUserByUsername } from "../repositories/userRepository.js";
+import { forbiddenPartnerDecisions } from "../../utils/decisionGuards.js";
+import { can } from "../../utils/permissions.js";
 
 /**
  * The business partner repository: manufacturers and sellers, the SOP
@@ -126,7 +129,12 @@ export function partnerRoutes(): express.Router {
     }
   });
 
-  router.put("/api/business-partners/:id", requireAuth, requirePermission("partner.edit"), serializeWrites("partner"), async (req: any, res) => {
+  // Three writes share this endpoint — maintaining the record, grading the
+  // seller's documents, and switching the partner on or off — so the middleware
+  // only keeps out callers entitled to none of them. Which one a request is
+  // making is decided below, by comparing it with the stored partner.
+  router.put("/api/business-partners/:id", requireAuth,
+    requireAnyPermission("partner.edit", "partner.evaluate", "partner.status"), serializeWrites("partner"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const { id } = req.params;
@@ -138,6 +146,64 @@ export function partnerRoutes(): express.Router {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
       const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
+
+      // This endpoint replaces the whole partner, so two decisions ride inside
+      // an ordinary edit: grading the seller's documents, and switching the
+      // partner on or off. Commercial owns the record and collects the papers
+      // but does not award the grade — and since only a grade-A seller may be
+      // attached to a source (rule 13), that grade decides whether the company
+      // can buy through this seller at all. The stored user record is read
+      // rather than the token, for the reason in rule 14.
+      const actor = await getUserByUsername(req.user?.username || "");
+      if (!actor || actor.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      // Whoever may only decide may not also rewrite the record around the
+      // decision. Fields are compared against what is stored, so a full-record
+      // payload that repeats them is not an edit.
+      if (!can(actor as any, "partner.edit")) {
+        const decided = new Set(["id", "status", "evaluation", "reasonForChange", "expectedUpdatedAt"]);
+        const edited = Object.keys(req.body || {}).filter(key => {
+          if (decided.has(key)) return false;
+          return JSON.stringify(req.body[key] ?? null) !== JSON.stringify((before as any)?.[key] ?? null);
+        });
+        if (edited.length > 0) {
+          return res.status(403).json({
+            error: `عدم دسترسی: ویرایش شریک تجاری نیازمند مجوز «ویرایش» است (تلاش برای تغییر: ${edited.join('، ')}).`,
+          });
+        }
+      }
+
+      const refusals = forbiddenPartnerDecisions(actor as any, before, req.body);
+      if (refusals.length > 0) {
+        const needed = refusals.map(r => r.permission).join('، ');
+        AuditService.createAuditRecord({
+          auditId: `AUD-PDEC-${Date.now()}`,
+          userId: req.user?.username,
+          userName: req.user?.name || req.user?.username,
+          role: req.user?.role,
+          module: "Business Partner Repository",
+          eventType: "Security",
+          ipAddress: getClientIp(req),
+          userAgent: getUserAgent(req),
+          entityType: "BusinessPartner",
+          entityId: id,
+          entityName: before?.name || existing.name,
+          action: "Update - Blocked",
+          severity: "Critical",
+          description: "تغییر ارزیابی یا وضعیت شریک تجاری به دلیل نداشتن مجوز رد شد.",
+          reasonForChange: `مجوز لازم: ${needed}`,
+          beforeData: { status: before?.status ?? null, evaluation: before?.evaluation ?? null },
+          afterData: { attempted: refusals.flatMap(r => r.fields), refusedBy: needed },
+        }).catch(err => console.error("Audit logging failed on partner decision refusal:", err));
+        const what = refusals.some(r => r.permission === 'partner.evaluate')
+          ? 'ارزیابی مدارک فروشنده'
+          : 'تغییر وضعیت شریک تجاری';
+        return res.status(403).json({
+          error: `عدم دسترسی: ${what} نیازمند مجوز جداگانه است و این حساب آن را ندارد.`,
+        });
+      }
+
       await upsertBusinessPartner(prisma, { ...req.body, id });
       const [saved] = (await getBusinessPartnersList()).filter(p => p.id === id);
 

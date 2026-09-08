@@ -202,10 +202,7 @@ test('a stored list is read literally, so a restriction survives being saved', (
   assert.equal(can(scoringOnly, 'score.finance'), true);
 
   const narrowed = { role: 'commercial', permissions: ['partner.edit'] };
-  // `partner.edit` still carries the two operations lifted out of it by the
-  // granular split, so a list naming it keeps the access it had.
-  assert.deepEqual(effectivePermissions(narrowed),
-    ['partner.edit', 'partner.evaluate', 'partner.status'], 'what was stored, plus what it implies');
+  assert.deepEqual(effectivePermissions(narrowed), ['partner.edit'], 'exactly what was stored');
   assert.equal(can(narrowed, 'partner.delete'), false, 'still replaces the template');
 });
 

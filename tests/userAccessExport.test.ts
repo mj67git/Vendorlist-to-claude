@@ -55,12 +55,11 @@ test('an account with no access to a module reports nothing for it', () => {
 test('the export follows the exception list, not the role, when one is set', () => {
   const restricted = { role: 'commercial', permissions: ['vendor.read', 'score.commercial'] };
   const effective = effectivePermissions(restricted);
-  // `vendor.read` carries the four source views split out of it, so a list
-  // naming it keeps them; nothing else from the template comes back.
-  assert.deepEqual(effective,
-    ['vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read', 'score.commercial']);
+  assert.deepEqual(effective, ['vendor.read', 'score.commercial']);
   assert.equal(moduleLetters('partners', effective), '', 'the sheet must not print access the account lost');
   assert.equal(moduleLetters('vendors', effective), 'R');
+  // The archive is its own read now, and this list does not name it.
+  assert.equal(moduleLetters('archive', effective), '');
 });
 
 test('a view over another module reports its own read, in the matrix and the sheet', () => {

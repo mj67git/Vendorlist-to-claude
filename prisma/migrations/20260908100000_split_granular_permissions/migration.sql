@@ -9,11 +9,14 @@
 --   users.manage  also carried reading users, editing their permissions and
 --                 resetting their passwords
 --
--- The code expands those names on load, the same way LEGACY_PERMISSIONS does,
--- so no account loses access with or without this migration. This writes the
--- expansion into the stored rows once so the permission dialog shows real
--- ticks instead of access that only exists at read time — the stored list is
--- meant to be exactly what was saved (see migration 20260903120000).
+-- This migration is what keeps those accounts whole: the application does NOT
+-- expand a live permission on load. It did briefly, and that made the split
+-- unexpressible — an administrator who left «مدیریت کاربران» ticked and cleared
+-- «تعیین سطح دسترسی» got the second one handed back on the next read, the same
+-- failure as the read heuristic migration 20260903120000 removed. So the
+-- expansion happens once, here, and from then on a stored list means exactly
+-- what it says. (A retired name such as `material.write` is still expanded on
+-- load, because nothing ever rewrote those rows.)
 --
 -- Only rows with a non-empty exception list are touched. An empty list means
 -- "follow the role template", and the templates live in code.

@@ -205,12 +205,15 @@ const LEGACY_PERMISSIONS: Record<string, Permission[]> = {
 };
 
 /**
- * What a stored permission implies, so a split never takes access away.
+ * What a permission used to carry before it was split.
  *
- * Unlike `LEGACY_PERMISSIONS` these names are still live: `vendor.edit` remains
- * a permission of its own and simply continues to carry the decision it used to
- * carry. Applied on read, so no row in the database has to change and an
- * administrator can revoke the implied half from any one account afterwards.
+ * Unlike `LEGACY_PERMISSIONS` these names are still live, so the map is NOT
+ * applied to a list that names them: migration 20260908100000 writes the
+ * expansion into the stored rows once, and after that an administrator must be
+ * able to tick the module without also handing out the operation lifted out of
+ * it. What it is still used for is a retired name, which no migration ever
+ * rewrote — `vendor.write` has to keep meaning everything `vendor.edit` meant
+ * on the day it was retired, the decision included.
  */
 const IMPLIED_PERMISSIONS: Partial<Record<Permission, Permission[]>> = {
   'vendor.read': ['archive.read', 'supplier-audit.read', 'sample.read', 'blacklist.read'],
@@ -548,18 +551,25 @@ export interface PermissionSubject {
 /**
  * Expand one stored entry into the permissions it means today.
  *
- * A name that was retired keeps working through LEGACY_PERMISSIONS, so an
+ * A name that was retired keeps working through `LEGACY_PERMISSIONS`, so an
  * account whose override still says `material.write` keeps exactly the access
- * it had before the permission was split.
+ * it had before that permission was split — including the operations later
+ * lifted out of the names it expands to, which is what `IMPLIED_PERMISSIONS`
+ * adds here.
+ *
+ * A name that is still live is NOT expanded. It was, briefly, and that made the
+ * granular split unexpressible: an administrator who left «مدیریت کاربران»
+ * ticked and cleared «تعیین سطح دسترسی» got the second one handed back on the
+ * next read, so the dialog showed a change that had not been made — the same
+ * failure as the read heuristic that migration 20260903120000 removed. The
+ * stored rows are expanded once, by migration 20260908100000, and from there a
+ * list means exactly what it says.
  */
 function expandStored(entry: unknown): Permission[] {
   if (typeof entry !== 'string') return [];
-  const direct = (ALL_PERMISSIONS as string[]).includes(entry)
-    ? [entry as Permission]
-    : LEGACY_PERMISSIONS[entry] ?? [];
-  // A live permission may still carry what it carried before a split, so the
-  // account that had it keeps the whole of what it could do.
-  return direct.flatMap(p => [p, ...(IMPLIED_PERMISSIONS[p] ?? [])]);
+  if ((ALL_PERMISSIONS as string[]).includes(entry)) return [entry as Permission];
+  const retired = LEGACY_PERMISSIONS[entry] ?? [];
+  return retired.flatMap(p => [p, ...(IMPLIED_PERMISSIONS[p] ?? [])]);
 }
 
 /**

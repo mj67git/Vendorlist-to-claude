@@ -6,15 +6,16 @@ import {
   vendorRiskSchema, vendorSchema, vendorScoreSchema,
 } from "../../utils/validation.js";
 import {
-  canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
 } from "../../utils/permissions.js";
+import { forbiddenVerdictChange, VERDICT_FIELDS } from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
 import {
   CALCULATION_WEIGHTS, GRADE_TIERS, calculateRoundedWeightedScore,
   calculateWeightedScore, rankVendor,
 } from "../domain/vendorEvaluation.js";
-import { requireAuth, requirePermission } from "../http/auth.js";
+import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
@@ -40,6 +41,82 @@ import {
  * Score and risk history are reconstructed from `audit_log` rather than stored
  * twice; the audit trail already holds every before/after pair.
  */
+
+/**
+ * Refuse a payload that decides something the caller may not decide.
+ *
+ * `vendor.edit` and `vendor.analysis` open endpoints that replace the whole
+ * record, so the qualification verdict rides along inside an ordinary edit.
+ * This compares it against what is stored, answers 403 when the caller is not
+ * entitled to the change, and records the attempt — a blocked write is evidence
+ * too, the same reasoning as the IRC and SOP refusals below.
+ *
+ * Returns true when the request has been answered and the handler must stop.
+ */
+async function refuseUnauthorisedVerdict(
+  req: any, res: any, current: any, incoming: any,
+  options: { requireEditForTheRest?: boolean } = {},
+): Promise<boolean> {
+  // The stored user record, not the token: a seven-day JWT carries only the
+  // role, so a permission taken away today would otherwise keep working until
+  // it expired (rule 14).
+  const actor = await getUserByUsername(req.user?.username || "");
+  if (!actor || actor.isActive === false) {
+    res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+    return true;
+  }
+  // The other half of the same question: this route also accepts ordinary
+  // edits, and the middleware could only ask whether the caller may do *one* of
+  // the two. Whoever holds the verdict but not `vendor.edit` may state the
+  // verdict and nothing else.
+  if (options.requireEditForTheRest && !can(actor as any, "vendor.edit")) {
+    // An empty field and an absent one are the same fact here: the form posts
+    // `''` where the record holds null, and treating that as an edit would
+    // refuse every verdict that arrives through the whole-record form.
+    const settled = (value: any) => JSON.stringify(value === '' || value === undefined ? null : value);
+    const otherChanges = Object.keys(incoming || {}).filter(key => {
+      if (VERDICT_FIELDS.includes(key as any) || key === 'reasonForChange' || key === 'reason') return false;
+      if (key === 'expectedUpdatedAt') return false;
+      return settled(incoming[key]) !== settled(current?.[key]);
+    });
+    if (otherChanges.length > 0) {
+      res.status(403).json({
+        error: `عدم دسترسی: ویرایش سورس نیازمند مجوز «ویرایش سورس» است (تلاش برای تغییر: ${otherChanges.join('، ')}).`,
+      });
+      return true;
+    }
+  }
+
+  const refusal = forbiddenVerdictChange(actor as any, current, incoming);
+  if (!refusal) return false;
+
+  const isSample = refusal.permission === 'sample.decide';
+  const what = isSample ? "تصمیم کیفی نمونه" : "رد صلاحیت یا بازگردانی سورس";
+  AuditService.createAuditRecord({
+    auditId: `AUD-DEC-${Date.now()}`,
+    userId: req.user?.username,
+    userName: req.user?.name || req.user?.username,
+    role: req.user?.role,
+    module: "Source Management",
+    eventType: "Security",
+    ipAddress: getClientIp(req),
+    userAgent: getUserAgent(req),
+    entityType: isSample ? "Sample" : "Source",
+    entityId: current.id,
+    entityName: current.material || current.name || "سورس",
+    action: "Update - Blocked",
+    severity: "Critical",
+    description: `${what} به دلیل نداشتن مجوز رد شد.`,
+    reasonForChange: `مجوز لازم: ${refusal.permission}`,
+    beforeData: { status: current.status ?? null, rejectionReasons: current.rejectionReasons ?? null },
+    afterData: { attempted: refusal.fields, refusedBy: refusal.permission },
+  }).catch(err => console.error("Audit logging failed on verdict refusal:", err));
+
+  res.status(403).json({
+    error: `عدم دسترسی: ${what} نیازمند مجوز جداگانه است و این حساب آن را ندارد.`,
+  });
+  return true;
+}
 
 export function vendorRoutes(): express.Router {
   const router = express.Router();
@@ -357,7 +434,12 @@ export function vendorRoutes(): express.Router {
   });
 
   // Update vendor profile (Unified Database)
-  router.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
+  // Not one permission: this endpoint carries both the ordinary edit and the
+  // qualification verdict, and which one a request is making is only knowable
+  // by comparing it with the stored record. `refuseUnauthorisedVerdict` splits
+  // them; the middleware only keeps out callers entitled to neither.
+  router.patch("/api/vendors/:id/profile", requireAuth,
+    requireAnyPermission("vendor.edit", "vendor.decide", "sample.decide"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -372,6 +454,7 @@ export function vendorRoutes(): express.Router {
         return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
       }
       const p = validationResult.data;
+      if (await refuseUnauthorisedVerdict(req, res, current, p, { requireEditForTheRest: true })) return;
       const updatedVendor = {
         ...current,
         ...p
@@ -600,6 +683,10 @@ export function vendorRoutes(): express.Router {
           error: `عدم دسترسی: شما تنها مجاز به ثبت امتیاز دپارتمان خود هستید (تلاش برای تغییر: ${unique}).`,
         });
       }
+
+      // The stated grounds for a rejection travel with the scores, so the
+      // verdict has to be checked on this route as well as on the profile.
+      if (await refuseUnauthorisedVerdict(req, res, current, s)) return;
 
       const allVendorsBefore = await getRankingSnapshot();
       const prevRank = getVendorRank(id, allVendorsBefore);

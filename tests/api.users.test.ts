@@ -33,18 +33,13 @@ async function savePermissions(token: string, username: string, permissions: str
 test('a narrowed list for a finance account comes back exactly as it was saved', SKIP, async () => {
   const token = await login('admin');
   const wanted = ['vendor.read', 'material.read', 'score.finance'];
-  // `vendor.read` carries the four source views that were split out of it, so
-  // the saved list names them too. Nothing else from the role comes back.
-  const expected = [
-    'vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read',
-    'material.read', 'score.finance',
-  ];
+  const expected = wanted;
 
   const saved = await savePermissions(token, 'finance', wanted);
   assert.equal(saved.status, 200);
 
   const row = (await listUsers(token)).find(u => u.username === 'finance');
-  assert.deepEqual(row.permissions, expected, 'the stored exception is what was sent, plus what it implies');
+  assert.deepEqual(row.permissions, expected, 'the stored exception is what was sent');
   assert.deepEqual(row.effectivePermissions, expected, 'and it is what is in force');
 });
 
@@ -212,8 +207,12 @@ test('an account without the permission may not see or change accounts', SKIP, a
  */
 test('the permission itself opens the module, for an account that is not an administrator', SKIP, async () => {
   const adminToken = await login('admin');
+  // The module's own permissions, named one by one since the granular split:
+  // `users.manage` opens it, `users.read` lists the accounts and
+  // `users.permissions` is what hands access out.
   const granted = await savePermissions(adminToken, 'commercial', [
-    'vendor.read', 'material.read', 'partner.read', 'users.manage',
+    'vendor.read', 'material.read', 'partner.read',
+    'users.read', 'users.manage', 'users.permissions',
   ]);
   assert.equal(granted.status, 200);
 
@@ -229,10 +228,7 @@ test('the permission itself opens the module, for an account that is not an admi
   });
   assert.equal(saved.status, 200);
   const planning = await db().user.findUnique({ where: { username: 'planning' } });
-  assert.deepEqual(planning.permissions, [
-    'vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read',
-    'score.planning',
-  ]);
+  assert.deepEqual(planning.permissions, ['vendor.read', 'score.planning']);
 });
 
 test('taking the permission away closes the module for an administrator too', SKIP, async () => {
