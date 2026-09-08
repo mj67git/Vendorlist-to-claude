@@ -10,6 +10,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { PageTitle } from '../ui/page-title';
 import { SortHeader } from '../ui/sort-header';
+import { StatTile } from '../ui/stat-tile';
 import { TableEmptyRow } from '../ui/table-empty-row';
 import { TableSkeletonRows } from '../ui/table-skeleton-rows';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
@@ -553,6 +554,45 @@ interface SourceSelection {
              <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
            </Button>
          )}
+
+         {/* The directory export belongs in the header, where the archive, the
+             audit trail and the user module all put theirs — it used to sit
+             inside the search panel, so this was the one module whose export
+             was not where a reader had learned to look for it.
+
+             Only the per-company dossier could be exported before this button
+             existed, so the list a purchasing or quality review starts from had
+             to be retyped off the screen. It exports what the search has
+             narrowed to, in the order the table is sorted, so the file matches
+             what is on screen. */}
+         {!activeSupplier && canExport && (
+           <div className="flex flex-col items-start md:items-end gap-1">
+             <Button
+               type="button"
+               variant="success"
+               size="sm"
+               disabled={excel.busy || sortedSuppliers.length === 0}
+               onClick={() => excel.run(xl => xl.exportSupplierDirectoryToExcel(
+                 sortedSuppliers.map(g => ({
+                   name: g.name,
+                   nameEn: g.nameEn,
+                   role: ROLE_LABEL[g.role],
+                   country: g.country,
+                   materialCount: g.sources.length,
+                   materials: g.sources.map(v => v.material).filter(Boolean),
+                   averageScore: averageScoreOf(g),
+                 })),
+               ))}
+               className="font-bold shrink-0"
+             >
+               {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+               <span>خروجی Excel</span>
+             </Button>
+             {excel.error && (
+               <p role="alert" className="text-2xs text-rose-600 dark:text-rose-400 font-bold">{excel.error}</p>
+             )}
+           </div>
+         )}
  
        </div>
 
@@ -1022,33 +1062,20 @@ interface SourceSelection {
            {/* The counters every other repository opens with. */}
            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
              {[
-               { label: 'کل تأمین‌کنندگان', en: 'Total Suppliers', value: directoryStats.total, Icon: Building2,
+               { label: 'کل تأمین‌کنندگان', hint: 'Total Suppliers', value: directoryStats.total, icon: Building2,
                  tone: 'bg-muted text-foreground border-border' },
-               { label: 'تولیدکنندگان', en: 'Manufacturers', value: directoryStats.manufacturers, Icon: Factory,
+               { label: 'تولیدکنندگان', hint: 'Manufacturers', value: directoryStats.manufacturers, icon: Factory,
                  tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
-               { label: 'فروشندگان', en: 'Suppliers', value: directoryStats.suppliers, Icon: Handshake,
+               { label: 'فروشندگان', hint: 'Suppliers', value: directoryStats.suppliers, icon: Handshake,
                  tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
                // «—» rather than a zero: no company scored yet is not an average
                // of zero, and an audit overview must not invent one.
-               { label: 'میانگین امتیاز ممیزی', en: 'Average Audit Score', value: directoryStats.averageScore ?? '—', Icon: Award,
+               { label: 'میانگین امتیاز ممیزی', hint: 'Average Audit Score', value: directoryStats.averageScore ?? '—', icon: Award,
                  tone: 'bg-primary/10 text-primary border-primary/20' },
-               { label: 'بدون امتیاز ثبت‌شده', en: 'Not Yet Scored', value: directoryStats.unscored, Icon: AlertTriangle,
+               { label: 'بدون امتیاز ثبت‌شده', hint: 'Not Yet Scored', value: directoryStats.unscored, icon: AlertTriangle,
                  tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
              ].map(card => (
-               <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
-                   <card.Icon className="w-5 h-5" />
-                 </div>
-                 <div className="min-w-0">
-                   <div className="text-2xs font-bold text-muted-foreground leading-tight">{card.label}</div>
-                   {/* The counts come from the same list the table shows, so they
-                       cannot claim a number while that list is still loading. */}
-                   {isLoading
-                     ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
-                     : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
-                   <div className="text-2xs text-muted-foreground font-mono truncate">{card.en}</div>
-                 </div>
-               </div>
+               <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
              ))}
            </div>
 
@@ -1085,39 +1112,8 @@ interface SourceSelection {
                  </button>
                )}
              </div>
-             {/* The directory itself, as a spreadsheet. Only the per-company
-                 dossier could be exported before, so the list a purchasing or
-                 quality review starts from had to be retyped off the screen.
-                 It exports what the search has narrowed to, in the order the
-                 table is sorted, so the file matches what is on screen. */}
-             {canExport && (
-             <Button
-               type="button"
-               variant="success"
-               size="sm"
-               disabled={excel.busy || sortedSuppliers.length === 0}
-               onClick={() => excel.run(xl => xl.exportSupplierDirectoryToExcel(
-                 sortedSuppliers.map(g => ({
-                   name: g.name,
-                   nameEn: g.nameEn,
-                   role: ROLE_LABEL[g.role],
-                   country: g.country,
-                   materialCount: g.sources.length,
-                   materials: g.sources.map(v => v.material).filter(Boolean),
-                   averageScore: averageScoreOf(g),
-                 })),
-               ))}
-               className="font-bold shrink-0"
-             >
-               {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
-               <span>خروجی Excel فهرست</span>
-             </Button>
-             )}
            </div>
-           {excel.error && (
-             <p role="alert" className="text-2xs text-rose-600 dark:text-rose-400 font-bold">{excel.error}</p>
-           )}
- 
+
            {/* The directory as a table.
 
                It was a three-column grid of cards, which is the one list shape

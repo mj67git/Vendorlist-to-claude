@@ -26,6 +26,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 export interface AuditLog {
@@ -866,7 +867,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
   };
 
   return (
-    <div className="space-y-6 text-right pb-12 w-full">
+    <div className="space-y-6 fade-in text-right pb-12 w-full">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-5">
         <PageTitle
@@ -937,7 +938,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
           for its own sake. This module is an investigation tool, and a number
           whose meaning is "how many records match this filter" is the only kind
           it needs. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {([
           {
             key: 'all', label: 'کل رویدادها', value: stats.total,
@@ -973,23 +974,18 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             tone: 'text-rose-700 dark:text-rose-300',
           },
         ] as const).map(tile => (
-          <button
+          /* Still a filter, not just a counter: `StatTile` renders a real
+             button when it is given an action, and keeps the pressed state so
+             the tile that is currently narrowing the table says so. */
+          <StatTile
             key={tile.key}
-            type="button"
+            label={tile.label}
+            value={tile.value}
+            hint={tile.hint}
+            valueClassName={(tile as any).tone}
+            active={tile.active}
             onClick={() => { tile.apply(); setCurrentPage(1); }}
-            aria-pressed={tile.active}
-            className={`text-right rounded-xl border p-3 transition-colors ${
-              tile.active
-                ? 'bg-accent border-foreground/30'
-                : 'bg-card border-border hover:bg-accent/60'
-            }`}
-          >
-            <span className="text-2xs font-bold text-muted-foreground block">{tile.label}</span>
-            <span className={`text-xl font-black font-mono block leading-tight ${(tile as any).tone || 'text-foreground'}`}>
-              {tile.value.toLocaleString('fa-IR')}
-            </span>
-            <span className="text-2xs text-muted-foreground block truncate">{tile.hint}</span>
-          </button>
+          />
         ))}
       </div>
 

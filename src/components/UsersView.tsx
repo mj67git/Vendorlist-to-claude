@@ -15,6 +15,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
   ALL_PERMISSIONS, can, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
@@ -567,9 +568,12 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const isSelf = (u: ManagedUser) => u.username.toLowerCase() === currentUser.username.toLowerCase();
 
   return (
-    <div className="space-y-5 fade-in">
-      {/* HEADER */}
-      <div className="bg-card border border-border rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="space-y-6 fade-in text-right">
+      {/* HEADER — the underlined row the archive, the audit trail and the
+          integrated supplier review all use. This screen was the one carrying
+          its title inside a card, so the page began differently from every
+          other module before a word of it was read. */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
         <PageTitle
           icon={UserCog}
           title="مدیریت کاربران سامانه"
@@ -577,15 +581,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
         />
 
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="جستجوی کاربر..."
-              className="pr-9 pl-3 w-full sm:w-56"
-            />
-          </div>
           {/* Administering accounts and taking a file of them out of the
               system are two different permissions. */}
           {can(currentUser, 'data.export') && (
@@ -616,26 +611,38 @@ export function UsersView({ currentUser }: UsersViewProps) {
       {/* KPI STRIP — the same four-card shape the other repositories use. The
           numbers are counted from the loaded list, so they never claim more
           than the table can show. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {[
           { label: 'کل کاربران', value: users.length, hint: 'حساب تعریف‌شده در سامانه' },
           { label: 'حساب فعال', value: activeCount, hint: `${(users.length - activeCount).toLocaleString('fa-IR')} حساب غیرفعال` },
           { label: 'مدیر فعال', value: activeAdmins, hint: 'دارندهٔ دسترسی کامل' },
           { label: 'دسترسی سفارشی', value: customCount, hint: `${neverSignedIn.toLocaleString('fa-IR')} حساب هنوز وارد نشده` },
         ].map(card => (
-          <div key={card.label} className="bg-card border border-border rounded-2xl p-4 shadow-xs">
-            <span className="text-2xs font-bold text-muted-foreground block">{card.label}</span>
-            <span className="text-xl font-black text-foreground block mt-1">
-              {loading ? '—' : card.value.toLocaleString('fa-IR')}
-            </span>
-            <span className="text-2xs text-muted-foreground block mt-0.5">{card.hint}</span>
-          </div>
+          <StatTile key={card.label} {...card} loading={loading} />
         ))}
       </div>
 
       {/* FILTER BAR — the three questions an access review asks. Native selects
           styled from `inputBaseClass`, like every other filter in the app. */}
       <div className="bg-card border border-border rounded-2xl p-4 shadow-xs flex flex-wrap items-end gap-3">
+        {/* The search sits with the filters it works alongside, the way the
+            other three modules arrange it — it used to live in the header, so
+            this screen asked its narrowing questions in two places. */}
+        <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
+          <span className="text-2xs font-bold text-muted-foreground">جستجو</span>
+          <div className="relative">
+            <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
+              <Search className="w-4 h-4" />
+            </span>
+            <Input
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="جستجوی نام، نام کاربری یا سمت…"
+              className="pr-10 pl-3 w-full"
+              aria-label="جستجوی کاربر"
+            />
+          </div>
+        </label>
         <label className="flex flex-col gap-1">
           <span className="text-2xs font-bold text-muted-foreground">سمت سازمانی</span>
           <select

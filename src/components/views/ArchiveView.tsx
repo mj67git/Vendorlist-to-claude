@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { PageTitle } from '../../components/ui/page-title';
 import { SortHeader } from '../../components/ui/sort-header';
+import { StatTile } from '../../components/ui/stat-tile';
 import { TableEmptyRow } from '../../components/ui/table-empty-row';
 import { TableSkeletonRows } from '../../components/ui/table-skeleton-rows';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
@@ -330,7 +331,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   return (
     <div className="space-y-6 fade-in text-right">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
         {/* The title leads, on the right, the way every other module's header
             reads. It used to be second in the DOM with `order` classes trying
             to place it — but this container is RTL, so `order-1` put the export
@@ -360,6 +361,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="success"
+            size="sm"
             onClick={() => excel.run(xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections))}
             disabled={excel.busy}
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
@@ -374,6 +376,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => setPrintingList(true)}
             title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
           >
@@ -390,6 +393,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => excel.run(xl => xl.exportCategoryToExcel(
               filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
             ))}
@@ -409,6 +413,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setExportMenuOpen(o => !o)}
               aria-haspopup="menu"
               aria-expanded={exportMenuOpen}
@@ -462,33 +467,18 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'کل رکوردها', en: 'Total Records', value: archiveStats.total, Icon: Archive,
+          { label: 'کل رکوردها', hint: 'Total Records', value: archiveStats.total, icon: Archive,
             tone: 'bg-muted text-foreground border-border' },
-          { label: 'سورس‌ها', en: 'Sources', value: archiveStats.sources, Icon: FileText,
+          { label: 'سورس‌ها', hint: 'Sources', value: archiveStats.sources, icon: FileText,
             tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
-          { label: 'نمونه‌ها', en: 'Samples', value: archiveStats.samples, Icon: ClipboardList,
+          { label: 'نمونه‌ها', hint: 'Samples', value: archiveStats.samples, icon: ClipboardList,
             tone: 'bg-primary/10 text-primary border-primary/20' },
-          { label: 'سورس‌های منتخب', en: 'Chosen Sources', value: selectedCount, Icon: Star,
+          { label: 'سورس‌های منتخب', hint: 'Chosen Sources', value: selectedCount, icon: Star,
             tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
-          { label: 'در لیست سیاه', en: 'Blacklisted', value: archiveStats.blacklisted, Icon: ShieldAlert,
+          { label: 'در لیست سیاه', hint: 'Blacklisted', value: archiveStats.blacklisted, icon: ShieldAlert,
             tone: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900' },
         ].map(card => (
-          <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
-              <card.Icon className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              {isLoading ? (
-                <div className="h-5 w-10 bg-muted rounded animate-pulse" />
-              ) : (
-                <div className="text-xl font-bold text-foreground font-mono leading-none">
-                  {card.value.toLocaleString('fa-IR')}
-                </div>
-              )}
-              <div className="text-2xs font-bold text-muted-foreground mt-1 truncate">{card.label}</div>
-              <div className="text-2xs text-muted-foreground/70 truncate" dir="ltr">{card.en}</div>
-            </div>
-          </div>
+          <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
         ))}
       </div>
 
