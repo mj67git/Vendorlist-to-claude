@@ -19,7 +19,7 @@ import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
-import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
+import { GRADE_RANGE_FA, SOP_DOCUMENTS_DEF, describeGrade } from '../../utils/sopEvaluation';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { cleanPlaceholder, resolveVendorPartner } from '../../utils/vendorPartner';
@@ -658,7 +658,7 @@ interface SourceSelection {
                           )}
                           <span className="mx-3 text-muted-foreground/50 font-normal">|</span>
                           <span className={activePartnerDetails.mfgPartner ? '' : 'text-sm font-semibold'}>
-                            گرید SOP : {activePartnerDetails.supGrade}
+                            گرید ارزیابی فروشنده : {describeGrade(activePartnerDetails.supGrade).fa || activePartnerDetails.supGrade}
                           </span>
                         </div>
                       )}
@@ -800,7 +800,7 @@ interface SourceSelection {
                <div className="flex items-center justify-between gap-2 mb-3">
                  <span className="text-2xs font-bold text-muted-foreground flex items-center gap-2">
                    <Award className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                   ارزیابی مدارک SOP
+                   ارزیابی مدارک فروشنده
                  </span>
                  {activePartnerDetails?.supPartner && onNavigate && (
                    <button type="button" onClick={() => onNavigate('business-partners')}
@@ -813,13 +813,34 @@ interface SourceSelection {
                {activePartnerDetails?.supPartner?.evaluation ? (
                  <>
                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                     <GradeBadge
-                       grade={activePartnerDetails.supPartner.evaluation.grade as any}
-                       status={activePartnerDetails.supPartner.evaluation.status as any}
-                     />
-                     <span className="font-mono font-bold text-foreground text-sm">
-                       {activePartnerDetails.supPartner.evaluation.totalScore} <span className="text-2xs text-muted-foreground">از ۱۰۰</span>
-                     </span>
+                     {/* A supplier grade, from the supplier table.
+                         `GradeBadge` reads the *source* vocabulary — A, B, C,
+                         rejected — and everything it does not recognise falls
+                         through to its last branch, so this badge announced
+                         «Grade C» for a supplier graded `D`, for one carrying
+                         the retired `Blacklist`, and even for one never
+                         evaluated. `describeGrade` knows every supplier grade
+                         and its colour, and the band is printed beside it so a
+                         reader is not asked to remember the rubric. */}
+                     {(() => {
+                       const ev = activePartnerDetails.supPartner!.evaluation!;
+                       const label = describeGrade(ev.grade);
+                       const band = GRADE_RANGE_FA[ev.grade as keyof typeof GRADE_RANGE_FA];
+                       return (
+                         <>
+                           <span className={`px-2.5 py-1 rounded-lg text-2xs font-bold border ${label.tone}`}>
+                             {ev.grade === 'Not Evaluated' ? 'ارزیابی نشده' : `Grade ${ev.grade}`}
+                             {label.fa && ev.grade !== 'Not Evaluated' ? ` · ${label.fa}` : ''}
+                           </span>
+                           <span className="font-mono font-bold text-foreground text-sm">
+                             {ev.totalScore.toLocaleString('fa-IR')} <span className="text-2xs text-muted-foreground">از ۱۰۰</span>
+                             {band && band !== '—' && (
+                               <span className="text-2xs text-muted-foreground font-sans mr-2">(بازهٔ گرید: {band})</span>
+                             )}
+                           </span>
+                         </>
+                       );
+                     })()}
                      <span className="text-2xs text-muted-foreground">
                        آخرین ارزیابی: {activePartnerDetails.supPartner.evaluation.updatedAt
                          ? new Date(activePartnerDetails.supPartner.evaluation.updatedAt).toLocaleDateString('fa-IR')
