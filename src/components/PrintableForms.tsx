@@ -10,6 +10,7 @@ import { getPartnerDetails } from '../utils/printablePartner';
 import { criterionCell, departmentNote, earnedCell } from '../utils/printableScores';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
+import { toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
 import { describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
@@ -31,27 +32,6 @@ function getMaterialTypeLabel(v: Vendor) {
   if (v.category === 'sample') return 'نمونه تستی';
   if (v.category === 'veterinary') return 'داروی دامی';
   return 'ماده اولیه (Active / Excipient)';
-}
-
-/**
- * Dates on these forms mixed calendars: the print date was Jalali while the
- * evaluation and registration dates came straight from the record as
- * `2026-08-27`. One document should not carry two calendars, so anything that
- * parses as a Gregorian date is shown in Jalali and anything already Persian is
- * left exactly as entered.
- */
-function toJalaliDisplay(value: string | null | undefined): string {
-  const raw = (value || '').trim();
-  if (!raw) return 'ثبت‌نشده';
-  // Already Persian (Persian digits or a Jalali-looking year) — leave it alone.
-  if (/[۰-۹]/.test(raw) || /^1[34]\d{2}[/-]/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
-  try {
-    return d.toLocaleDateString('fa-IR');
-  } catch {
-    return raw;
-  }
 }
 
 

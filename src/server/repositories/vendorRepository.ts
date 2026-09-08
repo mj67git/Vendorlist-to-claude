@@ -517,7 +517,11 @@ export async function saveVendorToDb(
         nameEn: nameEn || "Unknown",
         country: country || "نامشخص",
         contactInfo: serializedContactInfo,
-        registrationDate: registrationDate || new Date().toISOString().split('T')[0],
+        // Jalali, like every other date this application writes. The Gregorian
+        // ISO fallback that used to sit here meant a record saved without a
+        // registration date — a script, an import, any save that omitted the
+        // field — printed `2026-09-08` next to a record showing `۱۴۰۵/۰۶/۱۷`.
+        registrationDate: registrationDate || new Date().toLocaleDateString('fa-IR'),
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
@@ -531,7 +535,11 @@ export async function saveVendorToDb(
         nameEn: nameEn || "Unknown",
         country: country || "نامشخص",
         contactInfo: serializedContactInfo,
-        registrationDate: registrationDate || new Date().toISOString().split('T')[0],
+        // Jalali, like every other date this application writes. The Gregorian
+        // ISO fallback that used to sit here meant a record saved without a
+        // registration date — a script, an import, any save that omitted the
+        // field — printed `2026-09-08` next to a record showing `۱۴۰۵/۰۶/۱۷`.
+        registrationDate: registrationDate || new Date().toLocaleDateString('fa-IR'),
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,

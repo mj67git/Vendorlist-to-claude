@@ -11,6 +11,7 @@ import { authFetch } from '../../services/authFetch';
 import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from '../../types';
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
+import { toJalaliDisplay } from '../../utils/dateDisplay';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
@@ -657,8 +658,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 <div className="mt-3 pt-2.5 border-t border-border space-y-1.5 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground font-medium">تاریخ دریافت / صدور:</span>
+                    {/* Shown in the calendar the rest of the page uses. A row
+                        saved without this date used to carry the server's
+                        Gregorian fallback (`2026-09-08`) while the row beside it
+                        carried Jalali, so one screen printed two calendars. */}
                     <span className="font-mono font-bold text-foreground" dir="ltr">
-                      {vendor.lastAudit || vendor.registrationDate || 'ثبت نشده'}
+                      {toJalaliDisplay(vendor.lastAudit || vendor.registrationDate, 'ثبت نشده')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
