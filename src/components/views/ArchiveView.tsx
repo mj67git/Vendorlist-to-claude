@@ -53,7 +53,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
   const [gradeFilter, setGradeFilter] = useState('');
   const [riskFilter, setRiskFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  /**
+   * Country, taken from the record the same way the column prints it.
+   *
+   * This slot held a status filter, which duplicated work the other three
+   * already did — «مردود» is the blacklist entry of the category filter and the
+   * rejected entry of the grade filter — while country, the one column with no
+   * filter of its own, could only be reached through free-text search.
+   */
+  const [countryFilter, setCountryFilter] = useState('');
   
   const [printingVendor, setPrintingVendor] = useState<Vendor | null>(null);
   const [printingList, setPrintingList] = useState(false);
@@ -117,7 +125,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, perPage]);
+  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, perPage]);
 
   /**
    * The per-category button exports that category, so the on-screen filters do
@@ -127,6 +135,20 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
   const handleExportCategory = (catId: string, catLabel: string) => {
     void excel.run(xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections));
   };
+
+  /**
+   * The column prints the first word of the display country, so the filter
+   * keys on exactly that: an imported record whose country field holds a whole
+   * address would otherwise put its street on the dropdown and match nothing a
+   * reader can see.
+   */
+  const countryKey = (v: Vendor): string => (getDisplayCountry(v) || '').trim().split(' ')[0];
+
+  const countryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    db.forEach(v => { const k = countryKey(v); if (k) seen.add(k); });
+    return [...seen].sort((a, b) => archiveCollator.compare(a, b));
+  }, [db]);
 
   const filteredDb = useMemo(() => {
     return db.filter(v => {
@@ -161,7 +183,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
           )
         : true;
-      const matchStatus = statusFilter ? v.status === statusFilter : true;
+      // `__none__` rather than the empty string, which already means "no
+      // filter": a record with no country recorded is a real thing to look for.
+      const matchCountry = countryFilter
+        ? (countryFilter === '__none__' ? !countryKey(v) : countryKey(v) === countryFilter)
+        : true;
       const riskLevel = v.riskAssessment?.riskLevel || 'Unknown';
       const matchRisk = riskFilter 
         // `None` is unreachable — the risk dropdown offers only Low/Medium/High
@@ -171,9 +197,9 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
       
       const matchSelected = onlySelected ? !!selectionForVendor(v, selections) : true;
 
-      return matchSearch && matchGrade && matchRisk && matchCategory && matchStatus && matchSelected;
+      return matchSearch && matchGrade && matchRisk && matchCategory && matchCountry && matchSelected;
     });
-  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, selections, partners]);
+  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, selections, partners]);
 
   const selectedCount = useMemo(
     () => db.filter(v => !!selectionForVendor(v, selections)).length,
@@ -224,11 +250,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
     setCategoryFilter('');
     setRiskFilter('');
     setGradeFilter('');
-    setStatusFilter('');
+    setCountryFilter('');
     setOnlySelected(false);
     setCurrentPage(1);
   };
-  const anyFilterSet = !!(searchTerm || categoryFilter || riskFilter || gradeFilter || statusFilter || onlySelected);
+  const anyFilterSet = !!(searchTerm || categoryFilter || riskFilter || gradeFilter || countryFilter || onlySelected);
 
   const ITEMS_PER_PAGE = perPage;
   const totalItems = filteredDb.length;
@@ -273,11 +299,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
     if (categoryFilter) parts.push(`دسته: ${categoryLabels[categoryFilter as keyof typeof categoryLabels]?.fa || categoryFilter}`);
     if (gradeFilter) parts.push(`گرید: ${gradeFilter}`);
     if (riskFilter) parts.push(`ریسک: ${riskFilter}`);
-    if (statusFilter) parts.push(`وضعیت: ${statusFilter}`);
+    if (countryFilter) parts.push(`کشور: ${countryFilter === '__none__' ? 'ثبت‌نشده' : countryFilter}`);
     if (onlySelected) parts.push('فقط سورس‌های منتخب');
     if (searchTerm.trim()) parts.push(`جستجو: «${searchTerm.trim()}»`);
     return parts.length ? parts.join(' · ') : 'بدون فیلتر — کل آرشیو';
-  }, [categoryFilter, gradeFilter, riskFilter, statusFilter, onlySelected, searchTerm]);
+  }, [categoryFilter, gradeFilter, riskFilter, countryFilter, onlySelected, searchTerm]);
 
   if (printingList) {
     return (
@@ -520,14 +546,14 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
               ],
             },
             {
-              key: 'status', label: 'وضعیت', value: statusFilter, setValue: setStatusFilter,
+              key: 'country', label: 'کشور', value: countryFilter, setValue: setCountryFilter,
               options: [
-                { val: '', label: 'همهٔ وضعیت‌ها' }, { val: 'approved', label: 'تأییدشده' },
-                { val: 'conditional', label: 'مشروط' }, { val: 'new', label: 'جدید / در انتظار' },
-                { val: 'rejected', label: 'مردود' },
+                { val: '', label: 'همهٔ کشورها' },
+                ...countryOptions.map(c => ({ val: c, label: c })),
+                { val: '__none__', label: 'بدون کشور ثبت‌شده' },
               ],
             },
-          ] as const).map(filter => (
+          ]).map(filter => (
             <label key={filter.key} className="flex flex-col gap-1 min-w-[150px] flex-1 md:flex-none">
               <span className="text-2xs font-bold text-muted-foreground">{filter.label}</span>
               <select
