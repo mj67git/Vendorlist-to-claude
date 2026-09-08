@@ -459,47 +459,67 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                 : db.filter(v => v.category === id && !isSampleRecord(v) && !isVendorRejected(v));
 
             /*
-             * Three figures instead of two, and every one of them derived.
+             * What the card counts, in the vocabulary of the thing it counts.
              *
-             * «سایر» used to hold grade C, the unscored and the conditional all
-             * at once — the single number on the card that could not lead to a
-             * decision, since "not evaluated yet" and "evaluated, passed with
-             * conditions" ask for opposite things. The grade comes from the
-             * department scores through `describeVendorRank`, not from the
-             * stored column, so this row and the donut above it can no longer
-             * disagree about the same company.
+             * A source category shows its grade mix — A, B, C and the ones
+             * nobody has scored — because a source *has* a grade and that is
+             * the word the source page, the archive column and the dashboard
+             * donut all use for it. It used to read «تأییدشده / مشروط», which
+             * is the sample vocabulary (Approved / Conditional) borrowed for
+             * records that are graded, not judged; and the middle figure
+             * quietly held grade D as well, so a source scoring below 40 was
+             * counted as «conditional».
+             *
+             * The grade is derived from the department scores, never read off
+             * the stored column, so this row and the donut above it cannot
+             * disagree about the same source.
              */
-            const buckets = { good: 0, watch: 0, open: 0 };
-            for (const v of catVendors) {
-              /*
-               * The blacklist is a verdict, not a mix of qualities: every row
-               * on it is disqualified, so «۰ تأییدشده / ۰ مشروط» would be three
-               * numbers that can never say anything. What is worth knowing is
-               * how a source got there — a person's decision, or its own score.
-               */
-              if (isBlacklistCard) {
-                if (adminRejectionReason(v)) buckets.watch++;
-                else buckets.open++;
-                continue;
-              }
-              if (id === 'sample') {
-                const decided = describeSampleStatus(v);
-                if (!decided.decided) buckets.open++;
-                else if (decided.label === 'Approved') buckets.good++;
-                else buckets.watch++;
-                continue;
-              }
-              const grade = describeVendorRank(v).grade;
-              if (grade === 'A' || grade === 'B') buckets.good++;
-              else if (grade === 'C' || grade === 'D') buckets.watch++;
-              else buckets.open++;
-            }
+            type CardRow = { key: string; label: string; value: number; tone: string; bar: string };
+            let rows: CardRow[];
 
-            const labels = isBlacklistCard
-              ? { good: 'تأییدشده', watch: 'رد صریح', open: 'امتیاز پایین' }
-              : id === 'sample'
-                ? { good: 'تأییدشده', watch: 'مشروط یا رد', open: 'آزمایش‌نشده' }
-                : { good: 'تأییدشده', watch: 'مشروط', open: 'ارزیابی‌نشده' };
+            if (isBlacklistCard) {
+              // A verdict, not a mix of qualities: what is worth knowing is how
+              // a source got here — a person's decision, or its own score.
+              let explicit = 0;
+              for (const v of catVendors) if (adminRejectionReason(v)) explicit++;
+              rows = [
+                { key: 'explicit', label: 'رد صریح', value: explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-500' },
+                { key: 'low', label: 'امتیاز پایین', value: catVendors.length - explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-400' },
+              ];
+            } else if (id === 'sample') {
+              // The sample's own three words, from `describeSampleStatus`.
+              let approved = 0, decided = 0;
+              for (const v of catVendors) {
+                const d = describeSampleStatus(v);
+                if (!d.decided) continue;
+                decided++;
+                if (d.label === 'Approved') approved++;
+              }
+              rows = [
+                { key: 'approved', label: 'تأییدشده', value: approved, tone: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' },
+                { key: 'other', label: 'مشروط یا رد', value: decided - approved, tone: 'text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
+                { key: 'untested', label: 'آزمایش‌نشده', value: catVendors.length - decided, tone: 'text-muted-foreground', bar: 'bg-slate-400 dark:bg-slate-600' },
+              ];
+            } else {
+              const g = { A: 0, B: 0, C: 0, D: 0, none: 0 };
+              for (const v of catVendors) {
+                const grade = describeVendorRank(v).grade;
+                if (grade === 'A' || grade === 'B' || grade === 'C') g[grade]++;
+                else if (grade === 'D') g.D++;
+                else g.none++;
+              }
+              rows = [
+                { key: 'A', label: 'گرید A', value: g.A, tone: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' },
+                { key: 'B', label: 'گرید B', value: g.B, tone: 'text-blue-600 dark:text-blue-400', bar: 'bg-blue-500' },
+                { key: 'C', label: 'گرید C', value: g.C, tone: 'text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
+                // Grade D only reaches a category card while its scoring is
+                // unfinished — a completed one below 40 is blacklisted and
+                // counted in the warning line instead — so it is named rather
+                // than folded into a band it does not belong to.
+                ...(g.D > 0 ? [{ key: 'D', label: 'گرید D', value: g.D, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-500' }] : []),
+                { key: 'none', label: 'بدون امتیاز', value: g.none, tone: 'text-muted-foreground', bar: 'bg-slate-400 dark:bg-slate-600' },
+              ];
+            }
 
             // Only what is actually wrong, and only when something is: a line
             // that always shows «۰ مورد» teaches the reader to stop looking at
@@ -538,32 +558,28 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                     <div className={`font-mono text-3xl font-black leading-none transition-all duration-300 group-hover:scale-105 origin-left ${total === 0 ? 'text-muted-foreground' : style.statText}`}>
                       {total.toLocaleString('fa-IR')}
                     </div>
-                    {/* Stacked lines rather than three columns: «آزمایش‌نشده»
-                        and «مشروط یا رد» are long enough that side by side they
-                        were cut off at the card's edge, and a label clipped
-                        without an ellipsis reads as a different word. */}
+                    {/* Stacked lines rather than columns: the labels are long
+                        enough that side by side they were cut off at the card's
+                        edge, and a label clipped without an ellipsis reads as a
+                        different word. */}
                     <div className="space-y-0.5 text-2xs min-w-0">
-                      {([
-                        { key: 'good', value: buckets.good, label: labels.good, tone: 'text-emerald-600 dark:text-emerald-400' },
-                        { key: 'watch', value: buckets.watch, label: labels.watch, tone: isBlacklistCard ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400' },
-                        { key: 'open', value: buckets.open, label: labels.open, tone: isBlacklistCard ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground' },
-                      ]).filter(b => !(isBlacklistCard && b.key === 'good')).map(b => (
-                        <div key={b.key} className="flex items-center justify-end gap-1.5">
-                          <span className="text-muted-foreground">{b.label}</span>
-                          <span className={`font-mono font-black ${b.tone}`}>{b.value.toLocaleString('fa-IR')}</span>
+                      {rows.map(r => (
+                        <div key={r.key} className="flex items-center justify-end gap-1.5">
+                          <span className="text-muted-foreground">{r.label}</span>
+                          <span className={`font-mono font-black ${r.tone}`}>{r.value.toLocaleString('fa-IR')}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* The same three numbers as one bar, so the shape of the
-                      category reads without arithmetic. Decorative: the figures
-                      above already carry the information. */}
+                  {/* The same figures as one bar, so the shape of the category
+                      reads without arithmetic. Decorative: the numbers above
+                      already carry the information. */}
                   {total > 0 && (
                     <div aria-hidden className="h-1.5 w-full rounded-full overflow-hidden flex bg-muted">
-                      <div className="h-full bg-emerald-500" style={{ width: `${(buckets.good / total) * 100}%` }} />
-                      <div className={`h-full ${isBlacklistCard ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${(buckets.watch / total) * 100}%` }} />
-                      <div className={`h-full ${isBlacklistCard ? 'bg-rose-400' : 'bg-slate-400 dark:bg-slate-600'}`} style={{ width: `${(buckets.open / total) * 100}%` }} />
+                      {rows.map(r => (
+                        <div key={r.key} className={`h-full ${r.bar}`} style={{ width: `${(r.value / total) * 100}%` }} />
+                      ))}
                     </div>
                   )}
 
