@@ -95,7 +95,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
    * once, and the total stopped meaning anything.
    */
   const supplierGradeDistribution = useMemo(() => {
-    let a = 0, b = 0, c = 0, black = 0, none = 0;
+    let a = 0, b = 0, c = 0, rejected = 0, none = 0;
     for (const p of partners || []) {
       if (p.type !== 'Supplier') continue;
       const grade = reconcileSupplierEvaluation(p).evaluation?.grade;
@@ -103,7 +103,13 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         case 'A': a++; break;
         case 'B': b++; break;
         case 'C': c++; break;
-        case 'Blacklist': black++; break;
+        // The failing grade is `D` under the 90/75/60 rubric (rule 13).
+        // `Blacklist` is the retired name for the same thing and still appears
+        // on rows written before the change, so both land in one slice — while
+        // this counted only `Blacklist`, a rejected seller fell through to
+        // `default` and the dashboard called it «ارزیابی نشده», disagreeing
+        // with the repository table two clicks away, which said D.
+        case 'D': case 'Blacklist': rejected++; break;
         default: none++; break;
       }
     }
@@ -111,10 +117,10 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
       { name: 'گرید A', value: a, color: '#10b981' },
       { name: 'گرید B', value: b, color: '#3b82f6' },
       { name: 'گرید C', value: c, color: '#f59e0b' },
-      { name: 'لیست سیاه', value: black, color: '#e11d48' },
+      { name: 'گرید D (مردود)', value: rejected, color: '#e11d48' },
       { name: 'ارزیابی نشده', value: none, color: '#94a3b8' },
     ];
-    return { slices: slices.filter(d => d.value > 0), total: a + b + c + black + none };
+    return { slices: slices.filter(d => d.value > 0), total: a + b + c + rejected + none };
   }, [partners]);
 
   /*

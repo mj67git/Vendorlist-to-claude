@@ -901,7 +901,15 @@ export function vendorRoutes(): express.Router {
   });
 
   // Update vendor activity logs (Unified Database)
-  router.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
+  // Appending to the activity log is a byproduct of acting on the record, not
+  // an edit of its own: the sample verdict writes its line here, and quality
+  // holds `sample.decide` without `vendor.edit`, so a single permission on this
+  // route refused the second half of a decision the same request had just been
+  // allowed to make. Whoever may only decide may only append — removing an
+  // entry is still an edit, and that is enforced below.
+  router.patch("/api/vendors/:id/logs", requireAuth,
+    requireAnyPermission("vendor.edit", "vendor.decide", "sample.decide", "vendor.analysis"),
+    serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -916,6 +924,24 @@ export function vendorRoutes(): express.Router {
         return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
       }
       const l = validationResult.data;
+
+      // Only `vendor.edit` may rewrite history. For everyone else the submitted
+      // list has to start with the stored one, entry for entry: new lines at the
+      // end are the record of what they did, while a changed or missing line is
+      // somebody editing the trail with a permission that was granted for a
+      // decision.
+      if (l.activityLogs && !can(req.account, "vendor.edit")) {
+        const before = (current.activityLogs || []) as any[];
+        const after = l.activityLogs as any[];
+        const appendOnly = after.length >= before.length
+          && before.every((entry, i) => JSON.stringify(entry) === JSON.stringify(after[i]));
+        if (!appendOnly) {
+          return res.status(403).json({
+            error: "عدم دسترسی: تغییر یا حذف سوابق فعالیت نیازمند مجوز «ویرایش سورس» است.",
+          });
+        }
+      }
+
       const updatedVendor = {
         ...current,
         activityLogs: l.activityLogs ?? current.activityLogs

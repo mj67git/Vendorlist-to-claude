@@ -239,3 +239,51 @@ test('the module permission alone no longer hands out access', SKIP, async () =>
   });
   assert.equal(rename.status, 200, 'while the rest of the module still works');
 });
+
+test('the sample verdict may write its own activity line', SKIP, async () => {
+  // The verdict and its log entry arrive as two requests from one decision. The
+  // log route asked for `vendor.edit`, which quality does not hold, so the
+  // second half was refused after the first had been allowed — the record kept
+  // the new status with no trace of who set it.
+  await db().vendorMaterial.updateMany({
+    where: { vendorId: FIXTURE.vendorId }, data: { isSample: true, category: 'sample' },
+  });
+  const token = await login('qa');
+  const res = await api(`/api/vendors/${FIXTURE.vendorId}/logs`, {
+    method: 'PATCH', token,
+    body: {
+      activityLogs: [{ id: 'log_1', action: 'تصمیم نمونه: تأیید شده — تست', date: '1405/06/17 10:00', user: 'qa' }],
+      reasonForChange: 'تست',
+    },
+  });
+  assert.equal(res.status, 200);
+});
+
+test('but it may not rewrite the entries that are already there', SKIP, async () => {
+  // Appending is the record of what they did; changing or dropping a line is
+  // editing the trail with a permission that was granted for a decision.
+  const admin = await login('admin');
+  const seeded = await api(`/api/vendors/${FIXTURE.vendorId}/logs`, {
+    method: 'PATCH', token: admin,
+    body: {
+      activityLogs: [{ id: 'log_1', action: 'ثبت سورس', date: '1405/06/16 09:00', user: 'admin' }],
+      reasonForChange: 'تست',
+    },
+  });
+  assert.equal(seeded.status, 200);
+
+  const token = await login('qa');
+  const rewritten = await api(`/api/vendors/${FIXTURE.vendorId}/logs`, {
+    method: 'PATCH', token,
+    body: {
+      activityLogs: [{ id: 'log_1', action: 'چیز دیگری', date: '1405/06/16 09:00', user: 'admin' }],
+      reasonForChange: 'تست',
+    },
+  });
+  assert.equal(rewritten.status, 403);
+
+  const emptied = await api(`/api/vendors/${FIXTURE.vendorId}/logs`, {
+    method: 'PATCH', token, body: { activityLogs: [], reasonForChange: 'تست' },
+  });
+  assert.equal(emptied.status, 403);
+});
