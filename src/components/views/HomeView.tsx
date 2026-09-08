@@ -15,6 +15,8 @@ import { describeVendorRank } from '../../utils/vendorRank';
 import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
+import temadLogo from '../../assets/logo.png';
 
 // extracted from App.tsx
 
@@ -185,22 +187,68 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
 
   return (
     <div className="space-y-7 fade-in">
-      {/* PAGE HEADER — the system's own name is already in the sidebar and the
-          browser tab; repeating it a third time cost the top 180px of a screen
-          that is opened several times a day. */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
-        <h2 className="text-lg font-black text-foreground tracking-tight">خلاصهٔ وضعیت تامین‌کنندگان</h2>
-        {/* Offered only to an account that may actually register a source.
-            The endpoint has always refused the save without `vendor.create`;
-            showing the button to everyone meant a department without the
-            permission could fill in the longest form in the application and
-            learn at the last step that it was never allowed to. */}
-        {can(currentUser, 'vendor.create') && (
-          <Button onClick={onOpenSourceForm} className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0">
-            <Plus className="w-4 h-4" />
-            ثبت سورس جدید
-          </Button>
-        )}
+      {/* THE BANNER — the one place in the application that says what this
+          system is.
+
+          The name used to be left off this page deliberately, because the
+          sidebar and the browser tab both carry it and a third heading cost the
+          top of a screen people open several times a day. It comes back as a
+          single band roughly the height of the row it replaces: the deep navy
+          reads as the product's own identity rather than borrowing the blue the
+          rest of the interface uses for actions, and the register button lives
+          inside the band so the colour runs the full width instead of stopping
+          short of it.
+
+          The tones are fixed rather than tokenised on purpose — this is a brand
+          surface, like the sign-in card, and it must look the same in both
+          themes; only the border below it follows the theme. The logo is dark
+          navy on transparency, so it sits on a white plate to stay legible. */}
+      <div className="relative overflow-hidden rounded-2xl border border-border shadow-sm bg-gradient-to-l from-teal-800 via-slate-900 to-slate-950">
+        {/* A soft highlight so the band is not a flat rectangle. Decorative, so
+            it is hidden from assistive technology and cannot catch a click. */}
+        <div aria-hidden className="pointer-events-none absolute -top-16 -left-16 w-64 h-64 rounded-full bg-teal-400/15 blur-3xl" />
+
+        {/* Stacks below `lg`, because the breakpoint measures the window and the
+            sidebar takes a third of it: at a 768px tablet this band is only
+            about 470px wide, and side by side the Persian title broke onto
+            three lines while the Latin one was cut mid-word. */}
+        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-4 min-w-0">
+            {/* `sm:` and not a custom `xs:` — Tailwind v4 has no such breakpoint here,
+                so the plate was hidden at every width. */}
+            <span className="hidden sm:inline-flex items-center justify-center bg-white rounded-xl px-3 py-2 shrink-0 shadow-sm">
+              <img src={temadLogo} alt="تماد" className="h-11 w-auto object-contain" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-teal-300 text-2xs font-bold uppercase tracking-[0.18em] font-mono lg:truncate" dir="ltr">
+                Vendor List &amp; Supplier Evaluation System
+              </p>
+              <h2 className="text-white text-base sm:text-lg font-black tracking-tight mt-1">
+                سامانهٔ ارزیابی و رتبه‌بندی تأمین‌کنندگان
+              </h2>
+            </div>
+          </div>
+
+          {/* Offered only to an account that may actually register a source.
+              The endpoint has always refused the save without `vendor.create`;
+              showing the button to everyone meant a department without the
+              permission could fill in the longest form in the application and
+              learn at the last step that it was never allowed to.
+
+              Solid white on the dark band: the default button is the same blue
+              family as the ground behind it here, and a primary button on a
+              primary-adjacent field is the contrast failure this band would
+              otherwise introduce. */}
+          {can(currentUser, 'vendor.create') && (
+            <Button
+              onClick={onOpenSourceForm}
+              className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0 bg-white text-slate-900 hover:bg-white/90"
+            >
+              <Plus className="w-4 h-4" />
+              ثبت سورس جدید
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* WHAT NEEDS DOING — first, and full width.
