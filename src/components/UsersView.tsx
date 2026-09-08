@@ -574,8 +574,13 @@ export function UsersView({ currentUser }: UsersViewProps) {
           its title inside a card, so the page began differently from every
           other module before a word of it was read. */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
+        {/* The Latin caption above the Persian title, the shape the archive
+            and the integrated supplier review use — this screen carried the
+            tinted icon tile instead, so two headers in the same family opened
+            differently. */}
         <PageTitle
-          icon={UserCog}
+          eyebrow="User Access Management"
+          eyebrowIcon={UserCog}
           title="مدیریت کاربران سامانه"
           subtitle="تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود."
         />

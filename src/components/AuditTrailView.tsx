@@ -870,8 +870,10 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
     <div className="space-y-6 fade-in text-right pb-12 w-full">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-5">
+        {/* Same Latin caption shape as the archive and the user module. */}
         <PageTitle
-          icon={ClipboardList}
+          eyebrow="Audit Trail & Change Control"
+          eyebrowIcon={ClipboardList}
           title="ردیابی تغییرات"
           subtitle="سامانه مانیتورینگ فعالیت‌های سیستم و تاریخچه تغییرات فرآیندی (GMP Compliance)"
         />
