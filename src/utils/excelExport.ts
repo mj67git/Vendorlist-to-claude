@@ -17,7 +17,7 @@ import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
 import { calculateOverallScore } from './vendorUtils';
-import { canSupplySources } from './sopEvaluation';
+import { canSupplySources, describeGrade } from './sopEvaluation';
 import { getMaterialRole } from '../constants/materialRoles';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
 
@@ -625,16 +625,16 @@ export function buildPartnersWorksheet(
     (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
 
   // نتیجهٔ ارزیابی فروشنده بر اساس گرید (هم‌راستا با ستون لیست شرکا)
-  const sopResultLabel = (grade?: string) => {
-    switch (grade) {
-      case 'A': return 'Approved';
-      case 'B': return 'Permit Approval';
-      case 'C': return 'Expired';
-      case 'Blacklist': return 'Black List';
-      case 'Pending Review': return 'Pending Review';
-      default: return grade || '—';
-    }
-  };
+  /*
+   * The verdict each grade stands for, from the shared table.
+   *
+   * This map answered «Permit Approval» for B and «Expired» for C — those are
+   * *document* statuses from the rubric, not verdicts about a company, so the
+   * sheet said something untrue about every B and C supplier and disagreed with
+   * the badge on screen. It also had no answer for `D`, the failing grade of
+   * the current rubric.
+   */
+  const sopResultLabel = (grade?: string) => describeGrade(grade).en;
 
   const headers = [
     'ردیف',

@@ -80,9 +80,18 @@
 
 12. **PATCHهای سورس باید ترتیبی (sequential) بمانند.** هر endpoint (`/profile`, `/contact`, `/scores`, `/analysis`, `/logs`, `/risk`) کل vendor را read-modify-write می‌کند؛ اگر دوتا هم‌زمان در پرواز باشند، کندتری نسخهٔ کهنهٔ خودش را برمی‌گرداند و **دادهٔ حذف‌شده زنده می‌شود**. در `handleUpdateVendor` صفِ `syncQueue` با `await` پشت‌سرهم اجرا می‌شود — موازی نکن.
 
-13. **رابریک گرید SOP تثبیت‌شده است (`src/utils/sopEvaluation.ts`):** امتیاز هر مدرک Approved=20 / Permit Approval=10 / Expired=5 / Not Submitted=0، و مرزهای گرید **۸۰ / ۶۰ / ۴۰** → `A, B, C, Blacklist`. **گرید `D` وجود ندارد** (واژگان قدیمی بود و حذف شد). **گرید `Pending Review` هم بازنشسته شد** (۱۴۰۵/۰۶/۱۶، خواستهٔ کاربر): بازهٔ ۳۰ تا ۳۹ داشت، ولی یک *نیت* را نام می‌برد نه یک نتیجه، و هیچ‌جای برنامه به آن رفتاری جدا نمی‌داد — فروشندهٔ Pending Review دقیقاً مثل Blacklist از اتصال به سورس رد می‌شد. مقدارش در `SOPGrade` و در `GRADE_LABELS` **می‌ماند تا ردیف‌های ذخیره‌شدهٔ قدیمی برچسب خوانا داشته باشند** (همان الگوی `LEGACY_PERMISSIONS`)، ولی `calculateGradeAndStatus` هرگز آن را تولید نمی‌کند و `reconcileSupplierEvaluation` روی load رکورد قدیمی را از روی مدارکش بازنویسی می‌کند. این قوانین را در جای دیگری کپی نکن — از `computeSupplierEvaluation` و `calculateGradeAndStatus` استفاده کن.
+13. **رابریک گرید فروشنده (`src/utils/sopEvaluation.ts`):** امتیاز هر مدرک Approved=20 / Permit Approval=10 / Expired=5 / Not Submitted=0، و مرزهای گرید **۹۰ / ۷۵ / ۶۰** (۱۴۰۵/۰۶/۱۷، طبق جدول رسمی کاربر):
+   | گرید | عنوان | بازهٔ امتیاز |
+   | --- | --- | --- |
+   | A | Approved Supplier | ۹۰ – ۱۰۰ |
+   | B | Pending Approval | ۷۵ – ۸۹٫۹ |
+   | C | Conditional Approval | ۶۰ – ۷۴٫۹ |
+   | D | Rejected | زیر ۶۰ |
+
+   این جدول جایگزین رابریک قبلی (۸۰/۶۰/۴۰ → `A, B, C, Blacklist`) شد. **گرید مردود حالا `D` است، نه `Blacklist`.** دو مقدار بازنشسته — `Blacklist` و `Pending Review` — در `SOPGrade` و `GRADE_LABELS` **می‌مانند تا ردیف‌های ذخیره‌شدهٔ قدیمی برچسب خوانا داشته باشند** (همان الگوی `LEGACY_PERMISSIONS`)، ولی `calculateGradeAndStatus` هرگز تولیدشان نمی‌کند و `reconcileSupplierEvaluation` روی load رکورد قدیمی را از روی مدارکش بازنویسی می‌کند — به همین دلیل مهاجرت دیتابیس لازم نشد. این قوانین را در جای دیگری کپی نکن — از `computeSupplierEvaluation`، `calculateGradeAndStatus`، `describeGrade` و `GRADE_RANGE_FA` استفاده کن.
+   - نام وضعیت‌ها هم با جدول عوض شد: B از «Approved with Monitoring» به **Pending Approval** و C از «Conditional Supplier» به **Conditional Approval**. نام‌های قبلی در `SOPSupplierStatus` مانده‌اند چون روی ردیف‌های ذخیره‌شده هستند.
    - `reconcileSupplierEvaluation` روی load اجرا می‌شود تا ارزیابی ذخیره‌شدهٔ ناسازگار با مدارکش خودترمیم شود؛ `updatedAt/updatedBy` عمداً حفظ می‌شود تا محاسبهٔ مجدد شبیه ارزیابی تازهٔ انسانی نباشد.
-   - نکته: `getRankParams` (سورس‌ها) گرید `D` دارد ولی مقیاس دیگری است (A: ۸۰-۱۰۰ … D: ۰-۳۹) و به SOP ربطی ندارد.
+   - **نکتهٔ مهم:** مقیاس **سورس‌ها** (`getRankParams` / `vendorRank.ts`: A ۸۰-۱۰۰ … D ۰-۳۹) کاملاً جداست و با این تغییر عوض نشد. جدول بالا فقط دربارهٔ **فروشنده** است.
 
    - **فقط فروشندهٔ گرید A می‌تواند به سورس وصل شود** (`canSupplySources` در همین فایل). تولیدکننده مشمول نیست چون اصلاً SOP نمی‌گیرد. راه انحراف (override) عمداً وجود ندارد. سرور هم در `POST /api/vendors` و `PATCH /api/vendors/:id/profile` با **۴۲۲** رد می‌کند و رویداد را در audit ثبت می‌کند؛ گیت سمت کلاینت فقط UX است (قاعدهٔ ۱۴).
    - فروشندهٔ ازقبل‌متصل به یک سورس مستثناست، وگرنه رکوردهای قدیمی غیرقابل‌ویرایش می‌شوند.

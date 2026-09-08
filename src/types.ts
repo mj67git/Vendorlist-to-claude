@@ -150,9 +150,19 @@ export interface SOPDocumentEval {
 }
 
 // Grades produced by calculateGradeAndStatus (rubric: 80/60/40/30).
-export type SOPGrade = 'A' | 'B' | 'C' | 'Pending Review' | 'Blacklist' | 'Not Evaluated';
+/**
+ * Supplier grades. `A`–`D` are the live rubric; `Pending Review` and
+ * `Blacklist` are retired values kept so evaluations stored under earlier
+ * rubrics still render a label a reader recognises (the same treatment the
+ * retired permission names get). Nothing produces them any more.
+ */
+export type SOPGrade = 'A' | 'B' | 'C' | 'D' | 'Pending Review' | 'Blacklist' | 'Not Evaluated';
 export type SOPSupplierStatus =
   | 'Approved Supplier'
+  | 'Pending Approval'
+  | 'Conditional Approval'
+  | 'Rejected'
+  // Retired with the rubrics that produced them; still readable on stored rows.
   | 'Approved with Monitoring'
   | 'Conditional Supplier'
   | 'Pending Review'

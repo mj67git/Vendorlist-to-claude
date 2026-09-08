@@ -87,7 +87,7 @@ const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' })
 const GRADE_RANK: Record<string, number> = {
   // «Pending Review» is retired but kept in the order so a row stored under it
   // still sorts between C and Blacklist instead of falling to the bottom.
-  'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
+  'A': 6, 'B': 5, 'C': 4, 'D': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
 };
 type SortOrder = 'asc' | 'desc';
 
@@ -878,25 +878,20 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه گریدها</option>
-                {/* The bands as the business states them. Written with the
-                    open upper edge («۷۹٫۹») rather than a whole number, because
-                    the boundary the code applies is «below 60», not «at most
-                    79»: a score that ever lands between the two must read as B
-                    here and not fall into a gap the label invented. */}
-                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
-                <option value="B">Grade B (با پایش: {GRADE_RANGE_FA['B']})</option>
-                <option value="C">Grade C (مشروط: {GRADE_RANGE_FA['C']})</option>
-                {/* «Pending Review» removed from this filter at the user's
-                    request. The grade itself still exists — the SOP rubric
-                    gives it to a supplier scoring 30-39 (rule 13) — so such a
-                    partner keeps its badge everywhere else and is reached
-                    through «همه گریدها».
+                {/* The bands as the business states them, from the one
+                    constant the evaluation panel also prints. The upper edge is
+                    written open («۸۹٫۹») rather than a whole number, because the
+                    boundary the code applies is «below 75», not «at most 89».
 
-                    The Blacklist range beside it said ۰-۳۹, which was never
-                    true: the rubric blacklists below 30 and only below 30. Left
-                    as it was, this list would now read as covering every score
-                    while quietly dropping the 30-39 band. */}
-                <option value="Blacklist">Blacklist (لیست سیاه: {GRADE_RANGE_FA['Blacklist']})</option>
+                    «Blacklist» is gone from this list with the rubric that
+                    produced it — the failing grade is D now. A partner still
+                    carrying the retired value keeps its badge everywhere else
+                    and is reached through «همه گریدها», and is rewritten from
+                    its own documents on the next load. */}
+                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
+                <option value="B">Grade B (در انتظار تأیید: {GRADE_RANGE_FA['B']})</option>
+                <option value="C">Grade C (تأیید مشروط: {GRADE_RANGE_FA['C']})</option>
+                <option value="D">Grade D (مردود: {GRADE_RANGE_FA['D']})</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
@@ -1678,7 +1673,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                             <span className="text-muted-foreground text-sm">-- / ۱۰۰</span>
                           ) : (
                             <>
-                              {computedEval.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
+                              {computedEval.totalScore.toLocaleString('fa-IR')} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
                             </>
                           )}
                         </div>
@@ -1730,7 +1725,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         { g: 'A' as const, dot: 'bg-emerald-500', label: 'Grade A' },
                         { g: 'B' as const, dot: 'bg-blue-500', label: 'Grade B' },
                         { g: 'C' as const, dot: 'bg-amber-500', label: 'Grade C' },
-                        { g: 'Blacklist' as const, dot: 'bg-rose-500', label: 'Blacklist' },
+                        { g: 'D' as const, dot: 'bg-rose-500', label: 'Grade D' },
                       ]).map(band => (
                         <span key={band.g} className="flex items-center gap-1.5 text-muted-foreground">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${band.dot}`} aria-hidden />

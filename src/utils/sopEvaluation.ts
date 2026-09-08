@@ -54,19 +54,23 @@ export function calculateGradeAndStatus(totalScore: number, isEvaluated: boolean
   if (!isEvaluated) {
     return { grade: 'Not Evaluated', status: 'Not Evaluated' };
   }
-  if (totalScore >= 80) {
+  if (totalScore >= 90) {
     return { grade: 'A', status: 'Approved Supplier' };
+  } else if (totalScore >= 75) {
+    return { grade: 'B', status: 'Pending Approval' };
   } else if (totalScore >= 60) {
-    return { grade: 'B', status: 'Approved with Monitoring' };
-  } else if (totalScore >= 40) {
-    return { grade: 'C', status: 'Conditional Supplier' };
+    return { grade: 'C', status: 'Conditional Approval' };
   }
-  // Below 40 is the blacklist. There used to be a «Pending Review» band from 30
-  // to 39, retired at the business's request: it named an intention («somebody
-  // will decide about this supplier») rather than a result, and nothing in the
-  // application ever acted on it — a Pending Review supplier was refused a
-  // source link exactly like a blacklisted one. Three boundaries now, 80/60/40.
-  return { grade: 'Blacklist', status: 'Blacklist' };
+  /*
+   * The bands the business states: A ۹۰–۱۰۰, B ۷۵–۸۹, C ۶۰–۷۴, D below ۶۰.
+   *
+   * They replace the 80/60/40 rubric, and the failing grade is now `D
+   * (Rejected)` rather than `Blacklist`. Both retired values stay readable —
+   * `GRADE_LABELS` still names them and `reconcileSupplierEvaluation` rewrites a
+   * stored row from its own documents on the next load — so no migration was
+   * needed and no row renders as an empty badge in the meantime.
+   */
+  return { grade: 'D', status: 'Rejected' };
 }
 
 /**
@@ -88,12 +92,16 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
     tone: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-900',
   },
   'B': {
-    en: 'Approved with Monitoring', fa: 'تاییدشده با پایش',
+    en: 'Pending Approval', fa: 'در انتظار تأیید',
     tone: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-900',
   },
   'C': {
-    en: 'Conditional Supplier', fa: 'مشروط',
+    en: 'Conditional Approval', fa: 'تأیید مشروط',
     tone: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-900',
+  },
+  'D': {
+    en: 'Rejected', fa: 'مردود',
+    tone: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-900',
   },
   /**
    * Retired: the rubric no longer produces this grade (below 40 is Blacklist).
@@ -107,8 +115,9 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
     en: 'Pending Review (بازنشسته)', fa: 'در انتظار تصمیم (بازنشسته)',
     tone: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-950/60 dark:text-yellow-200 dark:border-yellow-900',
   },
+  /** Retired with the 80/60/40 rubric; the failing grade is `D` now. */
   'Blacklist': {
-    en: 'Blacklist', fa: 'لیست سیاه',
+    en: 'Blacklist (بازنشسته)', fa: 'لیست سیاه (بازنشسته)',
     tone: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-900',
   },
   'Not Evaluated': {
@@ -121,17 +130,17 @@ export const GRADE_LABELS: Record<SOPGrade, { en: string; fa: string; tone: stri
  * The score band each grade stands for, written once.
  *
  * The filter dropdown and the evaluation form each printed their own copy, and
- * they had already drifted — one of them still claimed the blacklist began at
- * 39 while the rubric had moved. The upper edge is written open («۷۹٫۹») rather
- * than as a whole number because the boundary the rubric applies is «below 60»,
- * not «at most 79»: a score that lands between them must read as B and not fall
+ * they had already drifted. The upper edge is written open («۸۹٫۹») rather than
+ * as a whole number because the boundary the rubric applies is «below 75», not
+ * «at most 89»: a score that lands between them must read as B and not fall
  * into a gap the label invented.
  */
 export const GRADE_RANGE_FA: Record<SOPGrade, string> = {
-  'A': '۸۰ – ۱۰۰',
-  'B': '۶۰ – ۷۹٫۹',
-  'C': '۴۰ – ۵۹٫۹',
-  'Blacklist': 'زیر ۴۰',
+  'A': '۹۰ – ۱۰۰',
+  'B': '۷۵ – ۸۹٫۹',
+  'C': '۶۰ – ۷۴٫۹',
+  'D': 'زیر ۶۰',
+  'Blacklist': '—',
   'Pending Review': '—',
   'Not Evaluated': '—',
 };

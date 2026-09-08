@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, Check, ChevronDown, Factory, Handshake, X, Globe } from 'lucide-react';
 import { Button } from './ui/button';
 import { BusinessPartner, BusinessPartnerType } from '../types';
-import { canSupplySources } from '../utils/sopEvaluation';
+import { canSupplySources, describeGrade } from '../utils/sopEvaluation';
 import { EntityName } from './EntityName';
 import { Input } from './ui/input';
 
@@ -72,17 +72,16 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
   // Current selected partner object
   const selectedPartner = partners.find(p => (anyType || p.type === type) && p.id === currentValue);
 
-  const getSOPGradeBadgeClass = (grade?: string) => {
-    switch (grade) {
-      case 'A': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      case 'B': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'C': return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'Pending Review': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'Blacklist': return 'bg-rose-100 text-rose-800 border-rose-300';
-      case 'Not Evaluated': return 'bg-muted text-muted-foreground border-border';
-      default: return 'bg-muted text-muted-foreground border-border';
-    }
-  };
+  /*
+   * The grade's own colour, from the shared table rather than a copy.
+   *
+   * This switch had no case for `D`, the failing grade of the current rubric,
+   * so a rejected supplier fell to the neutral default and looked unevaluated —
+   * and it carried no `dark:` variants, so every badge here was a bright patch
+   * in the dark theme. `describeGrade` already answers both, for every grade
+   * including the retired ones.
+   */
+  const getSOPGradeBadgeClass = (grade?: string) => describeGrade(grade).tone;
 
   // Filter partners. In anyType mode, every partner (manufacturer or supplier)
   // is selectable — they are independent now.

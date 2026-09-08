@@ -34,6 +34,7 @@ test('a stored evaluation that disagrees with its documents is re-derived on loa
   };
   const fixed = reconcileSupplierEvaluation(partner);
   assert.equal(fixed.evaluation.totalScore, 80, 'score must follow the documents');
+  assert.equal(fixed.evaluation.grade, 'B', '80 is a B under the 90/75/60 rubric');
   assert.equal(fixed.evaluation.updatedAt, '2020-01-01T00:00:00.000Z', 'must not look like a fresh evaluation');
   assert.equal(fixed.evaluation.updatedBy, 'qa');
 });
@@ -65,28 +66,28 @@ test('an unevaluated supplier stays Not Evaluated', () => {
 });
 
 test('every uniform document status lands on a grade the rubric defines', () => {
-  // The app briefly carried a second vocabulary (a 'D' grade) that the scoring
-  // rules could never produce; this keeps the two from diverging again.
-  const defined = new Set(['A', 'B', 'C', 'Blacklist', 'Not Evaluated']);
+  const defined = new Set(['A', 'B', 'C', 'D', 'Not Evaluated']);
   const cases: Record<string, string> = {
     'Approved': 'A',          // 5 x 20 = 100
-    'Permit Approval': 'B',   // 5 x 10 = 50 -> C
-    'Expired': 'Blacklist',   // 5 x 5 = 25, below the 40 boundary
-    'Not Submitted': 'Blacklist',
+    'Permit Approval': 'D',   // 5 x 10 = 50, below the 60 boundary
+    'Expired': 'D',           // 5 x 5 = 25
+    'Not Submitted': 'D',
   };
   for (const status of Object.keys(cases)) {
     const grade = computeSupplierEvaluation(docsWith(Object.fromEntries(SOP_DOCUMENTS_DEF.map(d => [d.key, status])))).grade;
+    assert.equal(grade, cases[status], `unexpected grade ${grade} for all-${status}`);
     assert.ok(defined.has(grade), `unexpected grade ${grade} for all-${status}`);
   }
 });
 
-test('the retired Pending Review band now falls to the blacklist', () => {
-  // 30-39 used to be its own grade. The boundary it left behind is the one
-  // place a regression would be silent, so it is asserted by score.
-  for (const score of [39, 35, 30]) {
-    assert.equal(calculateGradeAndStatus(score).grade, 'Blacklist', `score ${score}`);
+test('the retired grades are never produced but stay readable', () => {
+  // `Blacklist` and `Pending Review` belonged to earlier rubrics. Nothing
+  // writes them now; rows that carry them keep a label until reconciled.
+  for (const score of [0, 25, 39, 50, 59]) {
+    assert.equal(calculateGradeAndStatus(score).grade, 'D', `score ${score}`);
   }
-  assert.equal(calculateGradeAndStatus(40).grade, 'C', 'the C boundary itself is unchanged');
+  assert.equal(calculateGradeAndStatus(60).grade, 'C', 'the C boundary itself');
+  assert.ok(describeGrade('Blacklist').fa.includes('لیست سیاه'));
 });
 
 test('a supplier stored under the retired grade still renders a readable label', () => {
