@@ -11,7 +11,7 @@ import { Card } from '../../components/ui/card';
 import { categoryLabels } from '../../constants/categories';
 import { authFetch } from '../../services/authFetch';
 import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, SOPDocumentStatus, Status, SupplierEvaluation, User, Vendor } from '../../types';
-import { SOP_DOCUMENTS_DEF, computeSupplierEvaluation } from '../../utils/sopEvaluation';
+import { GRADE_RANGE_FA, SOP_DOCUMENTS_DEF, computeSupplierEvaluation, describeGrade } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../ui/textarea';
@@ -622,7 +622,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                       newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
-                    ۲. ارزیابی مدارک SOP
+                    ۲. ارزیابی فروشنده
                     <span className="bg-card/20 px-1.5 py-0.2 rounded text-2xs">
                       امتیاز: {computeNewSupplierEval().totalScore}
                     </span>
@@ -728,31 +728,55 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="bg-muted p-3 rounded-xl border border-border flex items-center justify-between">
-                      <div className="text-xs font-bold text-foreground">
-                        نتیجهٔ محاسبهٔ ارزیابی فروشنده: <span className="text-primary">{computeNewSupplierEval().status}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">امتیاز کل: <strong>{computeNewSupplierEval().totalScore} / 100</strong></span>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold text-white ${
-                          computeNewSupplierEval().grade === 'A' ? 'bg-emerald-600' :
-                          computeNewSupplierEval().grade === 'B' ? 'bg-blue-600' :
-                          computeNewSupplierEval().grade === 'C' ? 'bg-amber-600' :
-                          computeNewSupplierEval().grade === 'Pending Review' ? 'bg-yellow-600' : 'bg-rose-600'
-                        }`}>
-                          گرید {computeNewSupplierEval().grade}
+                    {/* One evaluation, read once. The badge ladder here was
+                        hand-written and had no case for `D`, the failing grade
+                        of the current rubric, so it shared the red of the
+                        catch-all with «ارزیابی نشده» — an unevaluated supplier
+                        wore a red badge reading «گرید Not Evaluated».
+                        `describeGrade` answers the colour and both names for
+                        every grade, retired ones included. */}
+                    {(() => {
+                      const ev = computeNewSupplierEval();
+                      const label = describeGrade(ev.grade);
+                      return (
+                        <div className="bg-muted p-3 rounded-xl border border-border flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-bold text-foreground">
+                            نتیجهٔ محاسبهٔ ارزیابی فروشنده: <span className="text-primary">{label.en}{label.fa ? ` (${label.fa})` : ''}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              امتیاز کل: <strong className="font-mono">{ev.totalScore.toLocaleString('fa-IR')}</strong> / ۱۰۰
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${label.tone}`}>
+                              {ev.grade === 'Not Evaluated' ? 'ارزیابی نشده' : `گرید ${ev.grade}`}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* The bands the result above is measured against, from the
+                        same constant the repository panel prints. This dialog
+                        showed a grade without ever saying what earned it. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-mono text-muted-foreground">
+                      {(['A', 'B', 'C', 'D'] as const).map(g => (
+                        <span key={g} className="flex items-center gap-1">
+                          <span className="font-bold text-foreground font-sans">گرید {g}</span>
+                          <span>{GRADE_RANGE_FA[g]}</span>
                         </span>
-                      </div>
+                      ))}
                     </div>
 
                     <div className="space-y-2">
-                      {[
-                        { key: 'manufacturerLetter', label: '۱. نامه نمایندگی از سازنده (Authorization Letter)' },
-                        { key: 'authorizedSignatory', label: '۲. تعهدنامه صاحبان امضای مجاز (Authorized Signatory)' },
-                        { key: 'businessLicense', label: '۳. پروانه کسب یا مدرک ثبتی معتبر (Business License)' },
-                        { key: 'officialEnglishTranslation', label: '۴. ترجمه رسمی انگلیسی مدارک (English Translation)' },
-                        { key: 'legalization', label: '۵. تاییدیه سفارت یا آپوستیل (Embassy Legalization)' }
-                      ].map((doc) => (
+                      {/* The five documents from the shared definition, not a
+                          second list: this dialog named them differently from
+                          the repository's own form («نامه نمایندگی از سازنده»
+                          against «نامه‌نگاری و معرفی‌نامه سازنده»), so the same
+                          document had two names depending on where it was
+                          filled in. */}
+                      {SOP_DOCUMENTS_DEF.map((def, i) => {
+                        const doc = { key: def.key, label: `${(i + 1).toLocaleString('fa-IR')}. ${def.nameFa} (${def.nameEn})` };
+                        return (
                         <div key={doc.key} className="flex items-center justify-between p-2.5 bg-card border border-border rounded-xl">
                           <span className="font-semibold text-foreground">{doc.label}</span>
                           <select
@@ -767,7 +791,8 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                             <option value="Not Submitted">عدم ارائه (۰ امتیاز)</option>
                           </select>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
