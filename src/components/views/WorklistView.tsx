@@ -9,6 +9,9 @@ import { GradeBadge } from '../GradeBadge';
 import { categoryLabels } from '../../constants/categories';
 import { can } from '../../utils/permissions';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
+import { describeVendorRank } from '../../utils/vendorRank';
+import { isVendorRejected } from '../../utils/vendorState';
+import { isSampleRecord } from '../../utils/sampleStatus';
 
 /**
  * The worklist behind the dashboard's four pending-action counters.
@@ -84,17 +87,28 @@ export const TASK_META: Record<TaskKey, {
 /**
  * The four backlogs, derived in one place so the dashboard counter and this
  * list can never disagree about what is outstanding.
+ *
+ * That was the intent and not the fact: the dashboard kept its own copy of all
+ * four filters, and the two had already drifted — its licence backlog counted
+ * samples, this one does not. The dashboard calls this function now.
  */
 export function buildWorklist(
   key: TaskKey,
   db: Vendor[],
   partners: BusinessPartner[],
 ): WorklistItem[] {
-  const realVendors = db.filter(v => !v.isSample && v.category !== 'sample');
+  const realVendors = db.filter(v => !isSampleRecord(v));
 
   if (key === 'eval') {
+    /*
+     * «Not evaluated» means no department has scored it, derived the way the
+     * rest of the application derives a source grade. Reading the stored
+     * `grade` column instead — which is what this did — put a source with real
+     * scores but an empty column on the backlog for ever, and took a source
+     * off it on the strength of a stale letter nobody's scores support.
+     */
     return realVendors
-      .filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'))
+      .filter(v => !isVendorRejected(v) && describeVendorRank(v).grade === null)
       .map(v => ({
         id: v.id,
         vendor: v,
@@ -108,13 +122,13 @@ export function buildWorklist(
 
   if (key === 'risk') {
     return realVendors
-      .filter(v => v.status !== 'rejected' && !v.riskAssessment)
+      .filter(v => !isVendorRejected(v) && !v.riskAssessment)
       .map(v => ({
         id: v.id,
         vendor: v,
         title: v.name,
         subtitle: v.material || 'بدون ماده',
-        note: v.grade ? `گرید ${v.grade}` : 'بدون گرید',
+        note: describeVendorRank(v).grade ? `گرید ${describeVendorRank(v).grade}` : 'بدون گرید',
         tone: 'neutral' as const,
         order: 0,
       }));

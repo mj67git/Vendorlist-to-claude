@@ -16,6 +16,7 @@ import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
+import { buildWorklist } from './WorklistView';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../../assets/logo.png';
 
@@ -70,17 +71,6 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
 
   const rejectedVendors = db.filter(isVendorRejected);
 
-  const expiringVendors = useMemo(() => {
-    return db
-      .filter(v => !!v.ircExpiryDate && v.ircExpiryDate.trim() !== '' && v.ircExpiryDate.trim().toLowerCase() !== 'n/a')
-      .map(v => ({
-        vendor: v,
-        check: checkLicenseExpiry(v.ircExpiryDate)
-      }))
-      .filter(item => item.check.status === 'expiring_soon' || item.check.status === 'expired')
-      .sort((a, b) => (a.check.daysLeft || 0) - (b.check.daysLeft || 0));
-  }, [db]);
-
   // Grade distribution for the donut (semantic ordinal grade colours).
   const gradeDistribution = useMemo(() => [
       { name: 'گرید A', value: stats.gradeA, color: '#10b981' },
@@ -127,19 +117,22 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     return { slices: slices.filter(d => d.value > 0), total: a + b + c + black + none };
   }, [partners]);
 
-  // Pending-actions center: real, actionable quality gaps.
-  const pendingActions = useMemo(() => {
-    const realVendors = sourceVendors;
-    const notEvaluated = realVendors.filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'));
-    const noRisk = realVendors.filter(v => v.status !== 'rejected' && !v.riskAssessment);
-    const sopPending = (partners || []).filter(p => p.type === 'Supplier' && (!p.evaluation || p.evaluation.grade === 'Not Evaluated'));
-    return [
-      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, icon: ClipboardList, tone: 'amber' },
-      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, icon: ShieldAlert, tone: 'orange' },
-      { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
-      { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: expiringVendors.length, icon: Calendar, tone: 'rose' },
-    ];
-  }, [sourceVendors, partners, expiringVendors]);
+  /*
+   * Pending-actions centre: real, actionable quality gaps.
+   *
+   * Counted by `buildWorklist`, the same function the کارتابل itself uses, so
+   * the tile and the list it opens cannot disagree. They already did: this kept
+   * its own copy of all four filters, its licence backlog counted samples while
+   * the list excluded them, and its «not evaluated» test read the stored grade
+   * column rather than deriving from the department scores — so a source with
+   * real scores and an empty column sat on the dashboard for ever.
+   */
+  const pendingActions = useMemo(() => ([
+    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', db, partners || []).length, icon: ClipboardList, tone: 'amber' },
+    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
+    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },
+    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', db, partners || []).length, icon: Calendar, tone: 'rose' },
+  ]), [db, partners]);
 
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
