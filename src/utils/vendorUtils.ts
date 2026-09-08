@@ -177,7 +177,17 @@ export function calculateOverallScore(scores: Scores | null, forceCalculate: boo
   const hasAnyScore = values.some(v => v > 0);
   const isFullyScored = values.every(v => v > 0);
   
-  if (!hasAnyScore) return 0;
+  /*
+   * Nothing scored is not a score of zero.
+   *
+   * This returned 0, so a source nobody had evaluated yet showed a bold «۰» in
+   * the ring on its own page and a zero in the material list — a failing mark
+   * for work that has not been done. `describeVendorRank` already had to guard
+   * against this figure before calling in; now the answer itself is honest and
+   * every caller that checks for `null` (the detail ring's «بدون امتیاز»
+   * branch among them) reaches the branch it was written for.
+   */
+  if (!hasAnyScore) return null;
   if (!isFullyScored && !forceCalculate) return null;
   
   return Math.round(

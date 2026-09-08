@@ -962,7 +962,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                 {/* SPS Index (Left Part - Green) */}
                 <div className={`w-[18%] ${getScoreColorClass(overall, true)} text-white flex flex-col items-center justify-center p-3 border-r border-blue-950`}>
                   <div className="text-[10px] sm:text-xs font-medium opacity-90 mb-1">شاخص (SPS)</div>
-                  <div className="text-3xl font-black font-sans tracking-tight">{overall || 0}</div>
+                  <div className="text-3xl font-black font-sans tracking-tight">{overall !== null ? overall : '—'}</div>
                 </div>
              </div>
 
@@ -1083,7 +1083,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     </div>
                     <div className="flex flex-col text-right">
                       <span className="text-xs text-slate-500 font-bold">جمع امتیاز نهایی</span>
-                      <span className="text-sm font-bold text-slate-700 font-mono mt-0.5">{overall || 0} از 100</span>
+                      <span className="text-sm font-bold text-slate-700 font-mono mt-0.5">{overall !== null ? `${overall} از 100` : 'ارزیابی نشده'}</span>
                     </div>
                   </div>
                   

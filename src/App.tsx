@@ -541,6 +541,20 @@ export default function App() {
   // directly into a detail page has none, so Back must unwind the stack itself
   // rather than sending the user off the site.
   const pushedEntriesRef = useRef(0);
+  /*
+   * The next stack change replaces where we are rather than going deeper, so
+   * the URL must be written with `replaceState`.
+   *
+   * Two moves leave a page behind instead of stacking on it: a saved
+   * registration, where the record takes the form's place, and a saved edit,
+   * which pops the form. The app stack handled both correctly, but the URL
+   * effect below pushed a browser entry either way — so the browser's own
+   * history still held `#/category/<cat>/new`, and one Back from the record
+   * just saved landed the user on an empty «سورس جدید» form. That entry names
+   * a page the app had already finished with, so `popstate` could not find it
+   * on the stack and adopted it as a new location.
+   */
+  const replaceUrlRef = useRef(false);
   const canPopBrowserRef = { get current() { return pushedEntriesRef.current > 0; } };
 
   useEffect(() => {
@@ -556,13 +570,14 @@ export default function App() {
     try {
       // The very first render adopts the current URL rather than adding to the
       // browser stack; later pushes are real entries so Back/Forward work.
-      if (isFirst) {
+      if (isFirst || replaceUrlRef.current) {
         window.history.replaceState(null, '', hash);
       } else {
         window.history.pushState(null, '', hash);
         pushedEntriesRef.current += 1;
       }
     } catch { /* history is unavailable (e.g. sandboxed); URL sync is optional */ }
+    finally { replaceUrlRef.current = false; }
   }, [viewHistory]);
 
   useEffect(() => {
@@ -932,6 +947,8 @@ export default function App() {
   // so it pops the form entry from the stack rather than asking the browser to
   // go "back" — the entry behind it is not guaranteed to be the list.
   const closeSourceForm = () => {
+    // The form page is finished, not somewhere to come back to.
+    replaceUrlRef.current = true;
     setViewHistory(popForm);
   };
 
@@ -1660,7 +1677,17 @@ export default function App() {
              came from, which for a form opened off a record is that record.
              (This is why rule 8a now reads "a registration lands on its record":
              the batch button is what keeps bulk entry painless.) */
-          onSaved={(saved) => { if (saved && !editing) handleSelectVendor(saved); else closeSourceForm(); }}
+          onSaved={(saved) => {
+            if (saved && !editing) {
+              // The record takes the form's place in the stack, so it takes its
+              // place in the browser's history too — Back from here belongs to
+              // whatever the user was doing before they opened the form.
+              replaceUrlRef.current = true;
+              handleSelectVendor(saved);
+            } else {
+              closeSourceForm();
+            }
+          }}
           onSave={(v, msg) => (editing ? handleUpdateVendor(v, msg) : handleAddVendor(v))}
           currentUser={currentUser}
           partners={businessPartners}
