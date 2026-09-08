@@ -52,6 +52,13 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // Only the stages the current user is allowed to perform are shown.
   const canRisk = can(currentUser, 'vendor.risk');
   const canAnalysis = can(currentUser, 'vendor.analysis');
+  // The two verdict boxes used to hang off `vendor.analysis`, which is the
+  // permission for *recording a test result* — a different act from ruling on
+  // it, and one the server never accepted for this: it demanded `vendor.edit`,
+  // so the box was offered to accounts the endpoint refused. Each box now shows
+  // the permission the server actually asks for (rule 14).
+  const canDecideSample = can(currentUser, 'sample.decide');
+  const canDecideSource = can(currentUser, 'vendor.decide');
   const canEditVendor = can(currentUser, 'vendor.edit');
   const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
@@ -1661,7 +1668,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     this block is inside `analysisRecords.length > 0` — so the
                     control cannot become the old dropdown under a new name and
                     approve a sample nobody has tested. */}
-                {isSampleRecord(vendor) && canAnalysis && (
+                {isSampleRecord(vendor) && canDecideSample && (
                   <div className={`rounded-xl p-4 border ${
                     vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800'
                     : vendor.status === 'approved' ? 'bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
@@ -1742,7 +1749,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 )}
 
                 {/* Admin decision box for sources/suppliers (not samples) */}
-                {!isSampleRecord(vendor) && canAnalysis && (
+                {!isSampleRecord(vendor) && canDecideSource && (
                   <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />

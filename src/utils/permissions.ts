@@ -715,3 +715,17 @@ export function forbiddenRawScoreChanges(
   }
   return offending;
 }
+
+/**
+ * The read a source category needs.
+ *
+ * Two of them are their own permission since the granular split, and the server
+ * serves fewer rows without it (`readableVendors`), so a page that checked only
+ * `vendor.read` would draw an empty table and blame the data. Everything else
+ * is an ordinary slice of the register and follows `vendor.read`.
+ */
+export function categoryPermission(category: string | null | undefined): Permission {
+  if (category === 'sample') return 'sample.read';
+  if (category === 'blacklist') return 'blacklist.read';
+  return 'vendor.read';
+}

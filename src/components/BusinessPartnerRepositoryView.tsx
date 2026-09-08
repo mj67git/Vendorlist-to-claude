@@ -599,6 +599,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // both follow `partner.files` — seeing that a partner is graded B is a
   // different thing from taking its business licence off the system.
   const canFiles = can(currentUser, 'partner.files');
+  // Grading the documents and switching a partner off are decisions of their
+  // own since the granular split, and the server refuses them separately from
+  // `partner.edit` (rule 14). Commercial keeps the record and the status;
+  // quality awards the grade.
+  const canEvaluate = can(currentUser, 'partner.evaluate');
+  const canSetStatus = can(currentUser, 'partner.status');
 
   const handleDocFileView = async (doc: SOPDocumentEval, partnerId?: string) => {
     const url = await ensureDocDataUrl(doc, partnerId);
@@ -1067,8 +1073,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   handleOpenEdit(partner);
                                   setActiveModalTab('evaluation');
                                 }}
-                                disabled={!can(currentUser, 'partner.edit')}
-                                title={can(currentUser, 'partner.edit') ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
+                                disabled={!canEvaluate}
+                                title={canEvaluate ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
                                 className="text-2xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                               >
                                 شروع ارزیابی
@@ -1483,6 +1489,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               {/* TAB 2: Supplier Evaluation (SOP) - Only visible when type === 'Supplier' */}
               {formData.type === 'Supplier' && activeModalTab === 'evaluation' && (
                 <div className="space-y-4">
+                  {!canEvaluate && (
+                    <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/60 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 text-2xs font-semibold leading-relaxed">
+                      این بخش برای شما فقط خواندنی است: ثبت وضعیت مدارک و در نتیجه تعیین گرید فروشنده، مجوز جداگانه‌ای دارد که حساب شما آن را ندارد.
+                    </div>
+                  )}
                   {/* Banner */}
                   <div className="p-3 bg-muted/60 border border-border rounded-xl flex items-center justify-between shadow-xs">
                     <div className="space-y-0.5">
@@ -1553,6 +1564,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               <select
                                 value={doc.status || ''}
                                 onChange={e => handleDocStatusChange(def.key, e.target.value as SOPDocumentStatus)}
+                                // The grade follows from these five statuses,
+                                // and only a grade-A seller may be attached to
+                                // a source — so this control is the decision,
+                                // and the server refuses it without
+                                // `partner.evaluate`.
+                                disabled={!canEvaluate}
+                                title={canEvaluate ? undefined : 'ارزیابی مدارک فروشنده در دسترس نقش شما نیست.'}
                                 className={`w-full text-xs rounded-lg px-3 py-2 border font-bold focus:outline-none transition-colors ${
                                   !doc.status ? 'border-amber-300 bg-amber-50/50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200' : 'border-border bg-card text-foreground'
                                 }`}
@@ -1873,7 +1891,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {can(currentUser, 'partner.edit') && selectedPartner.status !== 'Blacklisted' && (
+                {canSetStatus && selectedPartner.status !== 'Blacklisted' && (
                   <Button
                     type="button"
                     variant="destructive"
@@ -1886,7 +1904,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>لیست سیاه</span>
                   </Button>
                 )}
-                {can(currentUser, 'partner.edit') && selectedPartner.status === 'Blacklisted' && (
+                {canSetStatus && selectedPartner.status === 'Blacklisted' && (
                   <Button
                     type="button"
                     variant="outline"

@@ -72,8 +72,11 @@ export const TASK_META: Record<TaskKey, {
     label: 'ارزیابی معوق فروشندگان',
     description: 'فروشندگانی که مدارک آن‌ها هنوز ارزیابی نشده است. با کلیک روی هر ردیف وارد مخزن شرکای تجاری می‌شوید.',
     icon: Award,
-    permission: 'partner.edit',
-    readOnlyNote: 'شما مجوز ویرایش شرکای تجاری ندارید؛ این فهرست فقط برای مشاهده است.',
+    // The work in this backlog is grading the documents, which is its own
+    // permission since the granular split — `partner.edit` would offer the
+    // list as actionable to whoever merely maintains the record.
+    permission: 'partner.evaluate',
+    readOnlyNote: 'شما مجوز ارزیابی مدارک فروشنده را ندارید؛ این فهرست فقط برای مشاهده است.',
   },
   irc: {
     label: 'IRC نزدیک انقضا یا منقضی',

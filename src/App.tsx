@@ -48,7 +48,8 @@ import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
 import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
-import { can, effectivePermissions, type Permission } from './utils/permissions';
+import { can, categoryPermission, effectivePermissions, type Permission } from './utils/permissions'
+import { useServerViewAccess } from './hooks/useServerViewAccess';
 import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
@@ -754,6 +755,12 @@ export default function App() {
     return () => { cancelled = true; };
   }, [showUserMenu, currentUser]);
   const { isDark, toggleTheme } = useTheme();
+
+  // The two read-only views whose permission the server answers on entry. Kept
+  // here with the other top-level hooks, above the login early-return, so the
+  // hook order cannot change between renders (rule 10).
+  const gatedView = view === 'archive' || view === 'supplier-audit' ? view : null;
+  const viewAccess = useServerViewAccess(gatedView, !!currentUser && !isLocalMode());
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
   const handleLogout = async () => {
@@ -1635,6 +1642,20 @@ export default function App() {
         onHome={() => navigate('home')}
       />
     );
+    const DENY_ARCHIVE = (
+      <AccessDenied
+        title="عدم دسترسی به آرشیو کامل داده‌ها"
+        detail="حساب کاربری شما مجوز باز کردن آرشیو کامل را ندارد."
+        onHome={() => navigate('home')}
+      />
+    );
+    const DENY_DIRECTORY = (
+      <AccessDenied
+        title="عدم دسترسی به بررسی یکپارچه تأمین‌کنندگان"
+        detail="حساب کاربری شما مجوز باز کردن این نما را ندارد."
+        onHome={() => navigate('home')}
+      />
+    );
 
     if (formMode) {
       // The source form as a full page: it is the longest form in the app and
@@ -1727,12 +1748,13 @@ export default function App() {
       keyName = 'home';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
-      // The archive is a view over the source data, so it follows `vendor.read`
-      // — the permission the endpoint behind it enforces. (It used to check a
-      // separate `archive.read`, which no endpoint enforced; that name was
-      // retired rather than renamed — see LEGACY_PERMISSIONS.)
+      // `archive.read` again, and this time the server enforces it: the view
+      // asks `GET /api/vendors?view=archive` on entry and is refused there, so
+      // the check below is the UX half of a real answer rather than the whole
+      // of it (rule 14). It was retired once precisely because no endpoint
+      // stood behind it.
       keyName = 'archive';
-      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
+      content = (!can(currentUser, 'archive.read') || viewAccess === 'denied') ? DENY_ARCHIVE : (
         <ArchiveView db={db} isLoading={isSyncing && db.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
       );
     } else if (view === 'tasks') {
@@ -1751,7 +1773,7 @@ export default function App() {
       );
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
-      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <SupplierAuditView db={db} isLoading={isSyncing && db.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+      content = (!can(currentUser, 'supplier-audit.read') || viewAccess === 'denied') ? DENY_DIRECTORY : <SupplierAuditView db={db} isLoading={isSyncing && db.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, 'material.read') ? (
@@ -1817,7 +1839,11 @@ export default function App() {
         );
       }
     } else if (view === 'users') {
-      if (can(currentUser, 'users.manage')) {
+      // Opening the module is `users.read` now: the list is what the page is,
+      // and `GET /api/users` asks for exactly that. What an account can then do
+      // inside it is decided button by button, by the permissions the other
+      // user endpoints enforce.
+      if (can(currentUser, 'users.read')) {
         keyName = 'users';
         content = <UsersView currentUser={currentUser} />;
       } else {
@@ -1832,7 +1858,15 @@ export default function App() {
       }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
-      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      content = !can(currentUser, categoryPermission(categoryId)) ? (
+        categoryId === 'sample' || categoryId === 'blacklist' ? (
+          <AccessDenied
+            title={`عدم دسترسی به دستهٔ «${categoryLabels[categoryId]?.fa ?? categoryId}»`}
+            detail="حساب کاربری شما مجوز مشاهدهٔ این دسته را ندارد؛ ردیف‌های آن اصلاً برای این حساب فرستاده نمی‌شوند."
+            onHome={() => navigate('home')}
+          />
+        ) : DENY_SOURCES
+      ) : <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
       content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
@@ -1975,7 +2009,13 @@ export default function App() {
               <span>دسته‌بندی‌ها</span>
             </div>
             )}
-            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
+            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][])
+              // Two of the categories are their own read since the granular
+              // split, and the server serves fewer rows without them — an entry
+              // that leads to a page the account is not sent data for is worse
+              // than no entry.
+              .filter(([id]) => can(currentUser, categoryPermission(id)))
+              .map(([id, meta]) => {
               const count = db.filter(v =>
                 id === 'sample' ? (v.category === 'sample' || v.isSample) :
                 id === 'blacklist' ? isInBlacklistCategory(v) :
@@ -1993,9 +2033,11 @@ export default function App() {
               );
             })}
 
+            {(can(currentUser, 'partner.read') || can(currentUser, 'material.read')) && (
             <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>مدیریت پایگاه داده</span>
             </div>
+            )}
             {can(currentUser, 'partner.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={Building2} label="مخزن شرکای تجاری"
@@ -2015,9 +2057,12 @@ export default function App() {
               />
             )}
 
+            {(can(currentUser, 'archive.read') || can(currentUser, 'audit.read')
+              || can(currentUser, 'users.read') || can(currentUser, 'supplier-audit.read')) && (
             <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
               <span>کیفیت و نظارت</span>
             </div>
+            )}
             {/* Each entry is gated by the permission its page and endpoints
                 actually check, not by `role === 'admin'`. A raw role test here
                 diverged from the pages themselves: someone holding the
@@ -2025,7 +2070,7 @@ export default function App() {
                 the link, and the archive was hidden from everyone but admins even
                 though nothing restricted it (rule 14: one policy table, both
                 sides). */}
-            {can(currentUser, 'vendor.read') && (
+            {can(currentUser, 'archive.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={Archive} label="آرشیو کامل داده‌ها"
                 badge={db.length}
@@ -2043,7 +2088,7 @@ export default function App() {
                 onClick={() => navigate('audit-trail')}
               />
             )}
-            {can(currentUser, 'users.manage') && (
+            {can(currentUser, 'users.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={UserCog} label="مدیریت کاربران"
                 variant="audit-trail"
@@ -2051,7 +2096,7 @@ export default function App() {
                 onClick={() => navigate('users')}
               />
             )}
-            {can(currentUser, 'vendor.read') && (
+            {can(currentUser, 'supplier-audit.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
                 variant="supplier-audit"

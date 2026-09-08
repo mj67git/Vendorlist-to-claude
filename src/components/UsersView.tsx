@@ -188,6 +188,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
   // Reading the trail is its own permission; administering accounts does not
   // grant it, so the activity button is only offered to someone who holds both.
   const canReadAudit = can(currentUser, 'audit.read');
+  // The module's own work is three permissions since the granular split:
+  // opening it and editing accounts (`users.manage`), handing access out
+  // (`users.permissions`) and setting a temporary password (`users.password`).
+  // The server enforces each separately, so the buttons follow one by one
+  // rather than all appearing for whoever can open the page (rule 14).
+  const canManageUsers = can(currentUser, 'users.manage');
+  const canSetPermissions = can(currentUser, 'users.permissions');
+  const canResetPassword = can(currentUser, 'users.password');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -601,15 +609,17 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <span>خروجی Excel</span>
           </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={openCreate}
-            className="font-bold shrink-0"
-          >
-            <Plus />
-            <span>کاربر جدید</span>
-          </Button>
+          {canManageUsers && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={openCreate}
+              className="font-bold shrink-0"
+            >
+              <Plus />
+              <span>کاربر جدید</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -777,9 +787,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       <th scope="row" className="sticky right-0 z-10 bg-card py-2.5 px-4 text-right font-bold border-b border-l border-border">
                         <button
                           type="button"
-                          onClick={() => openPermissions(u)}
-                          className="text-right hover:text-primary transition-colors"
-                          title={`ویرایش سطح دسترسی ${u.name}`}
+                          onClick={() => canSetPermissions && openPermissions(u)}
+                          disabled={!canSetPermissions}
+                          className="text-right hover:text-primary transition-colors disabled:hover:text-foreground disabled:cursor-default"
+                          title={canSetPermissions ? `ویرایش سطح دسترسی ${u.name}` : u.name}
                         >
                           <span className="block text-xs font-bold text-foreground">{u.name}</span>
                           <span className="block text-2xs font-medium text-muted-foreground">
@@ -970,15 +981,19 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-center gap-1">
-                      <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
-                        className="text-muted-foreground hover:text-primary">
-                        <Pencil />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
-                        onClick={() => openPermissions(u)}
-                        className="text-muted-foreground hover:text-primary">
-                        <SlidersHorizontal />
-                      </Button>
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <Pencil />
+                        </Button>
+                      )}
+                      {canSetPermissions && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
+                          onClick={() => openPermissions(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <SlidersHorizontal />
+                        </Button>
+                      )}
                       {canReadAudit && (
                         <Button type="button" variant="ghost" size="icon-xs" title="فعالیت اخیر"
                           onClick={() => openActivity(u)}
@@ -986,23 +1001,29 @@ export function UsersView({ currentUser }: UsersViewProps) {
                           <History />
                         </Button>
                       )}
-                      <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
-                        onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
-                        className="text-muted-foreground hover:text-amber-600">
-                        <KeyRound />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
-                        disabled={isSelf(u)}
-                        onClick={() => setActive(u, !u.isActive)}
-                        className="text-muted-foreground hover:text-rose-600">
-                        {u.isActive ? <UserX /> : <CheckCircle />}
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
-                        disabled={isSelf(u)}
-                        onClick={() => setDeleteTarget(u)}
-                        className="text-muted-foreground hover:text-rose-600">
-                        <Trash2 />
-                      </Button>
+                      {canResetPassword && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
+                          onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
+                          className="text-muted-foreground hover:text-amber-600">
+                          <KeyRound />
+                        </Button>
+                      )}
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                          disabled={isSelf(u)}
+                          onClick={() => setActive(u, !u.isActive)}
+                          className="text-muted-foreground hover:text-rose-600">
+                          {u.isActive ? <UserX /> : <CheckCircle />}
+                        </Button>
+                      )}
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
+                          disabled={isSelf(u)}
+                          onClick={() => setDeleteTarget(u)}
+                          className="text-muted-foreground hover:text-rose-600">
+                          <Trash2 />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

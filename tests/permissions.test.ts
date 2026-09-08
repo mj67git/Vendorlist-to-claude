@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  can, canScoreDepartment, canScoreAny, scorableDepartments,
+  can, canScoreDepartment, canScoreAny, categoryPermission, scorableDepartments,
   forbiddenScoreChanges, forbiddenRawScoreChanges,
   effectivePermissions, hasCustomPermissions, roleTemplate, sanitizePermissions,
   ALL_PERMISSIONS, SCORING_DEPARTMENTS, type Permission, type Role,
@@ -378,4 +378,15 @@ test('raw per-question scores are checked the same way', () => {
 test('an absent payload changes nothing', () => {
   assert.deepEqual(forbiddenScoreChanges('finance', { qa: 1 }, null), []);
   assert.deepEqual(forbiddenRawScoreChanges('finance', { qa: {} }, undefined), []);
+});
+
+test('the two categories that are their own read say so', () => {
+  // The sidebar and the category page ask this rather than testing `vendor.read`
+  // everywhere: without these two the server sends fewer rows, so a page that
+  // checked only the general read would draw an empty table and blame the data.
+  assert.equal(categoryPermission('sample'), 'sample.read');
+  assert.equal(categoryPermission('blacklist'), 'blacklist.read');
+  for (const ordinary of ['foreign', 'domestic', 'veterinary', 'packaging', null, undefined]) {
+    assert.equal(categoryPermission(ordinary), 'vendor.read', `${ordinary}`);
+  }
 });
