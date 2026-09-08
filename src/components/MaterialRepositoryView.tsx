@@ -1007,26 +1007,30 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* پیش‌نمایش نام‌های استاندارد */}
-                  {/* Inverted on purpose: this is system output, not an input, and it has to
-                      read that way in both themes. `foreground`/`background` swap
-                      together, unlike the fixed slate gradient that used to be
-                      here — which vanished into a dark page. */}
-                  <div className="bg-foreground text-background p-4 sm:p-5 rounded-2xl border border-border shadow-md space-y-3">
-                    <div className="flex items-center gap-2 pb-2 border-b border-background/20">
-                      <Sparkles className="w-4 h-4 shrink-0" />
-                      <span className="text-xs font-bold">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
+                  {/* Card colours, not an inversion.
+                      Painting the foreground token on the background one made
+                      this near-black in the light theme: the one dark block on
+                      an otherwise light form, which reads as a rendering fault
+                      rather than as «this is what the system will write». It is
+                      a card now, marked as output by a primary-tinted border
+                      and the icon, the way the rest of the application marks a
+                      computed result. */}
+                  <div className="bg-muted p-4 sm:p-5 rounded-2xl border border-primary/30 shadow-xs space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-border">
+                      <Sparkles className="w-4 h-4 shrink-0 text-primary" />
+                      <span className="text-xs font-bold text-foreground">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
-                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-bold select-all">
+                        <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs font-bold text-foreground select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
-                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-mono font-bold select-all" dir="ltr">
+                        <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name</label>
+                        <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs font-mono font-bold text-foreground select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
                       </div>
