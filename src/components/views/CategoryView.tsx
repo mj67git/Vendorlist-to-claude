@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Archive, Download, Search, X } from 'lucide-react';
 import { Pagination } from '../../components/Pagination';
 import { PerPageSelect } from '../ui/per-page-select';
@@ -9,6 +9,7 @@ import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { adminRejectionReason, hasQcReject, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { describeVendorRank } from '../../utils/vendorRank';
 import { isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
@@ -49,7 +50,7 @@ export function CategoryView({
   const [currentPage, setCurrentPage] = useState(1);
   /** Groups per page. Same control and same sizes as every other paged module. */
   const [perPage, setPerPage] = useState(20);
-  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus'>('material');
+  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus' | 'rejectedAt' | 'route' | 'lowestScore'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   // ---- recorded source selections -----------------------------------------
@@ -130,11 +131,28 @@ export function CategoryView({
    * with «بهترین گرید» still selected would leave the control showing nothing
    * while the list stayed ordered by a rule the reader cannot see.
    */
+  // `null` so the first render counts as an arrival too — otherwise a link
+  // opened straight into the blacklist would keep the alphabetical default.
+  const lastCategoryRef = useRef<Category | null>(null);
   useEffect(() => {
     const allowed = categoryId === 'sample'
       ? ['material', 'count', 'sampleStatus']
-      : ['material', 'count', 'grade', 'expiry'];
-    if (!allowed.includes(sortBy)) setSortBy('material');
+      : categoryId === 'blacklist'
+        // «Best grade» and «soonest licence expiry» are not questions this list
+        // answers: every row here is disqualified, so the grade ranking gives
+        // them all the same score and the sort visibly does nothing, and the
+        // licence of a source nobody may buy from is not what a reviewer looks
+        // at — the chip for it is already hidden here, and the sort option was
+        // simply left behind.
+        ? ['material', 'count', 'rejectedAt', 'route', 'lowestScore']
+        : ['material', 'count', 'grade', 'expiry'];
+    // The blacklist opens on what happened most recently, not on the alphabet:
+    // this register is read to see what has just left the supply chain. Applied
+    // on arrival only — once the reader picks an order it is theirs to keep.
+    const arrived = lastCategoryRef.current !== categoryId;
+    lastCategoryRef.current = categoryId;
+    const fallback = categoryId === 'blacklist' ? 'rejectedAt' : 'material';
+    if (!allowed.includes(sortBy) || arrived) setSortBy(fallback as typeof sortBy);
   }, [categoryId, sortBy]);
 
   const meta = categoryLabels[categoryId];
@@ -250,6 +268,30 @@ export function CategoryView({
       sorted.sort((a, b) => Math.min(...a.vendors.map(rank)) - Math.min(...b.vendors.map(rank)));
     } else if (sortBy === 'expiry') {
       sorted.sort((a, b) => soonestExpiry(a.vendors) - soonestExpiry(b.vendors));
+    } else if (sortBy === 'rejectedAt') {
+      /*
+       * Newest first, keyed on the record's own timestamp rather than the date
+       * written into the rejection log: that log line carries a Persian string
+       * in one record and an ISO one in the next, so comparing them would order
+       * by which convention happened to be used. For a blacklisted source the
+       * last change *is* the rejection in all but the rarest case.
+       */
+      const changedAt = (v: Vendor) => (v.updatedAt ? new Date(v.updatedAt).getTime() : 0);
+      const newest = (vs: Vendor[]) => Math.max(...vs.map(changedAt));
+      sorted.sort((a, b) => newest(b.vendors) - newest(a.vendors));
+    } else if (sortBy === 'route') {
+      // A person's decision first, then the ones the score disqualified: the
+      // two are reviewed by different people in different ways.
+      const manualFirst = (vs: Vendor[]) => (vs.some(v => !!adminRejectionReason(v)) ? 0 : 1);
+      sorted.sort((a, b) => manualFirst(a.vendors) - manualFirst(b.vendors));
+    } else if (sortBy === 'lowestScore') {
+      // Worst first. A source with no score at all is not a zero — it goes to
+      // the end rather than pretending to be the worst of them.
+      const worst = (vs: Vendor[]) => {
+        const scores = vs.map(v => describeVendorRank(v).score).filter((n): n is number => n !== null);
+        return scores.length ? Math.min(...scores) : Infinity;
+      };
+      sorted.sort((a, b) => worst(a.vendors) - worst(b.vendors));
     }
     return sorted;
   }, [grouped, sortBy]);
@@ -339,7 +381,9 @@ export function CategoryView({
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
              
               className="text-xs bg-background border border-border rounded-lg px-2.5 py-2 text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
-              title="مرتب‌سازی گروه‌های ماده"
+              title={categoryId === 'blacklist'
+                ? "مرتب‌سازی گروه‌های ماده — «تازه‌ترین رد» بر اساس آخرین تغییر رکورد است"
+                : "مرتب‌سازی گروه‌های ماده"}
             >
               <option value="material">نام ماده (الفبا)</option>
               <option value="count">تعداد سورس (بیشترین)</option>
@@ -348,6 +392,12 @@ export function CategoryView({
                   page actually sorts by is which samples still need a verdict. */}
               {categoryId === 'sample' ? (
                 <option value="sampleStatus">وضعیت نمونه (آزمایش‌نشده اول)</option>
+              ) : categoryId === 'blacklist' ? (
+                <>
+                  <option value="rejectedAt">تازه‌ترین رد</option>
+                  <option value="route">نحوهٔ ورود (رد صریح اول)</option>
+                  <option value="lowestScore">کمترین امتیاز اول</option>
+                </>
               ) : (
                 <>
                   <option value="grade">بهترین گرید</option>
