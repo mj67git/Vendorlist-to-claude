@@ -1650,42 +1650,46 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* Summary Card (Live Real-time Calculated) */}
-                  {/* Inverted with tokens rather than a fixed slate gradient:
-                      this panel is the computed result, and it has to keep that
-                      contrast in both themes (same treatment as the standard-name
-                      preview in the materials repository). */}
-                  <div className="p-4 bg-foreground text-background rounded-2xl border border-border shadow-lg space-y-3">
-                    <div className="flex items-center justify-between border-b border-background/20 pb-2">
+                  {/* Card colours, not an inversion.
+                      This panel was painted foreground-on-background, which is
+                      near-black in the light theme: the one dark block on an
+                      otherwise light form, and the emphasis it bought was read
+                      as a rendering fault rather than as importance. It is a
+                      card now, and the emphasis comes from a primary-tinted
+                      border and the figures themselves, which is how the rest
+                      of the application marks a result. */}
+                  <div className="p-4 bg-muted rounded-2xl border border-primary/30 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-xs font-bold flex items-center gap-1.5">
-                        <Award className="w-4 h-4 shrink-0" />
+                        <Award className="w-4 h-4 shrink-0 text-primary" />
                         <span>نتیجهٔ ارزیابی فروشنده (Live Result)</span>
                       </span>
-                      <span className="text-2xs text-background/70 font-mono">
+                      <span className="text-2xs text-muted-foreground font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">مجموع امتیاز (Total Score)</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">مجموع امتیاز (Total Score)</span>
                         <div className="text-xl font-black font-mono">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="text-background/60 text-sm">-- / ۱۰۰</span>
+                            <span className="text-muted-foreground text-sm">-- / ۱۰۰</span>
                           ) : (
                             <>
-                              {computedEval.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
+                              {computedEval.totalScore} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
                             </>
                           )}
                         </div>
                       </div>
 
                       {/* Grade */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
+                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border">
                               ارزیابی نشده
                             </span>
                           ) : (
@@ -1699,11 +1703,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
 
                       {/* Supplier Status */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">وضعیت Supplier Status</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
+                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border">
                               در انتظار ارزیابی
                             </span>
                           ) : (
@@ -1721,16 +1725,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         heart to read their own number. The ranges come from the
                         same constant the repository filter prints, so the two
                         cannot drift apart again. */}
-                    <div className="mt-3 pt-3 border-t border-background/20 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
+                    <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
                       {([
-                        { g: 'A' as const, dot: 'bg-emerald-400', label: 'Grade A' },
-                        { g: 'B' as const, dot: 'bg-blue-400', label: 'Grade B' },
-                        { g: 'C' as const, dot: 'bg-amber-400', label: 'Grade C' },
-                        { g: 'Blacklist' as const, dot: 'bg-rose-400', label: 'Blacklist' },
+                        { g: 'A' as const, dot: 'bg-emerald-500', label: 'Grade A' },
+                        { g: 'B' as const, dot: 'bg-blue-500', label: 'Grade B' },
+                        { g: 'C' as const, dot: 'bg-amber-500', label: 'Grade C' },
+                        { g: 'Blacklist' as const, dot: 'bg-rose-500', label: 'Blacklist' },
                       ]).map(band => (
-                        <span key={band.g} className="flex items-center gap-1.5 text-background/80">
+                        <span key={band.g} className="flex items-center gap-1.5 text-muted-foreground">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${band.dot}`} aria-hidden />
-                          <span className="font-bold text-background">{band.label}</span>
+                          <span className="font-bold text-foreground">{band.label}</span>
                           <span>{GRADE_RANGE_FA[band.g]}</span>
                         </span>
                       ))}
