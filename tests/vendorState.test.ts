@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX } from '../src/utils/vendorState';
+import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX, latestScoreEvaluationLog, SCORE_EVALUATION_PREFIX } from '../src/utils/vendorState';
 
 const sample = (over: any = {}) => ({
   id: 'S1', isSample: true, category: 'sample',
@@ -158,4 +158,29 @@ test('a blacklisting that came only from lab results has no decision line to sho
   const v = source({ status: 'rejected', rejectionReasons: ['مردود در آزمون QC (QC-9)'] });
   assert.equal(adminRejectionReason(v), null);
   assert.equal(adminRejectionReason(source()), null);
+});
+
+test('a score-driven blacklisting has no stated reason, only a scoring entry', () => {
+  // The banner has to say something on this path: the derivation puts the
+  // source on the blacklist and nobody types a sentence, so an empty reason
+  // list is the normal case rather than a data fault.
+  const v = applyDerivedState(source({
+    scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
+    activityLogs: [
+      { id: 'l1', action: 'ویرایش اطلاعات', date: '۱۴۰۵/۰۶/۱۰', user: 'کاربر الف' },
+      { id: 'l2', action: `${SCORE_EVALUATION_PREFIX} "پاراستامول" — گرید نهایی: [Grade rejected]`, date: '۱۴۰۵/۰۶/۱۶', user: 'کارشناس کیفیت' },
+    ],
+  }));
+  assert.equal(isVendorRejected(v), true);
+  assert.equal((v.rejectionReasons || []).length, 0, 'nothing was written by hand');
+
+  const log = latestScoreEvaluationLog(v);
+  assert.equal(log?.user, 'کارشناس کیفیت');
+  assert.equal(log?.date, '۱۴۰۵/۰۶/۱۶');
+});
+
+test('a source with no scoring entry reports none rather than the wrong one', () => {
+  const v = source({ activityLogs: [{ id: 'l1', action: 'ویرایش اطلاعات', date: 'x', user: 'y' }] });
+  assert.equal(latestScoreEvaluationLog(v), null);
+  assert.equal(latestScoreEvaluationLog(source()), null);
 });

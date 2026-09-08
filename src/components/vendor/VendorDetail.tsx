@@ -17,7 +17,7 @@ import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
-import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog, latestScoreEvaluationLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -925,16 +925,73 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               ) : (
                 <>
                   <h3 className="text-lg font-bold text-rose-800 dark:text-rose-300 mb-1">وضعیت: لیست سیاه — تامین‌کننده رد صلاحیت شده</h3>
-                  <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است (Disqualified due to critical non-conformities):</p>
-                  
-                  <ul className="space-y-2">
-                    {vendor.rejectionReasons?.map((reason, idx) => (
-                      <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
-                        <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
-                        {reason}
-                      </li>
-                    ))}
-                  </ul>
+
+                  {/* Why this source is on the blacklist — including the case
+                      nobody wrote a sentence for.
+                      
+                      A source reaches this state three ways: an explicit
+                      decision, a laboratory record, or a weighted score that
+                      fell below 40. Only the first two write into
+                      `rejectionReasons`, and this panel printed that list and
+                      nothing else — so a score-driven rejection produced the
+                      sentence «به دلایل زیر … حذف شده است:» above an empty list.
+                      It promised reasons and gave none, on the one path where
+                      the reason is a plain fact the page already knows.
+
+                      The English gloss that used to sit inside this Persian
+                      sentence is gone with it: an LTR phrase spliced into RTL
+                      text without isolation broke across lines as
+                      «-conformities):». */}
+                  {(() => {
+                    const stated = (vendor.rejectionReasons || []).filter(r => typeof r === 'string' && r.trim());
+                    const scoreLog = latestScoreEvaluationLog(vendor);
+                    const stamp = scoreLog
+                      ? `${scoreLog.user ? `${scoreLog.user}` : 'کاربر سیستم'}${scoreLog.date ? ` · ${scoreLog.date}` : ''}`
+                      : null;
+
+                    if (stated.length > 0) {
+                      return (
+                        <>
+                          <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است:</p>
+                          <ul className="space-y-2">
+                            {stated.map((reason, idx) => (
+                              <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
+                                <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                                <span className="break-words">{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      );
+                    }
+
+                    // Derived from the score, which is the only thing that put
+                    // it here. `overall` is the same weighted total the header
+                    // circle shows, so the banner and the number agree.
+                    const scored = overall !== null;
+                    return (
+                      <>
+                        <p className="text-rose-700 dark:text-rose-300 text-sm mb-4 max-w-2xl font-semibold">
+                          {scored
+                            ? 'دلیل جداگانه‌ای ثبت نشده است؛ این وضعیت از امتیاز ارزیابی به‌دست آمده است:'
+                            : 'دلیل ثبت‌شده‌ای برای این وضعیت در سامانه نیست.'}
+                        </p>
+                        {scored && (
+                          <div className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-sm font-medium shadow-sm space-y-1.5">
+                            <p className="text-rose-800 dark:text-rose-300 leading-relaxed">
+                              امتیاز وزنی این سورس <span className="font-mono font-black">{overall}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
+                            </p>
+                            {stamp && (
+                              <p className="text-2xs text-muted-foreground">آخرین ثبت امتیاز: {stamp}</p>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-2xs text-rose-700 dark:text-rose-400 mt-3 leading-relaxed">
+                          این وضعیت ذخیره نشده، بلکه از امتیازها محاسبه می‌شود: با اصلاح امتیاز دپارتمان‌ها و رسیدن به ۴۰ یا بالاتر، خودبه‌خود برداشته می‌شود.
+                        </p>
+                      </>
+                    );
+                  })()}
 
                   {/* The banner used to end with a machine-shaped footer line —
                       «IRC_ISSUE_DATE: N/A» — and it was wrong three times over.

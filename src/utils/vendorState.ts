@@ -148,3 +148,23 @@ export function sampleDecisionLog(v: AnyVendor): { action: string; date?: string
   }
   return null;
 }
+
+/**
+ * The opening words of the activity-log line a departmental scoring writes.
+ *
+ * A source whose weighted score falls below 40 is blacklisted by the derivation
+ * itself — no reason is written into `rejectionReasons`, because nobody typed
+ * one. The scoring form does log who saved it and when, so the banner can name
+ * a person and a date instead of standing there with an empty list.
+ */
+export const SCORE_EVALUATION_PREFIX = 'ثبت ارزیابی نهایی سورس';
+
+/** The most recent scoring entry in a source's own history, or null. */
+export function latestScoreEvaluationLog(v: AnyVendor): { action: string; date?: string; user?: string } | null {
+  const logs = Array.isArray(v?.activityLogs) ? v.activityLogs : [];
+  for (let i = logs.length - 1; i >= 0; i -= 1) {
+    const entry = logs[i];
+    if (entry && typeof entry.action === 'string' && entry.action.startsWith(SCORE_EVALUATION_PREFIX)) return entry;
+  }
+  return null;
+}
