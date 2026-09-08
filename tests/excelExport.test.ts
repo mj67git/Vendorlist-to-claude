@@ -168,3 +168,46 @@ test('a legacy role spelling still exports as the label, and a missing one is no
   // which is what the role lookup returns for an empty value.
   assert.ok(rows.includes('ثبت‌نشده'), 'an unrecorded role stays unrecorded');
 });
+
+test('the sample sheet carries a verdict and lab counts, not empty score columns', () => {
+  // A sample is never scored by the departments and never gets a risk
+  // assessment, so on the sample sheet those two columns were guaranteed
+  // blank — in a document that gets handed to an auditor.
+  const { ws } = buildCategoryWorksheet(
+    [vendor({
+      id: 'vs1', isSample: true, category: 'sample', status: 'approved',
+      analysisRecords: [
+        { id: 'a1', qcCode: 'QC-1', decision: 'Pass', date: '1405/06/10' },
+        { id: 'a2', qcCode: 'QC-2', decision: 'Pass', date: '1405/06/14' },
+      ] as any,
+    })],
+    'sample',
+  );
+
+  assert.equal(cell(ws, HEADER, COL_SCORE).v, 'وضعیت نمونه');
+  assert.equal(cell(ws, HEADER, COL_RISK).v, 'تعداد نتایج آزمایشگاهی');
+  assert.equal(cell(ws, HEADER, COL_SCORE_NUM).v, 'تاریخ آخرین نتیجهٔ آزمایش');
+
+  assert.equal(cell(ws, FIRST_ROW, COL_SCORE).v, 'Approved');
+  assert.equal(cell(ws, FIRST_ROW, COL_RISK).v, 2);
+  assert.equal(cell(ws, FIRST_ROW, COL_SCORE_NUM).v, '1405/06/14', 'the newest result, not the first');
+});
+
+test('a non-sample sheet keeps the columns it always had', () => {
+  // The positions are load-bearing: the styling map and anything keyed to a
+  // column index depend on them, so only the sample sheet may differ.
+  const { ws } = buildCategoryWorksheet([vendor({})], 'foreign');
+  assert.equal(cell(ws, HEADER, COL_SCORE).v, 'امتیاز ارزیابی کل (از ۱۰۰)');
+  assert.equal(cell(ws, HEADER, COL_RISK).v, 'سطح ریسک کیفی');
+  assert.equal(cell(ws, HEADER, COL_SCORE_NUM).v, 'امتیاز عددی (۰-۱۰۰)');
+});
+
+test('a sample with no laboratory record says so rather than showing a blank', () => {
+  const { ws } = buildCategoryWorksheet(
+    [vendor({ id: 'vs2', isSample: true, category: 'sample', status: 'new' })],
+    'sample',
+  );
+  assert.equal(cell(ws, FIRST_ROW, COL_SCORE).v, 'آزمایش نشده');
+  assert.equal(cell(ws, FIRST_ROW, COL_RISK).v, 0);
+  assert.equal(cell(ws, FIRST_ROW, COL_SCORE_NUM).v, 'ثبت‌نشده');
+});

@@ -12,6 +12,7 @@ import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from 
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
 import { toJalaliDisplay } from '../../utils/dateDisplay';
+import { isSampleRecord } from '../../utils/sampleStatus';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
@@ -54,8 +55,8 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   const canEditVendor = can(currentUser, 'vendor.edit');
   const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
-    ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
-    ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
+    ...(!isSampleRecord(vendor) ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
+    ...(!isSampleRecord(vendor) && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
     ...(canAnalysis ? [{ id: 'analysis', title: 'ثبت نتایج آزمایشگاهی', icon: Microscope }] : []),
   ];
   const [evalStageRaw, setEvalStageRaw] = useState<string>(evalStages[0]?.id || 'score');
@@ -380,26 +381,26 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // Score history reconstructed from the audit trail (SPS over time).
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   useEffect(() => {
-    if (vendor.isSample) return;
+    if (isSampleRecord(vendor)) return;
     let cancelled = false;
     authFetch(`/api/vendors/${vendor.id}/score-history`)
       .then(res => (res.ok ? res.json() : []))
       .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setScoreHistory(data.filter(d => d.totalSPS !== null)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [vendor.id, vendor.isSample, vendor.scores]);
+  }, [vendor.id, vendor.isSample, vendor.category, vendor.scores]);
 
   // Risk assessment history reconstructed from the audit trail (SRI/RPN over time).
   const [riskHistory, setRiskHistory] = useState<any[]>([]);
   useEffect(() => {
-    if (vendor.isSample) return;
+    if (isSampleRecord(vendor)) return;
     let cancelled = false;
     authFetch(`/api/vendors/${vendor.id}/risk-history`)
       .then(res => (res.ok ? res.json() : []))
       .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setRiskHistory(data); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [vendor.id, vendor.isSample, vendor.riskAssessment]);
+  }, [vendor.id, vendor.isSample, vendor.category, vendor.riskAssessment]);
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
@@ -541,7 +542,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
             {/* Label وضعیت / گرید */}
             <div className="mt-1">
-              {vendor.isSample ? (
+              {isSampleRecord(vendor) ? (
                 <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
                   vendor.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
                   vendor.status === 'conditional' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
@@ -809,7 +810,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         </div>
       </div>
 
-      {vendor.isSample && (
+      {isSampleRecord(vendor) && (
         <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <div className="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 text-indigo-600 dark:text-indigo-400">
             <Info className="w-5 h-5" />
@@ -828,7 +829,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <AlertTriangle className="w-8 h-8" />
             </div>
             <div className="text-right flex-1 min-w-0">
-              {vendor.isSample || vendor.category === 'sample' ? (
+              {isSampleRecord(vendor) ? (
                 <>
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <h3 className="text-lg font-black text-rose-900 dark:text-rose-300">وضعیت: نمونه مردود در کنترل کیفیت (QC Rejected Sample)</h3>
@@ -1052,7 +1053,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 2. اول بخش امتیاز دهی بیاد */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'score') && (
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm overflow-hidden text-right">
           <div className="border-b border-border px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
@@ -1187,7 +1188,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* Score history & trend (reconstructed from the audit trail) */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && scoreHistory.length > 0 && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'score') && scoreHistory.length > 0 && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
@@ -1260,7 +1261,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 3. ارزیابی ریسک تامین کنندگان */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && canRisk && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'risk') && canRisk && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
@@ -1635,7 +1636,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     this block is inside `analysisRecords.length > 0` — so the
                     control cannot become the old dropdown under a new name and
                     approve a sample nobody has tested. */}
-                {(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                {isSampleRecord(vendor) && canAnalysis && (
                   <div className={`rounded-xl p-4 border ${
                     vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800'
                     : vendor.status === 'approved' ? 'bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
@@ -1716,7 +1717,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 )}
 
                 {/* Admin decision box for sources/suppliers (not samples) */}
-                {!(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                {!isSampleRecord(vendor) && canAnalysis && (
                   <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />

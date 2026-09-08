@@ -12,6 +12,7 @@ import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInBlacklistCategory } from './vendorState';
+import { describeSampleStatus } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
@@ -29,6 +30,7 @@ import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
  * neither column was ever coloured and forty lines of styling did nothing. A
  * named constant is checkable; `colIndex === 14` is not.
  */
+
 const COL = {
   INDEX: 0,
   NAME_FA: 1,
@@ -55,6 +57,20 @@ const COL = {
 
 /** What an empty cell says. Latin «N/A» sat next to Persian «ثبت‌نشده» in the same row. */
 const NOT_RECORDED = 'ثبت‌نشده';
+
+/**
+ * When the laboratory last reported on a sample, or a dash.
+ *
+ * Records carry their date as text in whatever calendar the form wrote, so they
+ * are compared as strings rather than parsed — the goal is to name the newest
+ * entry, not to do arithmetic on it.
+ */
+function latestAnalysisDate(v: Vendor): string {
+  const dates = (v.analysisRecords || []).map(r => (r.date || '').trim()).filter(Boolean);
+  if (dates.length === 0) return NOT_RECORDED;
+  return dates.slice().sort()[dates.length - 1];
+}
+
 
 /**
  * Returns a descriptive Persian label for the material criticality (substance type).
@@ -182,6 +198,9 @@ export function buildCategoryWorksheet(
     return matA.localeCompare(matB, 'fa');
   });
 
+  /** Samples are graded by a laboratory verdict, not by a weighted score. */
+  const isSampleSheet = categoryId === 'sample';
+
   // Compile headers with requested structure and material repository columns
   const headers = [
     'ردیف',
@@ -197,8 +216,15 @@ export function buildCategoryWorksheet(
     'تأمین‌کننده',
     'نوع تأمین‌کننده',
     'آدرس و اطلاعات تماس',
-    'امتیاز ارزیابی کل (از ۱۰۰)',
-    'سطح ریسک کیفی',
+    /* The sample sheet answers different questions in these two cells.
+       A sample is never scored by the departments and never gets a risk
+       assessment — the interface hides both forms for it — so on the sample
+       sheet these columns were two guaranteed-empty tracks in a document that
+       gets handed to an auditor. The positions stay put, because the styling
+       map and anything keyed to a column index (a saved filter, a pivot,
+       somebody's macro) depend on them; only what they carry changes. */
+    isSampleSheet ? 'وضعیت نمونه' : 'امتیاز ارزیابی کل (از ۱۰۰)',
+    isSampleSheet ? 'تعداد نتایج آزمایشگاهی' : 'سطح ریسک کیفی',
     'کد QC',
     'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)',
     // Appended at the end on purpose: anything keyed to the existing column
@@ -212,7 +238,7 @@ export function buildCategoryWorksheet(
     // which cannot be sorted, averaged or pivoted on. The number gets its own
     // cell rather than replacing that column, so nothing keyed to the existing
     // positions moves.
-    'امتیاز عددی (۰-۱۰۰)'
+    isSampleSheet ? 'تاریخ آخرین نتیجهٔ آزمایش' : 'امتیاز عددی (۰-۱۰۰)'
   ];
 
   // Map to Excel rows (with 1-based indexing)
@@ -276,14 +302,14 @@ export function buildCategoryWorksheet(
       partnerInfo.name,
       partnerInfo.roleLabel,
       formatContactLine(partnerInfo),
-      scoreStr,
-      riskText,
+      isSampleSheet ? describeSampleStatus(v).label : scoreStr,
+      isSampleSheet ? (v.analysisRecords || []).length : riskText,
       qcCodesStr,
       deviationSummary,
       chosen ? 'بله' : '—',
       chosen ? chosen.reason : '',
       chosen ? [chosen.decidedBy, chosenWhen].filter(Boolean).join(' — ') : '',
-      rank.score !== null ? rank.score : ''
+      isSampleSheet ? latestAnalysisDate(v) : (rank.score !== null ? rank.score : '')
     ];
   });
 

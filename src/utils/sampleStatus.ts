@@ -33,3 +33,16 @@ export function describeSampleStatus(vendor: any): SampleVerdict {
 export function isUntestedSample(vendor: any): boolean {
   return !describeSampleStatus(vendor).decided;
 }
+
+/**
+ * Is this record a sample?
+ *
+ * Read both fields, always. `isSample` is the flag the form sets and
+ * `category === 'sample'` is where the record lives; a row that carries one
+ * without the other used to be judged differently by different screens — the
+ * source page hid its scoring forms on the flag alone while the lists filtered
+ * on either.
+ */
+export function isSampleRecord(vendor: any): boolean {
+  return !!vendor?.isSample || vendor?.category === 'sample';
+}

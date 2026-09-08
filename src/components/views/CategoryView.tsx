@@ -49,7 +49,7 @@ export function CategoryView({
   const [currentPage, setCurrentPage] = useState(1);
   /** Groups per page. Same control and same sizes as every other paged module. */
   const [perPage, setPerPage] = useState(20);
-  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry'>('material');
+  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   // ---- recorded source selections -----------------------------------------
@@ -122,6 +122,20 @@ export function CategoryView({
   useEffect(() => {
     setCurrentPage(1);
   }, [query, sortBy, activeFilter, perPage]);
+
+  /*
+   * A sort that this category does not offer falls back to the name.
+   *
+   * The options differ between the sample list and the others, so arriving here
+   * with «بهترین گرید» still selected would leave the control showing nothing
+   * while the list stayed ordered by a rule the reader cannot see.
+   */
+  useEffect(() => {
+    const allowed = categoryId === 'sample'
+      ? ['material', 'count', 'sampleStatus']
+      : ['material', 'count', 'grade', 'expiry'];
+    if (!allowed.includes(sortBy)) setSortBy('material');
+  }, [categoryId, sortBy]);
 
   const meta = categoryLabels[categoryId];
   
@@ -215,6 +229,10 @@ export function CategoryView({
       sorted.sort((a, b) => b.vendors.length - a.vendors.length);
     } else if (sortBy === 'grade') {
       sorted.sort((a, b) => Math.max(...b.vendors.map(gradeRank)) - Math.max(...a.vendors.map(gradeRank)));
+    } else if (sortBy === 'sampleStatus') {
+      // Undecided first: those are the samples somebody still has to rule on.
+      const rank = (v: Vendor) => (isUntestedSample(v) ? 0 : isVendorRejected(v) ? 1 : v.status === 'conditional' ? 2 : 3);
+      sorted.sort((a, b) => Math.min(...a.vendors.map(rank)) - Math.min(...b.vendors.map(rank)));
     } else if (sortBy === 'expiry') {
       sorted.sort((a, b) => soonestExpiry(a.vendors) - soonestExpiry(b.vendors));
     }
@@ -308,8 +326,17 @@ export function CategoryView({
             >
               <option value="material">نام ماده (الفبا)</option>
               <option value="count">تعداد سورس (بیشترین)</option>
-              <option value="grade">بهترین گرید</option>
-              <option value="expiry">نزدیک‌ترین انقضای مجوز</option>
+              {/* A sample has no grade and no licence of its own, so ordering by
+                  either ran over a column of empty values. What a reader of this
+                  page actually sorts by is which samples still need a verdict. */}
+              {categoryId === 'sample' ? (
+                <option value="sampleStatus">وضعیت نمونه (آزمایش‌نشده اول)</option>
+              ) : (
+                <>
+                  <option value="grade">بهترین گرید</option>
+                  <option value="expiry">نزدیک‌ترین انقضای مجوز</option>
+                </>
+              )}
             </select>
           </div>
 
