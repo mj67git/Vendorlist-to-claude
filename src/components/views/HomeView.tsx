@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Award, BadgeCheck, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { EntityName } from '../../components/EntityName';
 import { Badge } from '../../components/ui/badge';
@@ -11,6 +11,8 @@ import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
+import { describeVendorRank } from '../../utils/vendorRank';
+import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
 
@@ -31,10 +33,28 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   const sampleCount = db.length - sourceVendors.length;
 
   const stats = useMemo(() => {
-    const rejected = sourceVendors.filter(isVendorRejected).length;
-    const gradeA = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'A').length;
-    const gradeB = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'B').length;
-    const gradeC = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'C').length;
+    /*
+     * The grade is derived from the department scores, not read off the stored
+     * `grade` column — the two diverge in the data, and every other screen (the
+     * source page, the archive, the spreadsheet) already derives it through
+     * `describeVendorRank`. Counting the column here made the dashboard the one
+     * place in the application that disagreed with the rest about a company's
+     * grade, and the widget's own title says the scores are what it counts.
+     *
+     * One pass over the population fills all five buckets: the five separate
+     * `filter` walks this replaces grew with the register, and this page is the
+     * first thing every user loads.
+     */
+    let rejected = 0, gradeA = 0, gradeB = 0, gradeC = 0;
+    for (const v of sourceVendors) {
+      if (isVendorRejected(v)) { rejected++; continue; }
+      switch (describeVendorRank(v).grade) {
+        case 'A': gradeA++; break;
+        case 'B': gradeB++; break;
+        case 'C': gradeC++; break;
+        default: break;
+      }
+    }
     return {
       total: sourceVendors.length,
       gradeA, gradeB, gradeC, rejected,
@@ -66,6 +86,43 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
       { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48' },
       { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8' },
     ].filter(d => d.value > 0), [stats]);
+
+  /**
+   * The seller-evaluation mix, from the five documents each seller submitted.
+   *
+   * Manufacturers are not in the population at all: they are never evaluated
+   * against the SOP (rule 4), so counting them would report a backlog that
+   * cannot exist. The grade is recomputed from the documents rather than read
+   * off the stored column, for the same reason rule 13 gives — a stored row can
+   * disagree with its own documents, and `reconcileSupplierEvaluation` is what
+   * the rest of the application trusts.
+   *
+   * «ارزیابی نشده» is a slice of its own so the ring adds up to the number of
+   * sellers. The source donut beside it silently dropped exactly that group
+   * once, and the total stopped meaning anything.
+   */
+  const supplierGradeDistribution = useMemo(() => {
+    let a = 0, b = 0, c = 0, black = 0, none = 0;
+    for (const p of partners || []) {
+      if (p.type !== 'Supplier') continue;
+      const grade = reconcileSupplierEvaluation(p).evaluation?.grade;
+      switch (grade) {
+        case 'A': a++; break;
+        case 'B': b++; break;
+        case 'C': c++; break;
+        case 'Blacklist': black++; break;
+        default: none++; break;
+      }
+    }
+    const slices = [
+      { name: 'گرید A', value: a, color: '#10b981' },
+      { name: 'گرید B', value: b, color: '#3b82f6' },
+      { name: 'گرید C', value: c, color: '#f59e0b' },
+      { name: 'لیست سیاه', value: black, color: '#e11d48' },
+      { name: 'ارزیابی نشده', value: none, color: '#94a3b8' },
+    ];
+    return { slices: slices.filter(d => d.value > 0), total: a + b + c + black + none };
+  }, [partners]);
 
   // Pending-actions center: real, actionable quality gaps.
   const pendingActions = useMemo(() => {
@@ -214,58 +271,52 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         ))}
       </div>
 
-      {/* GRADE MIX + ACTIVITY are grouped below the numbers they explain. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Grade distribution donut */}
-        <Card className="p-5 bg-card border-border/80">
-          <div className="flex items-center gap-2 mb-3">
-            <PieChartIcon className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">توزیع گرید کیفی</h3>
-          </div>
-          {gradeDistribution.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground text-xs">داده‌ای برای نمایش نیست.</div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="h-44 w-1/2" dir="ltr">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={gradeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={2} strokeWidth={2}>
-                      {gradeDistribution.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
-                    </Pie>
-                    <RTooltip contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }} formatter={(v: any, n: any) => [`${v} (${stats.total > 0 ? Math.round((v/stats.total)*100) : 0}%)`, n]} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 space-y-1.5">
-                {gradeDistribution.map(d => (
-                  <div key={d.name} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-foreground font-medium">
-                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
-                      {d.name}
-                    </span>
-                    <span className="font-mono font-bold text-foreground">{d.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
+      {/* GRADE MIX + ACTIVITY are grouped below the numbers they explain.
 
-        {/* Lab pass rate — beside the grade mix, since both summarise quality. */}
-        <Card className="p-5 bg-card border-border/80 lg:col-span-2">
+          Three equal columns: the two distributions read as a pair — the same
+          ring, the same legend, the same colour per grade — and the laboratory
+          rate sits with them because all three answer «چقدر خوب است آنچه
+          داریم؟». The lab card used to take two thirds of the row on its own. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Source grades, from the department scores. */}
+        <GradeDonutCard
+          icon={PieChartIcon}
+          title="توزیع گرید کیفی تأمین‌کنندگان"
+          subtitle="بر اساس امتیاز دپارتمان‌ها"
+          slices={gradeDistribution}
+          total={stats.total}
+          emptyMessage="داده‌ای برای نمایش نیست."
+          onOpen={() => onNavigate('archive')}
+          openLabel="مشاهده در آرشیو کل داده‌ها"
+        />
+
+        {/* Seller grades, from the five submitted documents. */}
+        <GradeDonutCard
+          icon={BadgeCheck}
+          title="توزیع گرید ارزیابی فروشنده"
+          subtitle="بر اساس مدارک ارسالی"
+          slices={supplierGradeDistribution.slices}
+          total={supplierGradeDistribution.total}
+          emptyMessage="فروشنده‌ای ثبت نشده است."
+          onOpen={() => onNavigate('business-partners')}
+          openLabel="مشاهده در مخزن شرکای تجاری"
+        />
+
+        {/* Lab pass rate — the third answer to the same question. */}
+        <Card className="p-5 bg-card border-border/80 flex flex-col">
           <div className="flex items-center gap-2 mb-3">
             <Microscope className="w-4 h-4 text-primary" />
             <h3 className="font-bold text-foreground text-sm">نرخ قبولی آزمایشگاه</h3>
           </div>
           {labStats.total === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
+            <div className="text-center py-10 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
           ) : (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-              <div className="shrink-0 text-center sm:text-right">
-                <div className={`text-4xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
+            <div className="flex-1 flex flex-col justify-center gap-3">
+              <div className="text-center">
+                <div className={`text-3xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
                 <div className="text-2xs text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
               </div>
-              <div className="flex-1 space-y-2">
+              <div className="space-y-2">
                 <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
                   <div className="h-full bg-emerald-500" style={{ width: `${(labStats.pass / labStats.total) * 100}%` }} />
                   <div className="h-full bg-blue-500" style={{ width: `${(labStats.cond / labStats.total) * 100}%` }} />
@@ -280,6 +331,13 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               </div>
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => onNavigate('tasks', null, 'eval')}
+            className="mt-3 text-2xs font-bold text-primary hover:underline text-right"
+          >
+            مشاهده در کارتابل اقدامات
+          </button>
         </Card>
       </div>
 
@@ -369,5 +427,68 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
       </div>
 
     </div>
+  );
+}
+
+
+/**
+ * One distribution ring with its legend.
+ *
+ * Two widgets on this page answer the same shape of question about different
+ * populations, so they share a component rather than a copy: the four table
+ * primitives in this project were split into four diverging copies exactly this
+ * way, and one of them ended up reading fake rows to a screen reader.
+ */
+function GradeDonutCard({ icon: Icon, title, subtitle, slices, total, emptyMessage, onOpen, openLabel }: {
+  icon: React.ComponentType<{ className?: string }>,
+  title: string,
+  subtitle: string,
+  slices: { name: string, value: number, color: string }[],
+  total: number,
+  emptyMessage: string,
+  onOpen: () => void,
+  openLabel: string,
+}) {
+  return (
+    <Card className="p-5 bg-card border-border/80 flex flex-col">
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-primary" />
+        <h3 className="font-bold text-foreground text-sm">{title}</h3>
+      </div>
+      <p className="text-2xs text-muted-foreground mt-0.5 mb-3">{subtitle}</p>
+      {slices.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-center py-10 text-muted-foreground text-xs">{emptyMessage}</div>
+      ) : (
+        <div className="flex-1 flex items-center gap-2">
+          <div className="h-40 w-1/2" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2} strokeWidth={2}>
+                  {slices.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
+                </Pie>
+                <RTooltip
+                  contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }}
+                  formatter={(v: any, n: any) => [`${v} (${total > 0 ? Math.round((v / total) * 100) : 0}%)`, n]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-1 space-y-1.5">
+            {slices.map(d => (
+              <div key={d.name} className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-foreground font-medium">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
+                  {d.name}
+                </span>
+                <span className="font-mono font-bold text-foreground">{d.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <button type="button" onClick={onOpen} className="mt-3 text-2xs font-bold text-primary hover:underline text-right">
+        {openLabel}
+      </button>
+    </Card>
   );
 }
