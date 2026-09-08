@@ -5,6 +5,7 @@ import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
 import { PerPageSelect } from '../ui/per-page-select';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { PageTitle } from '../ui/page-title';
@@ -13,6 +14,7 @@ import { TableEmptyRow } from '../ui/table-empty-row';
 import { TableSkeletonRows } from '../ui/table-skeleton-rows';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
 import { isVendorRejected } from '../../utils/vendorState';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
@@ -65,6 +67,15 @@ export function supplierKey(name: string): string {
    contactInfo: string;
    registrationDate: string;
    vendors: Vendor[];
+   /**
+    * The company's real sources — everything in `vendors` that is not a sample.
+    *
+    * A sample is a material that arrived for testing, not a material this
+    * company supplies, so it must not be counted as one or let a company into
+    * the audit directory on its own. `vendors` keeps the sample rows because
+    * the company's own file should still show them.
+    */
+   sources: Vendor[];
    /**
     * What this company is, taken from its Business Partner record — never
     * guessed from the name. `unknown` is a real answer: a company with no
@@ -170,10 +181,12 @@ interface SourceSelection {
             contactInfo: v.contactInfo || '',
             registrationDate: v.registrationDate || '',
             vendors: [],
+            sources: [],
             role: 'unknown',
           };
         }
         groups[key].vendors.push(v);
+        if (!isSampleRecord(v)) groups[key].sources.push(v);
 
         // The role comes from the partner record behind the source, through the
         // same resolver the detail header uses, so a card and that header can
@@ -185,7 +198,14 @@ interface SourceSelection {
         }
       });
 
-      return Object.values(groups);
+      /*
+       * A company whose every row is a sample is not under audit yet: nothing
+       * of it is being supplied, nothing has been scored, and listing it here
+       * would inflate both the directory and the «بدون امتیاز ثبت‌شده» tile
+       * with a shortfall that does not exist. Its samples still live in the
+       * category that owns them.
+       */
+      return Object.values(groups).filter(g => g.sources.length > 0);
     }, [db, partners]);
 
     /**
@@ -199,7 +219,7 @@ interface SourceSelection {
     const averageScoreOf = useMemo(() => (group: SupplierGroup): number | null => {
       let sum = 0;
       let scored = 0;
-      group.vendors.forEach(v => {
+      group.sources.forEach(v => {
         const value = myDepartments.length === 1
           ? ((v.scores as any)?.[myDepartments[0]] || 0)
           : calculateOverallScore(v.scores, true);
@@ -241,7 +261,7 @@ interface SourceSelection {
         s.name.toLowerCase().includes(query) ||
         s.nameEn.toLowerCase().includes(query) ||
         s.country.toLowerCase().includes(query) ||
-        s.vendors.some(v => 
+        s.sources.some(v => 
           v.material.toLowerCase().includes(query) ||
           v.materialEn.toLowerCase().includes(query) ||
           (v.cas && v.cas.toLowerCase().includes(query))
@@ -255,7 +275,7 @@ interface SourceSelection {
         switch (sortField) {
           case 'role': return ROLE_LABEL[g.role];
           case 'country': return g.country || '';
-          case 'materials': return g.vendors.length;
+          case 'materials': return g.sources.length;
           // An unscored company sorts as the lowest score rather than being
           // dropped somewhere arbitrary — the same choice the users table makes
           // for "never signed in".
@@ -353,8 +373,20 @@ interface SourceSelection {
    const stats = useMemo(() => {
      if (!activeSupplier) return null;
 
-     const list = activeSupplier.vendors;
-     const totalItems = list.length;
+     /*
+      * The company's supply, which is what these figures are about: a sample is
+      * a material under test, so it has no department scores, no risk
+      * assessment, no licence and no source decision, and counting it here
+      * turned every one of those into a shortfall the company does not have
+      * («هیچ‌کدام از ۲ ماده ارزیابی ریسک ندارد» for a company with one material
+      * and one sample). The laboratory card below is the deliberate exception —
+      * testing is precisely what a sample is for — and `totalItems` stays over
+      * everything because its label says «ماده فعال یا نمونه».
+      */
+     const list = activeSupplier.sources;
+     const totalItems = activeSupplier.vendors.length;
+     /** Only the supply, for the cards whose denominator is a material we buy. */
+     const sourceItems = list.length;
 
      let scoredCount = 0;
      let scoresSum = 0;
@@ -424,7 +456,7 @@ interface SourceSelection {
 
      // Laboratory record across everything this company supplies.
      let pass = 0, conditional = 0, reject = 0;
-     list.forEach(v => (v.analysisRecords || []).forEach(r => {
+     activeSupplier.vendors.forEach(v => (v.analysisRecords || []).forEach(r => {
        if (r.decision === 'Pass') pass++;
        else if (r.decision === 'Approved Conditional') conditional++;
        else if (r.decision === 'Reject') reject++;
@@ -433,7 +465,7 @@ interface SourceSelection {
      const lab = {
        pass, conditional, reject, total: labTotal,
        rate: labTotal > 0 ? Math.round(((pass + conditional) / labTotal) * 100) : null,
-       materialsTested: list.filter(v => (v.analysisRecords || []).length > 0).length,
+       materialsTested: activeSupplier.vendors.filter(v => (v.analysisRecords || []).length > 0).length,
      };
 
      // Risk: the worst case matters more than the average. One High-risk
@@ -476,6 +508,7 @@ interface SourceSelection {
      return {
        chosenFor,
        totalItems,
+       sourceItems,
        avgPerformance,
        deptAverages,
        statusDistribution,
@@ -672,7 +705,7 @@ interface SourceSelection {
                  </>
                ) : (
                  <p className="text-2xs text-amber-700 dark:text-amber-400 mt-1">
-                   هیچ‌کدام از {stats.totalItems} ماده ارزیابی ریسک ندارد.
+                   هیچ‌کدام از {stats.sourceItems} ماده ارزیابی ریسک ندارد.
                  </p>
                )}
              </div>
@@ -793,7 +826,7 @@ interface SourceSelection {
                    <span className="text-2xs font-bold text-muted-foreground">سورس منتخب</span>
                  </div>
                  <div className="text-xl font-black font-mono leading-none text-foreground">
-                   {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.totalItems}</span>
+                   {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.sourceItems}</span>
                  </div>
                  <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                    {stats.chosenFor.length > 0
@@ -909,7 +942,21 @@ interface SourceSelection {
                            </div>
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center">
-                           <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                           {/*
+                             * A sample carries the label its own test gave it,
+                             * not a source grade: departments do not score a
+                             * sample and risk is not assessed for one, so a
+                             * grade badge here would show a verdict nobody
+                             * reached (the same reason the sample category
+                             * dropped its score and risk columns).
+                             */}
+                           {isSampleRecord(v) ? (
+                             <Badge variant={describeSampleStatus(v).variant} className="text-2xs font-bold px-2 py-0">
+                               {describeSampleStatus(v).label}
+                             </Badge>
+                           ) : (
+                             <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                           )}
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center whitespace-nowrap">
                            <Button
@@ -1055,8 +1102,8 @@ interface SourceSelection {
                    nameEn: g.nameEn,
                    role: ROLE_LABEL[g.role],
                    country: g.country,
-                   materialCount: g.vendors.length,
-                   materials: g.vendors.map(v => v.material).filter(Boolean),
+                   materialCount: g.sources.length,
+                   materials: g.sources.map(v => v.material).filter(Boolean),
                    averageScore: averageScoreOf(g),
                  })),
                ))}
@@ -1130,8 +1177,8 @@ interface SourceSelection {
                    ) : (
                      paginatedSuppliers.map(supplier => {
                        const avgScore = averageScoreOf(supplier);
-                       const shown = supplier.vendors.slice(0, 2);
-                       const rest = supplier.vendors.length - shown.length;
+                       const shown = supplier.sources.slice(0, 2);
+                       const rest = supplier.sources.length - shown.length;
                        return (
                          <tr
                            key={supplier.key}
@@ -1174,7 +1221,7 @@ interface SourceSelection {
                            <td className="py-3 px-4">
                              <div className="flex flex-wrap items-center gap-1 max-w-[22rem]">
                                <span className="shrink-0 text-2xs font-mono font-bold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md">
-                                 {supplier.vendors.length.toLocaleString('fa-IR')}
+                                 {supplier.sources.length.toLocaleString('fa-IR')}
                                </span>
                                {shown.map(v => (
                                  <EntityName
