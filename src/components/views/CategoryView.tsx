@@ -10,7 +10,7 @@ import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { adminRejectionReason, hasQcReject, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { describeVendorRank } from '../../utils/vendorRank';
-import { isUntestedSample } from '../../utils/sampleStatus';
+import { describeSampleStatus, isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { MaterialGroup } from './MaterialGroup';
 import type { SourceSelectionRecord } from './MaterialsComparisonSection';
@@ -50,7 +50,7 @@ export function CategoryView({
   const [currentPage, setCurrentPage] = useState(1);
   /** Groups per page. Same control and same sizes as every other paged module. */
   const [perPage, setPerPage] = useState(20);
-  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus' | 'rejectedAt' | 'route' | 'lowestScore'>('material');
+  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus' | 'rejectedAt' | 'route' | 'lowestScore' | 'newest' | 'waiting'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   // ---- recorded source selections -----------------------------------------
@@ -136,7 +136,7 @@ export function CategoryView({
   const lastCategoryRef = useRef<Category | null>(null);
   useEffect(() => {
     const allowed = categoryId === 'sample'
-      ? ['material', 'count', 'sampleStatus']
+      ? ['material', 'count', 'sampleStatus', 'newest', 'waiting']
       : categoryId === 'blacklist'
         // «Best grade» and «soonest licence expiry» are not questions this list
         // answers: every row here is disqualified, so the grade ranking gives
@@ -167,6 +167,20 @@ export function CategoryView({
     return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
   }, [db, categoryId]);
   
+  /** The four sample verdicts, counted once and from the one helper. */
+  const sampleCounts = useMemo(() => {
+    const c = { approved: 0, conditional: 0, rejected: 0, untested: 0 };
+    if (categoryId !== 'sample') return c;
+    for (const v of categoryVendors) {
+      const d = describeSampleStatus(v);
+      if (!d.decided) c.untested++;
+      else if (d.label === 'Approved') c.approved++;
+      else if (d.label === 'Conditional') c.conditional++;
+      else c.rejected++;
+    }
+    return c;
+  }, [categoryVendors, categoryId]);
+
   const filteredVendors = useMemo(() => {
     const qt = query.toLowerCase();
     return categoryVendors.filter(v => 
@@ -192,8 +206,10 @@ export function CategoryView({
   const matchesFilter = (v: Vendor): boolean => {
     if (!activeFilter) return true;
     switch (activeFilter) {
-      case 'approved': return v.status === 'approved';
-      case 'conditional': return v.status === 'conditional';
+      // Through the shared helper, so the chip and the badge agree about one
+      // record: `isVendorRejected` wins over a stale `status` of «approved».
+      case 'approved': return describeSampleStatus(v).label === 'Approved';
+      case 'conditional': return describeSampleStatus(v).label === 'Conditional';
       // «آزمایش نشده» is a real population now, not an empty edge case: a sample
       // enters the category with no verdict and waits for one.
       case 'untested': return isUntestedSample(v);
@@ -268,6 +284,24 @@ export function CategoryView({
       sorted.sort((a, b) => Math.min(...a.vendors.map(rank)) - Math.min(...b.vendors.map(rank)));
     } else if (sortBy === 'expiry') {
       sorted.sort((a, b) => soonestExpiry(a.vendors) - soonestExpiry(b.vendors));
+    } else if (sortBy === 'newest') {
+      // A sample list is a queue; «what arrived last» is a question it is asked.
+      const changedAt = (v: Vendor) => (v.updatedAt ? new Date(v.updatedAt).getTime() : 0);
+      sorted.sort((a, b) => Math.max(...b.vendors.map(changedAt)) - Math.max(...a.vendors.map(changedAt)));
+    } else if (sortBy === 'waiting') {
+      /*
+       * The sample that has waited longest for a verdict, first.
+       *
+       * Only undecided samples have waited for anything, so a group with none
+       * sorts to the end rather than competing on a date that means something
+       * else. Among those waiting, the oldest record leads.
+       */
+      const waitingSince = (vs: Vendor[]) => {
+        const undecided = vs.filter(isUntestedSample)
+          .map(v => (v.updatedAt ? new Date(v.updatedAt).getTime() : 0));
+        return undecided.length ? Math.min(...undecided) : Infinity;
+      };
+      sorted.sort((a, b) => waitingSince(a.vendors) - waitingSince(b.vendors));
     } else if (sortBy === 'rejectedAt') {
       /*
        * Newest first, keyed on the record's own timestamp rather than the date
@@ -391,7 +425,11 @@ export function CategoryView({
                   either ran over a column of empty values. What a reader of this
                   page actually sorts by is which samples still need a verdict. */}
               {categoryId === 'sample' ? (
-                <option value="sampleStatus">وضعیت نمونه (آزمایش‌نشده اول)</option>
+                <>
+                  <option value="sampleStatus">وضعیت نمونه (آزمایش‌نشده اول)</option>
+                  <option value="waiting">بیشترین انتظار برای نتیجه</option>
+                  <option value="newest">تازه‌ترین نمونه</option>
+                </>
               ) : categoryId === 'blacklist' ? (
                 <>
                   <option value="rejectedAt">تازه‌ترین رد</option>
@@ -439,21 +477,28 @@ export function CategoryView({
                 </Badge>
                 {categoryId === 'sample' ? (
                   <>
-                    <Badge variant="gradeA" onClick={() => toggle('approved')} className={chipCls('approved', categoryVendors.filter(v => v.status === 'approved').length)}>
-                      تأیید شده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'approved').length}</span>
+                    {/* Counted through `describeSampleStatus`, the same helper
+                        the badge on the row uses. They used to read `status`
+                        directly, so a sample carrying a rejection reason while
+                        its status still said approved was shown as «Reject» on
+                        its row and counted under «تأیید شده» here — one record
+                        in two places, and four chips that no longer added up to
+                        the total. */}
+                    <Badge variant="gradeA" onClick={() => toggle('approved')} className={chipCls('approved', sampleCounts.approved)}>
+                      تأیید شده: <span className="font-bold font-mono mr-1">{sampleCounts.approved}</span>
                     </Badge>
-                    <Badge variant="gradeC" onClick={() => toggle('conditional')} className={chipCls('conditional', categoryVendors.filter(v => v.status === 'conditional').length)}>
-                      تأیید مشروط: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => v.status === 'conditional').length}</span>
+                    <Badge variant="gradeC" onClick={() => toggle('conditional')} className={chipCls('conditional', sampleCounts.conditional)}>
+                      تأیید مشروط: <span className="font-bold font-mono mr-1">{sampleCounts.conditional}</span>
                     </Badge>
-                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', categoryVendors.filter(isVendorRejected).length)}>
-                      مردود: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isVendorRejected).length}</span>
+                    <Badge variant="gradeReject" onClick={() => toggle('rejected')} className={chipCls('rejected', sampleCounts.rejected)}>
+                      مردود: <span className="font-bold font-mono mr-1">{sampleCounts.rejected}</span>
                     </Badge>
                     {/* Without this chip the three above no longer add up to the
                         total, and the samples waiting on a decision — the ones
                         somebody actually has to act on — are the ones you cannot
                         filter for. */}
-                    <Badge variant="outline" onClick={() => toggle('untested')} className={chipCls('untested', categoryVendors.filter(isUntestedSample).length)}>
-                      آزمایش نشده: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isUntestedSample).length}</span>
+                    <Badge variant="outline" onClick={() => toggle('untested')} className={chipCls('untested', sampleCounts.untested)}>
+                      آزمایش نشده: <span className="font-bold font-mono mr-1">{sampleCounts.untested}</span>
                     </Badge>
                   </>
                 ) : categoryId === 'blacklist' ? (
@@ -495,7 +540,10 @@ export function CategoryView({
                     </Badge>
                   </>
                 )}
-                {categoryId !== 'blacklist' && expiringCount > 0 && (
+                {/* A sample carries no licence of its own, which is why the
+                    matching sort option was removed for this category; the chip
+                    had simply been left behind. */}
+                {categoryId !== 'blacklist' && categoryId !== 'sample' && expiringCount > 0 && (
                   <Badge variant="warning" onClick={() => toggle('expiring')} className={chipCls('expiring')} title="فیلتر سورس‌های با مجوز رو به انقضا یا منقضی">
                     <AlertTriangle className="w-3.5 h-3.5 ml-1 shrink-0" /> نزدیک انقضا: <span className="font-bold font-mono mr-1">{expiringCount}</span>
                   </Badge>
