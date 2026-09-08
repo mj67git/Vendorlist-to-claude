@@ -60,5 +60,22 @@ export const categoryCardStyles: Record<string, {
     iconText: 'text-violet-600',
     statText: 'text-violet-600',
     accentGlow: 'group-hover:shadow-[0_0_20px_rgba(124,58,237,0.30)]'
+  },
+  /*
+   * The blacklist card was missing, because the dashboard row left the
+   * category out entirely — while the sidebar counted it. A register that
+   * hides its disqualified suppliers on the page people open first is telling
+   * half the truth, so the card exists; the muted rose keeps it from competing
+   * with the four categories that carry live work.
+   */
+  blacklist: {
+    hoverBg: 'hover:bg-rose-50/20',
+    hoverBorder: 'hover:border-rose-500/40',
+    hoverShadow: 'hover:shadow-[0_12px_30px_rgba(225,29,72,0.18)]',
+    iconBg: 'bg-rose-600/10',
+    iconBorder: 'border-rose-500/25',
+    iconText: 'text-rose-600',
+    statText: 'text-rose-600',
+    accentGlow: 'group-hover:shadow-[0_0_20px_rgba(225,29,72,0.25)]'
   }
 };

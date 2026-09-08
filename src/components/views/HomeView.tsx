@@ -10,8 +10,9 @@ import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { isVendorRejected } from '../../utils/vendorState';
+import { adminRejectionReason, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { describeVendorRank } from '../../utils/vendorRank';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
@@ -438,22 +439,94 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           <h3 className="font-bold text-foreground text-sm">دسته‌بندی‌های تامین</h3>
           <span className="text-xs text-muted-foreground">انتخاب دسته‌بندی برای مدیریت تخصصی</span>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {(Object.entries(categoryLabels) as [Category, any][]).filter(([id]) => id !== 'blacklist').map(([id, meta]) => {
-            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected'));
-            const verified = id === 'sample' 
-              ? catVendors.filter(v => v.status === 'approved').length 
-              : catVendors.filter(v => v.grade === 'A' || v.grade === 'B').length;
-            const other = catVendors.length - verified;
-            const verifiedLabel = 'تایید شده';
-            const otherLabel = id === 'sample' ? 'مشروط / رد' : 'سایر';
+        {/* Six cards now that the blacklist has one, so the row divides evenly
+            instead of leaving a single card stranded on a second line. */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
+            /*
+             * The card's population.
+             *
+             * The blacklist has its own list — it is a state, not a category —
+             * and every other category excludes the sources that reached it.
+             * That exclusion used to be written by hand as
+             * `status !== 'rejected' && grade !== 'rejected'`, which rule 11
+             * forbids for a reason: a source an administrator rejected without
+             * a failing score slipped through it and went on being counted as
+             * if it were still supplying.
+             */
+            const isBlacklistCard = id === 'blacklist';
+            const catVendors = isBlacklistCard
+              ? db.filter(isInBlacklistCategory)
+              // Samples keep their rejected rows, because a rejected sample is a
+              // finished test rather than a disqualified supplier and the
+              // blacklist is defined to exclude them (`isInBlacklistCategory`).
+              // Filtering them here too would have dropped them from both cards.
+              : id === 'sample'
+                ? db.filter(isSampleRecord)
+                : db.filter(v => v.category === id && !isSampleRecord(v) && !isVendorRejected(v));
+
+            /*
+             * Three figures instead of two, and every one of them derived.
+             *
+             * «سایر» used to hold grade C, the unscored and the conditional all
+             * at once — the single number on the card that could not lead to a
+             * decision, since "not evaluated yet" and "evaluated, passed with
+             * conditions" ask for opposite things. The grade comes from the
+             * department scores through `describeVendorRank`, not from the
+             * stored column, so this row and the donut above it can no longer
+             * disagree about the same company.
+             */
+            const buckets = { good: 0, watch: 0, open: 0 };
+            for (const v of catVendors) {
+              /*
+               * The blacklist is a verdict, not a mix of qualities: every row
+               * on it is disqualified, so «۰ تأییدشده / ۰ مشروط» would be three
+               * numbers that can never say anything. What is worth knowing is
+               * how a source got there — a person's decision, or its own score.
+               */
+              if (isBlacklistCard) {
+                if (adminRejectionReason(v)) buckets.watch++;
+                else buckets.open++;
+                continue;
+              }
+              if (id === 'sample') {
+                const decided = describeSampleStatus(v);
+                if (!decided.decided) buckets.open++;
+                else if (decided.label === 'Approved') buckets.good++;
+                else buckets.watch++;
+                continue;
+              }
+              const grade = describeVendorRank(v).grade;
+              if (grade === 'A' || grade === 'B') buckets.good++;
+              else if (grade === 'C' || grade === 'D') buckets.watch++;
+              else buckets.open++;
+            }
+
+            const labels = isBlacklistCard
+              ? { good: 'تأییدشده', watch: 'رد صریح', open: 'امتیاز پایین' }
+              : id === 'sample'
+                ? { good: 'تأییدشده', watch: 'مشروط یا رد', open: 'آزمایش‌نشده' }
+                : { good: 'تأییدشده', watch: 'مشروط', open: 'ارزیابی‌نشده' };
+
+            // Only what is actually wrong, and only when something is: a line
+            // that always shows «۰ مورد» teaches the reader to stop looking at
+            // it. The blacklist card is the one place the rejected count is the
+            // subject rather than a warning.
+            const expiring = isBlacklistCard ? 0 : catVendors.filter(v => {
+              const st = checkLicenseExpiry(v.ircExpiryDate).status;
+              return st === 'expired' || st === 'expiring_soon';
+            }).length;
+            const rejected = isBlacklistCard ? 0 : db.filter(v =>
+              v.category === id && !isSampleRecord(v) && isVendorRejected(v)).length;
+
+            const total = catVendors.length;
             const style = categoryCardStyles[id] || categoryCardStyles.foreign;
 
             return (
               <Card 
                 key={id}
                 onClick={() => onNavigate('category', id)}
-                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${catVendors.length === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
+                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${total === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
               >
                 <div className="flex items-start justify-between">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-all duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
@@ -467,12 +540,54 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
                   <div className="text-muted-foreground text-2xs mt-0.5 font-mono uppercase tracking-wider">{meta.en}</div>
                 </div>
 
-                <div className="border-t border-border/70 pt-3 flex items-center justify-between">
-                  <div className={`font-mono text-3xl font-black transition-all duration-300 group-hover:scale-105 origin-left ${catVendors.length === 0 ? 'text-muted-foreground' : style.statText}`}>{catVendors.length}</div>
-                  <div className="text-right">
-                    <div className="text-foreground font-bold text-xs">{verified} {verifiedLabel}</div>
-                    <div className="text-muted-foreground text-2xs mt-0.5">{other} {otherLabel}</div>
+                <div className="border-t border-border/70 pt-3 space-y-2">
+                  <div className="flex items-end justify-between gap-2">
+                    <div className={`font-mono text-3xl font-black leading-none transition-all duration-300 group-hover:scale-105 origin-left ${total === 0 ? 'text-muted-foreground' : style.statText}`}>
+                      {total.toLocaleString('fa-IR')}
+                    </div>
+                    {/* Stacked lines rather than three columns: «آزمایش‌نشده»
+                        and «مشروط یا رد» are long enough that side by side they
+                        were cut off at the card's edge, and a label clipped
+                        without an ellipsis reads as a different word. */}
+                    <div className="space-y-0.5 text-2xs min-w-0">
+                      {([
+                        { key: 'good', value: buckets.good, label: labels.good, tone: 'text-emerald-600 dark:text-emerald-400' },
+                        { key: 'watch', value: buckets.watch, label: labels.watch, tone: isBlacklistCard ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400' },
+                        { key: 'open', value: buckets.open, label: labels.open, tone: isBlacklistCard ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground' },
+                      ]).filter(b => !(isBlacklistCard && b.key === 'good')).map(b => (
+                        <div key={b.key} className="flex items-center justify-end gap-1.5">
+                          <span className="text-muted-foreground">{b.label}</span>
+                          <span className={`font-mono font-black ${b.tone}`}>{b.value.toLocaleString('fa-IR')}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* The same three numbers as one bar, so the shape of the
+                      category reads without arithmetic. Decorative: the figures
+                      above already carry the information. */}
+                  {total > 0 && (
+                    <div aria-hidden className="h-1.5 w-full rounded-full overflow-hidden flex bg-muted">
+                      <div className="h-full bg-emerald-500" style={{ width: `${(buckets.good / total) * 100}%` }} />
+                      <div className={`h-full ${isBlacklistCard ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${(buckets.watch / total) * 100}%` }} />
+                      <div className={`h-full ${isBlacklistCard ? 'bg-rose-400' : 'bg-slate-400 dark:bg-slate-600'}`} style={{ width: `${(buckets.open / total) * 100}%` }} />
+                    </div>
+                  )}
+
+                  {(rejected > 0 || expiring > 0) && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-bold pt-0.5">
+                      {rejected > 0 && (
+                        <span className="text-rose-600 dark:text-rose-400">
+                          {rejected.toLocaleString('fa-IR')} در لیست سیاه
+                        </span>
+                      )}
+                      {expiring > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          {expiring.toLocaleString('fa-IR')} مجوز منقضی یا نزدیک انقضا
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Card>
             )
