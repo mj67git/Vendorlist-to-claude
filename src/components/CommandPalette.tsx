@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, X, Globe, Database, Building2, Home, Archive, History, Handshake, CornerDownLeft } from 'lucide-react';
 import { EntityName } from './EntityName';
 import type { Vendor, Material, BusinessPartner, Category } from '../types';
+import { can, VIEW_PERMISSIONS, type PermissionSubject } from '../utils/permissions';
 
 interface CommandItem {
   id: string;
@@ -20,9 +21,11 @@ interface CommandPaletteProps {
   partners: BusinessPartner[];
   onSelectVendor: (v: Vendor) => void;
   onNavigate: (view: string, categoryId?: Category | null) => void;
+  /** Who is searching, so the palette offers only what they may open. */
+  currentUser?: PermissionSubject | null;
 }
 
-export function CommandPalette({ open, onClose, db, materials, partners, onSelectVendor, onNavigate }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, db, materials, partners, onSelectVendor, onNavigate, currentUser }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -36,28 +39,38 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
   }, [open]);
 
   const items = useMemo<CommandItem[]>(() => {
-    const pages: CommandItem[] = [
-      { id: 'p-home', title: 'صفحه اصلی', subtitle: 'داشبورد', group: 'صفحات', icon: Home, run: () => onNavigate('home') },
-      { id: 'p-archive', title: 'آرشیو کامل داده‌ها', subtitle: 'Full Archive', group: 'صفحات', icon: Archive, run: () => onNavigate('archive') },
-      { id: 'p-audit', title: 'ردیابی تغییرات (Audit)', subtitle: 'Audit Trail', group: 'صفحات', icon: History, run: () => onNavigate('audit-trail') },
-      { id: 'p-partners', title: 'مخزن شرکای تجاری', subtitle: 'Business Partners', group: 'صفحات', icon: Building2, run: () => onNavigate('business-partners') },
-      { id: 'p-materials', title: 'مخزن مواد اولیه', subtitle: 'Materials Master', group: 'صفحات', icon: Database, run: () => onNavigate('materials') },
-      { id: 'p-360', title: 'بررسی یکپارچه تامین‌کننده', subtitle: 'Supplier 360', group: 'صفحات', icon: Handshake, run: () => onNavigate('supplier-audit') },
+    // Each page carries the permission its own screen checks, so the palette
+    // cannot offer a shortcut into a page that answers «عدم دسترسی». It used to
+    // list all six for everybody — the one place in the application where the
+    // sidebar hid an entry and this still handed it out.
+    const pages: Array<CommandItem & { view: string | null }> = [
+      { id: 'p-home', title: 'صفحه اصلی', subtitle: 'داشبورد', group: 'صفحات', icon: Home, view: null, run: () => onNavigate('home') },
+      { id: 'p-archive', title: 'آرشیو کامل داده‌ها', subtitle: 'Full Archive', group: 'صفحات', icon: Archive, view: 'archive', run: () => onNavigate('archive') },
+      { id: 'p-audit', title: 'ردیابی تغییرات (Audit)', subtitle: 'Audit Trail', group: 'صفحات', icon: History, view: 'audit-trail', run: () => onNavigate('audit-trail') },
+      { id: 'p-partners', title: 'مخزن شرکای تجاری', subtitle: 'Business Partners', group: 'صفحات', icon: Building2, view: 'business-partners', run: () => onNavigate('business-partners') },
+      { id: 'p-materials', title: 'مخزن مواد اولیه', subtitle: 'Materials Master', group: 'صفحات', icon: Database, view: 'materials', run: () => onNavigate('materials') },
+      { id: 'p-360', title: 'بررسی یکپارچه تامین‌کننده', subtitle: 'Supplier 360', group: 'صفحات', icon: Handshake, view: 'supplier-audit', run: () => onNavigate('supplier-audit') },
     ];
-    const vendors: CommandItem[] = db.slice(0, 400).map(v => ({
+    const openPages: CommandItem[] = pages
+      .filter(p => p.view === null || can(currentUser ?? null, VIEW_PERMISSIONS[p.view]))
+      .map(({ view: _view, ...item }) => item);
+    // The records themselves follow the same rule. The source list is already
+    // filtered by the server for this account (`readableVendors`), so what is
+    // in `db` is what may be seen; materials and partners have their own read.
+    const vendors: CommandItem[] = (can(currentUser ?? null, 'vendor.read') ? db : []).slice(0, 400).map(v => ({
       id: `v-${v.id}`, title: v.name || v.material || 'سورس', subtitle: `${v.material || ''}${v.grade ? ' · گرید ' + v.grade : ''}`,
       group: 'سورس‌ها / تامین‌کنندگان', icon: Globe, run: () => onSelectVendor(v),
     }));
-    const mats: CommandItem[] = (materials || []).slice(0, 300).map(m => ({
+    const mats: CommandItem[] = (can(currentUser ?? null, 'material.read') ? materials || [] : []).slice(0, 300).map(m => ({
       id: `m-${(m as any).id}`, title: (m as any).nameFa || (m as any).name || 'ماده', subtitle: (m as any).cas || 'ماده اولیه',
       group: 'مواد اولیه', icon: Database, run: () => onNavigate('materials'),
     }));
-    const parts: CommandItem[] = (partners || []).slice(0, 300).map(p => ({
+    const parts: CommandItem[] = (can(currentUser ?? null, 'partner.read') ? partners || [] : []).slice(0, 300).map(p => ({
       id: `bp-${p.id}`, title: p.name, subtitle: p.type === 'Manufacturer' ? 'تولیدکننده' : 'فروشنده',
       group: 'شرکای تجاری', icon: Building2, run: () => onNavigate('business-partners'),
     }));
-    return [...pages, ...vendors, ...mats, ...parts];
-  }, [db, materials, partners, onNavigate, onSelectVendor]);
+    return [...openPages, ...vendors, ...mats, ...parts];
+  }, [db, materials, partners, onNavigate, onSelectVendor, currentUser]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

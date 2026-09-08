@@ -6,6 +6,7 @@ import {
   effectivePermissions, hasCustomPermissions, roleTemplate, sanitizePermissions,
   ALL_PERMISSIONS, SCORING_DEPARTMENTS, type Permission, type Role,
   modulePermissionsOf, ownedModulePermissions, permissionOwner, PERMISSION_MODULES,
+  SOURCE_LIST_VIEWS, VIEW_PERMISSIONS,
 } from '../src/utils/permissions';
 
 /**
@@ -427,4 +428,26 @@ test('every permission the policy defines can be reached in the form', () => {
     if (scoring.includes(permission)) continue;   // its own section in the dialog
     assert.ok(settable.has(permission), `${permission} has no row`);
   }
+});
+
+test('every gated view names a real permission, and the two the list serves are among them', () => {
+  // The sidebar, the command palette, the page itself and — for the archive and
+  // the directory — the server all read this table. The palette was the last
+  // holdout: it offered every page to everybody, so an account whose sidebar
+  // hid the archive could still reach it from ⌘K and land on a refusal.
+  for (const [view, permission] of Object.entries(VIEW_PERMISSIONS)) {
+    assert.ok(ALL_PERMISSIONS.includes(permission), `${view} names ${permission}, which is not a permission`);
+  }
+  for (const view of SOURCE_LIST_VIEWS) {
+    assert.ok(VIEW_PERMISSIONS[view], `${view} is served by the source list but has no permission`);
+  }
+  // Every working role can open the two views; only a deliberate exception list
+  // closes them, which is what makes the setting worth having.
+  for (const role of ['commercial', 'qa', 'planning', 'finance', 'lab'] as Role[]) {
+    for (const view of SOURCE_LIST_VIEWS) {
+      assert.equal(can(role, VIEW_PERMISSIONS[view]), true, `${role} should open ${view} by default`);
+    }
+  }
+  const narrowed = { role: 'planning', permissions: ['vendor.read', 'score.planning'] };
+  assert.equal(can(narrowed, VIEW_PERMISSIONS.archive), false, 'and an exception list closes it');
 });

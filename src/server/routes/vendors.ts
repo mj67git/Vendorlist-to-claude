@@ -6,7 +6,8 @@ import {
   vendorRiskSchema, vendorSchema, vendorScoreSchema,
 } from "../../utils/validation.js";
 import {
-  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges, type Permission,
+  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission,
 } from "../../utils/permissions.js";
 import {
   forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
@@ -129,10 +130,9 @@ async function refuseUnauthorisedVerdict(
  * the server answers whether that account may open it, which is what keeps the
  * tick in the permission form from being decoration (rule 14).
  */
-const VIEW_PERMISSIONS: Record<string, Permission> = {
-  archive: "archive.read",
-  "supplier-audit": "supplier-audit.read",
-};
+const GATED_VIEWS: Record<string, Permission> = Object.fromEntries(
+  SOURCE_LIST_VIEWS.map(view => [view, VIEW_PERMISSIONS[view]]),
+);
 
 /**
  * The same answer as `getVendorChangesSince`, for an account that is served
@@ -176,7 +176,7 @@ export function vendorRoutes(): express.Router {
     try {
       const view = typeof req.query.view === "string" ? req.query.view : null;
       if (view !== null) {
-        const needed = VIEW_PERMISSIONS[view];
+        const needed = GATED_VIEWS[view];
         if (!needed) {
           return res.status(400).json({ error: "نمای درخواستی معتبر نیست." });
         }

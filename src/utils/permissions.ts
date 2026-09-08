@@ -755,3 +755,32 @@ export function permissionOwner(permission: Permission): string | undefined {
 export function ownedModulePermissions(module: PermissionModule): Permission[] {
   return modulePermissionsOf(module).filter(p => PERMISSION_OWNER.get(p) === module.key);
 }
+
+/**
+ * The permission each navigable view asks for.
+ *
+ * One table so the sidebar, the command palette, the page itself and — for the
+ * two views the source list serves — the server all name the same permission.
+ * The palette was the last place that did not: it listed every page for
+ * everybody, so an account whose sidebar hid the archive could still jump into
+ * it from ⌘K and land on «عدم دسترسی».
+ *
+ * The home page is deliberately absent: it is the fallback every signed-in
+ * account can reach, and its panels gate themselves.
+ */
+export const VIEW_PERMISSIONS: Record<string, Permission> = {
+  archive: 'archive.read',
+  'supplier-audit': 'supplier-audit.read',
+  'audit-trail': 'audit.read',
+  'business-partners': 'partner.read',
+  materials: 'material.read',
+  users: 'users.read',
+};
+
+/**
+ * The read-only views served by `GET /api/vendors`, which therefore have to be
+ * answered by the server rather than by the page: both read the same rows as
+ * every other source view, so no row filter expresses them (`readableVendors`
+ * covers the ones that are a row filter — samples and the blacklist).
+ */
+export const SOURCE_LIST_VIEWS = ['archive', 'supplier-audit'] as const;
