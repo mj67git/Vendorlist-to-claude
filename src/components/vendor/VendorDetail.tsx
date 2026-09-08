@@ -1094,7 +1094,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
                 <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} onDirtyChange={setScoresDirty} />
               </div>
-            ) : vendor.scores ? (
+            ) : overall !== null ? (
+              /*
+               * `vendor.scores` on its own was the wrong test: the object exists
+               * on a source nobody has scored, with every department at zero, so
+               * this branch drew a full evaluation — a weighted total, four
+               * department cards whose criteria all read «۵ / ۵» because an
+               * unset raw value falls back to the maximum, and a radar collapsed
+               * on the origin. The empty state below was already written and
+               * could never be reached. `overall` is null exactly when no
+               * department carries a score, which is the question being asked.
+               */
               <div className="space-y-6">
                 {/* Weighted average score, beautifully centered and designed */}
                 {currentUser?.role === 'admin' ? (
@@ -1128,6 +1138,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     {FORM_LAYOUT.map(layout => {
                       const deptScore = vendor.scores[layout.id as keyof typeof vendor.scores];
                       if (deptScore === undefined || deptScore === null) return null;
+                      /*
+                       * A department with no score of its own is left out, not
+                       * drawn as a zero. `getRawScoreValue` answers 5 when it
+                       * has nothing recorded — right for the form, where a
+                       * slider must sit somewhere, and wrong here: on a source
+                       * scored by one department the other three appeared as
+                       * full marks on every criterion. Zero and «not recorded»
+                       * are the same state throughout this application
+                       * (rule 14), so this is the same test the server uses.
+                       */
+                      if (!(deptScore > 0)) return null;
                       
                       // Only the department a user may score is shown to them.
                       if (!canScoreDepartment(currentUser, layout.id)) return null;
@@ -1180,7 +1201,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
-                هیچ امتیازی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
+                هیچ امتیازدهی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
               </div>
             )}
           </div>
