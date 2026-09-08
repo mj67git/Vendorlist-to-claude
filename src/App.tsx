@@ -46,10 +46,10 @@ import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
-import { isVendorRejected, isInBlacklistCategory, applyDerivedState } from './utils/vendorState';
+import { isVendorRejected, isInBlacklistCategory } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { can, categoryPermission, effectivePermissions, VIEW_PERMISSIONS, type Permission } from './utils/permissions'
-import { useServerViewAccess } from './hooks/useServerViewAccess';
+import { useGatedVendorList } from './hooks/useGatedVendorList';
 import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
 import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
 import { CommandPalette } from './components/CommandPalette';
@@ -58,6 +58,7 @@ import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
+import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
 import { useCachedCollection } from './hooks/useCachedCollection';
 import {
   HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
@@ -126,23 +127,6 @@ const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void
   </div>
 );
 
-/**
- * Sources the application will show at all.
- *
- * A batch of demo records with ids above vF128 was imported once and never
- * belonged to the real register. Defined once here because three call sites
- * need it — the seed load, the initial fetch, and the re-read after a refused
- * write — and three copies of a filter is three chances to let one drift.
- */
-const isAllowedVendor = (v: any) => {
-  if (!v || !v.id) return false;
-  if (typeof v.id === 'string' && v.id.startsWith('vF')) {
-    const numPart = parseInt(v.id.substring(2), 10);
-    if (!isNaN(numPart) && numPart > 128) return false;
-  }
-  return true;
-};
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -172,32 +156,6 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const normalizeAndCleanVendor = (v: any): Vendor => {
-    if (v.isSample) {
-      // Rejection (and its removal) is derived from the QC records, so a deleted
-      // Reject result clears the blacklist stamp instead of latching it.
-      return applyDerivedState(v) as Vendor;
-    }
-
-    const isInitialVendor = typeof v.id === 'string' && v.id.startsWith('vF');
-    const hasBeenEvaluatedByUser = (v.rawScores && Object.keys(v.rawScores).length > 0) || (v.scores && (v.scores.commercial > 0 || v.scores.qa > 0));
-
-    if (isInitialVendor && !hasBeenEvaluatedByUser && !v.scores) {
-      const isRejected = isVendorRejected(v);
-      v.scores = null;
-      v.rawScores = null;
-      v.status = isRejected ? 'rejected' : 'new';
-      v.grade = isRejected ? 'rejected' : 'new';
-    }
-
-    if (v.scores && v.scores.qc !== undefined) {
-       v.scores.planning = v.scores.qc;
-       delete v.scores.qc;
-    }
-
-    // `applyDerivedState` owns the rejection stamp and the score-derived grade.
-    return applyDerivedState(v) as Vendor;
-  };
 
   const [db, setDb] = useState<Vendor[]>(() => {
     const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
@@ -696,6 +654,15 @@ export default function App() {
    * rest. See the background-sync effect below.
    */
   const [remoteChangeCount, setRemoteChangeCount] = useState(0);
+  /**
+   * Moves each time the register is replaced from the server.
+   *
+   * The archive and the directory keep their own copy, read through the route
+   * that guards them, so they would otherwise sit on a snapshot while the
+   * background poll refreshed everybody else's (rule 11a: the data is replaced
+   * silently and the page never jumps).
+   */
+  const [dataRevision, setDataRevision] = useState(0);
   /** The server's clock at the last poll — the `since` of the next one. */
   const syncCursorRef = useRef<string | null>(null);
   /** How many sources the server had at the last poll, which is how a deletion is noticed. */
@@ -759,10 +726,16 @@ export default function App() {
   // The two read-only views whose permission the server answers on entry. Kept
   // here with the other top-level hooks, above the login early-return, so the
   // hook order cannot change between renders (rule 10).
+  // The archive and the directory read their own rows through the route that
+  // guards them, rather than borrowing the shared store: what they draw is then
+  // the product of a request the server was free to refuse, not of a check made
+  // in the browser (rule 14). `dataRevision` moves whenever the register is
+  // replaced elsewhere, so a background sync reaches this copy too.
   const gatedView = view === 'archive' || view === 'supplier-audit' ? view : null;
-  const viewAccess = useServerViewAccess(
-    gatedView, !!currentUser && !isLocalMode(), currentUser?.username ?? null,
+  const gated = useGatedVendorList(
+    gatedView, !!currentUser && !isLocalMode(), currentUser?.username ?? null, dataRevision,
   );
+  const viewAccess = gated.access;
   const roleInitials = (r?: string) => r === 'admin' ? 'AD' : r === 'qa' ? 'QA' : r === 'commercial' ? 'CO' : r === 'planning' ? 'PL' : r === 'finance' ? 'FI' : 'US';
   const roleTitle = (r?: string) => r === 'admin' ? 'مدیریت ارشد سیستم' : r === 'qa' ? 'واحد تضمین کیفیت QA' : r === 'commercial' ? 'واحد بازرگانی و خرید' : r === 'planning' ? 'برنامه‌ریزی و انبار' : r === 'finance' ? 'واحد مالی و حسابداری' : 'کاربر سیستم';
   const handleLogout = async () => {
@@ -1334,6 +1307,7 @@ export default function App() {
       });
       const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
       setDb(fresh);
+      setDataRevision(n => n + 1);
       const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
       if (focused) updateCurrentVendorInHistory(focused);
     } catch (err) {
@@ -1653,6 +1627,19 @@ export default function App() {
         <p className="text-xs font-semibold">در حال بررسی سطح دسترسی…</p>
       </div>
     );
+    // A read that failed for a reason that is not a refusal. Saying "no access"
+    // here would blame the administrator for a network fault; saying nothing
+    // would draw an empty archive that looks like an empty register.
+    const LOAD_FAILED = (
+      <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm">
+        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-black text-foreground">اطلاعات این نما خوانده نشد</h2>
+        <p className="text-xs text-muted-foreground leading-relaxed font-medium">{gated.error}</p>
+        <Button onClick={() => setDataRevision(n => n + 1)} className="text-xs font-bold">تلاش دوباره</Button>
+      </div>
+    );
     const DENY_ARCHIVE = (
       <AccessDenied
         title="عدم دسترسی به آرشیو کامل داده‌ها"
@@ -1766,8 +1753,9 @@ export default function App() {
       // stood behind it.
       keyName = 'archive';
       content = !can(currentUser, VIEW_PERMISSIONS.archive) || viewAccess === 'denied' ? DENY_ARCHIVE
+        : gated.error ? LOAD_FAILED
         : viewAccess === 'checking' ? CHECKING_ACCESS : (
-        <ArchiveView db={db} isLoading={isSyncing && db.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
+        <ArchiveView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
       );
     } else if (view === 'tasks') {
       const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
@@ -1786,7 +1774,8 @@ export default function App() {
     } else if (view === 'supplier-audit') {
       keyName = 'supplier-audit';
       content = !can(currentUser, VIEW_PERMISSIONS['supplier-audit']) || viewAccess === 'denied' ? DENY_DIRECTORY
-        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView db={db} isLoading={isSyncing && db.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+        : gated.error ? LOAD_FAILED
+        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, VIEW_PERMISSIONS.materials) ? (
