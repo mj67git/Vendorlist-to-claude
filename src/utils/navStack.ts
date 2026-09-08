@@ -151,3 +151,32 @@ export function hydrateVendor(stack: ViewState[], vendor: Vendor): ViewState[] {
   };
   return next;
 }
+
+/**
+ * Put a freshly saved source back into every entry that is showing it.
+ *
+ * The application used to write the saved copy into whatever entry was on top,
+ * and that is a race the user loses. A save runs a queue of PATCHes with
+ * `await`, so the last one lands a few hundred milliseconds later; leave the
+ * record in that window — press «صفحه اصلی» — and the entry on top is the home
+ * page by the time the queue finishes, so the source was stamped onto it. The
+ * page then rendered the source instead of the dashboard, at `#/vendor/<id>`
+ * with no category: a record pushed onto a page it does not belong to.
+ *
+ * Matching by id answers both halves. An entry showing this source gets the
+ * fresh copy, so its breadcrumb stays right and the next edit from that page
+ * carries the new timestamp rather than a stale claim the server would refuse
+ * (rule 11a). An entry showing anything else is left exactly as it was, and a
+ * save whose page nobody is on any more finishes in silence.
+ */
+export function refreshVendorEverywhere(stack: ViewState[], vendor: Vendor): ViewState[] {
+  let changed = false;
+  const next = stack.map(entry => {
+    if (entry.selectedVendor?.id !== vendor.id) return entry;
+    changed = true;
+    return { ...entry, selectedVendor: vendor };
+  });
+  // The same array back when nothing matched, so React is not asked to render
+  // (and the URL is not re-synced) for a page the user has walked away from.
+  return changed ? next : stack;
+}

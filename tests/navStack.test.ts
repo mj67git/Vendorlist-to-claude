@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   HOME, MAX_VIEW_HISTORY, capHistory, hydrateVendor, popForm, popView,
-  pushForm, pushVendor, pushView, truncateTo, type ViewState,
+  pushForm, pushVendor, pushView, refreshVendorEverywhere, truncateTo, type ViewState,
 } from '../src/utils/navStack';
 import type { Vendor } from '../src/types';
 
@@ -159,4 +159,32 @@ test('hydrating leaves a record the user navigated to alone', () => {
 test('hydrating only ever touches the top of the stack', () => {
   const stack = [HOME, entry({ selectedVendor: { id: 'V1' } as Vendor }), entry({ view: 'archive' })];
   assert.equal(hydrateVendor(stack, { id: 'V1', name: 'x' } as Vendor), stack);
+});
+
+test('a save lands on the entries showing that source, and nowhere else', () => {
+  // The bug this replaces: the saved copy went into whatever entry was on top.
+  // A save runs its PATCHes with `await`, so pressing «صفحه اصلی» in that
+  // window put the source onto the home entry, and the dashboard turned back
+  // into the source page a beat after the user left it.
+  const saved = { ...src('V1'), name: 'ذخیره‌شده' } as Vendor;
+  const stack = [HOME, entry({ selectedVendor: src('V1') }), entry({ view: 'home', selectedVendor: null })];
+
+  const after = refreshVendorEverywhere(stack, saved);
+  assert.equal(after[2].selectedVendor, null, 'the page the user moved to is untouched');
+  assert.equal(after[1].selectedVendor?.name, 'ذخیره‌شده', 'the page showing it gets the fresh copy');
+  assert.equal(after[0], stack[0], 'entries that never held it are the same objects');
+});
+
+test('the same source deeper in the stack is refreshed too, so the breadcrumb agrees', () => {
+  const saved = { ...src('V1'), name: 'تازه' } as Vendor;
+  const stack = [entry({ selectedVendor: src('V1') }), entry({ selectedVendor: src('V1') })];
+  const after = refreshVendorEverywhere(stack, saved);
+  assert.deepEqual(after.map(e => e.selectedVendor?.name), ['تازه', 'تازه']);
+});
+
+test('a save for a source nobody is looking at changes nothing at all', () => {
+  // Returning the very same array matters: a new one would re-render the page
+  // and re-sync the address for a save the user has walked away from.
+  const stack = [HOME, entry({ selectedVendor: src('V2') })];
+  assert.equal(refreshVendorEverywhere(stack, src('V1')), stack);
 });

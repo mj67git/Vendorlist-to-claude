@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Loader2, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
@@ -62,7 +62,7 @@ import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormaliz
 import { useCachedCollection } from './hooks/useCachedCollection';
 import {
   HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
-  pushView, truncateTo, type ViewState,
+  pushView, refreshVendorEverywhere, truncateTo, type ViewState,
 } from './utils/navStack';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
@@ -462,7 +462,20 @@ export default function App() {
   // behind a confirmation dialog while it returns true. This prevents silent
   // loss of an open edit form (a real data-integrity risk under GxP).
   const navGuardRef = useRef<(() => boolean) | null>(null);
+  /**
+   * How many source saves are still waiting for the server.
+   *
+   * The unsaved-changes guard stays armed until the answer arrives, deliberately
+   * (rule 8a), so a user who presses save and then leaves gets a dialog that
+   * says their work will be lost — while the save is in fact in flight and about
+   * to succeed. The count lets that dialog tell the truth instead.
+   */
+  const [savesInFlight, setSavesInFlight] = useState(0);
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+  // Read from callbacks that fire after a save, where the rendered closure
+  // would hold whatever `pendingNav` was when the form was drawn.
+  const pendingNavRef = useRef<(() => void) | null>(null);
+  pendingNavRef.current = pendingNav;
   const registerNavGuard = React.useCallback((fn: (() => boolean) | null) => {
     navGuardRef.current = fn;
   }, []);
@@ -1024,14 +1037,15 @@ export default function App() {
   };
 
 
+  /**
+   * Refresh the saved copy of a source wherever the stack is showing it.
+   *
+   * The rule and the reason live in `refreshVendorEverywhere`; this is the
+   * state wiring around it.
+   */
   const updateCurrentVendorInHistory = (vendor: Vendor | null) => {
-    setViewHistory(prev => {
-      const newHistory = [...prev];
-      if (newHistory.length > 0) {
-        newHistory[newHistory.length - 1] = { ...newHistory[newHistory.length - 1], selectedVendor: vendor };
-      }
-      return newHistory;
-    });
+    if (!vendor) return;
+    setViewHistory(prev => refreshVendorEverywhere(prev, vendor));
   };
 
   const handleDownloadBackup = () => {
@@ -1247,6 +1261,7 @@ export default function App() {
      * landed, so we ask it and take its answer.
      */
     void (async () => {
+      setSavesInFlight(n => n + 1);
       try {
         // What this save was based on. `original` is the copy that was on
         // screen when the form was opened, so its timestamp is exactly the
@@ -1279,6 +1294,8 @@ export default function App() {
           run: () => resyncVendorsFromServer(normalized.id),
         });
         resyncVendorsFromServer(normalized.id);
+      } finally {
+        setSavesInFlight(n => Math.max(0, n - 1));
       }
     })();
   };
@@ -1403,6 +1420,7 @@ export default function App() {
      * next person to open the register saw a source that did not exist. The
      * optimistic row is withdrawn and the server's reason is shown instead.
      */
+    setSavesInFlight(n => n + 1);
     return authWrite('/api/vendors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1415,7 +1433,7 @@ export default function App() {
         'error', 8000,
       );
       return null;
-    });
+    }).finally(() => setSavesInFlight(n => Math.max(0, n - 1)));
   };
 
   // Material changes are persisted and audited server-side (module "مدیریت مواد"),
@@ -1697,6 +1715,26 @@ export default function App() {
              (This is why rule 8a now reads "a registration lands on its record":
              the batch button is what keeps bulk entry painless.) */
           onSaved={(saved) => {
+            // This runs after the server answers, which can be after the user
+            // has moved on. Registration goes to the new record because the
+            // work continues there (rule 8a) — but only if the form is still
+            // the page they are on. Jumping somebody who has already opened the
+            // home page is the same interruption this callback exists to avoid
+            // on every other save.
+            const stack = historyRef.current;
+            const stillOnForm = !!stack[stack.length - 1]?.formMode;
+            if (!stillOnForm) return;
+            // They pressed something while the save was in flight and the guard
+            // stopped them with a dialog. The save has now landed, so the thing
+            // they asked for is what happens — not a jump to the new record,
+            // which would answer a question they did not ask.
+            const waiting = pendingNavRef.current;
+            if (waiting) {
+              navGuardRef.current = null;
+              setPendingNav(null);
+              waiting();
+              return;
+            }
             if (saved && !editing) {
               // The record takes the form's place in the stack, so it takes its
               // place in the browser's history too — Back from here belongs to
@@ -2566,16 +2604,31 @@ export default function App() {
           size="sm"
           role="alertdialog"
           className="p-6"
-          ariaLabel="تغییرات ذخیره‌نشده"
+          ariaLabel={savesInFlight > 0 ? 'ذخیره در حال انجام' : 'تغییرات ذخیره‌نشده'}
         >
+              {/* Two different situations reach this dialog, and they used to
+                  get the same sentence. The guard stays armed until the server
+                  answers (rule 8a), so pressing save and then leaving showed
+                  «اطلاعات از بین می‌روند» about a save that was already on its
+                  way and about to succeed — a warning that was not true. */}
               <div className="flex items-start gap-3.5">
-                <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5" />
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                  savesInFlight > 0
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                }`}>
+                  {savesInFlight > 0
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : <ShieldAlert className="w-5 h-5" />}
                 </div>
                 <div className="text-right">
-                  <h3 className="text-sm font-black text-foreground mb-1.5">تغییرات ذخیره‌نشده</h3>
+                  <h3 className="text-sm font-black text-foreground mb-1.5">
+                    {savesInFlight > 0 ? 'در حال ذخیره' : 'تغییرات ذخیره‌نشده'}
+                  </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                    فرمی باز است و اطلاعات واردشده هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این اطلاعات از بین می‌روند.
+                    {savesInFlight > 0
+                      ? 'ذخیرهٔ این فرم هنوز تمام نشده است. چند لحظه صبر کنید تا پاسخ سرور برسد؛ اگر همین حالا خارج شوید ذخیره ادامه پیدا می‌کند، ولی نتیجه‌اش را روی این صفحه نمی‌بینید.'
+                      : 'فرمی باز است و اطلاعات واردشده هنوز ذخیره نشده‌اند. اگر از این صفحه خارج شوید، این اطلاعات از بین می‌روند.'}
                   </p>
                 </div>
               </div>
@@ -2589,14 +2642,14 @@ export default function App() {
                   onClick={() => setPendingNav(null)}
                   className="text-xs font-bold"
                 >
-                  بازگشت به فرم
+                  {savesInFlight > 0 ? 'ماندن تا پایان ذخیره' : 'بازگشت به فرم'}
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={() => { const go = pendingNav; setPendingNav(null); navGuardRef.current = null; go?.(); }}
                   className="border border-border text-xs font-bold"
                 >
-                  خروج بدون ذخیره
+                  {savesInFlight > 0 ? 'خروج از صفحه' : 'خروج بدون ذخیره'}
                 </Button>
               </div>
         </FormModal>
