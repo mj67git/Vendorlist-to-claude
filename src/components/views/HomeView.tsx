@@ -250,7 +250,13 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           { label: 'گرید B', value: stats.gradeB, color: 'text-blue-600 dark:text-blue-400', badgeVariant: 'gradeB' as const, sub: 'امتیاز ۶۰ تا ۷۹ (تایید با پایش)', percent: stats.total > 0 ? Math.round((stats.gradeB/stats.total)*100) : 0 },
           { label: 'گرید C', value: stats.gradeC, color: 'text-amber-600 dark:text-amber-400', badgeVariant: 'gradeC' as const, sub: 'امتیاز ۴۰ تا ۵۹ (مشروط)', percent: stats.total > 0 ? Math.round((stats.gradeC/stats.total)*100) : 0 },
           { label: 'بدون گرید', value: stats.ungraded, color: 'text-muted-foreground', badgeVariant: 'info' as const, sub: 'هنوز ارزیابی نشده‌اند', percent: stats.total > 0 ? Math.round((stats.ungraded/stats.total)*100) : 0 },
-          { label: 'لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const, sub: 'مردود یا لیست سیاه', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
+          { label: 'لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const,
+            // Its neighbours all name their band and this one did not, so the
+            // only card on the row whose threshold was invisible was the one
+            // that disqualifies a supplier. The explicit rejection is named
+            // too, because a source also reaches this state by an admin's
+            // decision rather than by its score alone (rule 11).
+            sub: 'امتیاز زیر ۴۰ یا رد صریح', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
         ].map(s => (
           <Card key={s.label} className="p-4 space-y-2.5 bg-card border-border/80 hover:border-primary/30 transition-all">
             <div className="flex items-center justify-between gap-2">
