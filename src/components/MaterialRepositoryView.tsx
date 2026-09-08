@@ -21,6 +21,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 interface Props {
@@ -512,38 +513,36 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   }, [materials]);
 
   return (
-    <div className="w-full flex flex-col gap-6 fade-in pb-10">
-      {/* STATS CARDS */}
+    <div className="space-y-6 fade-in text-right pb-12">
+      {/* The overview tiles, from the shared component: this screen printed
+          its counts in Latin digits, put the English word first with the
+          Persian one in brackets on a single line, and had no loading state —
+          three ways of differing from the partner repository beside it. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-muted text-foreground flex items-center justify-center shrink-0 border border-border">
-            <Archive className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
-            <div className="text-xl font-black text-foreground font-mono mt-0.5">{materials.length}</div>
-          </div>
-        </div>
-        {MATERIAL_ROLES.map(role => {
-          const Icon = ROLE_ICONS[role.value];
-          return (
-            <div key={role.value} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${role.tone}`}>
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-2xs font-bold text-muted-foreground tracking-wider truncate">
-                  {role.labelEn} <span className="font-normal">({role.labelFa})</span>
-                </div>
-                <div className="text-xl font-black text-foreground font-mono mt-0.5">{roleCounts.get(role.value) || 0}</div>
-              </div>
-            </div>
-          );
-        })}
+        <StatTile
+          label="مجموع مواد"
+          hint="Total Materials"
+          hintDir="ltr"
+          value={materials.length}
+          icon={Archive}
+          tone="bg-muted text-foreground border-border"
+        />
+        {MATERIAL_ROLES.map(role => (
+          <StatTile
+            key={role.value}
+            label={role.labelFa}
+            hint={role.labelEn}
+            hintDir="ltr"
+            value={roleCounts.get(role.value) || 0}
+            icon={ROLE_ICONS[role.value]}
+            tone={role.tone}
+          />
+        ))}
       </div>
 
       {/* HEADER & FILTER BAR */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
+      <div className="bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <PageTitle
           eyebrow="Material Master Registry"
           eyebrowIcon={Database}
@@ -563,35 +562,46 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             />
           </div>
           
-          <div className="flex gap-2 w-full sm:w-auto">
-            <select 
-              value={roleFilter} 
-              onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className={cn(inputBaseClass, 'w-full sm:w-40')}
-            >
-              <option value="All">همه نقش‌ها</option>
-              {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
-            </select>
-            
-            <select 
-              value={pharmFilter} 
-              onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className={cn(inputBaseClass, 'font-mono w-full sm:w-36')}
-            >
-              <option value="All">همه فارماکوپه‌ها</option>
-              {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-          </div>
-
           {can(currentUser, 'material.create') && (
             <Button
               onClick={handleOpenAdd}
-              className="w-full sm:w-auto text-xs font-bold shrink-0"
+              size="sm"
+              className="w-full sm:w-auto font-bold shrink-0"
             >
               <Plus />
               <span>ثبت ماده جدید</span>
             </Button>
           )}
+        </div>
+        </div>
+
+        {/* The filters on their own row under a rule, each one labelled — the
+            arrangement the partner repository uses. They used to sit inline
+            with the search and the action button, unlabelled, so what they
+            filtered could only be read off their default option. */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 pt-3 border-t border-border">
+          <label className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-2xs font-bold text-muted-foreground">نقش ماده</span>
+            <select
+              value={roleFilter}
+              onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'w-full sm:w-52 font-medium')}
+            >
+              <option value="All">همه نقش‌ها</option>
+              {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-2xs font-bold text-muted-foreground">فارماکوپه</span>
+            <select
+              value={pharmFilter}
+              onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'font-mono w-full sm:w-44')}
+            >
+              <option value="All">همه فارماکوپه‌ها</option>
+              {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </label>
         </div>
       </div>
 

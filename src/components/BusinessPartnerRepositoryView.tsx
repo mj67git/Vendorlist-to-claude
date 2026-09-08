@@ -45,6 +45,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import { Textarea } from './ui/textarea';
 
@@ -772,7 +773,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6 fade-in pb-12" style={{ direction: 'rtl' }}>
+    <div className="space-y-6 fade-in text-right pb-12">
       {/* KPI cards — same shape as the materials repository so the two
           repositories read as one product: one card per fact, icon tile on the
           side, number in mono. The gradient hero that used to sit above them
@@ -781,33 +782,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
           as it does in the materials view. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'کل شرکای تجاری', en: 'Total Partners', value: stats.total, Icon: Building2,
+          { label: 'کل شرکای تجاری', hint: 'Total Partners', value: stats.total, icon: Building2,
             tone: 'bg-muted text-foreground border-border' },
-          { label: 'تولیدکنندگان', en: 'Manufacturers', value: stats.manufacturers, Icon: Factory,
+          { label: 'تولیدکنندگان', hint: 'Manufacturers', value: stats.manufacturers, icon: Factory,
             tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
-          { label: 'فروشندگان', en: 'Suppliers', value: stats.suppliers, Icon: Handshake,
+          { label: 'فروشندگان', hint: 'Suppliers', value: stats.suppliers, icon: Handshake,
             tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
-          { label: 'مجاز برای اتصال به سورس', en: 'Grade A · Approved', value: stats.eligibleSuppliers, Icon: ShieldCheck,
+          { label: 'مجاز برای اتصال به سورس', hint: 'Grade A · Approved', value: stats.eligibleSuppliers, icon: ShieldCheck,
             tone: 'bg-teal-50 text-teal-600 border-teal-100 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-900' },
-          { label: 'غیرمجاز برای اتصال', en: 'Below Grade A', value: stats.blockedSuppliers, Icon: AlertTriangle,
+          { label: 'غیرمجاز برای اتصال', hint: 'Below Grade A', value: stats.blockedSuppliers, icon: AlertTriangle,
             tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
         ].map(card => (
-          <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
-              <card.Icon className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              {/* Wraps rather than truncating: «مجاز برای اتصال به سورس» is the
-                  whole point of the card and lost its ending at this width. */}
-              <div className="text-2xs font-bold text-muted-foreground leading-tight">{card.label}</div>
-              {/* The counts come from the same list the table shows, so they
-                  cannot claim a number while that list is still loading. */}
-              {isLoading
-                ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
-                : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
-              <div className="text-2xs text-muted-foreground font-mono truncate">{card.en}</div>
-            </div>
-          </div>
+          <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
         ))}
       </div>
 
@@ -836,10 +822,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             {can(currentUser, 'data.export') && (
             <Button
               variant="secondary"
+              size="sm"
               disabled={excel.busy}
               onClick={() => excel.run(xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []))}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
-              className="w-full sm:w-auto text-xs font-bold shrink-0"
+              className="w-full sm:w-auto font-bold shrink-0"
             >
               <Download />
               <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
@@ -852,7 +839,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             {can(currentUser, 'partner.create') && (
               <Button
                 onClick={handleOpenAdd}
-                className="w-full sm:w-auto text-xs font-bold shrink-0"
+                size="sm"
+                className="w-full sm:w-auto font-bold shrink-0"
               >
                 <Plus />
                 <span>ثبت شریک تجاری جدید</span>
