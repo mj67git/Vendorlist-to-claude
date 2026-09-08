@@ -10,6 +10,7 @@ import { getPartnerDetails } from '../utils/printablePartner';
 import { criterionCell, departmentNote, earnedCell } from '../utils/printableScores';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
+import { describeSampleStatus, isSampleRecord } from '../utils/sampleStatus';
 import { toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
 import { describeVendorRank } from '../utils/vendorRank';
@@ -128,6 +129,12 @@ export function PrintableArchiveList({
                 // used to print as "new (۰)" and "— (۰)", which read on paper
                 // like a real, failing evaluation.
                 const gradeText = describeVendorRank(v).label;
+                // A sample is not scored by the departments and not risk
+                // assessed, so on paper it carries the laboratory's verdict and
+                // says plainly that the other two questions do not apply —
+                // exactly what the archive table on screen now shows.
+                const sampleRow = isSampleRecord(v);
+                const sampleLabel = describeSampleStatus(v).label;
                 return (
                   <tr key={v.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{(i + 1).toLocaleString('fa-IR')}</td>
@@ -135,12 +142,16 @@ export function PrintableArchiveList({
                     <td className="border border-slate-300 px-2 py-1">{v.material}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{v.cas || '—'}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center">
-                      {categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category}
+                      {sampleRow
+                        ? `نمونه — ${sampleLabel}`
+                        : (categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category)}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-center">{getDisplayCountry(v)}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{gradeText}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{sampleRow ? 'بدون گرید' : gradeText}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center">
-                      {['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
+                      {sampleRow
+                        ? '—'
+                        : ['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
                         ? v.riskAssessment!.riskLevel
                         : 'ارزیابی نشده'}
                     </td>

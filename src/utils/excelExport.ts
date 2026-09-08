@@ -12,7 +12,7 @@ import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInBlacklistCategory } from './vendorState';
-import { describeSampleStatus } from './sampleStatus';
+import { describeSampleStatus, isSampleRecord } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
@@ -57,6 +57,13 @@ const COL = {
 
 /** What an empty cell says. Latin «N/A» sat next to Persian «ثبت‌نشده» in the same row. */
 const NOT_RECORDED = 'ثبت‌نشده';
+
+/**
+ * What a cell says when the question does not apply to this row at all — a
+ * sample has no risk assessment owed, which is a different statement from an
+ * assessment that is merely missing.
+ */
+const NOT_APPLICABLE = 'موضوعیت ندارد';
 
 /**
  * When the laboratory last reported on a sample, or a dash.
@@ -252,6 +259,18 @@ export function buildCategoryWorksheet(
       : rank.label;
 
     const riskText = getRiskLevelFa(v.riskAssessment?.riskLevel);
+
+    /*
+     * Whether *this row* is a sample, which is not the same question as whether
+     * this is the sample sheet. The whole-archive sheet and the current-view
+     * export mix samples with sources, and there a sample was handed a source
+     * grade («Grade B») and a risk of «ارزیابی نشده» — a verdict nobody reached
+     * and a backlog nobody owes, the same two cells just corrected in the
+     * archive table. On a mixed sheet the headers stay the source ones, so the
+     * cells say what the row is instead of inventing a figure for it.
+     */
+    const sampleRow = isSampleRecord(v);
+    const sampleLabel = describeSampleStatus(v).label;
     const deviationSummary = getDeviationsSummary(v);
 
     // Extract material details from material repository
@@ -302,14 +321,14 @@ export function buildCategoryWorksheet(
       partnerInfo.name,
       partnerInfo.roleLabel,
       formatContactLine(partnerInfo),
-      isSampleSheet ? describeSampleStatus(v).label : scoreStr,
-      isSampleSheet ? (v.analysisRecords || []).length : riskText,
+      isSampleSheet ? sampleLabel : sampleRow ? `نمونه — ${sampleLabel}` : scoreStr,
+      isSampleSheet ? (v.analysisRecords || []).length : sampleRow ? NOT_APPLICABLE : riskText,
       qcCodesStr,
       deviationSummary,
       chosen ? 'بله' : '—',
       chosen ? chosen.reason : '',
       chosen ? [chosen.decidedBy, chosenWhen].filter(Boolean).join(' — ') : '',
-      isSampleSheet ? latestAnalysisDate(v) : (rank.score !== null ? rank.score : '')
+      isSampleSheet ? latestAnalysisDate(v) : sampleRow ? '' : (rank.score !== null ? rank.score : '')
     ];
   });
 
