@@ -35,7 +35,7 @@ function moduleLetters(moduleKey: string, permissions: Permission[]): string {
 test('the shorthand reports what a role actually holds', () => {
   const commercial = roleTemplate('commercial');
   assert.equal(moduleLetters('vendors', commercial), 'RCU', 'commercial creates and edits sources but never deletes one');
-  assert.equal(moduleLetters('partners', commercial), 'RCUDF', 'partners, their documents included');
+  assert.equal(moduleLetters('partners', commercial), 'RCUDFS', 'partners, their documents and their status');
   assert.equal(moduleLetters('materials', commercial), 'R', 'materials are QA\'s to define');
 
   const qa = roleTemplate('qa');
@@ -55,15 +55,19 @@ test('an account with no access to a module reports nothing for it', () => {
 test('the export follows the exception list, not the role, when one is set', () => {
   const restricted = { role: 'commercial', permissions: ['vendor.read', 'score.commercial'] };
   const effective = effectivePermissions(restricted);
-  assert.deepEqual(effective, ['vendor.read', 'score.commercial']);
+  // `vendor.read` carries the four source views split out of it, so a list
+  // naming it keeps them; nothing else from the template comes back.
+  assert.deepEqual(effective,
+    ['vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read', 'score.commercial']);
   assert.equal(moduleLetters('partners', effective), '', 'the sheet must not print access the account lost');
   assert.equal(moduleLetters('vendors', effective), 'R');
 });
 
-test('a view over another module follows that module, in the matrix and the sheet', () => {
-  // The archive and the supplier directory have no permission of their own —
-  // both read `GET /api/vendors` like every source view — so they report the
-  // read they follow rather than claiming a switch of their own.
+test('a view over another module reports its own read, in the matrix and the sheet', () => {
+  // The archive and the supplier directory used to have no permission of their
+  // own and reported the source read they followed. The granular split gave
+  // each one a real read, so an account can be given the archive without the
+  // directory. A role template holds both, so the sheet reads the same.
   const finance = roleTemplate('finance');
   assert.equal(moduleLetters('archive', finance), 'R');
   assert.equal(moduleLetters('supplier-audit', finance), 'R');
@@ -74,14 +78,18 @@ test('a view over another module follows that module, in the matrix and the shee
   assert.equal(moduleLetters('supplier-audit', noReads), '');
 });
 
-test('the derived rows offer no permission of their own', () => {
-  // A tick the server cannot enforce is the mistake `archive.read` was deleted
-  // for, so these rows must not introduce one.
-  for (const key of ['archive', 'supplier-audit']) {
+test('the read-only rows offer a view tick and nothing to write', () => {
+  // Each of these views is a different reading of the same source data, so the
+  // row carries a view permission and no create, edit or delete.
+  for (const [key, permission] of [
+    ['archive', 'archive.read'],
+    ['supplier-audit', 'supplier-audit.read'],
+  ] as const) {
     const module = PERMISSION_MODULES.find(m => m.key === key)!;
-    assert.equal(module.derivedFrom, 'vendor.read');
-    assert.deepEqual(Object.values(module.actions), [null, null, null, null]);
-    assert.ok(module.note, 'the row explains why it cannot be set');
+    assert.equal(module.derivedFrom, undefined, 'it no longer borrows another module\'s permission');
+    assert.equal(module.actions.view, permission);
+    assert.deepEqual([module.actions.create, module.actions.edit, module.actions.delete], [null, null, null]);
+    assert.ok(module.note, 'the row explains what the view is');
   }
 });
 

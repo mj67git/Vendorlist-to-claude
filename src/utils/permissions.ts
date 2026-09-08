@@ -42,6 +42,36 @@ export type Permission =
   | 'vendor.select'
   /** Record or edit laboratory analysis results. */
   | 'vendor.analysis'
+  /**
+   * Disqualify a source, or bring one back.
+   *
+   * Split from `vendor.edit` because recording a fact about a supplier and
+   * ruling that the company will not buy from it are different acts with
+   * different signatures. The split also closed a real hole: the decision box
+   * was hidden in the interface behind `vendor.analysis`, but the verdict
+   * travels to the server as `status` on the profile endpoint and a reason line
+   * on the scores endpoint — so it was actually gated by `vendor.edit`, and
+   * anyone who could correct a phone number could blacklist a supplier while
+   * the laboratory user who saw the button was refused.
+   */
+  | 'vendor.decide'
+  /**
+   * Rule on a sample: approved, conditional or rejected.
+   *
+   * The bench records what the analysis found; this says what the organisation
+   * concluded from it. Separate from `vendor.analysis` at the business's
+   * request, and separate from `vendor.decide` because a sample verdict does
+   * not disqualify a company — it closes a trial.
+   */
+  | 'sample.decide'
+  /** See the sample category. */
+  | 'sample.read'
+  /** See the blacklist category. */
+  | 'blacklist.read'
+  /** See the whole-register archive. */
+  | 'archive.read'
+  /** See the integrated supplier review. */
+  | 'supplier-audit.read'
   /** Record or edit the FMEA risk assessment. */
   | 'vendor.risk'
   /** Score one department's evaluation. One permission per department, so a
@@ -66,6 +96,17 @@ export type Permission =
   | 'partner.edit'
   /** Remove a business partner. */
   | 'partner.delete'
+  /**
+   * Grade a seller against the five documents.
+   *
+   * The evaluation decides whether a seller may be attached to a source at all
+   * (only grade A may), so it is a quality decision rather than record-keeping;
+   * under `partner.edit` anyone who could fix an address could also change that
+   * verdict.
+   */
+  | 'partner.evaluate'
+  /** Blacklist or deactivate a business partner, or restore one. */
+  | 'partner.status'
   /** Download the SOP documents attached to a partner. Separate from
    *  `partner.read` because these are the legal papers themselves — business
    *  licence, signatory authorisation, legalisation — and seeing that a partner
@@ -88,8 +129,26 @@ export type Permission =
   | 'data.export'
   /** Read the audit trail. */
   | 'audit.read'
-  /** Administer user accounts, including their permissions. */
-  | 'users.manage';
+  /** See the user list and each account's access. */
+  | 'users.read'
+  /** Create accounts, edit them, activate and deactivate. */
+  | 'users.manage'
+  /**
+   * Change what another account may do.
+   *
+   * The sharpest privilege in the system — with it, an account can grant itself
+   * anything — so it is separable from ordinary account administration.
+   */
+  | 'users.permissions'
+  /** Reset another account's password. */
+  | 'users.password'
+  /**
+   * Download a full backup of the register.
+   *
+   * It had no permission at all: the button on the dashboard handed the entire
+   * database to anyone who could see it.
+   */
+  | 'data.backup';
 
 /** Departments that carry an evaluation score. */
 export const SCORING_DEPARTMENTS = ['commercial', 'qa', 'planning', 'finance'] as const;
@@ -97,12 +156,16 @@ export type ScoringDepartment = (typeof SCORING_DEPARTMENTS)[number];
 
 /** Every permission there is, in the order the admin screen groups them. */
 export const ALL_PERMISSIONS: Permission[] = [
-  'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete', 'vendor.select',
+  'vendor.read', 'vendor.create', 'vendor.edit', 'vendor.delete', 'vendor.select', 'vendor.decide',
+  'sample.read', 'sample.decide',
+  'blacklist.read', 'archive.read', 'supplier-audit.read',
   'material.read', 'material.create', 'material.edit', 'material.delete',
   'partner.read', 'partner.create', 'partner.edit', 'partner.delete', 'partner.files',
+  'partner.evaluate', 'partner.status',
   'vendor.analysis', 'vendor.risk',
   'score.commercial', 'score.qa', 'score.planning', 'score.finance',
-  'data.export', 'audit.read', 'users.manage',
+  'data.export', 'data.backup', 'audit.read',
+  'users.read', 'users.manage', 'users.permissions', 'users.password',
 ];
 
 /**
@@ -115,15 +178,46 @@ export const ALL_PERMISSIONS: Permission[] = [
  * change — the same approach that let per-user overrides ship without a
  * migration.
  *
- * `archive.read` is gone rather than renamed. It gated nothing: the archive is
- * a view over vendor data every signed-in user can already read, so no server
- * check could have made it real.
+ * The 1405/06/17 split is the same story at a larger scale. Four views that
+ * used to follow `vendor.read` became permissions of their own, and three
+ * decisions were lifted out of the permissions they had been riding on, so
+ * every stored list is expanded on read to keep the access it described:
+ *
+ *  - `vendor.read` still opens the archive, the integrated review, the sample
+ *    category and the blacklist, because that is what it opened before.
+ *  - `vendor.edit` still carries `vendor.decide`. This is what the server
+ *    actually enforced for the blacklist verdict, whatever the interface showed.
+ *  - `vendor.analysis` still carries `sample.decide` — the bench ruled on its
+ *    own samples until now.
+ *  - `partner.edit` still carries `partner.evaluate` and `partner.status`.
+ *  - `users.manage` still carries the three user permissions it was one of.
+ *
+ * `archive.read` is the one name that comes back rather than staying retired:
+ * it gated nothing when the archive was a plain view over data every signed-in
+ * user could read, and it is enforced now that `GET /api/vendors` filters rows
+ * by permission (step 3 of the refactor). An account that still carries the old
+ * value therefore keeps meaning what it says.
  */
 const LEGACY_PERMISSIONS: Record<string, Permission[]> = {
   'vendor.write': ['vendor.create', 'vendor.edit'],
   'material.write': ['material.create', 'material.edit', 'material.delete'],
   'partner.write': ['partner.create', 'partner.edit', 'partner.delete'],
-  'archive.read': [],
+};
+
+/**
+ * What a stored permission implies, so a split never takes access away.
+ *
+ * Unlike `LEGACY_PERMISSIONS` these names are still live: `vendor.edit` remains
+ * a permission of its own and simply continues to carry the decision it used to
+ * carry. Applied on read, so no row in the database has to change and an
+ * administrator can revoke the implied half from any one account afterwards.
+ */
+const IMPLIED_PERMISSIONS: Partial<Record<Permission, Permission[]>> = {
+  'vendor.read': ['archive.read', 'supplier-audit.read', 'sample.read', 'blacklist.read'],
+  'vendor.edit': ['vendor.decide'],
+  'vendor.analysis': ['sample.decide'],
+  'partner.edit': ['partner.evaluate', 'partner.status'],
+  'users.manage': ['users.read', 'users.permissions', 'users.password'],
 };
 
 /** Persian labels, used where a single permission is named on its own. */
@@ -133,6 +227,12 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'vendor.edit': 'ویرایش سورس',
   'vendor.delete': 'حذف سورس',
   'vendor.select': 'ثبت سورس منتخب هر ماده',
+  'vendor.decide': 'تصمیم نهایی سورس (رد صلاحیت و بازگردانی)',
+  'sample.read': 'مشاهدهٔ دستهٔ نمونه',
+  'sample.decide': 'تصمیم کیفی نمونه',
+  'blacklist.read': 'مشاهدهٔ لیست سیاه',
+  'archive.read': 'مشاهدهٔ آرشیو کامل داده‌ها',
+  'supplier-audit.read': 'مشاهدهٔ بررسی یکپارچه تأمین‌کنندگان',
   'material.read': 'مشاهدهٔ مخزن مواد',
   'material.create': 'ثبت مادهٔ جدید',
   'material.edit': 'ویرایش ماده',
@@ -142,6 +242,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'partner.edit': 'ویرایش شریک',
   'partner.delete': 'حذف شریک',
   'partner.files': 'دانلود مدارک شریک',
+  'partner.evaluate': 'ارزیابی فروشنده (مدارک و گرید)',
+  'partner.status': 'تغییر وضعیت شریک (لیست سیاه و غیرفعال‌سازی)',
   'vendor.analysis': 'ثبت نتایج آزمایشگاهی',
   'vendor.risk': 'ارزیابی ریسک (FMEA)',
   'score.commercial': 'امتیازدهی بازرگانی و خرید',
@@ -149,8 +251,12 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'score.planning': 'امتیازدهی برنامه‌ریزی و انبار',
   'score.finance': 'امتیازدهی مالی و حسابداری',
   'data.export': 'خروجی اکسل و چاپ (PDF)',
+  'data.backup': 'دانلود نسخهٔ پشتیبان کامل',
   'audit.read': 'مشاهدهٔ ردیابی تغییرات',
-  'users.manage': 'مدیریت کاربران',
+  'users.read': 'مشاهدهٔ فهرست کاربران',
+  'users.manage': 'ایجاد و ویرایش کاربران',
+  'users.permissions': 'تغییر سطح دسترسی کاربران',
+  'users.password': 'بازنشانی رمز کاربران',
 };
 
 /**
@@ -200,6 +306,30 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     key: 'vendors',
     title: 'سورس‌ها (تأمین‌کنندگان)',
     actions: { view: 'vendor.read', create: 'vendor.create', edit: 'vendor.edit', delete: 'vendor.delete' },
+    extras: [{
+      permission: 'vendor.decide',
+      letter: 'D',
+      label: 'تصمیم نهایی',
+      note: 'رد صلاحیت سورس و انتقال به لیست سیاه، و بازگرداندن از آن. جدا از «ویرایش» است چون ثبت یک واقعیت دربارهٔ تأمین‌کننده با تصمیم به قطع خرید از او یکی نیست.',
+    }],
+  },
+  {
+    key: 'samples',
+    title: 'نمونه‌ها',
+    actions: { view: 'sample.read', create: 'vendor.create', edit: 'vendor.edit', delete: 'vendor.delete' },
+    note: 'نمونه یک رکورد سورس با نشان «نمونه» است، پس ثبت و ویرایش و حذفش همان مجوزهای سورس است؛ فقط دیدن این دسته و رأی‌دادن دربارهٔ نمونه مجوز جدا دارند.',
+    extras: [{
+      permission: 'sample.decide',
+      letter: 'D',
+      label: 'تصمیم کیفی نمونه',
+      note: 'تعیین تأییدشده / مشروط / مردود برای نمونه پس از نتایج آزمایش. آزمایشگاه نتیجه را ثبت می‌کند؛ این گزینه می‌گوید سازمان از آن نتیجه چه نتیجه‌ای گرفته است.',
+    }],
+  },
+  {
+    key: 'blacklist',
+    title: 'لیست سیاه',
+    actions: { view: 'blacklist.read', create: null, edit: null, delete: null },
+    note: 'ورود و خروج از لیست سیاه با «تصمیم نهایی» در ردیف سورس‌ها انجام می‌شود؛ این ردیف فقط دیدن این دسته را تعیین می‌کند.',
   },
   {
     key: 'materials',
@@ -210,12 +340,26 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     key: 'partners',
     title: 'شرکای تجاری',
     actions: { view: 'partner.read', create: 'partner.create', edit: 'partner.edit', delete: 'partner.delete' },
-    extras: [{
-      permission: 'partner.files',
-      letter: 'F',
-      label: 'دانلود مدارک',
-      note: 'مشاهدهٔ فهرست و گرید شریک با «مشاهده» داده می‌شود؛ این گزینه اجازهٔ گرفتن خودِ مدارک (مجوز کسب‌وکار، معرفی‌نامه، ترجمهٔ رسمی) را می‌دهد.',
-    }],
+    extras: [
+      {
+        permission: 'partner.files',
+        letter: 'F',
+        label: 'دانلود مدارک',
+        note: 'مشاهدهٔ فهرست و گرید شریک با «مشاهده» داده می‌شود؛ این گزینه اجازهٔ گرفتن خودِ مدارک (مجوز کسب‌وکار، معرفی‌نامه، ترجمهٔ رسمی) را می‌دهد.',
+      },
+      {
+        permission: 'partner.evaluate',
+        letter: 'E',
+        label: 'ارزیابی فروشنده',
+        note: 'تعیین وضعیت پنج مدرک و در نتیجه گرید فروشنده. چون فقط فروشندهٔ گرید A می‌تواند به سورس وصل شود، این یک تصمیم کیفی است نه نگهداری رکورد.',
+      },
+      {
+        permission: 'partner.status',
+        letter: 'S',
+        label: 'تغییر وضعیت',
+        note: 'افزودن شریک به لیست سیاه، غیرفعال‌کردن و بازگرداندن به وضعیت فعال.',
+      },
+    ],
   },
   {
     key: 'selection',
@@ -229,7 +373,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     title: 'نتایج آزمایشگاهی',
     single: 'vendor.analysis',
     actions: { view: 'vendor.read', create: 'vendor.analysis', edit: 'vendor.analysis', delete: 'vendor.analysis' },
-    note: 'نتایج داخل صفحهٔ سورس نمایش داده می‌شوند، پس مشاهده‌شان همان «مشاهدهٔ سورس‌ها» است. کل فهرست یکجا ذخیره می‌شود، پس ثبت و ویرایش و حذف از هم تفکیک‌پذیر نیستند.',
+    note: 'نتایج داخل صفحهٔ سورس نمایش داده می‌شوند، پس مشاهده‌شان همان «مشاهدهٔ سورس‌ها» است. کل فهرست یکجا ذخیره می‌شود، پس ثبت و ویرایش و حذف از هم تفکیک‌پذیر نیستند. رأی دربارهٔ نتیجه در ردیف «نمونه‌ها» و «سورس‌ها» جدا شده است.',
   },
   {
     key: 'risk',
@@ -241,23 +385,27 @@ export const PERMISSION_MODULES: PermissionModule[] = [
   {
     key: 'archive',
     title: 'آرشیو کامل داده‌ها',
-    derivedFrom: 'vendor.read',
-    actions: { view: null, create: null, edit: null, delete: null },
-    note: 'آرشیو، نمایی از همان سورس‌هاست و مجوز جدا ندارد؛ با «مشاهدهٔ سورس‌ها» باز می‌شود. خروجی اکسل و چاپ فهرست هم همان داده را می‌دهند، پس محدودکردنشان جداگانه معنا ندارد.',
+    actions: { view: 'archive.read', create: null, edit: null, delete: null },
+    note: 'آرشیو فقط خواندنی است. برخلاف گذشته مجوز واقعی دارد: سرور ردیف‌های پاسخ را بر اساس همین تنظیم فیلتر می‌کند، نه اینکه فقط دکمه را پنهان کند.',
   },
   {
     key: 'supplier-audit',
     title: 'بررسی یکپارچه تأمین‌کنندگان',
-    derivedFrom: 'vendor.read',
-    actions: { view: null, create: null, edit: null, delete: null },
-    note: 'این نما سورس‌ها را بر اساس شرکت گروه‌بندی می‌کند و داده‌ای جز همان‌ها ندارد، پس از «مشاهدهٔ سورس‌ها» پیروی می‌کند. امتیازهای نمایش‌داده‌شده تابع دپارتمان‌هایی است که کاربر اجازهٔ امتیازدهی‌شان را دارد.',
+    actions: { view: 'supplier-audit.read', create: null, edit: null, delete: null },
+    note: 'این نما سورس‌ها را بر اساس شرکت گروه‌بندی می‌کند و فقط خواندنی است. امتیازهای نمایش‌داده‌شده تابع دپارتمان‌هایی است که کاربر اجازهٔ امتیازدهی‌شان را دارد.',
   },
   {
     key: 'export',
-    title: 'خروجی و چاپ',
+    title: 'خروجی و پشتیبان',
     single: 'data.export',
     actions: { view: 'data.export', create: 'data.export', edit: 'data.export', delete: 'data.export' },
-    note: 'خروجی اکسل همهٔ ماژول‌ها و چاپ فرم‌ها و فهرست‌ها (PDF). دادهٔ خروجی همان چیزی است که کاربر روی صفحه می‌بیند، پس این تنظیم بردن فایل به بیرون را محدود می‌کند، نه دیدن داده را.',
+    note: 'خروجی اکسل همهٔ ماژول‌ها و چاپ فرم‌ها و فهرست‌ها (PDF) — عمداً یک تنظیم سراسری است. دادهٔ خروجی همان چیزی است که کاربر روی صفحه می‌بیند، پس این تنظیم بردن فایل به بیرون را محدود می‌کند، نه دیدن داده را.',
+    extras: [{
+      permission: 'data.backup',
+      letter: 'B',
+      label: 'نسخهٔ پشتیبان کامل',
+      note: 'دانلود یک‌جای کل رکوردها. تا پیش از این هیچ مجوزی نداشت و برای هر کسی که صفحهٔ اصلی را می‌دید در دسترس بود.',
+    }],
   },
   {
     key: 'audit',
@@ -269,9 +417,22 @@ export const PERMISSION_MODULES: PermissionModule[] = [
   {
     key: 'users',
     title: 'مدیریت کاربران',
-    single: 'users.manage',
-    actions: { view: 'users.manage', create: 'users.manage', edit: 'users.manage', delete: 'users.manage' },
-    note: 'همهٔ مسیرهای این ماژول یک گارد مشترک دارند و عمداً تفکیک نشده‌اند.',
+    actions: { view: 'users.read', create: 'users.manage', edit: 'users.manage', delete: 'users.manage' },
+    note: 'ایجاد و ویرایش و فعال/غیرفعال‌کردن حساب‌ها یک گارد مشترک دارند؛ دو کار پرخطرتر جدا شده‌اند.',
+    extras: [
+      {
+        permission: 'users.permissions',
+        letter: 'P',
+        label: 'تغییر دسترسی‌ها',
+        note: 'تیزترین اختیار سامانه: دارندهٔ آن می‌تواند به هر حسابی — از جمله حساب خودش — هر مجوزی بدهد.',
+      },
+      {
+        permission: 'users.password',
+        letter: 'K',
+        label: 'بازنشانی رمز',
+        note: 'تعیین رمز تازه برای حساب دیگری. جدا از ویرایش حساب، چون به‌معنای دسترسی گرفتن به آن حساب است.',
+      },
+    ],
   },
 ];
 
@@ -304,7 +465,18 @@ export const LOCKED_REASONS = {
  * the application while the user form still offered the role. It now carries
  * the reads and `vendor.analysis`, which is the QC bench's actual work.
  */
-const READ_ALL = ['vendor.read', 'material.read', 'partner.read'] as const;
+/*
+ * The reads every working role starts with.
+ *
+ * The four category views became permissions of their own in the 1405/06/17
+ * split, so they are named here rather than implied — otherwise every template
+ * would silently lose the archive, the integrated review, the samples and the
+ * blacklist that it had before.
+ */
+const READ_ALL = [
+  'vendor.read', 'material.read', 'partner.read',
+  'archive.read', 'supplier-audit.read', 'sample.read', 'blacklist.read',
+] as const;
 
 const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
@@ -319,12 +491,21 @@ const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
     // bought from. QA grades and analyses; it does not place the order.
     'vendor.select',
     'partner.create', 'partner.edit', 'partner.delete',
+    // Not `partner.evaluate`: commercial collects the documents, quality grades
+    // them. And not `vendor.decide` — disqualifying a supplier is a quality
+    // decision, which is the whole point of lifting it out of `vendor.edit`.
+    'partner.status',
     'score.commercial',
   ],
   qa: [
     ...READ_ALL,
     'partner.files',
     'vendor.analysis',
+    // Quality rules on what quality tested: the sample verdict and the
+    // seller's document grade. The source disqualification stays with the
+    // administrator, because it ends a commercial relationship.
+    'sample.decide',
+    'partner.evaluate',
     // FMEA risk assessment is a quality activity and belongs with the rest of
     // QA's work. It used to sit with `admin` alone while the UI still offered
     // QA the risk form and a "ریسک ثبت‌نشده" backlog, so every quality user who
@@ -345,7 +526,9 @@ const ROLE_TEMPLATES: Record<Role, readonly Permission[]> = {
    * created the next laboratory account. It holds the reads and
    * `vendor.analysis`, which is exactly the work: the results are entered
    * against a source, so the source list has to be visible. No `partner.files`
-   * — the bench does not need a supplier's legal papers to run a test.
+   * — the bench does not need a supplier's legal papers to run a test. It
+   * records what the analysis found and does not rule on it: `sample.decide`
+   * belongs to quality.
    */
   lab: [...READ_ALL, 'vendor.analysis'],
 };
@@ -371,8 +554,12 @@ export interface PermissionSubject {
  */
 function expandStored(entry: unknown): Permission[] {
   if (typeof entry !== 'string') return [];
-  if ((ALL_PERMISSIONS as string[]).includes(entry)) return [entry as Permission];
-  return LEGACY_PERMISSIONS[entry] ?? [];
+  const direct = (ALL_PERMISSIONS as string[]).includes(entry)
+    ? [entry as Permission]
+    : LEGACY_PERMISSIONS[entry] ?? [];
+  // A live permission may still carry what it carried before a split, so the
+  // account that had it keeps the whole of what it could do.
+  return direct.flatMap(p => [p, ...(IMPLIED_PERMISSIONS[p] ?? [])]);
 }
 
 /**

@@ -33,13 +33,19 @@ async function savePermissions(token: string, username: string, permissions: str
 test('a narrowed list for a finance account comes back exactly as it was saved', SKIP, async () => {
   const token = await login('admin');
   const wanted = ['vendor.read', 'material.read', 'score.finance'];
+  // `vendor.read` carries the four source views that were split out of it, so
+  // the saved list names them too. Nothing else from the role comes back.
+  const expected = [
+    'vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read',
+    'material.read', 'score.finance',
+  ];
 
   const saved = await savePermissions(token, 'finance', wanted);
   assert.equal(saved.status, 200);
 
   const row = (await listUsers(token)).find(u => u.username === 'finance');
-  assert.deepEqual(row.permissions, wanted, 'the stored exception is what was sent');
-  assert.deepEqual(row.effectivePermissions, wanted, 'and it is what is in force');
+  assert.deepEqual(row.permissions, expected, 'the stored exception is what was sent, plus what it implies');
+  assert.deepEqual(row.effectivePermissions, expected, 'and it is what is in force');
 });
 
 test('a scoring-only account keeps no reads it was not given', SKIP, async () => {
@@ -223,7 +229,10 @@ test('the permission itself opens the module, for an account that is not an admi
   });
   assert.equal(saved.status, 200);
   const planning = await db().user.findUnique({ where: { username: 'planning' } });
-  assert.deepEqual(planning.permissions, ['vendor.read', 'score.planning']);
+  assert.deepEqual(planning.permissions, [
+    'vendor.read', 'sample.read', 'blacklist.read', 'archive.read', 'supplier-audit.read',
+    'score.planning',
+  ]);
 });
 
 test('taking the permission away closes the module for an administrator too', SKIP, async () => {
