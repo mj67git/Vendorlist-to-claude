@@ -211,6 +211,27 @@ interface SourceSelection {
       return scored > 0 ? Math.round(sum / scored) : null;
     }, [myDepartments]);
 
+    /**
+     * The overview strip, computed over the whole directory rather than the
+     * page on screen.
+     *
+     * This was the one repository with no counters at all: the module that
+     * exists to survey suppliers opened on a search box and a table, so the
+     * size and shape of the population it audits were only knowable by reading
+     * every row. The numbers come from `supplierGroups`, so they describe the
+     * directory and not whatever the search has narrowed it to.
+     */
+    const directoryStats = useMemo(() => {
+      const scores = supplierGroups.map(averageScoreOf).filter((n): n is number => n !== null);
+      return {
+        total: supplierGroups.length,
+        manufacturers: supplierGroups.filter(g => g.role === 'manufacturer').length,
+        suppliers: supplierGroups.filter(g => g.role === 'supplier').length,
+        unscored: supplierGroups.length - scores.length,
+        averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      };
+    }, [supplierGroups, averageScoreOf]);
+
     // Filter matching suppliers list
     const filteredSuppliers = useMemo(() => {
       const query = searchQuery.trim().toLowerCase();
@@ -951,6 +972,39 @@ interface SourceSelection {
        ) : (
          /* GLOBAL SEARCH & DISCOVERY DIRECTORY OF ALL UNIQUE SUPPLIERS */
          <div className="space-y-6">
+           {/* The counters every other repository opens with. */}
+           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+             {[
+               { label: 'کل تأمین‌کنندگان', en: 'Total Suppliers', value: directoryStats.total, Icon: Building2,
+                 tone: 'bg-muted text-foreground border-border' },
+               { label: 'تولیدکنندگان', en: 'Manufacturers', value: directoryStats.manufacturers, Icon: Factory,
+                 tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
+               { label: 'فروشندگان', en: 'Suppliers', value: directoryStats.suppliers, Icon: Handshake,
+                 tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
+               // «—» rather than a zero: no company scored yet is not an average
+               // of zero, and an audit overview must not invent one.
+               { label: 'میانگین امتیاز ممیزی', en: 'Average Audit Score', value: directoryStats.averageScore ?? '—', Icon: Award,
+                 tone: 'bg-primary/10 text-primary border-primary/20' },
+               { label: 'بدون امتیاز ثبت‌شده', en: 'Not Yet Scored', value: directoryStats.unscored, Icon: AlertTriangle,
+                 tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
+             ].map(card => (
+               <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
+                   <card.Icon className="w-5 h-5" />
+                 </div>
+                 <div className="min-w-0">
+                   <div className="text-2xs font-bold text-muted-foreground leading-tight">{card.label}</div>
+                   {/* The counts come from the same list the table shows, so they
+                       cannot claim a number while that list is still loading. */}
+                   {isLoading
+                     ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
+                     : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
+                   <div className="text-2xs text-muted-foreground font-mono truncate">{card.en}</div>
+                 </div>
+               </div>
+             ))}
+           </div>
+
            {/* The search field every other repository uses.
 
                It was a bare `<input>` with hand-written classes inside a
