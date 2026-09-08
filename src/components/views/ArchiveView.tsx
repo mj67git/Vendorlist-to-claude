@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ChevronDown, Download, ExternalLink, FileText, ListChecks, Printer, Search, Star, X } from 'lucide-react';
+import { Archive, ChevronDown, ClipboardList, Download, ExternalLink, FileText, ListChecks, Printer, Search, ShieldAlert, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { cn } from '../../lib/utils';
@@ -20,7 +20,7 @@ import { describeSelection, selectionForVendor, type SourceSelectionRecord } fro
 import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
-import { describeSampleStatus } from '../../utils/sampleStatus';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
 // extracted from App.tsx
@@ -145,7 +145,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           (p.id === v.manufacturerId || p.id === v.supplierId) &&
           ((p.name || '').toLowerCase().includes(term) || (p.nameEn || '').toLowerCase().includes(term)));
         
-      const matchGrade = gradeFilter ? v.grade === gradeFilter : true;
+      // A sample's stored grade is not shown and does not mean anything — the
+      // row prints «بدون گرید» — so it must not answer a grade filter either,
+      // or narrowing to «گرید B» returned rows displaying no grade at all.
+      const matchGrade = gradeFilter ? (!isSampleRecord(v) && v.grade === gradeFilter) : true;
       const matchCategory = categoryFilter 
         ? ((categoryFilter as string) === 'sample'
             ? (v.isSample || v.category === 'sample')
@@ -161,6 +164,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
       const matchStatus = statusFilter ? v.status === statusFilter : true;
       const riskLevel = v.riskAssessment?.riskLevel || 'Unknown';
       const matchRisk = riskFilter 
+        // `None` is unreachable — the risk dropdown offers only Low/Medium/High
+        // — so it is left exactly as it was rather than given new behaviour.
         ? (riskFilter === 'None' ? (!v.riskAssessment) : riskLevel === riskFilter) 
         : true;
       
@@ -246,6 +251,23 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * our Grade A foreign suppliers". Built from the controls that are actually
    * set, so an unfiltered print says so plainly.
    */
+  /**
+   * The counters every other repository opens with, over the whole archive
+   * rather than the filtered view: this screen is the register of everything
+   * held, so its overview has to answer «چقدر داریم» before the filters narrow
+   * it. The filtered count keeps its own place on the filter bar.
+   */
+  const archiveStats = useMemo(() => {
+    const samples = db.filter(isSampleRecord);
+    const sources = db.filter(v => !isSampleRecord(v));
+    return {
+      total: db.length,
+      sources: sources.length,
+      samples: samples.length,
+      blacklisted: db.filter(isVendorRejected).length,
+    };
+  }, [db]);
+
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
     if (categoryFilter) parts.push(`دسته: ${categoryLabels[categoryFilter as keyof typeof categoryLabels]?.fa || categoryFilter}`);
@@ -410,6 +432,38 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
         </div>
         )}
 
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'کل رکوردها', en: 'Total Records', value: archiveStats.total, Icon: Archive,
+            tone: 'bg-muted text-foreground border-border' },
+          { label: 'سورس‌ها', en: 'Sources', value: archiveStats.sources, Icon: FileText,
+            tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
+          { label: 'نمونه‌ها', en: 'Samples', value: archiveStats.samples, Icon: ClipboardList,
+            tone: 'bg-primary/10 text-primary border-primary/20' },
+          { label: 'سورس‌های منتخب', en: 'Chosen Sources', value: selectedCount, Icon: Star,
+            tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
+          { label: 'در لیست سیاه', en: 'Blacklisted', value: archiveStats.blacklisted, Icon: ShieldAlert,
+            tone: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900' },
+        ].map(card => (
+          <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
+              <card.Icon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              {isLoading ? (
+                <div className="h-5 w-10 bg-muted rounded animate-pulse" />
+              ) : (
+                <div className="text-xl font-bold text-foreground font-mono leading-none">
+                  {card.value.toLocaleString('fa-IR')}
+                </div>
+              )}
+              <div className="text-2xs font-bold text-muted-foreground mt-1 truncate">{card.label}</div>
+              <div className="text-2xs text-muted-foreground/70 truncate" dir="ltr">{card.en}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Search and filters.
@@ -613,13 +667,24 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                       <div className="font-mono text-muted-foreground text-xs truncate mt-0.5">{v.cas || 'N/A'}</div>
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">
-                      <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                      {/* A sample has no grade to show: departments do not
+                          score it, so a grade badge here asserted a verdict
+                          nobody reached. Its own verdict — the laboratory's —
+                          is already printed in the category cell, so this one
+                          says plainly that the question does not apply. */}
+                      {isSampleRecord(v) ? (
+                        <span className="text-2xs text-muted-foreground" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</span>
+                      ) : (
+                        <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                      )}
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">
                       {/* "Not assessed" is a finding of its own — the risk
                           backlog on the dashboard counts exactly these — so it
                           is named rather than left blank. */}
-                      {risk ? (
+                      {isSampleRecord(v) ? (
+                        <span className="text-2xs text-muted-foreground" title="برای نمونه ارزیابی ریسک انجام نمی‌شود">—</span>
+                      ) : risk ? (
                         <span className={`text-2xs font-bold px-2 py-0.5 rounded-md border ${
                           risk === 'High'
                             ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900'
