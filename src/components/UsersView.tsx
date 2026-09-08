@@ -18,8 +18,9 @@ import { PageTitle } from './ui/page-title';
 import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
-  ALL_PERMISSIONS, can, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
-  roleTemplate, type ModuleAction, type Permission, type PermissionModule,
+  ALL_PERMISSIONS, can, LOCKED_REASONS, ownedModulePermissions, PERMISSION_LABELS,
+  PERMISSION_MODULES, permissionOwner, roleTemplate,
+  type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from '../utils/auditTaxonomy';
 
@@ -74,10 +75,6 @@ const MODULE_SHORT: Record<string, string> = {
  * An always-open cell counts as granted, since nothing can take it away.
  */
 function moduleLetters(module: PermissionModule, draft: Permission[]): string {
-  // A view over another module's data has no permission of its own; it reports
-  // the read it follows, so the matrix and the export say plainly whether the
-  // page is reachable.
-  if (module.derivedFrom) return draft.includes(module.derivedFrom) ? 'R' : '';
   const crud = ACTION_COLUMNS
     .filter(col => {
       const cell = module.actions[col.key];
@@ -92,17 +89,10 @@ function moduleLetters(module: PermissionModule, draft: Permission[]): string {
   return [...crud, ...extras].join('');
 }
 
-/** Every permission a module can grant, its non-CRUD extras included. */
-function allModulePermissions(module: PermissionModule): Permission[] {
-  return [...new Set([...modulePermissions(module), ...(module.extras || []).map(x => x.permission)])];
-}
-
-/** The distinct permissions a module row can actually toggle. */
-function modulePermissions(module: PermissionModule): Permission[] {
-  const found = ACTION_COLUMNS
-    .map(col => module.actions[col.key])
-    .filter((p): p is Permission => p !== null && p !== 'open');
-  return [...new Set(found)];
+/** The row a mirrored cell is really set in. */
+function ownerModule(permission: Permission): PermissionModule | undefined {
+  const key = permissionOwner(permission);
+  return PERMISSION_MODULES.find(m => m.key === key);
 }
 
 /**
@@ -494,14 +484,18 @@ export function UsersView({ currentUser }: UsersViewProps) {
    * page the reader cannot open. So ticking any action of a module turns its
    * read on, and turning its read off clears the rest of the row.
    */
-  const togglePermission = (permission: Permission) => {
-    const module = PERMISSION_MODULES.find(m =>
-      ACTION_COLUMNS.some(c => m.actions[c.key] === permission)
-      || m.single === permission
-      || (m.extras || []).some(x => x.permission === permission));
+  const togglePermission = (permission: Permission, from?: PermissionModule) => {
+    // The row is passed in by the cell that was clicked. Searching for it by
+    // permission would find the wrong one now that the samples row shows the
+    // source's create/edit/delete: ticking «ثبت» there would switch on the
+    // sources read instead of the samples one.
+    const module = from ?? ownerModule(permission);
     const read = module?.actions.view;
     const readPerm = read && read !== 'open' ? read : null;
-    const rowPerms = module ? allModulePermissions(module) : [];
+    // Turning a row's view off clears only what that row owns. The mirrored
+    // cells are the other row's permissions and must survive, or closing the
+    // samples list would also revoke registering a source.
+    const rowPerms = module ? ownedModulePermissions(module) : [];
 
     setPermDraft(prev => {
       const on = prev.includes(permission);
@@ -520,7 +514,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
   /** The row's master tick: all of this module's actions on, or all off. */
   const toggleModule = (module: PermissionModule) => {
-    const owned = allModulePermissions(module);
+    const owned = ownedModulePermissions(module);
     if (owned.length === 0) return;
     setPermDraft(prev => {
       const allOn = owned.every(p => prev.includes(p));
@@ -1331,7 +1325,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
       <FormModal
         open={!!permTarget}
         onClose={() => setPermTarget(null)}
-        size="md"
+        // Thirteen rows with their own explanatory ticks since the granular
+        // split; at `md` the table scrolled sideways to reach the delete column.
+        size="lg"
         labelledBy="users-perm-title"
         unsavedChanges={permDirty}
         unsavedLabel="تغییرات سطح دسترسی"
@@ -1421,7 +1417,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </thead>
                   <tbody>
                     {PERMISSION_MODULES.map(module => {
-                      const owned = allModulePermissions(module);
+                      // The master tick sets what this row owns; a mirrored
+                      // cell is settable in the row it belongs to.
+                      const owned = ownedModulePermissions(module);
                       const granted = owned.filter(p => permDraft.includes(p));
                       const allOn = owned.length > 0 && granted.length === owned.length;
                       const someOn = granted.length > 0 && !allOn;
@@ -1450,7 +1448,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               </span>
                             </div>
                             {module.note && (
-                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
+                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[46ch]">
                                 {module.note}
                               </span>
                             )}
@@ -1459,11 +1457,11 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                 that would be empty on every other row. */}
                             {(module.extras || []).map(extra => (
                               <label key={extra.permission}
-                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[26ch]">
+                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[46ch]">
                                 <input
                                   type="checkbox"
                                   checked={permDraft.includes(extra.permission)}
-                                  onChange={() => togglePermission(extra.permission)}
+                                  onChange={() => togglePermission(extra.permission, module)}
                                   className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
                                 />
                                 <span>
@@ -1481,34 +1479,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
                           {ACTION_COLUMNS.map(col => {
                             const cell = module.actions[col.key];
-                            // A view over another module's data: one locked
-                            // tick across the row, reflecting the permission it
-                            // follows. An enabled checkbox here would promise a
-                            // control the server cannot enforce — both pages
-                            // read `GET /api/vendors` like every source view —
-                            // and an empty row would leave an administrator
-                            // wondering whether the page is reachable at all.
-                            if (module.derivedFrom) {
-                              if (col.key !== 'view') return null;
-                              const follows = permDraft.includes(module.derivedFrom);
-                              return (
-                                <td key={col.key} colSpan={4} className="py-2.5 px-1 text-center border-t border-border/70">
-                                  <span className="inline-flex flex-col items-center gap-0.5">
-                                    <input
-                                      type="checkbox"
-                                      checked={follows}
-                                      disabled
-                                      aria-label={`${module.title} — ${LOCKED_REASONS.derived}`}
-                                      title={`${LOCKED_REASONS.derived} (${PERMISSION_LABELS[module.derivedFrom]})`}
-                                      className="w-4 h-4 accent-primary opacity-60 cursor-not-allowed"
-                                    />
-                                    <span className="text-2xs text-muted-foreground">
-                                      تابع «{PERMISSION_LABELS[module.derivedFrom]}»
-                                    </span>
-                                  </span>
-                                </td>
-                              );
-                            }
                             // A module whose every action is the same permission
                             // gets one checkbox across the whole row, rather
                             // than the same tick repeated in four columns.
@@ -1525,7 +1495,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                     <input
                                       type="checkbox"
                                       checked={checked}
-                                      onChange={() => togglePermission(perm)}
+                                      onChange={() => togglePermission(perm, module)}
                                       aria-label={`${module.title} — ${PERMISSION_LABELS[perm]}`}
                                       className="w-4 h-4 accent-primary cursor-pointer"
                                     />
@@ -1559,6 +1529,30 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               return <td key={col.key} className="py-2.5 px-1 border-t border-border/70" />;
                             }
 
+                            // The same permission shown by an earlier row: it
+                            // is displayed so the row reads completely, but it
+                            // is set where it belongs. Two live checkboxes for
+                            // one permission would let the dialog contradict
+                            // itself between rows.
+                            const mirrorOf = permissionOwner(cell) !== module.key
+                              ? ownerModule(cell)
+                              : null;
+                            if (mirrorOf) {
+                              return (
+                                <td key={col.key} className="py-2.5 px-1 text-center border-t border-border/70">
+                                  <input
+                                    type="checkbox"
+                                    checked={permDraft.includes(cell)}
+                                    disabled
+                                    readOnly
+                                    aria-label={`${module.title} — ${PERMISSION_LABELS[cell]} (${LOCKED_REASONS.mirrored})`}
+                                    title={`${LOCKED_REASONS.mirrored} — ردیف «${mirrorOf.title}»`}
+                                    className="w-4 h-4 accent-primary opacity-50 cursor-not-allowed"
+                                  />
+                                </td>
+                              );
+                            }
+
                             const checked = permDraft.includes(cell);
                             const inTemplate = template.includes(cell);
                             const merged = !!module.single && col.key === 'create';
@@ -1570,7 +1564,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={() => togglePermission(cell)}
+                                    onChange={() => togglePermission(cell, module)}
                                     aria-label={`${module.title} — ${PERMISSION_LABELS[cell]}`}
                                     className="w-4 h-4 accent-primary cursor-pointer"
                                   />
@@ -1592,18 +1586,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
                           })}
 
                           <td className="py-2.5 px-1 text-center border-t border-border/70">
-                            {/* A derived row has nothing to select all of, and
-                                an empty disabled box beside a ticked locked one
-                                reads as a contradiction. It gets the same dash
-                                every other unavailable cell gets. */}
-                            {module.derivedFrom ? (
-                              <span
-                                className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-2xs cursor-help"
-                                title={LOCKED_REASONS.derived}
-                              >
-                                —
-                              </span>
-                            ) : (
                             <input
                               type="checkbox"
                               checked={allOn}
@@ -1614,7 +1596,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               title={owned.length === 0 ? LOCKED_REASONS.none : `دسترسی کامل به ${module.title}`}
                               className="w-4 h-4 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             />
-                            )}
                           </td>
                         </tr>
                       );
@@ -1677,6 +1658,8 @@ export function UsersView({ currentUser }: UsersViewProps) {
               <p className="text-2xs text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
                 خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
                 واردشده آن بخش را می‌بینند و <span className="font-bold">—</span> یعنی آن عملیات در آن ماژول وجود ندارد.
+                تیکِ خاکستری یعنی همان مجوز در ردیف دیگری تنظیم می‌شود و اینجا فقط نشان داده شده است — مثل ثبت و ویرایش
+                نمونه، که همان مجوزهای سورس‌اند.
                 نشانهٔ <span className="text-emerald-700 dark:text-emerald-400 font-bold">+</span> و
                 <span className="text-rose-700 dark:text-rose-400 font-bold"> −</span> یعنی این مورد نسبت به الگوی سمت
                 افزوده یا سلب شده است.

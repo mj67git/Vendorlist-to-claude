@@ -5,6 +5,7 @@ import {
   forbiddenScoreChanges, forbiddenRawScoreChanges,
   effectivePermissions, hasCustomPermissions, roleTemplate, sanitizePermissions,
   ALL_PERMISSIONS, SCORING_DEPARTMENTS, type Permission, type Role,
+  modulePermissionsOf, ownedModulePermissions, permissionOwner, PERMISSION_MODULES,
 } from '../src/utils/permissions';
 
 /**
@@ -388,5 +389,42 @@ test('the two categories that are their own read say so', () => {
   assert.equal(categoryPermission('blacklist'), 'blacklist.read');
   for (const ordinary of ['foreign', 'domestic', 'veterinary', 'packaging', null, undefined]) {
     assert.equal(categoryPermission(ordinary), 'vendor.read', `${ordinary}`);
+  }
+});
+
+test('a permission shown in two rows is set in exactly one of them', () => {
+  // The samples row shows the source's create, edit and delete, because a sample
+  // is a source record wearing a label. Two live switches for one permission
+  // would let the dialog contradict itself, and closing the samples list would
+  // revoke registering a source — so the first row owns it and the rest mirror.
+  const samples = PERMISSION_MODULES.find(m => m.key === 'samples')!;
+  assert.deepEqual(ownedModulePermissions(samples), ['sample.read', 'sample.decide']);
+  assert.ok(modulePermissionsOf(samples).includes('vendor.create'), 'it is still shown');
+  assert.equal(permissionOwner('vendor.create'), 'vendors', 'and set in the sources row');
+
+  // Every permission any row shows has exactly one owner, and every row owns
+  // what nobody showed before it — so no permission is unreachable in the form.
+  const settable = new Set<Permission>();
+  for (const module of PERMISSION_MODULES) {
+    for (const permission of ownedModulePermissions(module)) {
+      assert.ok(!settable.has(permission), `${permission} is offered by two rows`);
+      settable.add(permission);
+    }
+  }
+  for (const module of PERMISSION_MODULES) {
+    for (const permission of modulePermissionsOf(module)) {
+      assert.ok(settable.has(permission), `${permission} appears but can be set nowhere`);
+    }
+  }
+});
+
+test('every permission the policy defines can be reached in the form', () => {
+  // A permission the dialog cannot set is one an administrator can only grant by
+  // editing the database — the state this module was written to end.
+  const settable = new Set(PERMISSION_MODULES.flatMap(m => modulePermissionsOf(m)));
+  const scoring = ALL_PERMISSIONS.filter(p => p.startsWith('score.'));
+  for (const permission of ALL_PERMISSIONS) {
+    if (scoring.includes(permission)) continue;   // its own section in the dialog
+    assert.ok(settable.has(permission), `${permission} has no row`);
   }
 });

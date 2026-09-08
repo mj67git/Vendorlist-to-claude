@@ -283,18 +283,6 @@ export interface PermissionModule {
   /** Shown under the module name to explain a locked or merged row. */
   note?: string;
   /**
-   * This module has no permission of its own: it is a view over another
-   * module's data and follows that module's permission.
-   *
-   * The dialog shows it as a locked tick that reflects the permission it
-   * follows, so an administrator can see that the page is reachable without
-   * being offered a switch that would do nothing. A separate permission here
-   * would be the mistake `archive.read` was deleted for: no endpoint could
-   * enforce it, because both pages read `GET /api/vendors` like every other
-   * source view.
-   */
-  derivedFrom?: Permission;
-  /**
    * Abilities of this module that are not one of the four CRUD actions, each
    * with its own letter for the summary badge. Downloading a partner's SOP
    * papers is the first: it is a read, but not the read that opens the list, so
@@ -443,7 +431,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
 export const LOCKED_REASONS = {
   open: 'این بخش برای هر کاربر واردشده باز است و تنظیمی آن را محدود نمی‌کند.',
   none: 'این عملیات در این ماژول وجود ندارد.',
-  derived: 'این نما مجوز جداگانه ندارد و از مجوز ماژولی که داده‌اش را نشان می‌دهد پیروی می‌کند.',
+  mirrored: 'این خانه همان مجوز ردیف دیگری است و همان‌جا تنظیم می‌شود.',
 } as const;
 
 /**
@@ -728,4 +716,42 @@ export function categoryPermission(category: string | null | undefined): Permiss
   if (category === 'sample') return 'sample.read';
   if (category === 'blacklist') return 'blacklist.read';
   return 'vendor.read';
+}
+
+/**
+ * The row that owns each permission, when more than one row shows it.
+ *
+ * A sample is a source record wearing a label, so registering, editing and
+ * deleting one are the source permissions — and the samples row shows those
+ * very cells. The first row that lists a permission owns it; a later appearance
+ * is a mirror, displayed so the row reads completely but set where it belongs.
+ * Without this the dialog would offer one permission as two switches, and
+ * closing the samples list would quietly revoke registering a source.
+ */
+const PERMISSION_OWNER: Map<Permission, string> = (() => {
+  const owner = new Map<Permission, string>();
+  for (const module of PERMISSION_MODULES) {
+    for (const permission of modulePermissionsOf(module)) {
+      if (!owner.has(permission)) owner.set(permission, module.key);
+    }
+  }
+  return owner;
+})();
+
+/** Every permission a module row can show, its non-CRUD extras included. */
+export function modulePermissionsOf(module: PermissionModule): Permission[] {
+  const cells = (['view', 'create', 'edit', 'delete'] as ModuleAction[])
+    .map(action => module.actions[action])
+    .filter((p): p is Permission => p !== null && p !== 'open');
+  return [...new Set([...cells, ...(module.extras || []).map(x => x.permission)])];
+}
+
+/** The module key a permission is set in, or undefined if no row shows it. */
+export function permissionOwner(permission: Permission): string | undefined {
+  return PERMISSION_OWNER.get(permission);
+}
+
+/** What a row actually sets — the mirrored cells belong to an earlier row. */
+export function ownedModulePermissions(module: PermissionModule): Permission[] {
+  return modulePermissionsOf(module).filter(p => PERMISSION_OWNER.get(p) === module.key);
 }

@@ -14,7 +14,6 @@ import { PERMISSION_MODULES, effectivePermissions, roleTemplate, type Permission
 /** The same shorthand the screen and the export print, e.g. `RCU`. */
 function moduleLetters(moduleKey: string, permissions: Permission[]): string {
   const module = PERMISSION_MODULES.find(m => m.key === moduleKey)!;
-  if (module.derivedFrom) return permissions.includes(module.derivedFrom) ? 'R' : '';
   const cols: Array<['view' | 'create' | 'edit' | 'delete', string]> = [
     ['view', 'R'], ['create', 'C'], ['edit', 'U'], ['delete', 'D'],
   ];
@@ -85,7 +84,6 @@ test('the read-only rows offer a view tick and nothing to write', () => {
     ['supplier-audit', 'supplier-audit.read'],
   ] as const) {
     const module = PERMISSION_MODULES.find(m => m.key === key)!;
-    assert.equal(module.derivedFrom, undefined, 'it no longer borrows another module\'s permission');
     assert.equal(module.actions.view, permission);
     assert.deepEqual([module.actions.create, module.actions.edit, module.actions.delete], [null, null, null]);
     assert.ok(module.note, 'the row explains what the view is');
