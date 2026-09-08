@@ -23,6 +23,7 @@ import {
   type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from '../utils/auditTaxonomy';
+import { InfoHint } from './ui/info-hint';
 
 /**
  * The four columns of the module grid, right to left as the page reads.
@@ -202,6 +203,23 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [resetError, setResetError] = useState<string | null>(null);
 
   const [permTarget, setPermTarget] = useState<ManagedUser | null>(null);
+  /**
+   * Whether every row prints its explanation, or keeps it behind its ⓘ.
+   *
+   * Off by default, and remembered: an administrator setting up an account
+   * reads the notes once and then wants the matrix, which is thirteen rows of
+   * checkboxes the prose was burying. The choice is a preference of the person,
+   * not of the account being edited, so it lives in localStorage rather than in
+   * the permission draft.
+   */
+  const [showNotes, setShowNotes] = useState(() => {
+    try { return localStorage.getItem('users_perm_notes') === '1'; } catch { return false; }
+  });
+  const toggleNotes = () => setShowNotes(prev => {
+    const next = !prev;
+    try { localStorage.setItem('users_perm_notes', next ? '1' : '0'); } catch { /* private mode */ }
+    return next;
+  });
   const [permDraft, setPermDraft] = useState<Permission[]>([]);
   const [permError, setPermError] = useState<string | null>(null);
   const [permSaving, setPermSaving] = useState(false);
@@ -1401,11 +1419,33 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   checkbox only where the server can tell that action apart;
                   everywhere else it is locked and says why, so no tick in this
                   dialog promises a control that does not exist. */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-2xs text-muted-foreground font-semibold">
+                  {PERMISSION_MODULES.length.toLocaleString('fa-IR')} ماژول · هر ستون یک عملیات
+                </span>
+                {/* One switch for the whole dialog rather than an expander per
+                    row: whoever wants the reasoning wants it while reading the
+                    policy, not one module at a time. */}
+                <label className="inline-flex items-center gap-1.5 cursor-pointer text-2xs font-bold text-muted-foreground hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={showNotes}
+                    onChange={toggleNotes}
+                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                  />
+                  نمایش توضیحات
+                </label>
+              </div>
               <div className="overflow-x-auto -mx-2 px-2">
                 <table className="w-full min-w-[520px] border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <th className="text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
+                      {/* `w-full` on this one header hands the module column every pixel the
+                          fixed action columns do not need. Without it the auto layout
+                          split the table evenly and the notes wrapped at about 28
+                          characters, three lines each, next to five columns of
+                          whitespace. */}
+                      <th className="w-full text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
                       {ACTION_COLUMNS.map(col => (
                         <th key={col.key} className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
                           <span className="block">{col.label}</span>
@@ -1446,34 +1486,47 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               >
                                 {moduleLetters(module, permDraft) || '—'}
                               </span>
+                              {module.note && !showNotes && (
+                                <InfoHint text={module.note} label={`توضیح ${module.title}`} />
+                              )}
                             </div>
-                            {module.note && (
-                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[46ch]">
+                            {module.note && showNotes && (
+                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[72ch]">
                                 {module.note}
                               </span>
                             )}
                             {/* Abilities that are not one of the four columns get
                                 their own tick here rather than a fifth column
-                                that would be empty on every other row. */}
-                            {(module.extras || []).map(extra => (
-                              <label key={extra.permission}
-                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[46ch]">
-                                <input
-                                  type="checkbox"
-                                  checked={permDraft.includes(extra.permission)}
-                                  onChange={() => togglePermission(extra.permission, module)}
-                                  className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
-                                />
-                                <span>
-                                  <span className="text-2xs font-bold text-foreground">
-                                    {extra.label}
-                                    <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
+                                that would be empty on every other row. Chips
+                                rather than stacked paragraphs: three of them on
+                                the partners row used to make it 293px tall, six
+                                times the height of a row with nothing to say. */}
+                            {(module.extras || []).length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {(module.extras || []).map(extra => (
+                                  <span key={extra.permission} className="inline-flex items-center gap-1">
+                                    <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-border bg-muted/50 px-1.5 py-0.5 hover:bg-accent transition-colors">
+                                      <input
+                                        type="checkbox"
+                                        checked={permDraft.includes(extra.permission)}
+                                        onChange={() => togglePermission(extra.permission, module)}
+                                        className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0"
+                                      />
+                                      <span className="text-2xs font-bold text-foreground whitespace-nowrap">
+                                        {extra.label}
+                                        <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
+                                      </span>
+                                    </label>
+                                    {!showNotes && <InfoHint text={extra.note} label={`توضیح ${extra.label}`} />}
                                   </span>
-                                  <span className="text-2xs text-muted-foreground leading-relaxed block">
-                                    {extra.note}
-                                  </span>
-                                </span>
-                              </label>
+                                ))}
+                              </div>
+                            )}
+                            {showNotes && (module.extras || []).map(extra => (
+                              <span key={`note-${extra.permission}`}
+                                className="text-2xs text-muted-foreground leading-relaxed block mt-1 max-w-[72ch]">
+                                <span className="font-bold text-foreground">{extra.label}:</span> {extra.note}
+                              </span>
                             ))}
                           </td>
 

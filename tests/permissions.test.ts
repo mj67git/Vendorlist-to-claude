@@ -451,3 +451,22 @@ test('every gated view names a real permission, and the two the list serves are 
   const narrowed = { role: 'planning', permissions: ['vendor.read', 'score.planning'] };
   assert.equal(can(narrowed, VIEW_PERMISSIONS.archive), false, 'and an exception list closes it');
 });
+
+test('the dialog notes stay one short sentence each', () => {
+  // They did not: thirteen rows carried 2,700 characters, the tallest row was
+  // six times the shortest, and a 1366×768 laptop showed two rows of a
+  // thirteen-row matrix. The reasoning belongs in the code and in CLAUDE.md;
+  // what the dialog needs is the one line that answers the question in front of
+  // the administrator. This keeps the prose from creeping back.
+  const LIMIT = 100;
+  for (const module of PERMISSION_MODULES) {
+    if (module.note) {
+      assert.ok(module.note.length <= LIMIT,
+        `«${module.title}» has a ${module.note.length}-character note; keep it under ${LIMIT}`);
+    }
+    for (const extra of module.extras || []) {
+      assert.ok(extra.note.length <= LIMIT,
+        `«${extra.label}» has a ${extra.note.length}-character note; keep it under ${LIMIT}`);
+    }
+  }
+});
