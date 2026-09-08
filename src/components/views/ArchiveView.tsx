@@ -22,6 +22,7 @@ import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
 import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
 import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
+import { describeVendorRank } from '../../utils/vendorRank';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
 // extracted from App.tsx
@@ -171,7 +172,17 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
       // A sample's stored grade is not shown and does not mean anything — the
       // row prints «بدون گرید» — so it must not answer a grade filter either,
       // or narrowing to «گرید B» returned rows displaying no grade at all.
-      const matchGrade = gradeFilter ? (!isSampleRecord(v) && v.grade === gradeFilter) : true;
+      /*
+       * The grade is derived from the department scores, not read off the
+       * stored column. The archive's own spreadsheet already derived it
+       * (`describeVendorRank`), so the register on screen and the file taken
+       * out of it could name different grades for the same source.
+       */
+      const matchGrade = gradeFilter
+        ? (!isSampleRecord(v) && (gradeFilter === 'rejected'
+            ? isVendorRejected(v)
+            : describeVendorRank(v).grade === gradeFilter))
+        : true;
       const matchCategory = categoryFilter 
         ? ((categoryFilter as string) === 'sample'
             ? (v.isSample || v.category === 'sample')
@@ -219,7 +230,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
         case 'country': return getDisplayCountry(v) || '';
         // Grade and risk are ranked, not alphabetical: "A" above "B" and
         // "High" above "Low" is the order a reviewer means by "sort by risk".
-        case 'grade': return GRADE_ORDER[String(v.grade)] ?? -1;
+        case 'grade': return isVendorRejected(v) ? 0 : (GRADE_ORDER[String(describeVendorRank(v).grade)] ?? -1);
         case 'risk': return RISK_ORDER[String(v.riskAssessment?.riskLevel)] ?? 0;
         case 'updated': return v.updatedAt ? new Date(v.updatedAt).getTime() : 0;
         default: return v.name || '';
@@ -691,7 +702,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                       {isSampleRecord(v) ? (
                         <span className="text-2xs text-muted-foreground" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</span>
                       ) : (
-                        <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                        <GradeBadge grade={describeVendorRank(v).grade} status={v.status} scores={v.scores} />
                       )}
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">

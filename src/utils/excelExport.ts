@@ -1053,7 +1053,11 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
         ? [
             ['شریک تجاری مرتبط', linkedPartner?.name || '-'],
             ['امتیاز کل ارزیابی', sop.totalScore],
-            ['گرید ارزیابی', sop.grade],
+            // The letter and what it means: «D» alone tells a reader nothing,
+            // and the verdict is the half that matters on a filed document.
+            ['گرید ارزیابی', sop.grade === 'Not Evaluated'
+              ? 'ارزیابی نشده'
+              : `${sop.grade} — ${describeGrade(sop.grade).en} (${describeGrade(sop.grade).fa})`],
             ['آخرین به‌روزرسانی', sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('fa-IR') : '-'],
             ['ثبت‌کننده', sop.updatedBy || '-'],
           ]
