@@ -11,7 +11,7 @@ import { authFetch } from '../../services/authFetch';
 import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from '../../types';
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
-import { toJalaliDisplay } from '../../utils/dateDisplay';
+import { formatLogTimestamp, toJalaliDisplay } from '../../utils/dateDisplay';
 import { isSampleRecord } from '../../utils/sampleStatus';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
@@ -951,8 +951,12 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                   {(() => {
                     const stated = (vendor.rejectionReasons || []).filter(r => typeof r === 'string' && r.trim());
                     const scoreLog = latestScoreEvaluationLog(vendor);
+                    // Through the shared formatter, not raw: the stored value is
+                    // a machine timestamp («1405-06-06T09:56:00.000Z») and it
+                    // was being printed at the reader as one.
+                    const scoreStamp = formatLogTimestamp(scoreLog?.date);
                     const stamp = scoreLog
-                      ? `${scoreLog.user ? `${scoreLog.user}` : 'کاربر سیستم'}${scoreLog.date ? ` · ${scoreLog.date}` : ''}`
+                      ? `${scoreLog.user ? `${scoreLog.user}` : 'کاربر سیستم'}${scoreStamp ? ` · ${scoreStamp}` : ''}`
                       : null;
 
                     if (stated.length > 0) {
@@ -985,7 +989,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         {scored && (
                           <div className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-sm font-medium shadow-sm space-y-1.5">
                             <p className="text-rose-800 dark:text-rose-300 leading-relaxed">
-                              امتیاز وزنی این سورس <span className="font-mono font-black">{overall}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
+                              امتیاز وزنی این سورس <span className="font-mono font-black">{overall?.toLocaleString('fa-IR')}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
                             </p>
                             {stamp && (
                               <p className="text-2xs text-muted-foreground">آخرین ثبت امتیاز: {stamp}</p>
@@ -1686,7 +1690,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           </p>
                           {log && (
                             <blockquote className="bg-card border border-border rounded-lg px-3 py-2">
-                              <span className="block text-2xs font-bold text-muted-foreground mb-0.5">دلیل ثبت‌شده{log.user ? ` — ${log.user}` : ''}{log.date ? ` · ${log.date}` : ''}:</span>
+                              <span className="block text-2xs font-bold text-muted-foreground mb-0.5">دلیل ثبت‌شده{log.user ? ` — ${log.user}` : ''}{formatLogTimestamp(log.date) ? ` · ${formatLogTimestamp(log.date)}` : ''}:</span>
                               <p className="text-2xs text-foreground leading-relaxed whitespace-pre-wrap">{log.action.replace(new RegExp(`^${SAMPLE_DECISION_PREFIX}:\\s*`), '')}</p>
                             </blockquote>
                           )}
