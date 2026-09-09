@@ -174,7 +174,6 @@ export default function App() {
     }
   });
 
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     if (currentUser) {

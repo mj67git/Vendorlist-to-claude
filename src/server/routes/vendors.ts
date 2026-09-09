@@ -376,13 +376,11 @@ export function vendorRoutes(): express.Router {
     
       const v = validationResult.data;
     
-      // Fix material ID generation to prevent replacing when cas/irc are empty
-      if (!v.cas && !v.irc && v.material) {
-        const matNameClean = v.material.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
-        v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      } else {
-        v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      }
+      // An id for a source that arrived without one. The branch that used to
+      // stand here tested whether the record had a CAS or an IRC and then built
+      // the identical id either way \u2014 the material-name slug it computed for the
+      // "special" case was never read.
+      v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
     
       const existing = await getVendorById(v.id);
 

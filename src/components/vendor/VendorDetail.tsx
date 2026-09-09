@@ -432,7 +432,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   // Which catalogue entry actually carries the standard name for this source's
   // material — see utils/materialNames for why the linked record is not always it.
-  const { material: matchedMaterial, standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
+  const { standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
     resolveMaterialNames(vendor, materials);
 
 

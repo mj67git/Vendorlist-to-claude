@@ -149,7 +149,7 @@ async function main() {
   
   console.log('🌱 Inserting Materials...');
   const mMap = parsed.materials || {};
-  for (const [id, m] of Object.entries(mMap)) {
+  for (const m of Object.values(mMap)) {
     const val: any = m;
     await prisma.material.create({
       data: {
@@ -164,7 +164,7 @@ async function main() {
   
   console.log('🌱 Inserting Vendor-Material Links...');
   const lMap = parsed.vendor_materials || {};
-  for (const [id, l] of Object.entries(lMap)) {
+  for (const l of Object.values(lMap)) {
     const val: any = l;
     await prisma.vendorMaterial.create({
       data: {
@@ -179,7 +179,7 @@ async function main() {
   
   console.log('🌱 Inserting Evaluations...');
   const eMap = parsed.evaluations || {};
-  for (const [id, ev] of Object.entries(eMap)) {
+  for (const ev of Object.values(eMap)) {
     const val: any = ev;
     await prisma.evaluation.create({
       data: {

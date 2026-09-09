@@ -461,7 +461,6 @@ export async function saveVendorToDb(
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
       material, materialEn, cas, irc, ircExpiryDate, lastAudit, isSample, category,
       scores, rawScores, rejectionReasons,
-      activityLogs, analysisRecords, riskAssessment,
       manufacturerId, supplierId
     } = v;
 

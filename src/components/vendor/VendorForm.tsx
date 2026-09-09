@@ -21,9 +21,6 @@ import { Textarea } from '../ui/textarea';
 export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void | Promise<Vendor | null | void>, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: (saved?: Vendor | null) => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
-  // Create autocomplete suggestions
-  const materialSuggestions = Array.from(new Set(db.map(v => v.material).filter(Boolean)));
-  const materialEnSuggestions = Array.from(new Set(db.map(v => v.materialEn).filter(Boolean)));
 
   const initialSourceType = existingVendor ? (
     ['approved_samples', 'rejected_samples', 'sample'].includes(existingVendor.category as string) ? 'domestic' : existingVendor.category
@@ -937,9 +934,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                 anyType={true}
                 selectedId={selectedManufacturerId || selectedSupplierId}
                 onSelect={(newId) => {
-                  const oldName = partners.find(p => p.id === (selectedManufacturerId || selectedSupplierId))?.name || 'بدون تأمین‌کننده';
                   const picked = partners.find(p => p.id === newId);
-                  const newName = picked?.name || 'بدون تأمین‌کننده';
 
                   // Route the chosen partner into the correct field by its type;
                   // manufacturers and suppliers are independent now.

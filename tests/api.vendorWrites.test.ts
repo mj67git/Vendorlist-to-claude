@@ -90,8 +90,6 @@ test('a second writer working from a stale copy is refused, not silently applied
   // so it protects nothing across containers or on the serverless deployment —
   // which is what the updatedAt precondition is for. Simulated here by moving
   // the row on after the request has read it.
-  const token = await login('admin');
-
   const before = await db().vendor.findUnique({ where: { id: FIXTURE.vendorId } });
   await db().vendor.update({
     where: { id: FIXTURE.vendorId },
