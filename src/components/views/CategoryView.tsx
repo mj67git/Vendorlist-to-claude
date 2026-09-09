@@ -8,7 +8,7 @@ import { Input, inputBaseClass } from '../../components/ui/input';
 import { categoryLabels } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
-import { adminRejectionReason, hasQcReject, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { adminRejectionReason, hasQcReject, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
 import { describeVendorRank } from '../../utils/vendorRank';
 import { describeSampleStatus, isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
@@ -157,15 +157,10 @@ export function CategoryView({
 
   const meta = categoryLabels[categoryId];
   
-  const categoryVendors = useMemo(() => {
-    if (categoryId === 'sample') {
-      return db.filter(v => v.isSample || v.category === 'sample');
-    }
-    if (categoryId === 'blacklist') {
-      return db.filter(isInBlacklistCategory);
-    }
-    return db.filter(v => v.category === categoryId && v.status !== 'rejected' && v.grade !== 'rejected');
-  }, [db, categoryId]);
+  const categoryVendors = useMemo(
+    () => db.filter(v => isInCategoryRegister(v, categoryId)),
+    [db, categoryId],
+  );
   
   /** The four sample verdicts, counted once and from the one helper. */
   const sampleCounts = useMemo(() => {

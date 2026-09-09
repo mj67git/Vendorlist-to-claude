@@ -3,6 +3,7 @@ import test, { after, before, beforeEach } from 'node:test';
 import {
   api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer,
 } from './helpers/apiHarness';
+import { SOP_DOCUMENTS_DEF } from '../src/utils/sopEvaluation';
 
 /**
  * The decisions, enforced by the server rather than by the screen.
@@ -125,23 +126,39 @@ test('deciding is not a way in to editing', SKIP, async () => {
   assert.match(res.body.error, /ویرایش سورس/);
 });
 
-/** One approved document on seller A, so there is a grade to protect. */
+/**
+ * Seller A's approved documents, so there is a grade to protect.
+ *
+ * All five, matching `APPROVED_LICENCE` below: the payload in these tests
+ * carries the evaluation along unchanged, and it can only be unchanged if the
+ * stored documents are the same ones. A single seeded document made every
+ * ordinary edit read as a re-evaluation.
+ */
 async function seedSopDocument() {
-  await db().sopDocument.create({
-    data: {
-      id: 'SOP-A-1', evaluationId: `SE-${FIXTURE.supplierA}`, key: 'businessLicense',
-      nameFa: 'مجوز کسب‌وکار', nameEn: 'Business License', status: 'Approved', score: 20,
-    },
+  await db().sopDocument.createMany({
+    data: SOP_DOCUMENTS_DEF.map((def, i) => ({
+      id: `SOP-A-${i + 1}`, evaluationId: `SE-${FIXTURE.supplierA}`, key: def.key,
+      nameFa: def.nameFa, nameEn: def.nameEn, status: 'Approved' as const, score: 20,
+    })),
   });
 }
 
+/**
+ * A grade-A evaluation, and one that earns the grade.
+ *
+ * All five documents are approved, because the server derives the score from
+ * the documents rather than believing the figures in the payload. The earlier
+ * version of this fixture approved one document and asserted `grade: 'A'`
+ * beside it — a claim nothing backed, and exactly the kind the server used to
+ * store as sent.
+ */
 const APPROVED_LICENCE = {
-  documents: {
-    businessLicense: {
-      key: 'businessLicense', nameFa: 'مجوز کسب‌وکار', nameEn: 'Business License',
-      status: 'Approved', score: 20,
-    },
-  },
+  documents: Object.fromEntries(
+    SOP_DOCUMENTS_DEF.map(def => [
+      def.key,
+      { key: def.key, nameFa: def.nameFa, nameEn: def.nameEn, status: 'Approved', score: 20 },
+    ]),
+  ),
   totalScore: 100, grade: 'A', status: 'Approved',
 };
 

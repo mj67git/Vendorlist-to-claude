@@ -15,6 +15,8 @@
  * here too, otherwise it will be invisible to the module filter.
  */
 
+import { toPersianDigits } from './dateDisplay.js';
+
 /** Stored `module` value → what the user should see. */
 export const AUDIT_MODULE_LABELS: Record<string, string> = {
   'Source Management': 'مدیریت سورس‌ها',
@@ -203,17 +205,33 @@ export interface AuditEventDef {
 const named = (ctx: AuditEventContext, fallback: string) =>
   ctx.entityName ? `«${ctx.entityName}»` : fallback;
 
+/**
+ * A number inside a Persian sentence is written in Persian digits.
+ *
+ * The rest of the interface prints ۱۴۰۵ and ۱۰۰, so «امتیاز 0 ← 100» and
+ * «ویرایش 1 فیلد سورس» were the only Latin numerals a reader met on the page.
+ *
+ * Only a value that is *entirely* numeric is converted — digits with the
+ * separators a number or a date carries. A value with a letter in it is an
+ * identifier (`V-123`, `AUD-2026-…`, a file name) and keeping it exactly as
+ * stored is what lets a reader search for it.
+ */
+const fa = (value: string | number): string => {
+  const text = String(value);
+  return /^[0-9]+(?:[./:,٫\-\s][0-9]+)*$/.test(text) ? toPersianDigits(text) : text;
+};
+
 const fact = (ctx: AuditEventContext, key: string): string | null => {
   const value = ctx.facts?.[key];
-  return value === undefined || value === null || value === '' ? null : String(value);
+  return value === undefined || value === null || value === '' ? null : fa(String(value));
 };
 
 /** «از ۱۲ به ۱۸», or nothing when one side is missing. */
 const shift = (ctx: AuditEventContext, field: string): string => {
   const change = (ctx.changes || []).find(c => c.field === field);
   if (!change) return '';
-  const from = change.from === null || change.from === undefined || change.from === '' ? '—' : String(change.from);
-  const to = change.to === null || change.to === undefined || change.to === '' ? '—' : String(change.to);
+  const from = change.from === null || change.from === undefined || change.from === '' ? '—' : fa(String(change.from));
+  const to = change.to === null || change.to === undefined || change.to === '' ? '—' : fa(String(change.to));
   return `${from} ← ${to}`;
 };
 
@@ -289,7 +307,7 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
   'source.updated': {
     module: 'Source Management', entityType: 'Source', action: 'Update',
     severity: 'Warning', label: 'ویرایش سورس',
-    sentence: ctx => `ویرایش ${ctx.changes?.length ?? 0} فیلد سورس ${named(ctx, '')}`.trim(),
+    sentence: ctx => `ویرایش ${fa(ctx.changes?.length ?? 0)} فیلد سورس ${named(ctx, '')}`.trim(),
   },
   'source.scored': {
     module: 'ارزیابی سورس‌ها', entityType: 'Score', action: 'Update',
@@ -383,7 +401,7 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
   'material.updated': {
     module: 'مدیریت مواد', entityType: 'Material', action: 'Update',
     severity: 'Information', label: 'ویرایش ماده',
-    sentence: ctx => `ویرایش ${ctx.changes?.length ?? 0} فیلد مادهٔ ${named(ctx, '')}`.trim(),
+    sentence: ctx => `ویرایش ${fa(ctx.changes?.length ?? 0)} فیلد مادهٔ ${named(ctx, '')}`.trim(),
   },
   'material.deleted': {
     module: 'مدیریت مواد', entityType: 'Material', action: 'Delete',
@@ -415,7 +433,7 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
   'partner.updated': {
     module: 'Business Partner Repository', entityType: 'BusinessPartner', action: 'Update',
     severity: 'Information', label: 'ویرایش شریک تجاری',
-    sentence: ctx => `ویرایش ${ctx.changes?.length ?? 0} فیلد شریک ${named(ctx, '')}`.trim(),
+    sentence: ctx => `ویرایش ${fa(ctx.changes?.length ?? 0)} فیلد شریک ${named(ctx, '')}`.trim(),
   },
   'partner.deleted': {
     module: 'Business Partner Repository', entityType: 'BusinessPartner', action: 'Delete',
@@ -434,7 +452,12 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
   },
   'partner.status_changed': {
     module: 'Business Partner Repository', entityType: 'BusinessPartner', action: 'Update',
-    severity: 'Critical', label: 'تغییر وضعیت شریک', alwaysRecord: true,
+    severity: 'Critical', label: 'تغییر وضعیت شریک',
+    // Deliberately not `alwaysRecord`. The partner endpoint replaces the whole
+    // record, so this event is raised on every save and only the empty-change
+    // gate can tell an actual switch from a rename: with it always recorded,
+    // twenty-two saves that touched nothing wrote twenty-two rows reading
+    // «وضعیت شریک «…»: تغییر کرد» with no payload at all.
     sentence: ctx => withReason(`وضعیت شریک ${named(ctx, '')}: ${shift(ctx, 'status') || 'تغییر کرد'}`, ctx),
   },
   'partner.document_downloaded': {

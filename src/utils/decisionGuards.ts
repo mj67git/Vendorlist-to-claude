@@ -167,3 +167,44 @@ export function readableVendors<T>(
 export function readsEverySource(subject: PermissionSubject | string | undefined | null): boolean {
   return can(subject, 'sample.read') && can(subject, 'blacklist.read');
 }
+
+/**
+ * The departments a payload would score on a record that is a sample.
+ *
+ * A sample is judged by a laboratory verdict, not by a weighted score of the
+ * four departments: no view shows a sample a grade, `applyDerivedState` skips
+ * the scoring rules for one, and the evaluation form is not offered on a sample
+ * at all. The endpoint took the numbers anyway and stored them — data written
+ * into the register that nothing ever reads back, and that a later reader could
+ * easily mistake for an evaluation somebody performed.
+ *
+ * Zero is not a score, for the same reason it is not one in
+ * `forbiddenScoreChanges`: the form fills the departments the user cannot edit
+ * with zeros, and a payload that merely repeats stored zeros has decided
+ * nothing. Only a department whose value actually moves is reported.
+ */
+export function forbiddenSampleScoring(
+  current: AnyRecord,
+  next: AnyRecord,
+): string[] {
+  if (!isSampleVendor(current)) return [];
+  const before = (current?.scores || {}) as Record<string, unknown>;
+  const after = (next?.scores || {}) as Record<string, unknown>;
+  const offending = Object.keys(after).filter(department => {
+    const from = Number(before[department]) || 0;
+    const to = Number(after[department]) || 0;
+    return from !== to;
+  });
+
+  // The per-question raw scores are the same decision one level down, so a
+  // payload that skipped `scores` and sent only `rawScores` must not slip past.
+  const rawBefore = (current?.rawScores || {}) as Record<string, unknown>;
+  const rawAfter = (next?.rawScores || {}) as Record<string, unknown>;
+  for (const department of Object.keys(rawAfter)) {
+    if (offending.includes(department)) continue;
+    if (JSON.stringify(rawAfter[department] ?? null) !== JSON.stringify(rawBefore[department] ?? null)) {
+      offending.push(department);
+    }
+  }
+  return offending;
+}

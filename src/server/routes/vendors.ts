@@ -10,7 +10,7 @@ import {
   SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission,
 } from "../../utils/permissions.js";
 import {
-  forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
+  forbiddenSampleScoring, forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
 } from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
@@ -674,6 +674,24 @@ export function vendorRoutes(): express.Router {
         const unique = [...new Set(offending)].join('، ');
         return res.status(403).json({
           error: `عدم دسترسی: شما تنها مجاز به ثبت امتیاز دپارتمان خود هستید (تلاش برای تغییر: ${unique}).`,
+        });
+      }
+
+      // A sample has no departmental score to give. Refused rather than
+      // dropped: a request that stores nothing must not answer 200, or the
+      // caller records a scoring that never happened.
+      const scoredSample = forbiddenSampleScoring(current, s);
+      if (scoredSample.length > 0) {
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Vendor", id, name: current.name },
+          facts: {
+            attempted: "امتیازدهی دپارتمانی به نمونه",
+            fields: scoredSample.join("، "),
+          },
+        });
+        return res.status(422).json({
+          error: "نمونه با نظر آزمایشگاه تصمیم‌گیری می‌شود و امتیاز دپارتمانی نمی‌گیرد.",
         });
       }
 

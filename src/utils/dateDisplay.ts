@@ -30,7 +30,7 @@ export function toJalaliDisplay(value: string | null | undefined, fallback = 'ث
 }
 
 /** Latin digits to Persian ones, for a value assembled from ISO parts. */
-const toPersianDigits = (s: string) => s.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+export const toPersianDigits = (s: string) => s.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 /**
  * An ISO-shaped string whose year is actually Jalali, split into its parts.

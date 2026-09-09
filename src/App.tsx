@@ -46,7 +46,7 @@ import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
-import { isVendorRejected, isInBlacklistCategory } from './utils/vendorState';
+import { isVendorRejected, isInCategoryRegister } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { can, categoryPermission, effectivePermissions, VIEW_PERMISSIONS, type Permission } from './utils/permissions'
 import { useGatedVendorList } from './hooks/useGatedVendorList';
@@ -2056,11 +2056,7 @@ export default function App() {
               // than no entry.
               .filter(([id]) => can(currentUser, categoryPermission(id)))
               .map(([id, meta]) => {
-              const count = db.filter(v =>
-                id === 'sample' ? (v.category === 'sample' || v.isSample) :
-                id === 'blacklist' ? isInBlacklistCategory(v) :
-                (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected')
-              ).length;
+              const count = db.filter(v => isInCategoryRegister(v, id)).length;
               return (
                 <SidebarButton collapsed={sidebarCollapsed}
                   key={id}

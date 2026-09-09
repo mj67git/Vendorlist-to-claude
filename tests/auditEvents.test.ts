@@ -33,7 +33,7 @@ test('an edit that changed nothing writes no row at all', () => {
     entity: { id: 'V1', name: 'فروشندهٔ الف' },
     changes: [{ field: 'rpn', from: 12, to: 18 }],
   });
-  assert.match(real.description!, /RPN 12 ← 18/);
+  assert.match(real.description!, /RPN ۱۲ ← ۱۸/);
 });
 
 test('empty, null and absent are the same value, so they are not a change', () => {
@@ -161,7 +161,7 @@ test('the sentence names what changed, not how many bytes moved', () => {
       { field: 'commercialScore', from: 80, to: 90 },
     ],
   });
-  assert.match(scored.description!, /SPS 87\.4 ← 92\.4/);
+  assert.match(scored.description!, /SPS ۸۷.۴ ← ۹۲.۴/);
   assert.match(scored.description!, /گرید B ← A/);
 
   const lab = built({

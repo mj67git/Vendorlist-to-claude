@@ -11,7 +11,7 @@ import * as XLSXModule from 'xlsx-js-style';
 import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { Vendor, Scores, BusinessPartner, Material } from '../types';
-import { isVendorRejected, isInBlacklistCategory } from './vendorState';
+import { isVendorRejected, isInCategoryRegister } from './vendorState';
 import { describeSampleStatus, isSampleRecord } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
@@ -191,12 +191,7 @@ export function buildCategoryWorksheet(
   filterSummary?: string
 ): { ws: XLSX.WorkSheet, vendorCount: number } {
   // Filter appropriate vendors
-  const filteredVendors = vendors.filter(v => {
-    if (categoryId === 'all') return true;
-    if (categoryId === 'sample') return v.isSample || v.category === 'sample';
-    if (categoryId === 'blacklist') return isInBlacklistCategory(v);
-    return v.category === categoryId;
-  });
+  const filteredVendors = vendors.filter(v => isInCategoryRegister(v, categoryId));
 
   // Sort vendors by Persian material name so consecutive rows of identical materials group together for merging
   const sortedVendors = [...filteredVendors].sort((a, b) => {

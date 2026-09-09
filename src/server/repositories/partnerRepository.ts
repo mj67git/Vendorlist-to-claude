@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { parseDateSafely } from "../db/coerce.js";
 import { requirePrisma } from "../db/prisma.js";
 import { INITIAL_BUSINESS_PARTNERS_DB } from "../../db_business_partners.js";
+import { calculateDocScore, computeSupplierEvaluation } from "../../utils/sopEvaluation.js";
 
 /**
  * Everything that reads or writes a business partner.
@@ -133,21 +134,28 @@ export async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promi
   }
 
   const ev = p.evaluation;
+
+  // The score, the grade and the status are computed from the documents, so
+  // they are computed here rather than believed from the payload.
+  //
+  // They used to be stored exactly as sent, which made three numbers a caller
+  // could simply assert: a direct request could submit approved documents and
+  // store grade `D`, or the reverse. The attachment gate is safe either way
+  // because it recalculates (rule 13), but the stored column disagreed with its
+  // own documents until some client happened to load the record and reconcile
+  // it. Same rubric, same function as the browser uses.
+  const derived = computeSupplierEvaluation(ev.documents || {});
+  const scored = {
+    totalScore: derived.totalScore,
+    grade: derived.grade,
+    status: derived.status,
+    updatedBy: ev.updatedBy || null,
+  };
+
   const evaluation = await prisma.supplierEvaluation.upsert({
     where: { partnerId: p.id },
-    update: {
-      totalScore: Number(ev.totalScore) || 0,
-      grade: ev.grade || "Not Evaluated",
-      status: ev.status || "Not Evaluated",
-      updatedBy: ev.updatedBy || null,
-    },
-    create: {
-      partnerId: p.id,
-      totalScore: Number(ev.totalScore) || 0,
-      grade: ev.grade || "Not Evaluated",
-      status: ev.status || "Not Evaluated",
-      updatedBy: ev.updatedBy || null,
-    },
+    update: scored,
+    create: { partnerId: p.id, ...scored },
   });
 
   const docs = (ev.documents ? Object.values(ev.documents) : []) as any[];
@@ -167,7 +175,9 @@ export async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promi
       nameFa: doc.nameFa || "",
       nameEn: doc.nameEn || "",
       status: toDbSopStatus(doc.status),
-      score: Number(doc.score) || 0,
+      // Per-document score, from the same rubric as the total above: it is a
+      // function of the document's status, never a number the caller states.
+      score: calculateDocScore(doc.status ?? null),
       uploadedAt: doc.uploadedAt ? parseDateSafely(doc.uploadedAt) : null,
     };
 

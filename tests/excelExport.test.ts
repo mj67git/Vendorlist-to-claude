@@ -7,6 +7,7 @@ const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { buildCategoryWorksheet } from '../src/utils/excelExport';
 import { describeVendorRank, gradeForScore } from '../src/utils/vendorRank';
 import type { Vendor } from '../src/types';
+import { isInCategoryRegister } from '../src/utils/vendorState';
 
 /** A source with whatever the test needs; everything else is a plausible blank. */
 function vendor(over: Partial<Vendor>): Vendor {
@@ -210,4 +211,32 @@ test('a sample with no laboratory record says so rather than showing a blank', (
   assert.equal(cell(ws, FIRST_ROW, COL_SCORE).v, 'آزمایش نشده');
   assert.equal(cell(ws, FIRST_ROW, COL_RISK).v, 0);
   assert.equal(cell(ws, FIRST_ROW, COL_SCORE_NUM).v, 'ثبت‌نشده');
+});
+
+test('the sheet holds exactly the rows the category page shows', () => {
+  /*
+   * A register and its own export used to disagree. The page dropped
+   * disqualified sources from an ordinary category — they belong on the
+   * blacklist — and the sheet kept them, so «خارجی» drew 105 rows on screen and
+   * exported 140. Both now ask `isInCategoryRegister`, which is the whole fix:
+   * one predicate, two readers.
+   */
+  const rows = [
+    vendor({ id: 'ok-1' }),
+    vendor({ id: 'ok-2' }),
+    vendor({ id: 'gone', status: 'rejected', grade: 'rejected' }),
+    vendor({ id: 'other', category: 'domestic' }),
+    vendor({ id: 'smp', isSample: true, category: 'sample' } as any),
+  ];
+
+  const page = rows.filter(v => isInCategoryRegister(v, 'foreign')).map(v => v.id);
+  assert.deepEqual(page, ['ok-1', 'ok-2']);
+
+  const { vendorCount } = buildCategoryWorksheet(rows, 'foreign');
+  assert.equal(vendorCount, page.length, 'the sheet counts what the page counts');
+
+  // The disqualified source is not lost, it is on the register that owns it.
+  assert.deepEqual(rows.filter(v => isInCategoryRegister(v, 'blacklist')).map(v => v.id), ['gone']);
+  assert.deepEqual(rows.filter(v => isInCategoryRegister(v, 'sample')).map(v => v.id), ['smp']);
+  assert.equal(rows.filter(v => isInCategoryRegister(v, 'all')).length, rows.length);
 });
