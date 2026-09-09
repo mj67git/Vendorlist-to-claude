@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "react-example",
+      "name": "vlse",
       "dependencies": {
         "@prisma/client": "^5.22.0",
         "@radix-ui/react-avatar": "^1.2.6",
