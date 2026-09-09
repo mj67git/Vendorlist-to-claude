@@ -74,7 +74,11 @@ async function main() {
   
   console.log('🗑️ Cleaning up existing database records...');
   // Delete in correct order of dependency
-  await prisma.auditLog.deleteMany();
+  // `audit_log` refuses row deletes (the append-only trigger added in
+  // 20260909100000), so a fresh seed clears it the one way the trigger does not
+  // block. Seeding is a "start this database over" operation, not an edit to a
+  // trail anyone is relying on.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_log"');
   await prisma.evaluation.deleteMany();
   await prisma.vendorMaterial.deleteMany();
   await prisma.material.deleteMany();

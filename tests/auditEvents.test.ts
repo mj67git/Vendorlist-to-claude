@@ -138,6 +138,12 @@ test('every event produces a Persian sentence, with or without context', () => {
   }
 });
 
+test('the built record carries the event name through to storage', () => {
+  // It used to be stripped before the write, because there was no column for
+  // it. There is now, and every filter on the trail depends on it arriving.
+  assert.equal(built({ event: 'auth.login', entity: { id: 'admin' } }).event, 'auth.login');
+});
+
 test('the vocabulary is closed: an unknown event is refused', () => {
   assert.throws(
     () => buildAuditRecord({ event: 'source.exploded' as AuditEvent, entity: { id: 'V1' } }),

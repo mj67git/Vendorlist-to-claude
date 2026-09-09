@@ -132,7 +132,7 @@ function capped<T>(items: T[], serialize: (items: T[]) => string): { kept: T[]; 
 }
 
 export interface BuiltAuditRecord extends CreateAuditInput {
-  /** The event name. Persisted in its own column from phase 2 onwards. */
+  /** The event name, persisted in the `event` column of `audit_log`. */
   event: AuditEvent;
 }
 
@@ -215,8 +215,7 @@ export function recordEvent(req: any, input: RecordEventInput): Promise<void> {
   // where the trail deliberately stays silent.
   if (!record) return Promise.resolve();
 
-  const { event: _event, ...stored } = record;
-  return AuditService.createAuditRecord(stored)
+  return AuditService.createAuditRecord(record)
     .then(() => undefined)
     .catch(err => {
       console.error(`Audit write failed for ${record.event}:`, err);

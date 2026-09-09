@@ -31,6 +31,14 @@ export interface CreateAuditInput {
   userName?: string;
   role?: string;
   module: string;
+  /**
+   * The event name from the closed vocabulary in `auditTaxonomy.ts`.
+   *
+   * Optional because the hand-written call sites have not moved to
+   * `recordEvent` yet, and because rows written before the column existed have
+   * none. Every row written through `recordEvent` carries it.
+   */
+  event?: string;
   eventType?: 'User Activity' | 'Authentication' | 'Authorization' | 'Security' | string;
   ipAddress?: string;
   userAgent?: string;
@@ -191,6 +199,7 @@ export class AuditService {
         userName: input.userName || null,
         role: input.role || null,
         module: input.module,
+        event: input.event || null,
         eventType: input.eventType || "User Activity",
         ipAddress: input.ipAddress || null,
         userAgent: input.userAgent || null,
@@ -230,6 +239,7 @@ export class AuditService {
           userName: input.userName || null,
           role: input.role || null,
           module: input.module,
+          event: input.event || null,
           entityType: input.entityType || null,
           entityId: input.entityId || null,
           entityName: input.entityName || null,
