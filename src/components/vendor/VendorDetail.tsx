@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, ExternalLink, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '../../components/ui/button';
 import { EntityName } from '../../components/EntityName';
@@ -762,20 +762,42 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     </div>
                   )}
 
-                  {(sourcePartner.phone || sourcePartner.email) && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-                      {sourcePartner.phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
-                        </div>
-                      )}
-                      {sourcePartner.email && (
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
-                        </div>
-                      )}
+                  {/* Phone, then email, then the website — one line each, so
+                      every entry starts at the same edge with its own icon.
+                      Phone and email used to share a wrapped row while the
+                      website sat below the "nothing recorded" notice with no
+                      icon at all and `dir="ltr"` on its whole row, which pushed
+                      it to the opposite margin from everything above it. The
+                      direction belongs on the value, which is what is Latin —
+                      never on the row, which is what holds the icon. */}
+                  {sourcePartner.phone && (
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
+                    </div>
+                  )}
+
+                  {sourcePartner.email && (
+                    <div className="flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
+                    </div>
+                  )}
+
+                  {sourcePartner.website && (
+                    <div className="flex items-center gap-1.5">
+                      {/* The same icon the partner repository gives a website,
+                          so one record does not carry two vocabularies. */}
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <a
+                        href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        dir="ltr"
+                        className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono"
+                      >
+                        {sourcePartner.website}
+                      </a>
                     </div>
                   )}
 
@@ -787,14 +809,6 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                         اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
                         از همان‌جا قابل تکمیل است.
                       </span>
-                    </div>
-                  )}
-
-                  {sourcePartner.website && (
-                    <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-2xs">
-                        {sourcePartner.website}
-                      </a>
                     </div>
                   )}
                 </div>
