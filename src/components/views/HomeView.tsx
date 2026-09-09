@@ -381,7 +381,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         {/* Source grades, from the department scores. */}
         <GradeDonutCard
           icon={PieChartIcon}
-          title="توزیع گرید کیفی تأمین‌کنندگان"
+          title="توزیع گرید کیفی سورس‌ها"
           subtitle="بر اساس امتیاز دپارتمان‌ها"
           slices={gradeDistribution}
           total={stats.total}
@@ -393,7 +393,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         {/* Seller grades, from the five submitted documents. */}
         <GradeDonutCard
           icon={BadgeCheck}
-          title="توزیع گرید ارزیابی فروشنده"
+          title="توزیع گرید کیفی ارزیابی فروشندگان"
           subtitle="بر اساس مدارک ارسالی"
           slices={supplierGradeDistribution.slices}
           total={supplierGradeDistribution.total}
