@@ -1,7 +1,5 @@
 import { lockRecordWrite, serializeWrites } from "../http/recordLock.js";
 import type { PrismaClient } from "@prisma/client";
-import { AuditService } from "../../utils/auditService.js";
-import { calculateGradeAndStatus } from "../../utils/sopEvaluation.js";
 import { resolvePartnerLink, stripPartnerMarker } from "../domain/partnerLink.js";
 import { parseDateSafely } from "../db/coerce.js";
 import { requirePrisma } from "../db/prisma.js";

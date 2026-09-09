@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { reportDataOut } from '../services/reportDataOut';
 import { 
-  Search, Filter, SlidersHorizontal, ChevronLeft, X, Eye, 
-  Clock, ShieldAlert, CheckCircle, AlertTriangle, FileText, 
-  Activity, User as UserIcon, HelpCircle, Layers, ClipboardList,
-  RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
-  Calculator, Award, TrendingUp, Cpu
+  Search, SlidersHorizontal, ChevronLeft, X,
+  ShieldAlert, CheckCircle, AlertTriangle, FileText,
+  User as UserIcon, ClipboardList,
+  RotateCcw, AlertCircle, Loader2, FlaskConical,
+  Calculator, Award
 } from 'lucide-react';
 import jalaali from 'jalaali-js';
 import { Button } from './ui/button';

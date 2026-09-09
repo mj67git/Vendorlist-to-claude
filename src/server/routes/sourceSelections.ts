@@ -2,7 +2,6 @@ import express from "express";
 import { recordEvent } from "../../utils/auditEvents.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
-import { sendHandlerError } from "../http/errors.js";
 import { STALE_COPY_MESSAGE, lockRecordWrite, staleCopy } from "../http/recordLock.js";
 import { getVendorById } from "../repositories/vendorRepository.js";
 

@@ -10,7 +10,7 @@ import * as XLSXModule from 'xlsx-js-style';
  */
 import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
-import { Vendor, Scores, BusinessPartner, Material } from '../types';
+import { Vendor, BusinessPartner, Material } from '../types';
 import { isVendorRejected, isInCategoryRegister } from './vendorState';
 import { describeSampleStatus, isSampleRecord } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';

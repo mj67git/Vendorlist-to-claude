@@ -9,7 +9,6 @@ import { ShamsiDatePicker } from '../../components/ShamsiDatePicker';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { categoryLabels } from '../../constants/categories';
-import { authFetch } from '../../services/authFetch';
 import { BusinessPartner, Category, Material, SOPDocumentEval, SOPDocumentKey, SOPDocumentStatus, Status, SupplierEvaluation, User, Vendor } from '../../types';
 import { GRADE_RANGE_FA, SOP_DOCUMENTS_DEF, computeSupplierEvaluation, describeGrade } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';

@@ -7,7 +7,6 @@ import { effectivePermissions, hasCustomPermissions } from "../../utils/permissi
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth } from "../http/auth.js";
 import { setCurrentSession } from "../http/requestContext.js";
-import { sendHandlerError } from "../http/errors.js";
 import { getClientIp } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
 import { JWT_SECRET } from "../security/jwtSecret.js";

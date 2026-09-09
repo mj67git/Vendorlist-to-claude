@@ -1,11 +1,10 @@
 import express from "express";
 import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
 import { diffFields, recordEvent } from "../../utils/auditEvents.js";
-import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
 import {
-  asText, listMaterials, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
+  listMaterials, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
 } from "../repositories/materialRepository.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";

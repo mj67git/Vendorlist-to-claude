@@ -1,7 +1,7 @@
 import express from "express";
 import { diffFields, recordEvent } from "../../utils/auditEvents.js";
 import {
-  ALL_PERMISSIONS, can, effectivePermissions, sanitizePermissions, type Permission,
+  can, effectivePermissions, sanitizePermissions,
 } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import {

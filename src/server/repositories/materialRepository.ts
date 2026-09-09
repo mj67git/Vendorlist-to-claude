@@ -2,7 +2,6 @@ import type { PrismaClient } from "@prisma/client";
 import { recordEvent } from "../../utils/auditEvents.js";
 import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
 import { requirePrisma } from "../db/prisma.js";
-import { generateMaterialId } from "../domain/materialId.js";
 
 /**
  * Turning a material row into what the client expects, and a request body into

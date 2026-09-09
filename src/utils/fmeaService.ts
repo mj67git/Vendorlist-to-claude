@@ -1,4 +1,4 @@
-import { RiskAssessmentData, AnalysisRecord, Vendor } from '../types';
+import { AnalysisRecord } from '../types';
 
 export interface FmeaConfig {
   riskModifiers: {

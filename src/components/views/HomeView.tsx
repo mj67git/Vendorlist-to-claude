@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Award, BadgeCheck, Boxes, Building2, Calendar, ChevronLeft, ClipboardList, FlaskConical, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
-import { EntityName } from '../../components/EntityName';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { StatTile } from '../../components/ui/stat-tile';

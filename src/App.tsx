@@ -1,9 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Info, Building2, CheckCircle, Handshake, Hash, ShieldAlert, Loader2, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
+import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Building2, CheckCircle, Handshake, ShieldAlert, Loader2, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
-import { INITIAL_BUSINESS_PARTNERS_DB } from './db_business_partners';
-import { Category, Scores, Vendor, User, Material, BusinessPartner } from './types';
+import { Category, Vendor, User, Material, BusinessPartner } from './types';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from './assets/logo.png';
 import { categoryLabels } from './constants/categories';
@@ -61,8 +60,8 @@ import { fetchAllVendors } from './services/vendorPages';
 import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
 import { useCachedCollection } from './hooks/useCachedCollection';
 import {
-  HOME, capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
-  pushView, refreshVendorEverywhere, truncateTo, type ViewState,
+  capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
+  pushView, refreshVendorEverywhere, type ViewState,
 } from './utils/navStack';
 import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';

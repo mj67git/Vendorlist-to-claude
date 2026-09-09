@@ -1,11 +1,11 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { reportDataOut } from '../services/reportDataOut';
 import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, Printer, Shield, Warehouse, DollarSign, 
   AlertTriangle, Microscope, Handshake, CheckCircle, Star 
 } from 'lucide-react';
-import { Vendor, Grade, BusinessPartner, Material } from '../types';
+import { Vendor, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
 import { getPartnerDetails } from '../utils/printablePartner';
 import { criterionCell, departmentNote, earnedCell } from '../utils/printableScores';

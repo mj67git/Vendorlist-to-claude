@@ -1,12 +1,11 @@
 import express from "express";
 import { auditRowValues, diffFields, recordEvent } from "../../utils/auditEvents.js";
-import { calculateGradeAndStatus } from "../../utils/sopEvaluation.js";
 import {
   vendorAnalysisSchema, vendorContactSchema, vendorLogsSchema, vendorProfileSchema,
   vendorRiskSchema, vendorSchema, vendorScoreSchema,
 } from "../../utils/validation.js";
 import {
-  can, canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  can, forbiddenRawScoreChanges, forbiddenScoreChanges,
   SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission,
 } from "../../utils/permissions.js";
 import {
@@ -16,7 +15,7 @@ import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
 import {
   CALCULATION_WEIGHTS, GRADE_TIERS, calculateRoundedWeightedScore,
-  calculateWeightedScore, rankVendor,
+  calculateWeightedScore,
 } from "../domain/vendorEvaluation.js";
 import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
