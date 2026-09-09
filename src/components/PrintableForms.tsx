@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, Printer, Shield, Warehouse, DollarSign, 
@@ -27,6 +28,19 @@ import temadLogo from '../assets/logo.png';
  * in utils/printableScores.ts, where "not recorded" is an answer rather than a
  * value to be filled in.
  */
+
+/**
+ * Open the print dialog, and say so.
+ *
+ * A printed form leaves the building exactly as a spreadsheet does, and it is
+ * the one way out that touches no server route at all — so the browser is
+ * where it has to be reported (see reportDataOut). The short delay is the
+ * original behaviour: the dialog is opened after the layout has settled.
+ */
+function printAndReport(label: string, rows?: number) {
+  reportDataOut('data.printed', label, rows);
+  setTimeout(() => window.print(), 100);
+}
 
 function getMaterialTypeLabel(v: Vendor) {
   if (v.category === 'packaging') return 'اقلام بسته‌بندی';
@@ -81,7 +95,7 @@ export function PrintableArchiveList({
           <div className="text-xs text-slate-500">
             {vendors.length.toLocaleString('fa-IR')} ردیف آمادهٔ چاپ — برای ذخیره به‌صورت PDF، در پنجرهٔ چاپ گزینهٔ «Save as PDF» را انتخاب کنید.
           </div>
-          <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+          <button onClick={() => printAndReport('فهرست چاپی سورس‌ها', vendors.length)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
             <Printer className="w-5 h-5" />
             چاپ فهرست
           </button>
@@ -236,7 +250,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
               <ChevronLeft className="w-5 h-5" />
               بازگشت
             </button>
-            <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+            <button onClick={() => printAndReport(`فرم نمونهٔ «${vendor?.material || vendor?.name || ''}»`)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
               <Printer className="w-5 h-5" />
               چاپ فرم نمونه تستی
             </button>
@@ -582,7 +596,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
               <ChevronLeft className="w-5 h-5" />
               بازگشت
             </button>
-            <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+            <button onClick={() => printAndReport(`فرم ارزیابی «${vendor?.material || vendor?.name || ''}»`)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
               <Printer className="w-5 h-5" />
               چاپ فرم
             </button>

@@ -135,7 +135,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * beside it exports what is actually on screen.
    */
   const handleExportCategory = (catId: string, catLabel: string) => {
-    void excel.run(xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections));
+    void excel.run(
+      xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections),
+      { label: `آرشیو — ${catLabel}`, rows: db.length },
+    );
   };
 
   /**
@@ -373,7 +376,10 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             type="button"
             variant="success"
             size="sm"
-            onClick={() => excel.run(xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections))}
+            onClick={() => excel.run(
+              xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections),
+              { label: 'آرشیو کامل (چند شیتی)', rows: db.length },
+            )}
             disabled={excel.busy}
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
           >
@@ -405,9 +411,12 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => excel.run(xl => xl.exportCategoryToExcel(
-              filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
-            ))}
+            onClick={() => excel.run(
+              xl => xl.exportCategoryToExcel(
+                filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
+              ),
+              { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
+            )}
             disabled={excel.busy}
             title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
           >

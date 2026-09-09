@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import {
   AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, History, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
@@ -370,6 +371,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
       // the bundle and this page is not an export tool until the button is used.
       const { exportUserAccessToExcel } = await import('../utils/excelExport');
       exportUserAccessToExcel(rows, moduleTitles);
+      reportDataOut('data.exported', 'سطوح دسترسی کاربران', rows.length);
     } catch (err: any) {
       setActionError('تهیهٔ خروجی Excel ناموفق بود. دوباره تلاش کنید.');
       console.error('User access export failed:', err);

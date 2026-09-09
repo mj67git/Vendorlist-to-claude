@@ -582,7 +582,7 @@ interface SourceSelection {
                    materials: g.sources.map(v => v.material).filter(Boolean),
                    averageScore: averageScoreOf(g),
                  })),
-               ))}
+               ), { label: 'فهرست تأمین‌کنندگان', rows: sortedSuppliers.length })}
                className="font-bold shrink-0"
              >
                {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
@@ -909,7 +909,7 @@ interface SourceSelection {
                    materials,
                    chosenMaterials: stats.chosenFor.map(v => v.material),
                    soleSourceMaterials: stats.soleSource.map(v => v.material),
-                 }))}
+                 }), { label: `پروندهٔ ${activeSupplier.name}`, rows: activeSupplier.vendors.length })}
                >
                  <Briefcase />
                  {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}

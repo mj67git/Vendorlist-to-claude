@@ -366,7 +366,10 @@ export function CategoryView({
             {can(currentUser, 'data.export') && (
             <Button 
               type="button" 
-              onClick={() => excel.run(xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections))}
+              onClick={() => excel.run(
+                xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections),
+                { label: `دستهٔ ${meta.fa}`, rows: db.length },
+              )}
               disabled={excel.busy}
               className="flex items-center gap-2 text-xs font-bold shadow-xs cursor-pointer active:scale-95"
               title={`دانلود خروجی اکسل دسته‌بندی ${meta.fa}`}

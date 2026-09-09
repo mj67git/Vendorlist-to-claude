@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import { 
   Search, Filter, SlidersHorizontal, ChevronLeft, X, Eye, 
   Clock, ShieldAlert, CheckCircle, AlertTriangle, FileText, 
@@ -809,6 +810,9 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
       // already reports a failure under the button.
       const { exportAuditToExcel } = await import('../utils/excelExport');
       exportAuditToExcel(rows);
+      // Exporting the trail is itself an export, and the trail is the last
+      // place that should have a blind spot about what left it.
+      reportDataOut('data.exported', 'ردیابی تغییرات', rows.length);
       setExportNotice(null);
     } catch (err) {
       console.error('Audit export failed:', err);

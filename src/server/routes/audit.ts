@@ -1,6 +1,7 @@
 import express from "express";
 import { AuditService } from "../../utils/auditService.js";
-import { AUDIT_EVENT_GROUPS } from "../../utils/auditTaxonomy.js";
+import { AUDIT_EVENT_GROUPS, type AuditEvent } from "../../utils/auditTaxonomy.js";
+import { recordEvent } from "../../utils/auditEvents.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
 
@@ -142,6 +143,48 @@ export function auditRoutes(): express.Router {
         return res.status(404).json({ error: "Audit log not found" });
       }
       res.json(log);
+    } catch (err: any) {
+      sendHandlerError(res, err);
+    }
+  });
+
+  /**
+   * The one thing the browser is allowed to tell the trail about.
+   *
+   * Everything else in `audit_log` is written by the handler that made the
+   * change, because a trail the client can author is weaker evidence than one
+   * only the server writes (rule 2). But taking data *out* of the company —
+   * a spreadsheet, a printed form — happens entirely in the browser: the rows
+   * are already on the page, and no request is made to produce the file. There
+   * is no server-side moment to record, so either the browser says so or the
+   * one act that moves regulated data outside the system leaves no trace.
+   *
+   * The concession is kept as narrow as it can be. Three event names are
+   * accepted and nothing else; the module, action, severity and wording still
+   * come from the vocabulary, not from the caller; and the only things the
+   * caller supplies are a short label and a row count, both bounded here. A
+   * client cannot forge a deletion, a grade or a permission change through
+   * this door — it can only claim it exported something.
+   */
+  const REPORTABLE: AuditEvent[] = ["data.exported", "data.printed", "data.backup_downloaded"];
+
+  router.post("/api/audit/events", requireAuth, async (req: any, res) => {
+    try {
+      const { event, label, rows } = req.body || {};
+      if (!REPORTABLE.includes(event)) {
+        return res.status(400).json({ error: "این رویداد از سمت کلاینت قابل ثبت نیست." });
+      }
+      const name = typeof label === "string" ? label.trim().slice(0, 120) : "";
+      // A row count is a number or it is nothing; a string here would end up in
+      // the sentence as whatever the caller wrote.
+      const count = Number.isFinite(rows) && rows >= 0 ? Math.floor(rows) : null;
+
+      await recordEvent(req, {
+        event,
+        entity: { name: name || null },
+        facts: { rows: count },
+      });
+      res.json({ success: true });
     } catch (err: any) {
       sendHandlerError(res, err);
     }

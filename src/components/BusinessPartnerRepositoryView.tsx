@@ -830,7 +830,10 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               variant="secondary"
               size="sm"
               disabled={excel.busy}
-              onClick={() => excel.run(xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []))}
+              onClick={() => excel.run(
+                xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []),
+                { label: 'شرکای تجاری', rows: filteredPartners.length },
+              )}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
               className="w-full sm:w-auto font-bold shrink-0"
             >

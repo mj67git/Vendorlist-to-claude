@@ -99,6 +99,15 @@ export function partnerRoutes(): express.Router {
       if (!doc || !doc.fileDataUrl) {
         return res.status(404).json({ error: "فایلی برای این مدرک یافت نشد" });
       }
+      // Reading a record is not audited, but a document leaving the company is
+      // the one read that is — and unlike an export it has a server-side
+      // moment, so it is recorded here rather than taken on the client's word.
+      const partner = await prisma.businessPartner.findUnique({ where: { id: req.params.id } });
+      await recordEvent(req, {
+        event: "partner.document_downloaded",
+        entity: { id: req.params.id, name: partner?.name || req.params.id },
+        facts: { document: doc.nameFa || doc.key, fileName: doc.fileName },
+      });
       res.json({ fileName: doc.fileName, fileSize: doc.fileSize, fileDataUrl: doc.fileDataUrl });
     } catch (err: any) {
       sendHandlerError(res, err);
