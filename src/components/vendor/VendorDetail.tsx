@@ -622,217 +622,213 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         return null;
       })()}
 
-      {/* 1. اطلاعات تامین کننده */}
-      <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
-        <div className="flex items-center gap-2.5 mb-5 border-b border-border pb-3">
-          <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-          <h3 className="font-bold text-foreground text-sm">مشخصات فنی و اطلاعات عمومی</h3>
-        </div>
-        
-        <div className="flex flex-col gap-5 text-sm">
-          {/* مشخصات اصلی ماده اولیه و کدهای ثبتی */}
-          <div className="space-y-4">
-            {/* جعبه شاخص ماده اولیه */}
-            <div className="bg-muted/40 border border-border rounded-xl p-4 shadow-inner space-y-3">
+      {/* 1. اطلاعات تامین کننده
+       *
+       * Two reference blocks side by side on a wide screen, because that is
+       * what they are: a dozen short facts a reader checks, not the work of
+       * the page. Measured before this, the card alone stood 835px tall on a
+       * 1440×900 screen — 93% of the viewport for twelve facts — and the
+       * evaluation, the risk assessment and the laboratory records all began
+       * below the fold. Three things made it that tall: two single-line cards
+       * stretched to the height of a seven-line neighbour by the grid, a
+       * standard-name box whose padding was most of it, and a contact panel of
+       * three nested frames around 166px of text.
+       */}
+      <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm text-right">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* مشخصات فنی */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5 border-b border-border pb-2.5">
+              <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+              <h3 className="font-bold text-foreground text-sm">مشخصات فنی و اطلاعات عمومی</h3>
+            </div>
+
+            {/* The two standard names, as one pair. They are the record's
+                identity, so they keep their weight — but not a box of their
+                own inside a box. */}
+            <div>
+              <div className="text-muted-foreground text-2xs font-medium">نام استاندارد</div>
+              <div className="font-black text-foreground text-base sm:text-lg leading-snug" title={displayStandardNameFa}>
+                {displayStandardNameFa}
+              </div>
+              <div className="text-xs font-mono font-bold text-muted-foreground" dir="ltr">
+                {displayStandardNameEn}
+              </div>
+            </div>
+
+            {/* The registry facts, in the label-above-value grid the partner
+                repository already uses. One line per fact rather than one card
+                per fact, so nothing is stretched to a neighbour's height. */}
+            {/* Two columns, so the four registry facts fill two even rows.
+                At three they left a ragged half-row, which is the same empty
+                space this card was rebuilt to stop producing. */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-xs border-t border-border/60 pt-3">
               <div>
-                <div className="text-muted-foreground text-xs font-bold mb-1">نام استاندارد فارسی:</div>
-                <div className="font-black text-foreground text-lg sm:text-xl leading-relaxed" title={displayStandardNameFa}>
-                  {displayStandardNameFa}
-                </div>
+                <span className="text-muted-foreground text-2xs block font-medium">شمارهٔ CAS</span>
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '—'}
+                </span>
               </div>
-              <div className="pt-2.5 border-t border-border/60">
-                <div className="text-muted-foreground text-xs font-bold mb-1">نام استاندارد انگلیسی:</div>
-                <div className="text-sm sm:text-base font-mono font-bold text-foreground" dir="ltr">
-                  {displayStandardNameEn}
-                </div>
-              </div>
-            </div>
 
-            {/* کارت‌های فرعی مشخصات عددی */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">شمارهٔ CAS</div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
-                    {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '-'}
-                  </div>
-                </div>
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">
+                  {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
+                </span>
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '—'}
+                </span>
               </div>
-              
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">
-                    {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
-                  </div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
-                    {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '-'}
-                  </div>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-border space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground font-medium">تاریخ دریافت / صدور:</span>
-                    {/* Shown in the calendar the rest of the page uses. A row
-                        saved without this date used to carry the server's
-                        Gregorian fallback (`2026-09-08`) while the row beside it
-                        carried Jalali, so one screen printed two calendars. */}
-                    <span className="font-mono font-bold text-foreground" dir="ltr">
-                      {toJalaliDisplay(vendor.lastAudit || vendor.registrationDate, 'ثبت نشده')}
+
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">تاریخ صدور</span>
+                {/* Shown in the calendar the rest of the page uses. A row saved
+                    without this date used to carry the server's Gregorian
+                    fallback while the row beside it carried Jalali, so one
+                    screen printed two calendars. */}
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {toJalaliDisplay(vendor.lastAudit || vendor.registrationDate, '—')}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">انقضای مجوز</span>
+                {vendor.ircExpiryDate ? (() => {
+                  const check = checkLicenseExpiry(vendor.ircExpiryDate);
+                  const tone = check.status === 'expired'
+                    ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300'
+                    : check.status === 'expiring_soon'
+                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300'
+                      : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300';
+                  const word = check.status === 'expired' ? 'منقضی'
+                    : check.status === 'expiring_soon' ? `${check.daysLeft} روز` : 'معتبر';
+                  return (
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-bold font-mono text-foreground" dir="ltr">{vendor.ircExpiryDate}</span>
+                      <span className={`px-1.5 rounded text-2xs font-bold shrink-0 ${tone}`}>{word}</span>
                     </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground font-medium">تاریخ انقضای مجوز:</span>
-                    {vendor.ircExpiryDate ? (() => {
-                      const check = checkLicenseExpiry(vendor.ircExpiryDate);
-                      return (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-foreground" dir="ltr">
-                            {vendor.ircExpiryDate}
-                          </span>
-                          {check.status === 'expired' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
-                              منقضی
-                            </span>
-                          )}
-                          {check.status === 'expiring_soon' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
-                              {check.daysLeft} روز
-                            </span>
-                          )}
-                          {check.status === 'valid' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
-                              معتبر
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })() : (
-                      <span className="text-muted-foreground font-mono">ثبت نشده</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">کد داخلی سامانه</div>
-                  <div className="font-mono text-muted-foreground text-center py-1.5 px-3 text-sm" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
-                    {vendor.id.substring(0, 8).toUpperCase()}
-                  </div>
-                </div>
+                  );
+                })() : (
+                  <span className="text-muted-foreground font-mono block">ثبت نشده</span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده) */}
-          <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 text-foreground font-bold text-xs sm:text-sm border-b border-border/60 pb-3">
-              <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              <span>اطلاعات تماس و آدرس</span>
+          {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده)
+              One frame, not three: the partner's name is this block's own
+              sub-heading rather than the header of a card inside a card. */}
+          <div className="space-y-3 lg:border-r lg:border-border/60 lg:pr-5">
+            <div className="flex items-center gap-2.5 border-b border-border pb-2.5">
+              <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+              <h3 className="font-bold text-foreground text-sm">اطلاعات تماس و آدرس</h3>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
-                  {partnerIsManufacturer
-                    ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
-                  {/* The role label is kept out of the clip so it cannot spend
-                      the budget the partner name needs. */}
-                  <span className="shrink-0">{sourcePartner.roleLabel}:</span>
-                  <EntityName name={sourcePartner.name} lines={2} />
-                </div>
+            <div className={`flex items-center gap-2 font-extrabold text-xs ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
+              {partnerIsManufacturer
+                ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+              {/* The role label is kept out of the clip so it cannot spend the
+                  budget the partner name needs. */}
+              <span className="shrink-0">{sourcePartner.roleLabel}:</span>
+              <EntityName name={sourcePartner.name} lines={2} />
+            </div>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1 max-w-[75ch]">
-                  <div className="flex items-start gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                    <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
-                  </div>
-
-                  {sourcePartner.address && (
-                    <div className="flex items-start gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <span><strong>آدرس:</strong> {sourcePartner.address}</span>
-                    </div>
-                  )}
-
-                  {sourcePartner.contactPerson && (
-                    <div className="flex items-center gap-1.5">
-                      <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span><strong>شخص رابط:</strong> {sourcePartner.contactPerson}</span>
-                    </div>
-                  )}
-
-                  {/* Phone, then email, then the website — one line each, so
-                      every entry starts at the same edge with its own icon.
-                      Phone and email used to share a wrapped row while the
-                      website sat below the "nothing recorded" notice with no
-                      icon at all and `dir="ltr"` on its whole row, which pushed
-                      it to the opposite margin from everything above it. The
-                      direction belongs on the value, which is what is Latin —
-                      never on the row, which is what holds the icon. */}
-                  {sourcePartner.phone && (
-                    <div className="flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
-                    </div>
-                  )}
-
-                  {sourcePartner.email && (
-                    <div className="flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
-                    </div>
-                  )}
-
-                  {sourcePartner.website && (
-                    <div className="flex items-center gap-1.5">
-                      {/* The same icon the partner repository gives a website,
-                          so one record does not carry two vocabularies. */}
-                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <a
-                        href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        dir="ltr"
-                        className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono"
-                      >
-                        {sourcePartner.website}
-                      </a>
-                    </div>
-                  )}
-
-                  {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
-                    && !sourcePartner.email && !sourcePartner.website && (
-                    <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
-                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>
-                        اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
-                        از همان‌جا قابل تکمیل است.
-                      </span>
-                    </div>
-                  )}
-                </div>
+            {/* Phone, then email, then the website — one line each, so every
+                entry starts at the same edge with its own icon. The direction
+                belongs on the value, which is what is Latin — never on the
+                row, which is what holds the icon. */}
+            <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed max-w-[75ch]">
+              <div className="flex items-start gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
               </div>
 
+              {sourcePartner.address && (
+                <div className="flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <span><strong>آدرس:</strong> {sourcePartner.address}</span>
+                </div>
+              )}
+
+              {sourcePartner.contactPerson && (
+                <div className="flex items-center gap-1.5">
+                  <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span><strong>شخص رابط:</strong> {sourcePartner.contactPerson}</span>
+                </div>
+              )}
+
+              {sourcePartner.phone && (
+                <div className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
+                </div>
+              )}
+
+              {sourcePartner.email && (
+                <div className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
+                </div>
+              )}
+
+              {sourcePartner.website && (
+                <div className="flex items-center gap-1.5">
+                  {/* The same icon the partner repository gives a website, so
+                      one record does not carry two vocabularies. */}
+                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <a
+                    href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    dir="ltr"
+                    className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono"
+                  >
+                    {sourcePartner.website}
+                  </a>
+                </div>
+              )}
+
+              {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
+                && !sourcePartner.email && !sourcePartner.website && (
+                <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
+                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
+                    از همان‌جا قابل تکمیل است.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
+        </div>
 
-          {/* سوابق انحرافات */}
-          {vendor.rejectionReasons && vendor.rejectionReasons.length > 0 && (
-            <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs">
-              <div className="flex items-center gap-2 mb-3 text-foreground font-bold text-xs sm:text-sm">
-                <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                <span>سوابق انحرافات</span>
-              </div>
-              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
-                <ul className="list-disc list-inside space-y-1.5">
-                  {vendor.rejectionReasons.map((reason, idx) => (
-                    <li key={idx} className="break-words">{reason}</li>
-                  ))}
-                </ul>
-              </div>
+        {/* سوابق انحرافات — full width beneath both columns, because a list
+            of stated reasons is prose, not a fact to line up in a grid. */}
+        {vendor.rejectionReasons && vendor.rejectionReasons.length > 0 && (
+          <div className="mt-5 bg-muted/60 border border-border/50 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-2 text-foreground font-bold text-xs sm:text-sm">
+              <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+              <span>سوابق انحرافات</span>
             </div>
-          )}
+            <div className="text-foreground font-medium text-xs leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
+              <ul className="list-disc list-inside space-y-1.5">
+                {vendor.rejectionReasons.map((reason, idx) => (
+                  <li key={idx} className="break-words">{reason}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* The record's own identifier, in the footnote it deserves. It used
+            to hold a third of the registry row while its own tooltip said it
+            is not a regulatory code — it is how support finds the row. */}
+        <div className="mt-4 pt-3 border-t border-border/60 text-2xs text-muted-foreground">
+          <span>کد داخلی سامانه: </span>
+          <span className="font-mono" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
+            {vendor.id.substring(0, 8).toUpperCase()}
+          </span>
         </div>
       </div>
 
