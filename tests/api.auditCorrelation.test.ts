@@ -61,7 +61,7 @@ test('every record written for one request shares that request\'s identifier', S
   }
 
   assert.ok(rows.length >= 2, `expected the edit and the risk record, got ${rows.length}`);
-  assert.ok(rows.some((r: any) => r.module === 'Risk Management'));
+  assert.ok(rows.some((r: any) => r.event === 'risk.assessed'));
   // And nothing was written under a chain of its own.
   const all = await db().auditLog.findMany({ where: { entityId: FIXTURE.vendorId } });
   assert.ok(all.every((r: any) => r.correlationId === requestId));

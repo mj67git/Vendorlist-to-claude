@@ -69,8 +69,10 @@ test('a refused change is recorded as blocked, and the refusal names what was re
 
   const rows = await waitForAudit({ entityId: FIXTURE.vendorId });
   assert.equal(rows[0].result, 'Blocked');
-  // Not "Delete - Blocked": nobody tried to delete anything here.
-  assert.equal(rows[0].action, 'Update - Blocked');
+  // One spelling for every refusal, from the closed vocabulary, rather than the
+  // "Update - Blocked" / "Delete - Blocked" strings each handler used to invent.
+  assert.equal(rows[0].action, 'ACCESS_DENIED');
+  assert.equal(rows[0].event, 'access.denied');
 });
 
 test('a refused sign-in is recorded as failed', SKIP, async () => {

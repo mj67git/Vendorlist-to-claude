@@ -62,7 +62,7 @@ test('the refusal is recorded, because a blocked write is evidence too', SKIP, a
     body: profileBody({ status: 'rejected', rejectionReasons: ['رد'] }),
   });
   const rows = await db().auditLog.findMany({ where: { entityId: FIXTURE.vendorId } });
-  const blocked = rows.filter((r: any) => r.action === 'Update - Blocked');
+  const blocked = rows.filter((r: any) => r.event === 'access.denied');
   assert.equal(blocked.length, 1);
   assert.equal(blocked[0].severity, 'Critical');
 });

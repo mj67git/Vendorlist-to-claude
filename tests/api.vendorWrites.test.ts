@@ -39,8 +39,11 @@ test('a profile edit reaches the database and is audited with before and after',
     where: { entityId: FIXTURE.vendorId }, orderBy: { timestamp: 'desc' },
   });
   assert.ok(entry, 'every change is recorded');
-  assert.equal((entry.beforeData as any).country, 'Turkey');
-  assert.equal((entry.afterData as any).country, 'India');
+  // The row names what moved rather than carrying two copies of the source.
+  assert.equal(entry.beforeData, null);
+  const changed = (entry.afterData as any).changes.find((c: any) => c.field === 'country');
+  assert.equal(changed.from, 'Turkey');
+  assert.equal(changed.to, 'India');
 });
 
 test('the partner link is stored in its own column, not in the contact text', SKIP, async () => {
@@ -61,7 +64,8 @@ test('the partner link is stored in its own column, not in the contact text', SK
   const entry = await db().auditLog.findFirst({
     where: { entityId: FIXTURE.vendorId }, orderBy: { timestamp: 'desc' },
   });
-  assert.equal((entry.afterData as any).supplierId, FIXTURE.supplierB, 'and it is on the record');
+  const link = (entry.afterData as any).changes.find((c: any) => c.field === 'supplierId');
+  assert.equal(link.to, FIXTURE.supplierB, 'and it is on the record');
 });
 
 test('a partner still linked to a source cannot be deleted', SKIP, async () => {

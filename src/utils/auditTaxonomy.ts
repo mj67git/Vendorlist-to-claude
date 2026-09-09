@@ -153,7 +153,7 @@ export type AuditEvent =
   | 'source.disqualified' | 'source.reinstated' | 'source.deleted'
   | 'source.selected' | 'source.selection_changed'
   | 'sample.decided'
-  | 'lab.result_added' | 'lab.result_removed'
+  | 'lab.result_added' | 'lab.result_updated' | 'lab.result_removed'
   | 'risk.assessed'
   | 'material.created' | 'material.updated' | 'material.deleted'
   | 'material.spec_uploaded' | 'material.spec_removed' | 'material.status_changed'
@@ -342,6 +342,15 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
       const code = fact(ctx, 'qcCode');
       const decision = fact(ctx, 'decision');
       return `نتیجهٔ آزمایش${code ? ` ${code}` : ''} برای ${named(ctx, 'سورس')}${decision ? `: ${decision}` : ''} ثبت شد`;
+    },
+  },
+  'lab.result_updated': {
+    module: 'Laboratory', entityType: 'Laboratory Result', action: 'Update',
+    severity: 'Warning', label: 'ویرایش نتیجهٔ آزمایش', alwaysRecord: true,
+    sentence: ctx => {
+      const code = fact(ctx, 'qcCode');
+      const decision = shift(ctx, 'decision');
+      return `نتیجهٔ آزمایش${code ? ` ${code}` : ''} سورس ${named(ctx, '')} ویرایش شد${decision ? ` (تصمیم ${decision})` : ''}`.replace('  ', ' ');
     },
   },
   'lab.result_removed': {
