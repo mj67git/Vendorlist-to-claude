@@ -147,7 +147,11 @@ export function isInCategoryRegister(v: AnyVendor, categoryId: string): boolean 
   if (categoryId === 'all') return true;
   if (categoryId === 'sample') return isSampleVendor(v);
   if (categoryId === 'blacklist') return isInBlacklistCategory(v);
-  return v?.category === categoryId && !isVendorRejected(v);
+  // A sample is a stage, not a category, and it has a register of its own. The
+  // flag and the category disagree on some rows — that is what `isSampleVendor`
+  // is for — so a record flagged as a sample while still filed under «خارجی»
+  // used to be counted in both registers at once.
+  return v?.category === categoryId && !isSampleVendor(v) && !isVendorRejected(v);
 }
 
 /**

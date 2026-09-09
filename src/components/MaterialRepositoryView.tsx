@@ -9,6 +9,7 @@ import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
+import { indexSourcesByMaterial } from '../utils/materialSources';
 import { findDuplicateMaterial } from '../utils/materialDuplicates';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { authFetch, isLocalMode } from '../services/authFetch';
@@ -115,25 +116,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
    * /api/materials/:id) and is the authority. This mirrors that count from the
    * data the client already holds so the number can be shown in the table and
    * the confirmation can be honest — a source with no `materialId` of its own
-   * is matched on its substance, the same way `resolveMaterialNames` does,
-   * because those are exactly the legacy rows whose link the client cannot see.
+   * is matched on its substance.
+   *
+   * Every record, samples included: a sample holds a `vendor_materials` row
+   * like any other and the delete is refused on it just the same.
    */
-  const vendorsByMaterial = useMemo(() => {
-    const eq = (a?: string | null, b?: string | null) =>
-      !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
-    const isRealCas = (c?: string | null) => !!c && !['n/a', 'na', '-', ''].includes(c.trim().toLowerCase());
-
-    const map = new Map<string, Vendor[]>();
-    for (const v of db) {
-      const material = v.materialId
-        ? materials.find(m => m.id === v.materialId)
-        : materials.find(m =>
-            eq(m.nameFa, v.material) || eq(m.nameEn, v.materialEn) || (eq(m.cas, v.cas) && isRealCas(m.cas)));
-      if (!material) continue;
-      map.set(material.id, [...(map.get(material.id) || []), v]);
-    }
-    return map;
-  }, [db, materials]);
+  const vendorsByMaterial = useMemo(() => indexSourcesByMaterial(db, materials), [db, materials]);
 
   const connectedVendors = materialToDelete ? vendorsByMaterial.get(materialToDelete.id) || [] : [];
 

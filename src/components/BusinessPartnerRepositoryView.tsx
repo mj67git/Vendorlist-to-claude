@@ -34,6 +34,7 @@ import {
   canSupplySources,
   GRADE_RANGE_FA
 } from '../utils/sopEvaluation';
+import { summarisePartners } from '../utils/partnerStats';
 import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
@@ -297,31 +298,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     return Array.from(new Set(list)).sort();
   }, [partners]);
 
-  // Comprehensive KPI Statistics
-  const stats = useMemo(() => {
-    const total = partners.length;
-    const manufacturers = partners.filter(p => p.type === 'Manufacturer').length;
-    const suppliers = partners.filter(p => p.type === 'Supplier');
-    const active = partners.filter(p => p.status === 'Active').length;
-    const inactive = partners.filter(p => p.status === 'Inactive').length;
-
-    // "Approved" used to mean grade A **or B**, but only grade A may be
-    // attached to a source and the server rejects the rest with 422 — so the
-    // card counted suppliers the system refuses. It now asks the same function
-    // the gate asks, and the two cards partition the suppliers exactly.
-    const eligibleSuppliers = suppliers.filter(s => canSupplySources(s).allowed).length;
-    const blockedSuppliers = suppliers.length - eligibleSuppliers;
-
-    return { 
-      total, 
-      manufacturers, 
-      suppliers: suppliers.length, 
-      active, 
-      inactive,
-      eligibleSuppliers,
-      blockedSuppliers
-    };
-  }, [partners]);
+  // Comprehensive KPI statistics. Shared with the dashboard, which shows the
+  // same register from the other end, so the two cannot report different sizes.
+  const stats = useMemo(() => summarisePartners(partners), [partners]);
 
   // Check if any filter is active
   const hasActiveFilters = useMemo(() => {

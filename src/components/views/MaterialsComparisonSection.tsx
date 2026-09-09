@@ -5,6 +5,7 @@ import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
+import { isSampleVendor, isVendorRejected } from '../../utils/vendorState';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { jalaliIsoParts } from '../../utils/dateDisplay';
 import type { SourceSelectionRecord } from '../../utils/sourceSelection';
@@ -72,7 +73,11 @@ export const MaterialsComparisonSection: React.FC<{
     return null;
   }
 
-  const validVendors = (vendors || []).filter(v => !v.isSample && v.status !== 'rejected' && v.grade !== 'rejected');
+  // Who is actually in the running: samples are not sources, and a
+  // disqualified source is not a candidate. The verdict is the derived one
+  // (rule 11) — the stored pair this used to compare let a source rejected by
+  // decision rather than by score stay in the recommendation.
+  const validVendors = (vendors || []).filter(v => !isSampleVendor(v) && !isVendorRejected(v));
   
   if (validVendors.length === 0) return null;
 

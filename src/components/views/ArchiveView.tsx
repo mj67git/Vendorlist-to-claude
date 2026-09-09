@@ -20,7 +20,7 @@ import { authFetch, isLocalMode } from '../../services/authFetch';
 import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
 import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
-import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
+import { isInBlacklistCategory, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
 import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { describeVendorRank } from '../../utils/vendorRank';
 import { getDisplayCountry } from '../../utils/vendorUtils';
@@ -195,7 +195,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             ? (v.isSample && isVendorRejected(v))
             : (categoryFilter as string) === 'blacklist'
             ? isInBlacklistCategory(v)
-            : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
+            // The ordinary categories, from the one predicate that defines
+            // them (rule 11d). The hand-written pair that stood here is what
+            // rule 11 forbids: a source an administrator disqualified without a
+            // failing score passed straight through it.
+            : isInCategoryRegister(v, categoryFilter as string)
           )
         : true;
       // `__none__` rather than the empty string, which already means "no

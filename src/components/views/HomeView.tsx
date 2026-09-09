@@ -1,18 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BadgeCheck, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
+import { Award, BadgeCheck, Boxes, Building2, Calendar, ChevronLeft, ClipboardList, FlaskConical, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { EntityName } from '../../components/EntityName';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
+import { StatTile } from '../../components/ui/stat-tile';
 import { categoryLabels } from '../../constants/categories';
 import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { adminRejectionReason, isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
-import { describeVendorRank } from '../../utils/vendorRank';
-import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
+import { adminRejectionReason, isInCategoryRegister, isSampleVendor, isVendorRejected } from '../../utils/vendorState';
+import { describeVendorRank, SOURCE_GRADE_RANGE_FA } from '../../utils/vendorRank';
+import { describeSampleStatus } from '../../utils/sampleStatus';
+import { countMaterialsWithSources, indexSourcesByMaterial } from '../../utils/materialSources';
+import { summarisePartners } from '../../utils/partnerStats';
 import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
@@ -69,15 +71,37 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     };
   }, [sourceVendors]);
 
-  const rejectedVendors = db.filter(isVendorRejected);
+  /**
+   * How much of the catalogue is actually bought.
+   *
+   * The sources only, never the samples: the tile beside this one counts «کل
+   * سورس‌ها … به‌جز نمونه‌ها», and one row of figures must not use two meanings
+   * of the word. The materials repository asks the same function over every
+   * record, because there the question is what a delete would break.
+   */
+  const materialsInUse = useMemo(
+    () => countMaterialsWithSources(indexSourcesByMaterial(sourceVendors, materials)),
+    [sourceVendors, materials],
+  );
 
-  // Grade distribution for the donut (semantic ordinal grade colours).
+  const partnerStats = useMemo(() => summarisePartners(partners || []), [partners]);
+
+  /*
+   * Grade distribution for the donut (semantic ordinal grade colours).
+   *
+   * The band each grade stands for travels with the slice. It used to be the
+   * subtitle of a row of cards that repeated these same five figures directly
+   * above the ring, and when those went the bands were the only thing on them
+   * the ring did not already say.
+   */
   const gradeDistribution = useMemo(() => [
-      { name: 'گرید A', value: stats.gradeA, color: '#10b981' },
-      { name: 'گرید B', value: stats.gradeB, color: '#3b82f6' },
-      { name: 'گرید C', value: stats.gradeC, color: '#f59e0b' },
-      { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48' },
-      { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8' },
+      { name: 'گرید A', value: stats.gradeA, color: '#10b981', hint: SOURCE_GRADE_RANGE_FA.A },
+      { name: 'گرید B', value: stats.gradeB, color: '#3b82f6', hint: SOURCE_GRADE_RANGE_FA.B },
+      { name: 'گرید C', value: stats.gradeC, color: '#f59e0b', hint: SOURCE_GRADE_RANGE_FA.C },
+      // Not simply grade D: a source also reaches this state by an explicit
+      // decision rather than by its score alone (rule 11).
+      { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48', hint: 'امتیاز زیر ۴۰ یا رد صریح' },
+      { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8', hint: 'هنوز ارزیابی نشده' },
     ].filter(d => d.value > 0), [stats]);
 
   /**
@@ -290,42 +314,64 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </div>
       </div>
 
-      {/* KPI ROW */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {[
-          { label: 'کل سورس‌ها', value: stats.total, color: 'text-primary', badgeVariant: 'info' as const, sub: sampleCount > 0 ? `بدون احتساب ${sampleCount} نمونه` : 'به‌جز نمونه‌ها', percent: 100 },
-          { label: 'گرید A', value: stats.gradeA, color: 'text-emerald-600 dark:text-emerald-400', badgeVariant: 'gradeA' as const, sub: 'امتیاز ۸۰ تا ۱۰۰ (تایید کامل)', percent: stats.total > 0 ? Math.round((stats.gradeA/stats.total)*100) : 0 },
-          { label: 'گرید B', value: stats.gradeB, color: 'text-blue-600 dark:text-blue-400', badgeVariant: 'gradeB' as const, sub: 'امتیاز ۶۰ تا ۷۹ (تایید با پایش)', percent: stats.total > 0 ? Math.round((stats.gradeB/stats.total)*100) : 0 },
-          { label: 'گرید C', value: stats.gradeC, color: 'text-amber-600 dark:text-amber-400', badgeVariant: 'gradeC' as const, sub: 'امتیاز ۴۰ تا ۵۹ (مشروط)', percent: stats.total > 0 ? Math.round((stats.gradeC/stats.total)*100) : 0 },
-          { label: 'بدون گرید', value: stats.ungraded, color: 'text-muted-foreground', badgeVariant: 'info' as const, sub: 'هنوز ارزیابی نشده‌اند', percent: stats.total > 0 ? Math.round((stats.ungraded/stats.total)*100) : 0 },
-          { label: 'لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const,
-            // Its neighbours all name their band and this one did not, so the
-            // only card on the row whose threshold was invisible was the one
-            // that disqualifies a supplier. The explicit rejection is named
-            // too, because a source also reaches this state by an admin's
-            // decision rather than by its score alone (rule 11).
-            sub: 'امتیاز زیر ۴۰ یا رد صریح', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
-        ].map(s => (
-          <Card key={s.label} className="p-4 space-y-2.5 bg-card border-border/80 hover:border-primary/30 transition-all">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-foreground">{s.label}</span>
-              <Badge variant={s.badgeVariant} className="text-2xs px-1.5 py-0 font-mono shrink-0">
-                {s.percent}%
-              </Badge>
-            </div>
-            {/* The progress bar that used to sit here measured each number
-                against the total it was already a percentage of, and painted
-                every one of them the same blue — so the "total" card carried a
-                permanently full bar of itself. The badge already says it. */}
-            <div className={`text-3xl font-black tabular-nums font-mono ${s.color}`}>
-              {s.value}
-            </div>
-            <div className="text-2xs text-muted-foreground leading-snug">{s.sub}</div>
-          </Card>
-        ))}
+      {/* WHAT IS ON FILE — one tile per register, and nothing that is drawn
+          again further down.
+
+          Five of the six cards that used to stand here were the grade mix —
+          gradeA, gradeB, gradeC, ungraded and the blacklist — which is exactly
+          what the ring below them draws, so the same five figures were printed
+          twice within one scroll, and the blacklist a third time on its own
+          category card. What was genuinely missing was the size of the other
+          two registers, and neither appears anywhere else on this page.
+
+          `StatTile` is the tile both repository screens open with, so the
+          dashboard now counts in the same shape — and in Persian digits, which
+          the hand-built cards here never did. A tile with somewhere to go is a
+          real button, which is the other half of what that component settles.
+
+          A fixed three-column class, never one built from the number of tiles:
+          Tailwind cannot see a class name that is assembled at runtime, and
+          with one or two tiles these simply stretch. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <StatTile
+          label="کل سورس‌ها"
+          value={stats.total}
+          hint={sampleCount > 0 ? `بدون احتساب ${sampleCount.toLocaleString('fa-IR')} نمونه` : 'به‌جز نمونه‌ها'}
+          icon={Boxes}
+          tone="bg-muted text-foreground border-border"
+          onClick={() => onNavigate('archive')}
+        />
+
+        {/* Gated, and gated on the whole tile rather than on its number.
+            `useCachedCollection` empties the collection for an account without
+            the read, so an ungated tile would print a confident zero for a
+            register the user is simply not being sent. UX only, as ever — the
+            server is what actually refuses the page (rule 14). */}
+        {can(currentUser, 'material.read') && (
+          <StatTile
+            label="مواد اولیه"
+            value={materials.length}
+            hint={`${materialsInUse.toLocaleString('fa-IR')} ماده دارای سورس`}
+            icon={FlaskConical}
+            tone="bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900"
+            onClick={() => onNavigate('materials')}
+          />
+        )}
+
+        {can(currentUser, 'partner.read') && (
+          <StatTile
+            label="شرکای تجاری"
+            value={partnerStats.total}
+            hint={`${partnerStats.manufacturers.toLocaleString('fa-IR')} تولیدکننده · ${partnerStats.suppliers.toLocaleString('fa-IR')} فروشنده`}
+            icon={Building2}
+            tone="bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900"
+            onClick={() => onNavigate('business-partners')}
+          />
+        )}
       </div>
 
-      {/* GRADE MIX + ACTIVITY are grouped below the numbers they explain.
+      {/* HOW GOOD IS IT — the three distributions, below the registers they
+          describe.
 
           Three equal columns: the two distributions read as a pair — the same
           ring, the same legend, the same colour per grade — and the laboratory
@@ -397,38 +443,6 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </Card>
       </div>
 
-      {/* RECENT ACTIVITY — a plain full-width list rather than a fourth card
-          grid, so the page stops repeating one layout family end to end. */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <History className="w-4 h-4 text-primary" />
-          <h3 className="font-bold text-foreground text-sm">آخرین تغییرات ثبت‌شده</h3>
-        </div>
-        {recentAudit.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground text-xs border border-dashed border-border rounded-xl">
-            تغییری برای نمایش ثبت نشده است.
-          </div>
-        ) : (
-          <div className="divide-y divide-border border-t border-border">
-            {recentAudit.map((l, i) => {
-              const sev = l.severity === 'Critical' ? 'bg-rose-500' : l.severity === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500';
-              let when = '';
-              try { const d = new Date(l.timestamp || l.createdAt); when = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch {}
-              return (
-                <div key={l.id || i} className="flex items-center gap-2.5 py-2.5">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action}: ${l.entityName || ''}`}</div>
-                    <div className="text-2xs text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
-                  </div>
-                  <span className="text-2xs text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       {/* The expiring-licence list used to be rendered here. It moved to the
           worklist (#/tasks/irc): the dashboard grew longer exactly as the
           backlog grew, which is backwards — a dashboard should summarise and
@@ -445,26 +459,18 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
             /*
-             * The card's population.
+             * The card's population, from the one predicate that answers it
+             * (rule 11d).
              *
-             * The blacklist has its own list — it is a state, not a category —
-             * and every other category excludes the sources that reached it.
-             * That exclusion used to be written by hand as
-             * `status !== 'rejected' && grade !== 'rejected'`, which rule 11
-             * forbids for a reason: a source an administrator rejected without
-             * a failing score slipped through it and went on being counted as
-             * if it were still supplying.
+             * The blacklist and the samples are each their own register — a
+             * state and a stage, not categories — and an ordinary category
+             * excludes the rows that belong to them. This card wrote that rule
+             * out by hand, the category page wrote a third version of it, and
+             * the spreadsheet a fourth; «خارجی» drew 105 rows on screen and
+             * exported 140. Now the four ask `isInCategoryRegister`.
              */
             const isBlacklistCard = id === 'blacklist';
-            const catVendors = isBlacklistCard
-              ? db.filter(isInBlacklistCategory)
-              // Samples keep their rejected rows, because a rejected sample is a
-              // finished test rather than a disqualified supplier and the
-              // blacklist is defined to exclude them (`isInBlacklistCategory`).
-              // Filtering them here too would have dropped them from both cards.
-              : id === 'sample'
-                ? db.filter(isSampleRecord)
-                : db.filter(v => v.category === id && !isSampleRecord(v) && !isVendorRejected(v));
+            const catVendors = db.filter(v => isInCategoryRegister(v, id));
 
             /*
              * What the card counts, in the vocabulary of the thing it counts.
@@ -537,8 +543,11 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               const st = checkLicenseExpiry(v.ircExpiryDate).status;
               return st === 'expired' || st === 'expiring_soon';
             }).length;
+            // The complement of the register above: the rows this category
+            // would hold if they had not been disqualified. Same two exclusions
+            // as `isInCategoryRegister`, with the verdict inverted.
             const rejected = isBlacklistCard ? 0 : db.filter(v =>
-              v.category === id && !isSampleRecord(v) && isVendorRejected(v)).length;
+              v.category === id && !isSampleVendor(v) && isVendorRejected(v)).length;
 
             const total = catVendors.length;
             const style = categoryCardStyles[id] || categoryCardStyles.foreign;
@@ -612,6 +621,45 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </div>
       </div>
 
+      {/* RECENT ACTIVITY — last on the page, and a plain full-width list
+          rather than a fourth card grid so the page stops repeating one layout
+          family end to end.
+
+          It used to sit between the distributions and the category cards,
+          which put a feed of individual edits in the middle of a summary and
+          pushed the six registers below the fold. A dashboard reads
+          top-down — what needs doing, what is on file, how good it is, where
+          to go — and «what just happened» is the footnote to all of it. */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <History className="w-4 h-4 text-primary" />
+          <h3 className="font-bold text-foreground text-sm">آخرین تغییرات ثبت‌شده</h3>
+        </div>
+        {recentAudit.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-xs border border-dashed border-border rounded-xl">
+            تغییری برای نمایش ثبت نشده است.
+          </div>
+        ) : (
+          <div className="divide-y divide-border border-t border-border">
+            {recentAudit.map((l, i) => {
+              const sev = l.severity === 'Critical' ? 'bg-rose-500' : l.severity === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500';
+              let when = '';
+              try { const d = new Date(l.timestamp || l.createdAt); when = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }); } catch {}
+              return (
+                <div key={l.id || i} className="flex items-center gap-2.5 py-2.5">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-foreground font-medium truncate">{l.description || `${l.action}: ${l.entityName || ''}`}</div>
+                    <div className="text-2xs text-muted-foreground">{l.userName || l.userId || 'سیستم'} · {l.module}</div>
+                  </div>
+                  <span className="text-2xs text-muted-foreground font-mono shrink-0" dir="ltr">{when}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -629,7 +677,8 @@ function GradeDonutCard({ icon: Icon, title, subtitle, slices, total, emptyMessa
   icon: React.ComponentType<{ className?: string }>,
   title: string,
   subtitle: string,
-  slices: { name: string, value: number, color: string }[],
+  /** `hint` is the band the slice stands for, under its name in the legend. */
+  slices: { name: string, value: number, color: string, hint?: string }[],
   total: number,
   emptyMessage: string,
   onOpen: () => void,
@@ -661,12 +710,18 @@ function GradeDonutCard({ icon: Icon, title, subtitle, slices, total, emptyMessa
           </div>
           <div className="flex-1 space-y-1.5">
             {slices.map(d => (
-              <div key={d.name} className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-foreground font-medium">
-                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
-                  {d.name}
+              <div key={d.name} className="flex items-start justify-between gap-2 text-xs">
+                <span className="flex items-start gap-1.5 text-foreground font-medium min-w-0">
+                  {/* The swatch sits on the first line of a two-line entry
+                      rather than centred against both, so a legend with bands
+                      and one without still line up with the ring. */}
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 mt-1" style={{ background: d.color }} />
+                  <span className="min-w-0">
+                    {d.name}
+                    {d.hint && <span className="block text-2xs text-muted-foreground font-normal">{d.hint}</span>}
+                  </span>
                 </span>
-                <span className="font-mono font-bold text-foreground">{d.value}</span>
+                <span className="font-mono font-bold text-foreground shrink-0">{d.value.toLocaleString('fa-IR')}</span>
               </div>
             ))}
           </div>

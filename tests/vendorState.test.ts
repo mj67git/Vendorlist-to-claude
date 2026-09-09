@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX, latestScoreEvaluationLog, SCORE_EVALUATION_PREFIX } from '../src/utils/vendorState';
+import { isInCategoryRegister, isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX, latestScoreEvaluationLog, SCORE_EVALUATION_PREFIX } from '../src/utils/vendorState';
 
 const sample = (over: any = {}) => ({
   id: 'S1', isSample: true, category: 'sample',
@@ -183,4 +183,22 @@ test('a source with no scoring entry reports none rather than the wrong one', ()
   const v = source({ activityLogs: [{ id: 'l1', action: 'ویرایش اطلاعات', date: 'x', user: 'y' }] });
   assert.equal(latestScoreEvaluationLog(v), null);
   assert.equal(latestScoreEvaluationLog(source()), null);
+});
+
+test('a sample filed under an ordinary category belongs to one register, not two', () => {
+  /*
+   * The flag and the category can disagree — `isSampleVendor` exists precisely
+   * because they do — and a record carrying `isSample` while still filed under
+   * «خارجی» was counted in the foreign register *and* the sample register at
+   * once: on the category page, in the sidebar badge and in the spreadsheet.
+   * A sample is a stage, not a category, and it has a register of its own.
+   */
+  const stray: any = { id: 'V1', category: 'foreign', isSample: true, status: 'new', grade: '' };
+
+  assert.equal(isInCategoryRegister(stray, 'foreign'), false);
+  assert.equal(isInCategoryRegister(stray, 'sample'), true);
+
+  const ordinary: any = { id: 'V2', category: 'foreign', isSample: false, status: 'new', grade: '' };
+  assert.equal(isInCategoryRegister(ordinary, 'foreign'), true);
+  assert.equal(isInCategoryRegister(ordinary, 'sample'), false);
 });
