@@ -7,7 +7,6 @@ import { generateMaterialId } from "../domain/materialId.js";
 import {
   CALCULATION_WEIGHTS,
   calculateRoundedWeightedScore,
-  rankVendor,
 } from "../domain/vendorEvaluation.js";
 
 /**
@@ -23,10 +22,6 @@ import {
  * ordering rules — `lockVendorWrite` and the `expectedUpdatedAt` precondition
  * in `saveVendorToDb` — are load-bearing, not decoration.
  */
-
-export function getVendorRank(vendorId: string, allVendors: any[]): number {
-  return rankVendor(vendorId, allVendors, CALCULATION_WEIGHTS);
-}
 
 
 // --- Mapping helpers between the frontend shapes and the normalized enums ---
@@ -364,49 +359,6 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     }
     return result;
   }
-}
-
-/**
- * The minimum needed to place a vendor in the ranking: an id, its scores, and
- * whether it is a sample (samples rank among samples).
- *
- * Ranking a single vendor used to call getVendorsList() twice — before and
- * after the save — which loaded every activity log and analysis record in the
- * database to produce one integer. The ranking logic itself is untouched;
- * rankVendor still receives objects of the shape it expects.
- */
-export async function getRankingSnapshot(): Promise<any[]> {
-  const prisma = requirePrisma();
-  const [links, evaluations] = await Promise.all([
-    prisma.vendorMaterial.findMany({ select: { vendorId: true, isSample: true, category: true } }),
-    prisma.evaluation.findMany({
-      select: {
-        vendorId: true, scores: true,
-        commercialScore: true, qaScore: true, planningScore: true, financeScore: true,
-      },
-    }),
-  ]);
-
-  const linkByVendor = new Map<string, any>();
-  for (const l of links) if (!linkByVendor.has(l.vendorId)) linkByVendor.set(l.vendorId, l);
-
-  return evaluations.map(ev => {
-    let scores: any = null;
-    try { scores = ev.scores ? JSON.parse(ev.scores as any) : null; } catch { /* fall through */ }
-    if (!scores) {
-      scores = {
-        commercial: ev.commercialScore, qa: ev.qaScore,
-        planning: ev.planningScore, finance: ev.financeScore,
-      };
-    }
-    const link = linkByVendor.get(ev.vendorId);
-    return {
-      id: ev.vendorId,
-      scores,
-      isSample: link ? link.isSample : false,
-      category: link ? link.category : "foreign",
-    };
-  });
 }
 
 export async function getVendorById(id: string): Promise<any> {

@@ -80,30 +80,6 @@ function latestAnalysisDate(v: Vendor): string {
 
 
 /**
- * Returns a descriptive Persian label for the material criticality (substance type).
- */
-function getMaterialType(vendor: Vendor): string {
-  if (vendor.riskAssessment?.materialCriticality) {
-    const crit = vendor.riskAssessment.materialCriticality;
-    if (crit === 5) return 'ماده موثره دارویی (API)';
-    if (crit === 4) return 'اکسپیانت (Excipient)';
-    if (crit === 3) return 'حدواسط شیمیایی، حلال یا واکنشگر';
-    if (crit === 2) return 'اقلام بسته‌بندی اولیه';
-    if (crit === 1) return 'اقلام بسته‌بندی ثانویه';
-  }
-
-  const nameEnLower = (vendor.materialEn || '').toLowerCase();
-  const nameFa = vendor.material || '';
-
-  if (vendor.category === 'packaging') return 'اقلام بسته‌بندی';
-  if (nameEnLower.includes('excipient') || nameFa.includes('اکسپیانت')) return 'اکسپیانت (Excipient)';
-  if (nameEnLower.includes('intermediate') || nameFa.includes('حدواسط')) return 'حدواسط شیمیایی';
-  if (nameEnLower.includes('solvent') || nameFa.includes('حلال')) return 'حلال / واکنشگر';
-
-  return 'ماده موثره دارویی (API)'; // Default fallback matching industrial expectation
-}
-
-/**
  * Maps the English risk assessment level to formatted Persian text.
  */
 function getRiskLevelFa(riskLevel: string | undefined): string {

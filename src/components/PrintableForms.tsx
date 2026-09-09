@@ -42,13 +42,6 @@ function printAndReport(label: string, rows?: number) {
   setTimeout(() => window.print(), 100);
 }
 
-function getMaterialTypeLabel(v: Vendor) {
-  if (v.category === 'packaging') return 'اقلام بسته‌بندی';
-  if (v.category === 'sample') return 'نمونه تستی';
-  if (v.category === 'veterinary') return 'داروی دامی';
-  return 'ماده اولیه (Active / Excipient)';
-}
-
 
 /**
  * The archive list itself, as a printable A4 landscape document.
