@@ -161,7 +161,11 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
     { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },
     { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', db, partners || []).length, icon: Calendar, tone: 'rose' },
+    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', db, partners || []).length, icon: Microscope, tone: 'blue' },
   ]), [db, partners]);
+
+  /** The same count, reused by the laboratory card rather than rebuilt there. */
+  const labBacklog = pendingActions.find(a => a.key === 'lab')?.count ?? 0;
 
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
@@ -285,7 +289,9 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           <h3 className="font-bold text-foreground text-sm">کارهای معوق</h3>
           <span className="text-2xs text-muted-foreground">— برای رسیدگی روی هر مورد کلیک کنید</span>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Five backlogs, so the row divides at three then five rather than
+            leaving the last card stranded alone under a row of four. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {pendingActions.map(a => {
             // Opening the backlog, not the first record in it: jumping
             // straight into one of twelve told the user neither which record
@@ -430,15 +436,29 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               </div>
             </div>
           )}
-          {/* No link, deliberately — do not add one back from the pattern of
-              the two cards beside it. Each of those opens the same population
-              its ring counts. This rate is computed over every source's
-              laboratory records, and no screen shows that set: the archive
-              carries no laboratory column, and the sample register is a subset
-              (the analysis tab is gated by permission, not by `isSample`). The
-              button that used to sit here opened the worklist's «سورس‌های
-              ارزیابی‌نشده» tab — sources missing their departmental scores,
-              which is a different set and a different subject. */}
+          {/* This card stood without a link for a while, because the only
+              destination on offer was the worklist's «سورس‌های ارزیابی‌نشده»
+              tab — departmental scores, a different set and a different
+              subject. `#/tasks/lab` is the missing one: the records this rate
+              says nothing about, because they have no result on file at all.
+
+              It is the complement of the rate rather than its population, and
+              says so. Present in both states so the card does not change height
+              as the backlog clears, and `mt-auto` to sit on the same line as
+              the link in the two cards beside it. */}
+          {labBacklog > 0 ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('tasks', null, 'lab')}
+              className="mt-auto pt-3 text-2xs font-bold text-primary hover:underline text-right cursor-pointer"
+            >
+              {labBacklog.toLocaleString('fa-IR')} رکورد بدون نتیجهٔ آزمایش ←
+            </button>
+          ) : (
+            <p className="mt-auto pt-3 text-2xs font-bold text-muted-foreground text-right">
+              آزمایش همهٔ رکوردها ثبت شده است.
+            </p>
+          )}
         </Card>
       </div>
 
