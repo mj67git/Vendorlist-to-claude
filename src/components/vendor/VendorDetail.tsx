@@ -12,7 +12,7 @@ import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from 
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
 import { formatLogTimestamp, toJalaliDisplay } from '../../utils/dateDisplay';
-import { isSampleRecord } from '../../utils/sampleStatus';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
@@ -550,15 +550,20 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
             {/* Label وضعیت / گرید */}
             <div className="mt-1">
               {isSampleRecord(vendor) ? (
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
-                  vendor.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
-                  vendor.status === 'conditional' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                  'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                }`}>
-                  <ClipboardCheck className="w-4 h-4 ml-1.5" />
-                  {vendor.status === 'approved' ? 'نمونه: تایید شده (Approved)' :
-                   vendor.status === 'conditional' ? 'نمونه: تایید مشروط (Conditional)' : 'نمونه: مردود (Rejected)'}
-                </div>
+                /* From `describeSampleStatus`, like the eight other surfaces
+                   that show a sample's verdict — and for the reason that helper
+                   exists. This badge used to be a three-way ternary with no
+                   fourth branch, so a sample registered five seconds ago, with
+                   no laboratory record and nobody's decision behind it, was
+                   announced as «مردود» on its own page. A verdict nobody gave
+                   is the one thing this screen must never state. */
+                <Badge
+                  variant={describeSampleStatus(vendor).variant}
+                  className="gap-1.5 py-1 px-3 text-xs font-bold shadow-2xs"
+                >
+                  <ClipboardCheck className="w-4 h-4 shrink-0" />
+                  {describeSampleStatus(vendor).title}
+                </Badge>
               ) : (
                 <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
               )}
