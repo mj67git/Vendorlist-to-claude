@@ -45,7 +45,8 @@ test('an export is recorded with what left and how much of it', SKIP, async () =
   assert.ok(row, 'the export is on the trail');
   assert.equal(row.userId, 'admin', 'attributed to whoever took the file');
   assert.match(row.description, /شرکای تجاری/);
-  assert.match(row.description, /42/);
+  // Persian digits: the count is read inside a Persian sentence.
+  assert.match(row.description, /۴۲/);
 });
 
 test('the client cannot author anything but a data-out event', SKIP, async () => {

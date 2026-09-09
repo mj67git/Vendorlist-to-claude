@@ -55,6 +55,9 @@ export function auditRoutes(): express.Router {
       if (group && group !== "all" && AUDIT_EVENT_GROUPS[group]) {
         filters.modules = AUDIT_EVENT_GROUPS[group].modules;
       }
+      // The event name, when the reader knows exactly which kind of change they
+      // are looking for. Narrower than the module and the action together.
+      if (req.query.event && req.query.event !== "all") filters.event = req.query.event as string;
       if (req.query.action && req.query.action !== "all") filters.action = req.query.action as string;
       if (req.query.severity && req.query.severity !== "all") filters.severity = req.query.severity as string;
       // Outcome: Success, Failed or Blocked. A refusal is the most interesting

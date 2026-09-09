@@ -10,6 +10,8 @@ export interface AuditLogFilters {
   /** Matches either the stored userId or the stored userName (the filter form offers names). */
   user?: string;
   module?: string;
+  /** One event name from the closed vocabulary — the sharpest filter there is. */
+  event?: string;
   /** Coarse event group, expanded to a set of module values by the caller. */
   modules?: string[];
   eventType?: string;
@@ -320,6 +322,7 @@ export class AuditService {
       }
       if (filters.module && filters.module !== "all") where.module = filters.module;
       else if (filters.modules && filters.modules.length) where.module = { in: filters.modules };
+      if (filters.event && filters.event !== "all") where.event = filters.event;
       if (filters.action && filters.action !== "all") where.action = filters.action;
       if (filters.result && filters.result !== "all") where.result = filters.result;
       // `Info` and `Information` are the same level; see auditTaxonomy.ts.

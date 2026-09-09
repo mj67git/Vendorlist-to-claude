@@ -448,7 +448,10 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
     module: 'Data Export', entityType: 'Export', action: 'EXPORT',
     severity: 'Warning', label: 'خروجی اکسل', alwaysRecord: true,
     sentence: ctx => {
-      const rows = fact(ctx, 'rows');
+      // Persian digits: the count sits inside a Persian sentence, and the rest
+      // of the page prints numbers that way.
+      const raw = ctx.facts?.rows;
+      const rows = typeof raw === 'number' ? raw.toLocaleString('fa-IR') : fact(ctx, 'rows');
       return `خروجی اکسل ${named(ctx, '')}${rows ? ` — ${rows} ردیف` : ''}`.trim();
     },
   },
@@ -483,6 +486,37 @@ export const AUDIT_EVENTS: Record<AuditEvent, AuditEventDef> = {
 export const ALL_AUDIT_EVENTS = Object.keys(AUDIT_EVENTS) as AuditEvent[];
 
 /** Persian sentence for one recorded event. */
+/**
+ * Read a stored audit row back as "what this field was, and became".
+ *
+ * The history endpoints (`score-history`, `risk-history`,
+ * `evaluation-history`) rebuild a timeline from the trail, and they used to do
+ * it by reading whole-record copies out of `before_data` and `after_data`.
+ * Those copies are exactly what the rewrite stopped writing, so the readers
+ * have to understand the new shape — and the old one, because rows written
+ * before the rewrite are still in the table and still belong on the timeline.
+ */
+export function auditRowValues(row: {
+  beforeData?: unknown; afterData?: unknown;
+}): { before: Record<string, unknown>; after: Record<string, unknown> } {
+  const after = (row?.afterData || {}) as Record<string, unknown>;
+  const changes = Array.isArray((after as any).changes) ? (after as any).changes as FieldChange[] : null;
+  if (!changes) {
+    return { before: (row?.beforeData || {}) as Record<string, unknown>, after };
+  }
+  const from: Record<string, unknown> = {};
+  const to: Record<string, unknown> = {};
+  for (const change of changes) {
+    from[change.field] = change.from;
+    to[change.field] = change.to;
+  }
+  // Facts sit alongside the changes and answer the same question for events
+  // that are not a field edit at all.
+  const facts = (after as any).facts;
+  if (facts && typeof facts === 'object') Object.assign(to, facts);
+  return { before: from, after: to };
+}
+
 export function describeEvent(event: AuditEvent, ctx: AuditEventContext = {}): string {
   return AUDIT_EVENTS[event].sentence(ctx);
 }
@@ -521,4 +555,14 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   probability: 'احتمال وقوع', sps: 'امتیاز SPS', date: 'تاریخ',
   commercialScore: 'امتیاز بازرگانی', qualityScore: 'امتیاز کیفی',
   planningScore: 'امتیاز برنامه‌ریزی', financeScore: 'امتیاز مالی',
+  // The named values that events carry instead of a field edit (`facts`). They
+  // reach the detail panel through the same table, and an unnamed key is
+  // counted as technical and hidden — which is the wrong answer for the one
+  // thing a refusal or an export record has to say.
+  attempted: 'اقدام درخواستی', permission: 'مجوز لازم', fields: 'فیلدهای درخواستی',
+  rows: 'تعداد ردیف', document: 'مدرک', fileSize: 'حجم فایل', replaced: 'فایل جایگزین‌شده',
+  blockedMinutes: 'دقایق مسدودی', added: 'مجوز افزوده', removed: 'مجوز سلب‌شده',
+  usedBySources: 'شمار سورس‌های وابسته', duplicateOf: 'تکراری با', rule: 'قاعدهٔ تکرار',
+  rejectCount: 'شمار نتایج مردود', verdict: 'رأی', supplier: 'تأمین‌کننده',
+  severity: 'شدت', occurrence: 'احتمال وقوع', truncated: 'بریده‌شده',
 };
