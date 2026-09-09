@@ -385,13 +385,15 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               </div>
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => onNavigate('tasks', null, 'eval')}
-            className="mt-3 text-2xs font-bold text-primary hover:underline text-right"
-          >
-            مشاهده در کارتابل اقدامات
-          </button>
+          {/* No link, deliberately — do not add one back from the pattern of
+              the two cards beside it. Each of those opens the same population
+              its ring counts. This rate is computed over every source's
+              laboratory records, and no screen shows that set: the archive
+              carries no laboratory column, and the sample register is a subset
+              (the analysis tab is gated by permission, not by `isSample`). The
+              button that used to sit here opened the worklist's «سورس‌های
+              ارزیابی‌نشده» tab — sources missing their departmental scores,
+              which is a different set and a different subject. */}
         </Card>
       </div>
 
