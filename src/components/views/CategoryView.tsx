@@ -5,7 +5,7 @@ import { PerPageSelect } from '../ui/per-page-select';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
-import { categoryLabels } from '../../constants/categories';
+import { categoryLabels, categoryRank } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { adminRejectionReason, hasQcReject, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
@@ -50,8 +50,19 @@ export function CategoryView({
   const [currentPage, setCurrentPage] = useState(1);
   /** Groups per page. Same control and same sizes as every other paged module. */
   const [perPage, setPerPage] = useState(20);
-  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus' | 'rejectedAt' | 'route' | 'lowestScore' | 'newest' | 'waiting'>('material');
+  const [sortBy, setSortBy] = useState<'material' | 'count' | 'grade' | 'expiry' | 'sampleStatus' | 'rejectedAt' | 'route' | 'lowestScore' | 'newest' | 'waiting' | 'origin'>('material');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  /**
+   * Which category a blacklisted source came from.
+   *
+   * The blacklist is the one register that mixes them: every other page holds a
+   * single category by definition, but this one gathers whatever was
+   * disqualified, from «دامی» to «خرید خارجی». Its own dropdown rather than one
+   * of the chips beside it, because the chips are one exclusive control over a
+   * different question — how the source got here — and «رد صریح در دستهٔ دامی»
+   * has to be askable.
+   */
+  const [originFilter, setOriginFilter] = useState<string>('');
 
   // ---- recorded source selections -----------------------------------------
   // Which source is actually bought for each material. The comparison panel
@@ -122,7 +133,7 @@ export function CategoryView({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, sortBy, activeFilter, perPage]);
+  }, [query, sortBy, activeFilter, originFilter, perPage]);
 
   /*
    * A sort that this category does not offer falls back to the name.
@@ -144,7 +155,7 @@ export function CategoryView({
         // licence of a source nobody may buy from is not what a reviewer looks
         // at — the chip for it is already hidden here, and the sort option was
         // simply left behind.
-        ? ['material', 'count', 'rejectedAt', 'route', 'lowestScore']
+        ? ['material', 'count', 'rejectedAt', 'route', 'lowestScore', 'origin']
         : ['material', 'count', 'grade', 'expiry'];
     // The blacklist opens on what happened most recently, not on the alphabet:
     // this register is read to see what has just left the supply chain. Applied
@@ -153,6 +164,10 @@ export function CategoryView({
     lastCategoryRef.current = categoryId;
     const fallback = categoryId === 'blacklist' ? 'rejectedAt' : 'material';
     if (!allowed.includes(sortBy) || arrived) setSortBy(fallback as typeof sortBy);
+    // The origin filter only means anything on the blacklist, and a value left
+    // behind on arrival would silently hide rows on a page with no control to
+    // clear it.
+    if (arrived) setOriginFilter('');
   }, [categoryId, sortBy]);
 
   const meta = categoryLabels[categoryId];
@@ -228,9 +243,36 @@ export function CategoryView({
     }
   };
 
+  /**
+   * The categories actually represented on this blacklist, with their counts.
+   *
+   * Built from the register rather than from `categoryLabels`, so the dropdown
+   * never offers «اقلام بسته‌بندی» on a list that holds none — an option that
+   * can only produce an empty page is a dead end, and the count beside each one
+   * says how many rows to expect before the reader commits to the click.
+   * `categoryLabels` still decides the order and the wording.
+   */
+  const originOptions = useMemo(() => {
+    if (categoryId !== 'blacklist') return [];
+    const counts = new Map<string, number>();
+    for (const v of categoryVendors) {
+      const key = (v.category || '').trim();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return (Object.keys(categoryLabels) as Category[])
+      .filter(id => counts.has(id))
+      .map(id => ({ id, label: categoryLabels[id].fa, count: counts.get(id) as number }));
+  }, [categoryVendors, categoryId]);
+
   const displayVendors = useMemo(
-    () => filteredVendors.filter(matchesFilter),
-    [filteredVendors, activeFilter]
+    () => filteredVendors
+      .filter(matchesFilter)
+      // A second, independent dimension: the chips say why a source is here,
+      // this says where it came from, and the two combine rather than replace
+      // each other.
+      .filter(v => !originFilter || v.category === originFilter),
+    [filteredVendors, activeFilter, originFilter]
   );
 
   // Group by material
@@ -313,6 +355,22 @@ export function CategoryView({
       // two are reviewed by different people in different ways.
       const manualFirst = (vs: Vendor[]) => (vs.some(v => !!adminRejectionReason(v)) ? 0 : 1);
       sorted.sort((a, b) => manualFirst(a.vendors) - manualFirst(b.vendors));
+    } else if (sortBy === 'origin') {
+      /*
+       * By the category the sources came from, so the blacklist can be read one
+       * supply route at a time.
+       *
+       * The rows are grouped by material and a material can be bought through
+       * more than one route, so a group is placed by the first category it
+       * holds in the order the sidebar lists them — the same order the dropdown
+       * offers. A mixed group therefore appears once, under its earliest
+       * category, rather than being split or sorted by a value half its rows do
+       * not have. Material name breaks the tie so the order inside one category
+       * is still alphabetical and does not shuffle between renders.
+       */
+      const groupRank = (vs: Vendor[]) => Math.min(...vs.map(v => categoryRank(v.category)));
+      sorted.sort((a, b) =>
+        groupRank(a.vendors) - groupRank(b.vendors) || a.fa.localeCompare(b.fa, 'fa'));
     } else if (sortBy === 'lowestScore') {
       // Worst first. A source with no score at all is not a zero — it goes to
       // the end rather than pretending to be the worst of them.
@@ -349,7 +407,11 @@ export function CategoryView({
           short viewport was permanently spent on controls set once. One row on
           desktop; the filter chips keep their own line because they wrap. */}
       <div className="sticky top-0 z-20 bg-muted/95 backdrop-blur-md -mt-4 sm:-mt-8 -mx-4 sm:-mx-8 px-4 sm:px-8 pt-3 sm:pt-4 pb-3 border-b border-border shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
+        {/* `flex-wrap`, because the blacklist carries one control more than the
+            other registers: with four items pinned to a single row the sort
+            select was squeezed past the edge of the page and showed a chevron
+            over an empty box. They wrap to a second line instead. */}
+        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 lg:gap-4">
           <h2 className="text-2xl font-bold text-foreground flex items-center gap-2 shrink-0">
             <meta.icon className="w-6 h-6 text-primary" />
             {meta.fa}
@@ -402,6 +464,30 @@ export function CategoryView({
             )}
           </div>
 
+          {/* Origin filter — the blacklist only, because it is the only page
+              that holds more than one category. Its own control beside the sort
+              rather than a chip: the chips are one exclusive choice about why a
+              source was disqualified, and a reader wants both questions at once. */}
+          {categoryId === 'blacklist' && originOptions.length > 1 && (
+            <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
+              <label htmlFor="blacklist-origin" className="text-2xs text-muted-foreground whitespace-nowrap">
+                دستهٔ مبدأ
+              </label>
+              <select
+                id="blacklist-origin"
+                value={originFilter}
+                onChange={(e) => setOriginFilter(e.target.value)}
+                className={cn(inputBaseClass, 'w-full lg:w-44 cursor-pointer text-xs')}
+                title="فیلتر بر اساس دسته‌بندی‌ای که سورس پیش از رد شدن در آن ثبت شده بود"
+              >
+                <option value="">همهٔ دسته‌بندی‌ها</option>
+                {originOptions.map(o => (
+                  <option key={o.id} value={o.id}>{o.label} ({o.count})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Sort control */}
           <div className="flex items-center gap-2 w-full lg:w-auto shrink-0">
             <label htmlFor="category-sort" className="text-2xs text-muted-foreground whitespace-nowrap">
@@ -411,8 +497,7 @@ export function CategoryView({
               id="category-sort"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-             
-              className="text-xs bg-background border border-border rounded-lg px-2.5 py-2 text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+              className={cn(inputBaseClass, 'w-full lg:w-52 cursor-pointer text-xs')}
               title={categoryId === 'blacklist'
                 ? "مرتب‌سازی گروه‌های ماده — «تازه‌ترین رد» بر اساس آخرین تغییر رکورد است"
                 : "مرتب‌سازی گروه‌های ماده"}
@@ -431,6 +516,7 @@ export function CategoryView({
               ) : categoryId === 'blacklist' ? (
                 <>
                   <option value="rejectedAt">تازه‌ترین رد</option>
+                  <option value="origin">دستهٔ مبدأ</option>
                   <option value="route">نحوهٔ ورود (رد صریح اول)</option>
                   <option value="lowestScore">کمترین امتیاز اول</option>
                 </>
@@ -588,14 +674,14 @@ export function CategoryView({
           <div className="text-center py-16 px-4 bg-card rounded-2xl border border-border">
             <Archive className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h4 className="text-foreground font-semibold text-lg">نتیجه‌ای یافت نشد</h4>
-            {(query || activeFilter) && (
+            {(query || activeFilter || originFilter) && (
               <div className="mt-3">
                 <p className="text-sm text-muted-foreground">با فیلتر یا جست‌وجوی فعلی موردی پیدا نشد.</p>
                 <Button
                   type="button"
                   variant="link"
                   size="sm"
-                  onClick={() => { setQuery(''); setActiveFilter(null); }}
+                  onClick={() => { setQuery(''); setActiveFilter(null); setOriginFilter(''); }}
                   className="mt-3"
                 >
                   پاک کردن فیلترها

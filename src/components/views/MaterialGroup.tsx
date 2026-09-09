@@ -11,6 +11,7 @@ import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { MaterialsComparisonSection, type SourceSelectionRecord } from './MaterialsComparisonSection';
+import { categoryLabels } from '../../constants/categories';
 
 // extracted from App.tsx
 
@@ -155,8 +156,20 @@ export const MaterialGroup: React.FC<{
                         <span>{partnerName}</span>
                       </div>
 
-                      {/* Metadata line (English name, country, licence expiry) */}
+                      {/* Metadata line (origin category, English name, country, licence expiry) */}
                       <div className="flex items-center gap-1.5 text-2xs text-muted-foreground flex-wrap">
+                        {/* Where the source was bought before it was
+                            disqualified. Named on the blacklist alone: every
+                            other page holds one category and the whole page
+                            already says which, but this register mixes them and
+                            the row was the one place that never said so — the
+                            filter and the sort beside it would otherwise sort by
+                            something invisible. */}
+                        {categoryId === 'blacklist' && vendor.category && categoryLabels[vendor.category as Category] && (
+                          <Badge variant="outline" className="text-2xs px-1.5 py-0 font-medium shrink-0">
+                            {categoryLabels[vendor.category as Category].fa}
+                          </Badge>
+                        )}
                         {vendor.nameEn && vendor.nameEn.trim() && vendor.nameEn.toLowerCase() !== 'n/a' && vendor.nameEn.toLowerCase() !== 'unknown' && (
                           <span className="font-mono text-2xs text-muted-foreground">{vendor.nameEn}</span>
                         )}

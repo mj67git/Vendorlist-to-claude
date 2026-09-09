@@ -15,3 +15,20 @@ export const categoryLabels = {
   sample: { fa: 'نمونه', en: 'Sample', icon: ClipboardCheck },
   blacklist: { fa: 'لیست سیاه', en: 'Black List', icon: AlertTriangle },
 };
+
+/** The order the sidebar lists the categories in, and the order anything sorts by. */
+export const CATEGORY_ORDER = Object.keys(categoryLabels);
+
+/**
+ * Where a category sits in that order; anything unrecognised sorts last.
+ *
+ * The blacklist is the one register that mixes categories, so it is the one
+ * that can be ordered by them — and the order a reader expects is the one the
+ * sidebar already taught them, not the alphabet. An empty or unknown value is
+ * a real possibility on an imported row, and it belongs at the end rather than
+ * at the top where `indexOf` would put it.
+ */
+export function categoryRank(category: string | null | undefined): number {
+  const i = CATEGORY_ORDER.indexOf((category || '').trim());
+  return i === -1 ? CATEGORY_ORDER.length : i;
+}
