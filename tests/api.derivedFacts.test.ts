@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach } from 'node:test';
-import { api, db, FIXTURE, login, resetAll, SKIP, startTestServer, stopTestServer } from './helpers/apiHarness';
+import { api, db, FIXTURE, login, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit, waitForAuditQuiet } from './helpers/apiHarness';
 import { SOP_DOCUMENTS_DEF } from '../src/utils/sopEvaluation';
 
 /**
@@ -86,6 +86,9 @@ test('a save that did not switch the partner writes no status row', SKIP, async 
     body: partnerBody({ city: 'استانبول', reasonForChange: 'اصلاح نشانی' }),
   });
 
+  // Absence, so waiting for a row that never comes proves nothing: drain what
+  // is in flight first, then assert none of it was a status change.
+  await waitForAuditQuiet();
   const rows = await db().auditLog.findMany({ where: { event: 'partner.status_changed' } });
   assert.equal(rows.length, 0, 'a rename is not a status change');
 
@@ -95,7 +98,7 @@ test('a save that did not switch the partner writes no status row', SKIP, async 
   });
   assert.equal(switched.status, 200);
 
-  const after = await db().auditLog.findMany({ where: { event: 'partner.status_changed' } });
+  const after = await waitForAudit({ event: 'partner.status_changed' });
   assert.equal(after.length, 1, 'and a real switch still writes exactly one');
   assert.match(after[0].description, /Active ← Inactive/);
 });
@@ -121,9 +124,7 @@ test('a sample is refused a departmental score', SKIP, async () => {
   const evaluation = await db().evaluation.findFirst({ where: { vendorId: FIXTURE.vendorId } });
   assert.ok(!evaluation || Number(evaluation.commercial) === 0, 'and nothing was written');
 
-  const refusal = await db().auditLog.findFirst({
-    where: { entityId: FIXTURE.vendorId, event: 'access.denied' },
-  });
+  const [refusal] = await waitForAudit({ entityId: FIXTURE.vendorId, event: 'access.denied' });
   assert.ok(refusal, 'the refusal is on the trail, not only in the response');
 });
 

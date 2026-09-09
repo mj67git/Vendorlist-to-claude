@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { after, before, beforeEach } from 'node:test';
-import { api, db, login, resetAll, SKIP, startTestServer, stopTestServer } from './helpers/apiHarness';
+import { api, db, login, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit } from './helpers/apiHarness';
 import { effectivePermissions, roleTemplate } from '../src/utils/permissions';
 
 /**
@@ -286,9 +286,7 @@ test('the permission change is written to the audit trail with before and after'
   const token = await login('admin');
   await savePermissions(token, 'finance', ['score.finance']);
 
-  const entry = await db().auditLog.findFirst({
-    where: { entityId: 'finance', action: 'PERMISSION_CHANGE' }, orderBy: { timestamp: 'desc' },
-  });
+  const [entry] = await waitForAudit({ entityId: 'finance', action: 'PERMISSION_CHANGE' });
   assert.ok(entry, 'the change is recorded');
   assert.equal(entry.severity, 'Critical');
   assert.equal(entry.event, 'user.permissions_changed');

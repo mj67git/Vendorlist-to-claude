@@ -243,6 +243,29 @@ export function profileBody(overrides: Record<string, unknown> = {}) {
  * to hold still for a moment drains whatever is in flight instead of guessing
  * how many rows there will be or how long they will take.
  */
+/**
+ * Wait for a fire-and-forget audit write to land, and return the rows.
+ *
+ * `recordEvent` is deliberately not awaited by the handlers — an audit write
+ * must never turn a successful save into a failed request (rule 16) — so a test
+ * that reads `audit_log` straight after the HTTP response is racing it. On this
+ * machine the write usually wins; on a loaded CI runner it does not, and the
+ * test fails having proved nothing about the code.
+ *
+ * Use this for "the row is there". For "the row is *not* there", waiting for a
+ * row that never comes proves nothing: use `waitForAuditQuiet` first, which
+ * drains whatever is in flight, and then assert on what settled.
+ */
+export async function waitForAudit(where: any, min = 1, timeoutMs = 4000): Promise<any[]> {
+  const deadline = Date.now() + timeoutMs;
+  let rows: any[] = [];
+  for (;;) {
+    rows = await db().auditLog.findMany({ where, orderBy: { timestamp: 'desc' } });
+    if (rows.length >= min || Date.now() >= deadline) return rows;
+    await new Promise(r => setTimeout(r, 25));
+  }
+}
+
 export async function waitForAuditQuiet(quietMs = 250, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let last = -1;

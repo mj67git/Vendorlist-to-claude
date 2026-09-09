@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach } from 'node:test';
-import { api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer } from './helpers/apiHarness';
+import { api, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit } from './helpers/apiHarness';
 import { resultFor } from '../src/utils/auditService';
 
 /**
@@ -12,18 +12,6 @@ import { resultFor } from '../src/utils/auditService';
  * new handler was free to word it differently. `result` is that answer as a
  * column, derived in one place.
  */
-
-/** Wait for a fire-and-forget audit write to land. */
-async function waitForAudit(where: any, min = 1): Promise<any[]> {
-  const deadline = Date.now() + 2000;
-  let rows: any[] = [];
-  while (Date.now() < deadline) {
-    rows = await db().auditLog.findMany({ where, orderBy: { timestamp: 'desc' } });
-    if (rows.length >= min) break;
-    await new Promise(r => setTimeout(r, 25));
-  }
-  return rows;
-}
 
 before(async () => {
   await startTestServer();

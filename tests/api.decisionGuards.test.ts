@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach } from 'node:test';
 import {
-  api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer,
+  api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit,
 } from './helpers/apiHarness';
 import { SOP_DOCUMENTS_DEF } from '../src/utils/sopEvaluation';
 
@@ -62,8 +62,9 @@ test('the refusal is recorded, because a blocked write is evidence too', SKIP, a
     method: 'PATCH', token,
     body: profileBody({ status: 'rejected', rejectionReasons: ['رد'] }),
   });
-  const rows = await db().auditLog.findMany({ where: { entityId: FIXTURE.vendorId } });
-  const blocked = rows.filter((r: any) => r.event === 'access.denied');
+  // The refusal is recorded by a write the handler does not await, so this
+  // waits for it rather than assuming it beat the response.
+  const blocked = await waitForAudit({ entityId: FIXTURE.vendorId, event: 'access.denied' });
   assert.equal(blocked.length, 1);
   assert.equal(blocked[0].severity, 'Critical');
 });
