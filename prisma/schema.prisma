@@ -230,6 +230,12 @@ model Vendor {
   // material row for the same substance.
   irc                 String? @map("irc")
   ircExpiryDate       String? @map("irc_expiry_date")
+  // The date the licence was issued, in the Jalali calendar the form collects.
+  // The form has always asked for it and the source page has always printed it,
+  // but there was no column: the value was accepted, carried through the whole
+  // save and dropped, and the page quietly showed the registration date in its
+  // place.
+  lastAudit           String? @map("last_audit")
 
   // Links to the business partners, enforced by the database.
   //

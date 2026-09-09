@@ -32,7 +32,7 @@ import {
 // browser needs it too, and this module reaches the database.
 export { auditRowValues } from './auditTaxonomy.js';
 import type { CreateAuditInput } from './auditService.js';
-import { AuditService } from './auditService.js';
+import { AuditService, newAuditId } from './auditService.js';
 import { getClientIp, getUserAgent } from '../server/http/requestInfo.js';
 
 /** Never written, whatever a caller passes. Matched case-insensitively. */
@@ -171,7 +171,7 @@ export function buildAuditRecord(
 
   return {
     event: input.event,
-    auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    auditId: newAuditId(now),
     correlationId: input.correlationId,
     userId: input.actor?.username || undefined,
     userName: input.actor?.name || input.actor?.username || undefined,

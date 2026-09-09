@@ -358,7 +358,10 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
         activityLogs: logsByVendor.get(v.id) || [],
         analysisRecords: analysisArr,
         riskAssessment: riskObj,
-        lastAudit: ""
+        // The licence issue date, from its own column. It used to be hardcoded
+        // to "" here, so the source page fell back to the registration date and
+        // printed that under «تاریخ صدور».
+        lastAudit: (v as any).lastAudit ?? ""
       });
     }
     return result;
@@ -458,7 +461,7 @@ export async function saveVendorToDb(
   {
     const {
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
-      material, materialEn, cas, irc, isSample, category,
+      material, materialEn, cas, irc, ircExpiryDate, lastAudit, isSample, category,
       scores, rawScores, rejectionReasons,
       activityLogs, analysisRecords, riskAssessment,
       manufacturerId, supplierId
@@ -526,6 +529,20 @@ export async function saveVendorToDb(
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
         irc: irc || null,
+        /*
+         * The licence dates.
+         *
+         * Neither was written here. `irc_expiry_date` existed as a column and
+         * was read back on every load, and `PATCH /contact` carefully computed
+         * it, audited the change and handed it to this function — which dropped
+         * it. `last_audit` had no column at all. So the expiry date a person
+         * typed into the source form was accepted, acknowledged with a 200, and
+         * gone on the next read, which left every feature built on it — the
+         * dashboard's expiring-licence tile, the banner on the source page, the
+         * worklist, the valid/expired badge — permanently reporting nothing.
+         */
+        ircExpiryDate: ircExpiryDate || null,
+        lastAudit: lastAudit || null,
         manufacturerId: manufacturerLink,
         supplierId: supplierLink,
       },
@@ -544,6 +561,20 @@ export async function saveVendorToDb(
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
         irc: irc || null,
+        /*
+         * The licence dates.
+         *
+         * Neither was written here. `irc_expiry_date` existed as a column and
+         * was read back on every load, and `PATCH /contact` carefully computed
+         * it, audited the change and handed it to this function — which dropped
+         * it. `last_audit` had no column at all. So the expiry date a person
+         * typed into the source form was accepted, acknowledged with a 200, and
+         * gone on the next read, which left every feature built on it — the
+         * dashboard's expiring-licence tile, the banner on the source page, the
+         * worklist, the valid/expired badge — permanently reporting nothing.
+         */
+        ircExpiryDate: ircExpiryDate || null,
+        lastAudit: lastAudit || null,
         manufacturerId: manufacturerLink,
         supplierId: supplierLink,
       },

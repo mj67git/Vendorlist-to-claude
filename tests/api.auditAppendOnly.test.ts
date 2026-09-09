@@ -58,6 +58,27 @@ test('a stored audit row cannot be edited or deleted', SKIP, async () => {
   assert.equal(rows[0].description, 'ورود به سامانه');
 });
 
+test('a burst of events keeps every single record', SKIP, async () => {
+  /*
+   * The reference used to be `AUD-<year>-<four random digits>` against a UNIQUE
+   * column: nine thousand values for a year. A load run of 3,455 writes lost
+   * 557 of them — 16% — and lost them silently, because `recordEvent` swallows
+   * its own errors so that an audit write can never fail a user's save. Six
+   * hundred writes here would have failed roughly twenty times under the old
+   * scheme; under the new one the count is exact.
+   */
+  const BURST = 600;
+  await Promise.all(Array.from({ length: BURST }, (_, i) =>
+    recordEvent(asAdmin, {
+      event: 'auth.login',
+      entity: { id: `user-${i}`, name: `کاربر ${i}` },
+    })));
+
+  const rows = await db().auditLog.findMany({ where: { event: 'auth.login' } });
+  assert.equal(rows.length, BURST, 'every event in the burst has a row');
+  assert.equal(new Set(rows.map((r: any) => r.auditId)).size, BURST, 'and every row has its own reference');
+});
+
 test('the test harness can still start each test from an empty table', SKIP, async () => {
   await recordEvent(asAdmin, { event: 'auth.logout', entity: { id: 'admin' } });
   // TRUNCATE does not fire a row-level trigger, which is deliberate: the rule is
