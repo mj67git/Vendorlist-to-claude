@@ -100,6 +100,37 @@ export function diffFields(
   return changes;
 }
 
+/**
+ * Read a stored audit row back as "what this field was, and became".
+ *
+ * The history endpoints (`score-history`, `risk-history`,
+ * `evaluation-history`) rebuild a timeline from the trail, and they used to do
+ * it by reading whole-record copies out of `before_data` and `after_data`.
+ * Those copies are exactly what the rewrite stopped writing, so the readers
+ * have to understand the new shape — and the old one, because rows written
+ * before the rewrite are still in the table and still belong on the timeline.
+ */
+export function auditRowValues(row: {
+  beforeData?: unknown; afterData?: unknown;
+}): { before: Record<string, unknown>; after: Record<string, unknown> } {
+  const after = (row?.afterData || {}) as Record<string, unknown>;
+  const changes = Array.isArray((after as any).changes) ? (after as any).changes as FieldChange[] : null;
+  if (!changes) {
+    return { before: (row?.beforeData || {}) as Record<string, unknown>, after };
+  }
+  const from: Record<string, unknown> = {};
+  const to: Record<string, unknown> = {};
+  for (const change of changes) {
+    from[change.field] = change.from;
+    to[change.field] = change.to;
+  }
+  // Facts sit alongside the changes and answer the same question for events
+  // that are not a field edit at all.
+  const facts = (after as any).facts;
+  if (facts && typeof facts === 'object') Object.assign(to, facts);
+  return { before: from, after: to };
+}
+
 function cleanChanges(changes?: FieldChange[]): FieldChange[] {
   return (changes || [])
     .filter(c => c && typeof c.field === 'string' && !isForbidden(c.field))

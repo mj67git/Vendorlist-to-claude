@@ -1,12 +1,11 @@
 import express from "express";
 import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
-import { AuditService } from "../../utils/auditService.js";
+import { auditRowValues, diffFields, recordEvent } from "../../utils/auditEvents.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import {
-  buildPartnerAuditDescription, getBusinessPartnersList, mapPartnerRow, upsertBusinessPartner,
+  getBusinessPartnersList, upsertBusinessPartner,
 } from "../repositories/partnerRepository.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
 import { forbiddenPartnerDecisions } from "../../utils/decisionGuards.js";
@@ -23,6 +22,19 @@ import { can } from "../../utils/permissions.js";
  * nothing wrote.
  */
 
+/**
+ * The partner's own descriptive fields.
+ *
+ * Named rather than diffed wholesale because the record also carries its SOP
+ * evaluation and its status, and those two are separate decisions with separate
+ * permissions — they get their own audit events instead of appearing as fields
+ * of a routine edit.
+ */
+const PARTNER_PROFILE_FIELDS = [
+  "name", "nameEn", "type", "country", "city", "address",
+  "email", "contactPerson", "phone", "website",
+];
+
 export function partnerRoutes(): express.Router {
   const router = express.Router();
 
@@ -35,20 +47,25 @@ export function partnerRoutes(): express.Router {
     }
   });
 
-  // SOP evaluation history for a supplier, reconstructed from the audit trail
-  // (each partner change records the full partner, incl. its evaluation, in
-  // afterData). Returns only points where an evaluation with a score exists.
+  // SOP evaluation history for a supplier, reconstructed from the audit trail:
+  // an evaluation event names the score and grade that moved. Returns only the
+  // points where a score is present, so a rename never shows up as a grading.
   router.get("/api/business-partners/:id/evaluation-history", requireAuth, requirePermission("partner.read"), async (req: any, res) => {
     try {
       const prisma = requirePrisma();
       const rows = await prisma.auditLog.findMany({
-        where: { entityId: req.params.id, entityType: "BusinessPartner" },
+        // `SupplierEvaluation` is what an evaluation event stores; the older
+        // rows recorded the whole partner under `BusinessPartner`.
+        where: { entityId: req.params.id, entityType: { in: ["BusinessPartner", "SupplierEvaluation"] } },
         orderBy: { timestamp: "asc" },
       });
       const history: any[] = [];
       let lastScore: number | null = null;
       for (const r of rows) {
-        const ev = (r.afterData as any)?.evaluation;
+        // Rows written since the audit rewrite name the evaluation's fields
+        // directly; older ones carry a copy of the whole partner.
+        const values = auditRowValues(r as any).after;
+        const ev = (r.afterData as any)?.evaluation ?? values;
         if (!ev || typeof ev.totalScore !== "number") continue;
         // Skip consecutive duplicates (no score change).
         if (ev.totalScore === lastScore) continue;
@@ -102,25 +119,12 @@ export function partnerRoutes(): express.Router {
       await upsertBusinessPartner(prisma, partner);
       const [saved] = (await getBusinessPartnersList()).filter(p => p.id === partner.id);
 
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "Business Partner Repository",
-        action: "Create",
-        severity: "Information",
-        entityType: "BusinessPartner",
-        entityId: partner.id,
-        entityName: partner.name,
-        eventType: "User Activity",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        description: buildPartnerAuditDescription("Create", partner),
-        reasonForChange: req.body.reasonForChange || "ثبت شریک تجاری جدید",
-        beforeData: null,
-        afterData: saved,
-      }).catch(err => console.error("Audit logging failed on partner create:", err));
+      await recordEvent(req, {
+        event: "partner.created",
+        entity: { id: partner.id, name: partner.name },
+        facts: { type: partner.type, country: partner.country },
+        reason: req.body.reasonForChange || null,
+      });
 
       res.json({ success: true, partner: saved });
     } catch (err: any) {
@@ -177,25 +181,15 @@ export function partnerRoutes(): express.Router {
       const refusals = forbiddenPartnerDecisions(actor as any, before, req.body);
       if (refusals.length > 0) {
         const needed = refusals.map(r => r.permission).join('، ');
-        AuditService.createAuditRecord({
-          auditId: `AUD-PDEC-${Date.now()}`,
-          userId: req.user?.username,
-          userName: req.user?.name || req.user?.username,
-          role: req.user?.role,
-          module: "Business Partner Repository",
-          eventType: "Security",
-          ipAddress: getClientIp(req),
-          userAgent: getUserAgent(req),
-          entityType: "BusinessPartner",
-          entityId: id,
-          entityName: before?.name || existing.name,
-          action: "Update - Blocked",
-          severity: "Critical",
-          description: "تغییر ارزیابی یا وضعیت شریک تجاری به دلیل نداشتن مجوز رد شد.",
-          reasonForChange: `مجوز لازم: ${needed}`,
-          beforeData: { status: before?.status ?? null, evaluation: before?.evaluation ?? null },
-          afterData: { attempted: refusals.flatMap(r => r.fields), refusedBy: needed },
-        }).catch(err => console.error("Audit logging failed on partner decision refusal:", err));
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "BusinessPartner", id, name: before?.name || existing.name },
+          facts: {
+            attempted: "تغییر ارزیابی یا وضعیت شریک تجاری",
+            permission: needed,
+            fields: refusals.flatMap(r => r.fields).join("، "),
+          },
+        });
         const what = refusals.some(r => r.permission === 'partner.evaluate')
           ? 'ارزیابی مدارک فروشنده'
           : 'تغییر وضعیت شریک تجاری';
@@ -207,25 +201,32 @@ export function partnerRoutes(): express.Router {
       await upsertBusinessPartner(prisma, { ...req.body, id });
       const [saved] = (await getBusinessPartnersList()).filter(p => p.id === id);
 
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "Business Partner Repository",
-        action: "Update",
-        severity: "Warning",
-        entityType: "BusinessPartner",
-        entityId: id,
-        entityName: saved?.name || existing.name,
-        eventType: "User Activity",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        description: buildPartnerAuditDescription("Update", saved, before),
-        reasonForChange: req.body.reasonForChange || "ویرایش اطلاعات شریک تجاری",
-        beforeData: before,
-        afterData: saved,
-      }).catch(err => console.error("Audit logging failed on partner update:", err));
+      // One endpoint carries three different acts, so it can produce three
+      // different rows: the profile edit, the SOP evaluation, and the status
+      // switch. Each is skipped when that part of the record did not move, so a
+      // plain rename no longer reads as "the seller was re-evaluated". They
+      // share one correlation id, which is what ties them back into one save.
+      const partnerEntity = { id, name: saved?.name || existing.name };
+      const reason = req.body.reasonForChange || null;
+
+      await recordEvent(req, {
+        event: "partner.status_changed",
+        entity: partnerEntity,
+        changes: diffFields(before, saved, ["status"]),
+        reason,
+      });
+      await recordEvent(req, {
+        event: "partner.evaluated",
+        entity: partnerEntity,
+        changes: diffFields(before?.evaluation, saved?.evaluation, ["totalScore", "grade", "status"]),
+        reason,
+      });
+      await recordEvent(req, {
+        event: "partner.updated",
+        entity: partnerEntity,
+        changes: diffFields(before, saved, PARTNER_PROFILE_FIELDS),
+        reason,
+      });
 
       res.json({ success: true, partner: saved });
     } catch (err: any) {
@@ -244,19 +245,6 @@ export function partnerRoutes(): express.Router {
       if (staleCopy(req, existing)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-
-      const auditBase = {
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "Business Partner Repository",
-        entityType: "BusinessPartner",
-        entityId: id,
-        entityName: existing.name,
-        eventType: "User Activity" as const,
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-      };
 
       // Referential integrity: block deletion when the partner is still linked
       // to a source. Manufacturers and Suppliers are independent now, so there
@@ -291,33 +279,24 @@ export function partnerRoutes(): express.Router {
       }
 
       if (blockedReason) {
-        await AuditService.createAuditRecord({
-          ...auditBase,
-          auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-          action: "Delete - Blocked",
-          severity: "Warning",
-          description: `تلاش ناموفق برای حذف شریک تجاری "${existing.name}" (${existing.type}) — رکورد در حال استفاده است.`,
-          reasonForChange: "Attempted delete of referenced record",
-          beforeData: null,
-          afterData: null,
-        }).catch(err => console.error("Audit logging failed on blocked partner delete:", err));
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "BusinessPartner", id, name: existing.name },
+          facts: { attempted: "حذف شریک تجاری", type: existing.type },
+          reason: "رکورد در یک یا چند سورس استفاده شده است",
+        });
         return res.status(400).json({ error: blockedReason });
       }
 
-      const [before] = (await getBusinessPartnersList()).filter(p => p.id === id);
       // supplier_evaluations + sop_documents cascade via foreign keys.
       await prisma.businessPartner.delete({ where: { id } });
 
-      await AuditService.createAuditRecord({
-        ...auditBase,
-        auditId: `AUD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        action: "Delete",
-        severity: "Critical",
-        description: buildPartnerAuditDescription("Delete", { name: existing.name, type: existing.type }),
-        reasonForChange: (req.query.reasonForChange as string) || "حذف شریک تجاری",
-        beforeData: before,
-        afterData: null,
-      }).catch(err => console.error("Audit logging failed on partner delete:", err));
+      await recordEvent(req, {
+        event: "partner.deleted",
+        entity: { id, name: existing.name },
+        facts: { type: existing.type },
+        reason: (req.query.reasonForChange as string) || null,
+      });
 
       res.json({ success: true });
     } catch (err: any) {

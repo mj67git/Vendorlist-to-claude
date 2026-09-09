@@ -291,8 +291,13 @@ test('the permission change is written to the audit trail with before and after'
   });
   assert.ok(entry, 'the change is recorded');
   assert.equal(entry.severity, 'Critical');
+  assert.equal(entry.event, 'user.permissions_changed');
   const after = typeof entry.afterData === 'string' ? JSON.parse(entry.afterData) : entry.afterData;
-  assert.deepEqual(after.permissions, ['score.finance']);
+  // The row now carries what moved rather than two copies of the whole list.
+  const permissions = after.changes.find((c: any) => c.field === 'permissions');
+  assert.deepEqual(permissions.to, ['score.finance']);
+  // `finance` had no stored exception list, so this write only grants.
+  assert.equal(after.facts.added, 1, 'and counts what was granted');
 });
 
 test('effectivePermissions agrees with what the endpoint reports', SKIP, async () => {

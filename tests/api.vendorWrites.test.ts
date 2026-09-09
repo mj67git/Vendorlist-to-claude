@@ -246,7 +246,8 @@ test('the chosen-source decision requires a reason and is audited', SKIP, async 
     where: { action: { contains: 'SOURCE_SELECTION' } },
   });
   assert.ok(audited, 'the decision is on the audit trail');
-  assert.equal(audited.severity, 'Warning', 'a purchasing decision is not routine noise');
+  assert.equal(audited.event, 'source.selected');
+  assert.equal(audited.severity, 'Critical', 'a purchasing decision is not routine noise');
 });
 
 test('choosing the source needs the choosing permission, not the editing one', SKIP, async () => {

@@ -2,12 +2,13 @@ import express from "express";
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { AuditService } from "../../utils/auditService.js";
+import { recordEvent } from "../../utils/auditEvents.js";
 import { effectivePermissions, hasCustomPermissions } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth } from "../http/auth.js";
 import { setCurrentSession } from "../http/requestContext.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
+import { getClientIp } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
 import { JWT_SECRET } from "../security/jwtSecret.js";
 import {
@@ -82,6 +83,20 @@ for (const key of keys) loginAttempts.delete(key);
 }
 
 /**
+ * Who to name on a refused sign-in, when nobody is signed in.
+ *
+ * `recordEvent` takes the actor from `req.user`, which a login attempt does not
+ * have yet. The attempted username is the only thing known about whoever is at
+ * the keyboard, and it is exactly what a reviewer looking at a run of refusals
+ * needs to see — so it stands in as the actor rather than leaving the row
+ * anonymous.
+ */
+function attemptedActor(username: unknown) {
+  const name = typeof username === "string" && username.trim() ? username.trim() : null;
+  return { username: name || "unknown", name: name || "ناشناس", role: "guest" };
+}
+
+/**
  * Sweep expired entries so a long-running process does not accumulate them.
  *
  * The limiter is an in-memory Map, which is correct for the way this is
@@ -115,33 +130,18 @@ export function authRoutes(): express.Router {
     try {
     const { username, password } = req.body;
     const ipAddress = getClientIp(req);
-    const userAgent = getUserAgent(req);
-    const now = new Date();
-    const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const throttleKeys = [`ip:${ipAddress}`, `user:${String(username || "").toLowerCase()}`];
 
     const blockedFor = loginBlockRemainingMs(throttleKeys);
     if (blockedFor > 0) {
       const minutes = Math.max(1, Math.ceil(blockedFor / 60000));
-      AuditService.createAuditRecord({
-        auditId,
-        userId: username || "unknown",
-        userName: username || "ناشناس",
-        role: "unknown",
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: username || "unknown",
-        entityName: username || "ناشناس",
-        action: "FAILED_LOGIN",
-        severity: "Critical",
-        description: `ورود به‌دلیل تلاش‌های ناموفق پیاپی موقتاً مسدود است (${username || "نامشخص"})`,
-        reasonForChange: "اعمال محدودیت نرخ پس از تلاش‌های ناموفق پیاپی",
-        beforeData: null,
-        afterData: { attemptedUsername: username || null, blockedMinutes: minutes },
-      }).catch(err => console.error("Audit logging failed on throttled login:", err));
+      recordEvent(req, {
+        event: "auth.login_failed",
+        actor: attemptedActor(username),
+        entity: { id: username || "unknown", name: username || "ناشناس" },
+        facts: { blockedMinutes: minutes },
+        reason: "مسدودشده به‌دلیل تلاش‌های ناموفق پیاپی",
+      });
 
       res.setHeader("Retry-After", String(Math.ceil(blockedFor / 1000)));
       return res.status(429).json({
@@ -150,50 +150,24 @@ export function authRoutes(): express.Router {
     }
 
     if (!username || !password) {
-      AuditService.createAuditRecord({
-        auditId,
-        userId: username || "unknown",
-        userName: username || "ناشناس",
-        role: "guest",
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: username || "unknown",
-        entityName: username || "ورود ناموفق",
-        action: "FAILED_LOGIN",
-        severity: "Warning",
-        description: "تلاش ناموفق برای ورود به سیستم: عدم ارسال نام کاربری یا کلمه عبور",
-        reasonForChange: "عدم ارسال مشخصات ورودی (Missing Credentials)",
-        beforeData: null,
-        afterData: { attemptedUsername: username || null }
-      }).catch(err => console.error("Audit logging failed on failed login:", err));
+      recordEvent(req, {
+        event: "auth.login_failed",
+        actor: attemptedActor(username),
+        entity: { id: username || "unknown", name: username || "ناشناس" },
+        reason: "نام کاربری یا کلمهٔ عبور ارسال نشد",
+      });
 
       return res.status(400).json({ error: "نام کاربری و کلمهٔ عبور را وارد کنید." });
     }
 
     const matchedUser = await getUserByUsername(username);
     if (!matchedUser) {
-      AuditService.createAuditRecord({
-        auditId,
-        userId: username,
-        userName: username,
-        role: "guest",
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: username,
-        entityName: username,
-        action: "FAILED_LOGIN",
-        severity: "Warning",
-        description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${username}: کاربر یافت نشد`,
-        reasonForChange: "نام کاربری نادرست یا تعریف نشده در پایگاه داده",
-        beforeData: null,
-        afterData: { attemptedUsername: username }
-      }).catch(err => console.error("Audit logging failed on failed login:", err));
+      recordEvent(req, {
+        event: "auth.login_failed",
+        actor: attemptedActor(username),
+        entity: { id: username, name: username },
+        reason: "نام کاربری ناشناس",
+      });
 
       recordFailedLogin(throttleKeys);
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
@@ -202,25 +176,12 @@ export function authRoutes(): express.Router {
     const isPasswordCorrect = verifyPassword(password, matchedUser.password);
 
     if (!isPasswordCorrect) {
-      AuditService.createAuditRecord({
-        auditId,
-        userId: matchedUser.username,
-        userName: matchedUser.name,
-        role: matchedUser.role,
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: matchedUser.username,
-        entityName: matchedUser.name,
-        action: "FAILED_LOGIN",
-        severity: "Warning",
-        description: `تلاش ناموفق برای ورود به سیستم با نام کاربری ${matchedUser.username}: کلمه عبور اشتباه است`,
-        reasonForChange: "کلمه عبور وارد شده با هش ذخیره شده مطابقت ندارد",
-        beforeData: null,
-        afterData: { attemptedUsername: matchedUser.username }
-      }).catch(err => console.error("Audit logging failed on failed login:", err));
+      recordEvent(req, {
+        event: "auth.login_failed",
+        actor: { username: matchedUser.username, name: matchedUser.name, role: matchedUser.role },
+        entity: { id: matchedUser.username, name: matchedUser.name },
+        reason: "کلمهٔ عبور نادرست",
+      });
 
       recordFailedLogin(throttleKeys);
       return res.status(401).json({ error: "نام کاربری یا کلمهٔ عبور نادرست است." });
@@ -229,25 +190,12 @@ export function authRoutes(): express.Router {
     // A deactivated account is refused here, after the password check, so the
     // response cannot be used to tell a closed account from a wrong password.
     if (matchedUser.isActive === false) {
-      AuditService.createAuditRecord({
-        auditId,
-        userId: matchedUser.username,
-        userName: matchedUser.name,
-        role: matchedUser.role,
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: matchedUser.username,
-        entityName: matchedUser.name,
-        action: "FAILED_LOGIN",
-        severity: "Warning",
-        description: `تلاش برای ورود با حساب کاربری غیرفعال ${matchedUser.username}`,
-        reasonForChange: "حساب کاربری توسط مدیر سیستم غیرفعال شده است",
-        beforeData: null,
-        afterData: { attemptedUsername: matchedUser.username }
-      }).catch(err => console.error("Audit for inactive login failed:", err));
+      recordEvent(req, {
+        event: "auth.login_failed",
+        actor: { username: matchedUser.username, name: matchedUser.name, role: matchedUser.role },
+        entity: { id: matchedUser.username, name: matchedUser.name },
+        reason: "حساب کاربری غیرفعال است",
+      });
 
       return res.status(403).json({ error: "این حساب کاربری غیرفعال است. با مدیر سیستم تماس بگیرید." });
     }
@@ -299,25 +247,11 @@ export function authRoutes(): express.Router {
     const mustChangePassword = matchedUser.mustChangePassword !== false;
 
     // Log the login activity
-    AuditService.createAuditRecord({
-      auditId,
-      userId: matchedUser.username,
-      userName: matchedUser.name,
-      role: matchedUser.role,
-      module: "احراز هویت",
-      eventType: "Authentication",
-      ipAddress,
-      userAgent,
-      entityType: "Security Event",
-      entityId: matchedUser.username,
-      entityName: matchedUser.name,
-      action: "LOGIN",
-      severity: "Information",
-      description: `ورود موفقیت‌آمیز کاربر ${matchedUser.name} (${matchedUser.username}) به سامانه`,
-      reasonForChange: "احراز هویت موفق با کلمه عبور و تولید کلید JWT",
-      beforeData: null,
-      afterData: { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name }
-    }).catch(err => console.error("Audit logging failed on login:", err));
+    recordEvent(req, {
+      event: "auth.login",
+      actor: { username: matchedUser.username, name: matchedUser.name, role: matchedUser.role },
+      entity: { id: matchedUser.username, name: matchedUser.name },
+    });
 
     res.json({
       success: true,
@@ -350,29 +284,9 @@ export function authRoutes(): express.Router {
   // User Logout endpoint
   router.post("/api/auth/logout", requireAuth, async (req: any, res) => {
     try {
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const ipAddress = getClientIp(req);
-      const userAgent = getUserAgent(req);
-
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "احراز هویت",
-        eventType: "Authentication",
-        ipAddress,
-        userAgent,
-        entityType: "Security Event",
-        entityId: req.user.username,
-        entityName: req.user.name,
-        action: "LOGOUT",
-        severity: "Information",
-        description: `خروج موفقیت‌آمیز کاربر ${req.user.name} (${req.user.username}) از سامانه`,
-        reasonForChange: "ارسال درخواست خروج صریح از سوی کاربر",
-        beforeData: { sessionStatus: "Active" },
-        afterData: { sessionStatus: "Logged Out" }
+      await recordEvent(req, {
+        event: "auth.logout",
+        entity: { id: req.user.username, name: req.user.name },
       });
 
       res.json({ success: true, message: "با موفقیت از سیستم خارج شدید" });
@@ -422,25 +336,10 @@ export function authRoutes(): express.Router {
     });
 
     // Log the password change activity
-    const now = new Date();
-    const year = now.getFullYear();
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const auditId = `AUD-${year}-${randomNum}`;
-    AuditService.createAuditRecord({
-      auditId,
-      userId: req.user.username,
-      userName: req.user.name,
-      role: req.user.role,
-      module: "مدیریت کاربران",
-      action: "Update",
-      severity: "Warning",
-      description: `کلمه عبور کاربر ${req.user.name} با موفقیت بروزرسانی و امن‌سازی شد.`,
-      entityType: "User",
-      entityId: req.user.username,
-      entityName: req.user.name,
-      beforeData: { info: "کلمه عبور قبلی تغییر یافت" },
-      afterData: { info: "کلمه عبور جدید با هش و سالت ذخیره شد" }
-    }).catch(err => console.error("Audit logging failed on password change:", err));
+    recordEvent(req, {
+      event: "auth.password_changed",
+      entity: { id: req.user.username, name: req.user.name },
+    });
 
     console.log(`[Security] Password successfully updated and hashed for user: ${username}`);
     res.json({ 

@@ -198,26 +198,6 @@ export async function upsertBusinessPartner(prisma: PrismaClient, p: any): Promi
   }
 }
 
-// Build a human-readable audit description for a business-partner change,
-// including supplier SOP evaluation changes (score / grade / status).
-export function buildPartnerAuditDescription(action: string, partner: any, before?: any): string {
-  let description = `${action} business partner: ${partner.name} (${partner.type})`;
-  if (partner.type === "Supplier" && partner.evaluation) {
-    const ev = partner.evaluation;
-    if (action === "Create") {
-      description += ` | SOP Score: ${ev.totalScore}/100, Grade: ${ev.grade}, Status: ${ev.status}`;
-    } else if (action === "Update" && before?.evaluation) {
-      const o = before.evaluation;
-      const changes: string[] = [];
-      if (o.totalScore !== ev.totalScore) changes.push(`Total Score: ${o.totalScore} -> ${ev.totalScore}`);
-      if (o.grade !== ev.grade) changes.push(`Grade: ${o.grade} -> ${ev.grade}`);
-      if (o.status !== ev.status) changes.push(`Supplier Status: ${o.status} -> ${ev.status}`);
-      if (changes.length) description += ` | SOP Eval Changes (${changes.join(", ")})`;
-    }
-  }
-  return description;
-}
-
 /**
  * Every SOP document field except the file itself.
  *

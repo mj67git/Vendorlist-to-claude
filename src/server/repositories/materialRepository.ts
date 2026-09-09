@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { AuditService } from "../../utils/auditService.js";
+import { recordEvent } from "../../utils/auditEvents.js";
 import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
@@ -104,22 +104,17 @@ export async function rejectDuplicateMaterial(
   const hit = findDuplicateMaterial(candidate, existing, current);
   if (!hit) return null;
 
-  const now = new Date();
-  await AuditService.createAuditRecord({
-    auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-    userId: req.user.username,
-    userName: req.user.name,
-    role: req.user.role,
-    module: "مدیریت مواد",
-    action: current ? "Update" : "Create",
-    severity: "Warning",
-    description: `ثبت مادهٔ تکراری رد شد: ${hit.reason}`,
-    entityType: "Material",
-    entityId: hit.material.id || "",
-    entityName: hit.material.nameFa || hit.material.nameEn || "",
-    reasonForChange: "Rejected duplicate material",
-    beforeData: null,
-    afterData: { attempted: candidate, duplicateOf: hit.material.id, rule: hit.field },
+  // A refusal, so it belongs with the other refusals rather than in the
+  // material's own history: nothing about the material changed.
+  await recordEvent(req, {
+    event: "access.denied",
+    entity: {
+      type: "Material",
+      id: hit.material.id || null,
+      name: hit.material.nameFa || hit.material.nameEn || null,
+    },
+    facts: { attempted: "ثبت مادهٔ تکراری", duplicateOf: hit.material.id, rule: hit.field },
+    reason: hit.reason,
   });
 
   return { error: hit.reason, duplicateOf: hit.material.id };
