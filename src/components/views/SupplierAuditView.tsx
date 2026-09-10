@@ -108,7 +108,7 @@ const ROLE_LABEL: Record<SupplierGroup['role'], string> = {
 };
 
   interface SupplierAuditViewProps {
-    db: Vendor[];
+    vendors: Vendor[];
     onSelectVendor: (vendor: Vendor) => void;
     currentUser: User | null;
     partners?: BusinessPartner[];
@@ -129,7 +129,7 @@ interface SourceSelection {
   decidedAt: string;
 }
 
-  export function SupplierAuditView({ db, onSelectVendor, currentUser, partners = [], materials = [], onNavigate, isLoading = false }: SupplierAuditViewProps) {
+  export function SupplierAuditView({ vendors, onSelectVendor, currentUser, partners = [], materials = [], onNavigate, isLoading = false }: SupplierAuditViewProps) {
     const excel = useExcelExport();
     /** Taking a file out of the system, as opposed to reading it on screen. */
     const canExport = can(currentUser, 'data.export');
@@ -170,7 +170,7 @@ interface SourceSelection {
     const supplierGroups = useMemo(() => {
       const groups: Record<string, SupplierGroup> = {};
 
-      db.forEach(v => {
+      vendors.forEach(v => {
         const key = supplierKey(v.name);
         if (!key) return;
 
@@ -208,7 +208,7 @@ interface SourceSelection {
        * category that owns them.
        */
       return Object.values(groups).filter(g => g.sources.length > 0);
-    }, [db, partners]);
+    }, [vendors, partners]);
 
     /**
      * The average audit score of a company, over the sources that carry one.
@@ -494,7 +494,7 @@ interface SourceSelection {
        if (v.isSample || isVendorRejected(v)) return false;
        const key = (v.material || '').trim().toLowerCase();
        if (!key) return false;
-       const alternatives = db.filter(other =>
+       const alternatives = vendors.filter(other =>
          other.id !== v.id &&
          !other.isSample &&
          !isVendorRejected(other) &&
@@ -523,7 +523,7 @@ interface SourceSelection {
        licences,
        soleSource,
      };
-   }, [activeSupplier, currentUser, db, selections]);
+   }, [activeSupplier, currentUser, vendors, selections]);
  
    return (
      <div className="space-y-6 fade-in text-right">

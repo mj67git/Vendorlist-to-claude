@@ -41,8 +41,8 @@ const GRADE_ORDER: Record<string, number> = { A: 4, B: 3, C: 2, D: 1, rejected: 
 
 const RISK_LABEL: Record<string, string> = { High: 'بالا', Medium: 'متوسط', Low: 'پایین' };
 
-export function ArchiveView({ db, currentUser, partners = [], materials = [], onSelectVendor, isLoading = false }: {
-  db: Vendor[],
+export function ArchiveView({ vendors, currentUser, partners = [], materials = [], onSelectVendor, isLoading = false }: {
+  vendors: Vendor[],
   currentUser: User,
   partners?: BusinessPartner[],
   materials?: Material[],
@@ -136,8 +136,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    */
   const handleExportCategory = (catId: string, catLabel: string) => {
     void excel.run(
-      xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections),
-      { label: `آرشیو — ${catLabel}`, rows: db.length },
+      xl => xl.exportCategoryToExcel(vendors, catId, catLabel, partners, materials, selections),
+      { label: `آرشیو — ${catLabel}`, rows: vendors.length },
     );
   };
 
@@ -151,12 +151,12 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   const countryOptions = useMemo(() => {
     const seen = new Set<string>();
-    db.forEach(v => { const k = countryKey(v); if (k) seen.add(k); });
+    vendors.forEach(v => { const k = countryKey(v); if (k) seen.add(k); });
     return [...seen].sort((a, b) => archiveCollator.compare(a, b));
-  }, [db]);
+  }, [vendors]);
 
   const filteredDb = useMemo(() => {
-    return db.filter(v => {
+    return vendors.filter(v => {
       const term = searchTerm.toLowerCase();
       const matchSearch = 
         v.name.toLowerCase().includes(term) || 
@@ -218,11 +218,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
       return matchSearch && matchGrade && matchRisk && matchCategory && matchCountry && matchSelected;
     });
-  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, selections, partners]);
+  }, [vendors, searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, selections, partners]);
 
   const selectedCount = useMemo(
-    () => db.filter(v => !!selectionForVendor(v, selections)).length,
-    [db, selections],
+    () => vendors.filter(v => !!selectionForVendor(v, selections)).length,
+    [vendors, selections],
   );
 
   // Rows per page, like the materials, partners and audit tables. The archive
@@ -303,15 +303,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * it. The filtered count keeps its own place on the filter bar.
    */
   const archiveStats = useMemo(() => {
-    const samples = db.filter(isSampleRecord);
-    const sources = db.filter(v => !isSampleRecord(v));
+    const samples = vendors.filter(isSampleRecord);
+    const sources = vendors.filter(v => !isSampleRecord(v));
     return {
-      total: db.length,
+      total: vendors.length,
       sources: sources.length,
       samples: samples.length,
-      blacklisted: db.filter(isVendorRejected).length,
+      blacklisted: vendors.filter(isVendorRejected).length,
     };
-  }, [db]);
+  }, [vendors]);
 
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
@@ -381,8 +381,8 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             variant="success"
             size="sm"
             onClick={() => excel.run(
-              xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections),
-              { label: 'آرشیو کامل (چند شیتی)', rows: db.length },
+              xl => xl.exportFullArchiveMultiSheetExcel(vendors, partners, materials, selections),
+              { label: 'آرشیو کامل (چند شیتی)', rows: vendors.length },
             )}
             disabled={excel.busy}
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
@@ -607,7 +607,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                 حذف فیلترها
               </Button>
               <span className="text-2xs text-muted-foreground">
-                {totalItems.toLocaleString('fa-IR')} از {db.length.toLocaleString('fa-IR')} رکورد
+                {totalItems.toLocaleString('fa-IR')} از {vendors.length.toLocaleString('fa-IR')} رکورد
               </span>
             </div>
           )}

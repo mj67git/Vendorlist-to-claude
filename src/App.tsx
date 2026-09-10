@@ -153,7 +153,7 @@ export default function App() {
 
 
 
-  const [db, setDb] = useState<Vendor[]>(() => {
+  const [vendors, setVendors] = useState<Vendor[]>(() => {
     const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
     try {
       const saved = localStorage.getItem('app_db');
@@ -197,13 +197,13 @@ export default function App() {
   //    against the server.
   useEffect(() => {
     try {
-      const slim = db.map(v => ({ ...v, activityLogs: [], analysisRecords: [], rawScores: undefined }));
+      const slim = vendors.map(v => ({ ...v, activityLogs: [], analysisRecords: [], rawScores: undefined }));
       localStorage.setItem('app_db', JSON.stringify(slim));
     } catch (err) {
       console.warn('Vendor cache exceeded the browser storage quota; continuing without it.', err);
       try { localStorage.removeItem('app_db'); } catch { /* nothing left to do */ }
     }
-  }, [db]);
+  }, [vendors]);
 
   // Re-check the restored account against the server once per load. currentUser
   // is rehydrated from localStorage, and every role gate in the UI reads it, so
@@ -264,7 +264,7 @@ export default function App() {
         // for a deliberate policy decision — and the localStorage cache would
         // keep showing the list the account just lost.
         if (!can(currentUser, 'vendor.read')) {
-          setDb([]);
+          setVendors([]);
           setLoadError(null);
           return;
         }
@@ -288,7 +288,7 @@ export default function App() {
           },
           onPage: (rows) => {
             loaded.push(...rows.filter(isAllowedVendor).map(normalizeAndCleanVendor));
-            if (!cancelled) setDb([...loaded]);
+            if (!cancelled) setVendors([...loaded]);
           },
         })
           .then(() => { if (!cancelled) setLoadError(null); })
@@ -345,7 +345,7 @@ export default function App() {
   const { items: businessPartners, setItems: setBusinessPartners } = partnersCollection;
   const partnersLoading = partnersCollection.loading;
 
-  // A route carries only a vendor *id*; the full record is re-hydrated from `db`
+  // A route carries only a vendor *id*; the full record is re-hydrated from `vendors`
   // (see `selectedVendor` below), which may still be loading on a deep link.
   const routeToViewState = (r: RouteState): ViewState => ({
     view: r.view as ViewState['view'],
@@ -391,7 +391,7 @@ export default function App() {
   useEffect(() => {
     try {
       // Persist only a light identity snapshot of the selected vendor — the full
-      // record is re-hydrated from `db` by id on read, so storing the whole
+      // record is re-hydrated from `vendors` by id on read, so storing the whole
       // object (risk/analysis/activity arrays) would bloat localStorage.
       const slim: PersistedViewState[] = viewHistory.map(s => ({
         ...s,
@@ -414,11 +414,11 @@ export default function App() {
   const view = currentViewState.view;
   const categoryId = currentViewState.categoryId;
   const formMode = currentViewState.formMode ?? null;
-  // A vendor reached through a shared link is only an id until `db` arrives, so
+  // A vendor reached through a shared link is only an id until `vendors` arrives, so
   // distinguish "still loading" from "this link points at a source that no
   // longer exists" instead of rendering a detail page full of blanks.
   const pendingVendor = currentViewState.selectedVendor;
-  const resolvedVendor = pendingVendor ? db.find(v => v.id === pendingVendor.id) ?? null : null;
+  const resolvedVendor = pendingVendor ? vendors.find(v => v.id === pendingVendor.id) ?? null : null;
   const isVendorStub = !!pendingVendor && !pendingVendor.name;
   const selectedVendor = pendingVendor
     ? (resolvedVendor ?? (isVendorStub ? null : pendingVendor))
@@ -748,7 +748,7 @@ export default function App() {
   };
 
   const expiringVendors = useMemo(() => {
-    return db
+    return vendors
       .filter(v => !!v.ircExpiryDate && v.ircExpiryDate.trim() !== '' && v.ircExpiryDate.trim().toLowerCase() !== 'n/a')
       .map(v => ({
         vendor: v,
@@ -756,13 +756,13 @@ export default function App() {
       }))
       .filter(item => item.check.status === 'expiring_soon' || item.check.status === 'expired')
       .sort((a, b) => (a.check.daysLeft || 0) - (b.check.daysLeft || 0));
-  }, [db]);
+  }, [vendors]);
 
   // Critical audit events (local mode reads the client store; harmless 0 otherwise).
   const criticalAuditCount = useMemo(() => {
     if (!isLocalMode()) return 0;
     try { return readLocalAudit().filter(record => record.severity === 'Critical').length; } catch { return 0; }
-  }, [db, businessPartners, materials]);
+  }, [vendors, businessPartners, materials]);
 
   /**
    * Background sync — how a second operator sees the first one's work.
@@ -985,7 +985,7 @@ export default function App() {
       const named = route.vendorId
         ? (currentViewState.selectedVendor?.id === route.vendorId
             ? currentViewState.selectedVendor
-            : db.find(v => v.id === route.vendorId) || null)
+            : vendors.find(v => v.id === route.vendorId) || null)
         : null;
       return {
         key: routeKey(route),
@@ -1010,7 +1010,7 @@ export default function App() {
     if (route.vendorId) {
       const record = currentViewState.selectedVendor?.id === route.vendorId
         ? currentViewState.selectedVendor
-        : db.find(v => v.id === route.vendorId) || null;
+        : vendors.find(v => v.id === route.vendorId) || null;
       if (record) handleSelectVendor(record);
       return;
     }
@@ -1031,7 +1031,7 @@ export default function App() {
 
   const handleDownloadBackup = () => {
     try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(vendors, null, 2));
       const downloadAnchor = document.createElement('a');
       downloadAnchor.setAttribute("href", dataStr);
       
@@ -1053,9 +1053,9 @@ export default function App() {
     // Ours, so the next background poll does not announce this record back to
     // the person who just saved it.
     ownWritesRef.current.add(normalized.id);
-    const original = db.find(v => v.id === normalized.id);
+    const original = vendors.find(v => v.id === normalized.id);
 
-    setDb(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
+    setVendors(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
     updateCurrentVendorInHistory(normalized);
     if (msg !== null) {
       notify(msg || 'تغییرات با موفقیت ذخیره شد!');
@@ -1261,7 +1261,7 @@ export default function App() {
         // other side of it.
         if (expected) {
           const stamp = expected;
-          setDb(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
+          setVendors(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
           updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
         }
       } catch (err: unknown) {
@@ -1301,7 +1301,7 @@ export default function App() {
         onPage: () => {},
       });
       const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-      setDb(fresh);
+      setVendors(fresh);
       setDataRevision(n => n + 1);
       const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
       if (focused) updateCurrentVendorInHistory(focused);
@@ -1320,13 +1320,13 @@ export default function App() {
   resyncRef.current = resyncVendorsFromServer;
 
   const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
-    const removed = db.find(v => v.id === vendorId);
+    const removed = vendors.find(v => v.id === vendorId);
     // Ours, so the next background poll does not announce this record back to
     // the person who just saved it.
     ownWritesRef.current.add(vendorId);
     // Our own removal moves the register size too; re-baseline on the next poll.
     knownTotalRef.current = null;
-    setDb(prev => prev.filter(v => v.id !== vendorId));
+    setVendors(prev => prev.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
     notify('سورس با موفقیت حذف شد!');
     if (isLocalMode()) {
@@ -1341,7 +1341,7 @@ export default function App() {
       body: JSON.stringify({ reasonForChange })
     }).catch((err: unknown) => {
       console.error('Failed to sync vendor deletion to DB:', err);
-      if (removed) setDb(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
+      if (removed) setVendors(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
       notify(
         err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس حذف نشد.',
         'error', 8000,
@@ -1375,7 +1375,7 @@ export default function App() {
     // new row is not read as somebody else's change to the register size.
     ownWritesRef.current.add(normalized.id);
     knownTotalRef.current = null;
-    setDb(prev => [normalized, ...prev]);
+    setVendors(prev => [normalized, ...prev]);
     // No action button on the toast any more: the form now takes the user to
     // the new source's own page, so «مشاهده و امتیازدهی» would point at the
     // page they are already standing on.
@@ -1404,7 +1404,7 @@ export default function App() {
       body: JSON.stringify(normalized)
     }).then(() => normalized).catch((err: unknown) => {
       console.error('Failed to sync new vendor to DB:', err);
-      setDb(prev => prev.filter(v => v.id !== normalized.id));
+      setVendors(prev => prev.filter(v => v.id !== normalized.id));
       notify(
         err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
         'error', 8000,
@@ -1670,7 +1670,7 @@ export default function App() {
       } else {
       content = (
         <VendorForm
-          db={db}
+          vendors={vendors}
           materials={materials}
           onAddMaterial={handleAddMaterial}
           categoryId={(editing?.category as Category) || (categoryId as Category) || 'domestic'}
@@ -1727,7 +1727,7 @@ export default function App() {
     } else if (vendorLinkPending) {
       // Deep link into a source: wait for the dataset, then report honestly if
       // the id is not in it.
-      const stillLoading = isSyncing || db.length === 0;
+      const stillLoading = isSyncing || vendors.length === 0;
       keyName = `vendor-pending-${pendingVendor!.id}`;
       content = stillLoading ? (
         <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
@@ -1750,10 +1750,10 @@ export default function App() {
       );
     } else if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
-      content = <VendorDetail db={db} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
+      content = <VendorDetail vendors={vendors} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
     } else if (view === 'home') {
       keyName = 'home';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
+      content = <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     } else if (view === 'archive') {
       // `archive.read` again, and this time the server enforces it: the view
       // asks `GET /api/vendors?view=archive` on entry and is refused there, so
@@ -1764,7 +1764,7 @@ export default function App() {
       content = !can(currentUser, VIEW_PERMISSIONS.archive) || viewAccess === 'denied' ? DENY_ARCHIVE
         : gated.error ? LOAD_FAILED
         : viewAccess === 'checking' ? CHECKING_ACCESS : (
-        <ArchiveView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
+        <ArchiveView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
       );
     } else if (view === 'tasks') {
       const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
@@ -1772,7 +1772,7 @@ export default function App() {
       content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
         <WorklistView
           taskKey={taskKey}
-          db={db}
+          vendors={vendors}
           partners={businessPartners}
           currentUser={currentUser}
           onSelectVendor={handleSelectVendor}
@@ -1784,7 +1784,7 @@ export default function App() {
       keyName = 'supplier-audit';
       content = !can(currentUser, VIEW_PERMISSIONS['supplier-audit']) || viewAccess === 'denied' ? DENY_DIRECTORY
         : gated.error ? LOAD_FAILED
-        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />;
+        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, VIEW_PERMISSIONS.materials) ? (
@@ -1800,7 +1800,7 @@ export default function App() {
           onEditMaterial={handleEditMaterial}
           onDeleteMaterial={handleDeleteMaterial}
           currentUser={currentUser}
-          db={db}
+          vendors={vendors}
           isLoading={isSyncing && materials.length === 0}
         />
       );
@@ -1819,7 +1819,7 @@ export default function App() {
           onEditPartner={handleEditBusinessPartner}
           onDeletePartner={handleDeleteBusinessPartner}
           currentUser={currentUser}
-          db={db}
+          vendors={vendors}
           // Not `&& length === 0`: with no cache the list falls back to the
           // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty and
           // the skeleton could never appear — the seed was being shown as if it
@@ -1877,10 +1877,10 @@ export default function App() {
             onHome={() => navigate('home')}
           />
         ) : DENY_SOURCES
-      ) : <CategoryView db={db} isLoading={isSyncing && db.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      ) : <CategoryView vendors={vendors} isLoading={isSyncing && vendors.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
-      content = <HomeView db={db} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
+      content = <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
     }
 
     return (
@@ -2027,7 +2027,7 @@ export default function App() {
               // than no entry.
               .filter(([id]) => can(currentUser, categoryPermission(id)))
               .map(([id, meta]) => {
-              const count = db.filter(v => isInCategoryRegister(v, id)).length;
+              const count = vendors.filter(v => isInCategoryRegister(v, id)).length;
               return (
                 <SidebarButton collapsed={sidebarCollapsed}
                   key={id}
@@ -2080,7 +2080,7 @@ export default function App() {
             {can(currentUser, VIEW_PERMISSIONS.archive) && (
               <SidebarButton collapsed={sidebarCollapsed}
                 icon={Archive} label="آرشیو کامل داده‌ها"
-                badge={db.length}
+                badge={vendors.length}
                 variant="archive"
                 active={view === 'archive'}
                 onClick={() => navigate('archive')}
@@ -2370,7 +2370,7 @@ export default function App() {
                   menu, beside the other things done once in a while.
 
                   Note its gate is a deliberate house rule, not a security
-                  boundary: the file is built in the browser from `db`, which
+                  boundary: the file is built in the browser from `vendors`, which
                   `GET /api/vendors` already serves to every signed-in user. A
                   server permission cannot be added for it without inventing one
                   no endpoint enforces — the mistake `archive.read` was deleted
@@ -2613,7 +2613,7 @@ export default function App() {
         <CommandPalette
           open={showCommandPalette}
           onClose={() => setShowCommandPalette(false)}
-          db={db}
+          vendors={vendors}
           materials={materials}
           partners={businessPartners}
           onSelectVendor={handleSelectVendor}

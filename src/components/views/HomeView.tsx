@@ -25,19 +25,19 @@ import temadLogo from '../../assets/logo.png';
 
 // extracted from App.tsx
 
-export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: NavigateFn, onSelectVendor: (v: Vendor) => void, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
+export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { vendors: Vendor[], onNavigate: NavigateFn, onSelectVendor: (v: Vendor) => void, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
   /**
    * The supplier population, excluding sample records.
    *
-   * `stats` used to count `db` outright while the pending-actions panel below
+   * `stats` used to count `vendors` outright while the pending-actions panel below
    * deliberately filtered samples out, so the same screen showed two different
    * definitions of "supplier" without saying so.
    */
   const sourceVendors = useMemo(
-    () => db.filter(v => !v.isSample && v.category !== 'sample'),
-    [db],
+    () => vendors.filter(v => !v.isSample && v.category !== 'sample'),
+    [vendors],
   );
-  const sampleCount = db.length - sourceVendors.length;
+  const sampleCount = vendors.length - sourceVendors.length;
 
   const stats = useMemo(() => {
     /*
@@ -159,12 +159,12 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
    * real scores and an empty column sat on the dashboard for ever.
    */
   const pendingActions = useMemo((): { key: TaskKey; label: string; count: number; icon: React.ComponentType<{ className?: string }>; tone: string }[] => ([
-    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', db, partners || []).length, icon: ClipboardList, tone: 'amber' },
-    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
-    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },
-    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', db, partners || []).length, icon: Calendar, tone: 'rose' },
-    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', db, partners || []).length, icon: Microscope, tone: 'blue' },
-  ]), [db, partners]);
+    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', vendors, partners || []).length, icon: ClipboardList, tone: 'amber' },
+    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', vendors, partners || []).length, icon: ShieldAlert, tone: 'orange' },
+    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', vendors, partners || []).length, icon: Award, tone: 'blue' },
+    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', vendors, partners || []).length, icon: Calendar, tone: 'rose' },
+    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', vendors, partners || []).length, icon: Microscope, tone: 'blue' },
+  ]), [vendors, partners]);
 
   /** The same count, reused by the laboratory card rather than rebuilt there. */
   const labBacklog = pendingActions.find(a => a.key === 'lab')?.count ?? 0;
@@ -172,14 +172,14 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
     let pass = 0, cond = 0, rej = 0;
-    for (const v of db) for (const r of (v.analysisRecords || [])) {
+    for (const v of vendors) for (const r of (v.analysisRecords || [])) {
       if (r.decision === 'Pass') pass++;
       else if (r.decision === 'Approved Conditional') cond++;
       else if (r.decision === 'Reject') rej++;
     }
     const total = pass + cond + rej;
     return { pass, cond, rej, total, rate: total > 0 ? Math.round(((pass + cond) / total) * 100) : 0 };
-  }, [db]);
+  }, [vendors]);
 
   // Recent audit activity (works in local mode; backend fetch otherwise).
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
@@ -205,7 +205,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
       .then(j => { if (!cancelled && j?.data) setRecentAudit(withoutSignInNoise(j.data)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [currentUser, db, partners, materials]);
+  }, [currentUser, vendors, partners, materials]);
 
   const toneClasses: Record<string, string> = {
     amber: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800',
@@ -491,7 +491,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
              * exported 140. Now the four ask `isInCategoryRegister`.
              */
             const isBlacklistCard = id === 'blacklist';
-            const catVendors = db.filter(v => isInCategoryRegister(v, id));
+            const catVendors = vendors.filter(v => isInCategoryRegister(v, id));
 
             /*
              * What the card counts, in the vocabulary of the thing it counts.
@@ -567,7 +567,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
             // The complement of the register above: the rows this category
             // would hold if they had not been disqualified. Same two exclusions
             // as `isInCategoryRegister`, with the verdict inverted.
-            const rejected = isBlacklistCard ? 0 : db.filter(v =>
+            const rejected = isBlacklistCard ? 0 : vendors.filter(v =>
               v.category === id && !isSampleVendor(v) && isVendorRejected(v)).length;
 
             const total = catVendors.length;

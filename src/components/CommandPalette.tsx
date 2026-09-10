@@ -16,7 +16,7 @@ interface CommandItem {
 interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
-  db: Vendor[];
+  vendors: Vendor[];
   materials: Material[];
   partners: BusinessPartner[];
   onSelectVendor: (v: Vendor) => void;
@@ -25,7 +25,7 @@ interface CommandPaletteProps {
   currentUser?: PermissionSubject | null;
 }
 
-export function CommandPalette({ open, onClose, db, materials, partners, onSelectVendor, onNavigate, currentUser }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, vendors, materials, partners, onSelectVendor, onNavigate, currentUser }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -56,8 +56,8 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
       .map(({ view: _view, ...item }) => item);
     // The records themselves follow the same rule. The source list is already
     // filtered by the server for this account (`readableVendors`), so what is
-    // in `db` is what may be seen; materials and partners have their own read.
-    const vendors: CommandItem[] = (can(currentUser ?? null, 'vendor.read') ? db : []).slice(0, 400).map(v => ({
+    // in `vendors` is what may be seen; materials and partners have their own read.
+    const sourceItems: CommandItem[] = (can(currentUser ?? null, 'vendor.read') ? vendors : []).slice(0, 400).map(v => ({
       id: `v-${v.id}`, title: v.name || v.material || 'سورس', subtitle: `${v.material || ''}${v.grade ? ' · گرید ' + v.grade : ''}`,
       group: 'سورس‌ها / تامین‌کنندگان', icon: Globe, run: () => onSelectVendor(v),
     }));
@@ -69,8 +69,8 @@ export function CommandPalette({ open, onClose, db, materials, partners, onSelec
       id: `bp-${p.id}`, title: p.name, subtitle: p.type === 'Manufacturer' ? 'تولیدکننده' : 'فروشنده',
       group: 'شرکای تجاری', icon: Building2, run: () => onNavigate('business-partners'),
     }));
-    return [...openPages, ...vendors, ...mats, ...parts];
-  }, [db, materials, partners, onNavigate, onSelectVendor, currentUser]);
+    return [...openPages, ...sourceItems, ...mats, ...parts];
+  }, [vendors, materials, partners, onNavigate, onSelectVendor, currentUser]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

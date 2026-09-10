@@ -31,7 +31,7 @@ interface Props {
   onEditMaterial: (material: Material, customAction?: string) => void;
   onDeleteMaterial: (id: string) => void;
   currentUser: User | null;
-  db?: Vendor[];
+  vendors?: Vendor[];
   /** True while the first fetch is still in flight — the table shows skeletons
       instead of claiming the repository is empty. */
   isLoading?: boolean;
@@ -78,7 +78,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   onEditMaterial,
   onDeleteMaterial,
   currentUser,
-  db = [],
+  vendors = [],
   isLoading = false
 }) => {
   const [search, setSearch] = useState('');
@@ -121,7 +121,7 @@ export const MaterialRepositoryView: React.FC<Props> = ({
    * Every record, samples included: a sample holds a `vendor_materials` row
    * like any other and the delete is refused on it just the same.
    */
-  const vendorsByMaterial = useMemo(() => indexSourcesByMaterial(db, materials), [db, materials]);
+  const vendorsByMaterial = useMemo(() => indexSourcesByMaterial(vendors, materials), [vendors, materials]);
 
   const connectedVendors = materialToDelete ? vendorsByMaterial.get(materialToDelete.id) || [] : [];
 
