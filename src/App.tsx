@@ -1710,105 +1710,159 @@ export default function App() {
     } else if (selectedVendor) {
       keyName = `vendor-${selectedVendor.id}`;
       content = <VendorDetail vendors={vendors} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
-    } else if (view === 'home') {
-      keyName = 'home';
-      content = <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
-    } else if (view === 'archive') {
-      // `archive.read` again, and this time the server enforces it: the view
-      // asks `GET /api/vendors?view=archive` on entry and is refused there, so
-      // the check below is the UX half of a real answer rather than the whole
-      // of it (rule 14). It was retired once precisely because no endpoint
-      // stood behind it.
-      keyName = 'archive';
-      content = !can(currentUser, VIEW_PERMISSIONS.archive) || viewAccess === 'denied' ? DENY_ARCHIVE
-        : gated.error ? LOAD_FAILED
-        : viewAccess === 'checking' ? CHECKING_ACCESS : (
-        <ArchiveView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
-      );
-    } else if (view === 'tasks') {
-      const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
-      keyName = `tasks-${taskKey}`;
-      content = !can(currentUser, 'vendor.read') ? DENY_SOURCES : (
-        <WorklistView
-          taskKey={taskKey}
-          vendors={vendors}
-          partners={businessPartners}
-          currentUser={currentUser}
-          onSelectVendor={handleSelectVendor}
-          onNavigate={navigate}
-          onSwitchTask={k => navigate('tasks', null, k)}
-        />
-      );
-    } else if (view === 'supplier-audit') {
-      keyName = 'supplier-audit';
-      content = !can(currentUser, VIEW_PERMISSIONS['supplier-audit']) || viewAccess === 'denied' ? DENY_DIRECTORY
-        : gated.error ? LOAD_FAILED
-        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />;
-    } else if (view === 'materials') {
-      keyName = 'materials';
-      content = !can(currentUser, VIEW_PERMISSIONS.materials) ? (
-        <PermissionDenied reason="materials" onHome={() => navigate('home')} />
-      ) : (
-        <MaterialRepositoryView 
-          materials={materials}
-          onAddMaterial={handleAddMaterial}
-          onEditMaterial={handleEditMaterial}
-          onDeleteMaterial={handleDeleteMaterial}
-          currentUser={currentUser}
-          vendors={vendors}
-          isLoading={isSyncing && materials.length === 0}
-        />
-      );
-    } else if (view === 'business-partners') {
-      keyName = 'business-partners';
-      content = !can(currentUser, VIEW_PERMISSIONS['business-partners']) ? (
-        <PermissionDenied reason="business-partners" onHome={() => navigate('home')} />
-      ) : (
-        <BusinessPartnerRepositoryView
-          partners={businessPartners}
-          onAddPartner={handleAddBusinessPartner}
-          onEditPartner={handleEditBusinessPartner}
-          onDeletePartner={handleDeleteBusinessPartner}
-          currentUser={currentUser}
-          vendors={vendors}
-          // Not `&& length === 0`: with no cache the list falls back to the
-          // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty and
-          // the skeleton could never appear — the seed was being shown as if it
-          // were the server's data while the real fetch was still in flight.
-          isLoading={partnersLoading}
-        />
-      );
-    } else if (view === 'audit-trail') {
-
-      if (can(currentUser, 'audit.read')) {
-        keyName = 'audit-trail';
-        content = <AuditTrailView currentUser={currentUser} />;
-      } else {
-        keyName = 'audit-denied';
-        content = <PermissionDenied reason="audit-trail" onHome={() => navigate('home')} />;
-      }
-    } else if (view === 'users') {
-      // Opening the module is `users.read` now: the list is what the page is,
-      // and `GET /api/users` asks for exactly that. What an account can then do
-      // inside it is decided button by button, by the permissions the other
-      // user endpoints enforce.
-      if (can(currentUser, VIEW_PERMISSIONS.users)) {
-        keyName = 'users';
-        content = <UsersView currentUser={currentUser} />;
-      } else {
-        keyName = 'users-denied';
-        content = <PermissionDenied reason="users" onHome={() => navigate('home')} />;
-      }
-    } else if (view === 'category' && categoryId) {
-      keyName = `category-${categoryId}`;
-      content = !can(currentUser, categoryPermission(categoryId)) ? (
-        categoryId === 'sample' || categoryId === 'blacklist'
-          ? <CategoryDenied categoryId={categoryId} onHome={() => navigate('home')} />
-          : DENY_SOURCES
-      ) : <CategoryView vendors={vendors} isLoading={isSyncing && vendors.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
-      keyName = 'home-fallback';
-      content = <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />;
+      /*
+       * One entry per page, instead of a chain of ten `else if` branches.
+       *
+       * The chain was 200 lines and every branch repeated the same three
+       * decisions in its own words: which key the transition animates on,
+       * which permission opens the page, and what to draw when it does not.
+       * Written as a table those decisions line up and can be read down a
+       * column — and a page added without a permission is now visibly a page
+       * added without a permission.
+       *
+       * The permission is `VIEW_PERMISSIONS`, the same table the sidebar, the
+       * command palette and the server read (rule 14). Nothing here is a
+       * second opinion about who may see what.
+       */
+      const DASHBOARD = (
+        <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />
+      );
+
+      /**
+       * The two views the server answers for.
+       *
+       * Both read their rows from `GET /api/vendors?view=…`, so the client
+       * check is the UX half of a real answer: `denied` is the server's, and
+       * `checking` holds the page back until it arrives rather than drawing it
+       * and snatching it away (rule 14).
+       */
+      const serverGated = (denial: React.ReactNode, page: React.ReactNode) =>
+        viewAccess === 'denied' ? denial
+        : gated.error ? LOAD_FAILED
+        : viewAccess === 'checking' ? CHECKING_ACCESS
+        : page;
+
+      const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
+
+      const routes: Record<Exclude<ViewState['view'], 'category'>, { key: string; permission: Permission | null; denied: React.ReactNode; render: () => React.ReactNode }> = {
+        home: {
+          key: 'home',
+          permission: null,
+          denied: null,
+          render: () => DASHBOARD,
+        },
+        archive: {
+          key: 'archive',
+          permission: VIEW_PERMISSIONS.archive,
+          denied: DENY_ARCHIVE,
+          render: () => serverGated(DENY_ARCHIVE, (
+            <ArchiveView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
+          )),
+        },
+        'supplier-audit': {
+          key: 'supplier-audit',
+          permission: VIEW_PERMISSIONS['supplier-audit'],
+          denied: DENY_DIRECTORY,
+          render: () => serverGated(DENY_DIRECTORY, (
+            <SupplierAuditView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />
+          )),
+        },
+        tasks: {
+          // The backlog is built from the source register, so it is gated on
+          // reading sources rather than on a page permission of its own.
+          key: `tasks-${taskKey}`,
+          permission: 'vendor.read',
+          denied: DENY_SOURCES,
+          render: () => (
+            <WorklistView
+              taskKey={taskKey}
+              vendors={vendors}
+              partners={businessPartners}
+              currentUser={currentUser}
+              onSelectVendor={handleSelectVendor}
+              onNavigate={navigate}
+              onSwitchTask={k => navigate('tasks', null, k)}
+            />
+          ),
+        },
+        materials: {
+          key: 'materials',
+          permission: VIEW_PERMISSIONS.materials,
+          denied: <PermissionDenied reason="materials" onHome={() => navigate('home')} />,
+          render: () => (
+            <MaterialRepositoryView
+              materials={materials}
+              onAddMaterial={handleAddMaterial}
+              onEditMaterial={handleEditMaterial}
+              onDeleteMaterial={handleDeleteMaterial}
+              currentUser={currentUser}
+              vendors={vendors}
+              isLoading={isSyncing && materials.length === 0}
+            />
+          ),
+        },
+        'business-partners': {
+          key: 'business-partners',
+          permission: VIEW_PERMISSIONS['business-partners'],
+          denied: <PermissionDenied reason="business-partners" onHome={() => navigate('home')} />,
+          render: () => (
+            <BusinessPartnerRepositoryView
+              partners={businessPartners}
+              onAddPartner={handleAddBusinessPartner}
+              onEditPartner={handleEditBusinessPartner}
+              onDeletePartner={handleDeleteBusinessPartner}
+              currentUser={currentUser}
+              vendors={vendors}
+              // Not `&& length === 0`: with no cache the list falls back to the
+              // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty
+              // and the skeleton could never appear — the seed was being shown
+              // as if it were the server's data while the real fetch was still
+              // in flight.
+              isLoading={partnersLoading}
+            />
+          ),
+        },
+        'audit-trail': {
+          key: 'audit-trail',
+          permission: VIEW_PERMISSIONS['audit-trail'],
+          denied: <PermissionDenied reason="audit-trail" onHome={() => navigate('home')} />,
+          render: () => <AuditTrailView currentUser={currentUser} />,
+        },
+        users: {
+          // Opening the module is `users.read`: the list is what the page is,
+          // and `GET /api/users` asks for exactly that. What an account can
+          // then do inside it is decided button by button, by the permissions
+          // the other user endpoints enforce.
+          key: 'users',
+          permission: VIEW_PERMISSIONS.users,
+          denied: <PermissionDenied reason="users" onHome={() => navigate('home')} />,
+          render: () => <UsersView currentUser={currentUser} />,
+        },
+      };
+
+      if (view === 'category' && categoryId) {
+        keyName = `category-${categoryId}`;
+        content = !can(currentUser, categoryPermission(categoryId)) ? (
+          categoryId === 'sample' || categoryId === 'blacklist'
+            ? <CategoryDenied categoryId={categoryId} onHome={() => navigate('home')} />
+            : DENY_SOURCES
+        ) : <CategoryView vendors={vendors} isLoading={isSyncing && vendors.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
+      } else {
+        const route = routes[view as Exclude<ViewState['view'], 'category'>];
+        if (!route) {
+          // An address that decoded to no page at all. The dashboard is the
+          // one page every signed-in account can open.
+          keyName = 'home-fallback';
+          content = DASHBOARD;
+        } else if (route.permission && !can(currentUser, route.permission)) {
+          keyName = `${route.key}-denied`;
+          content = route.denied;
+        } else {
+          keyName = route.key;
+          content = route.render();
+        }
+      }
     }
 
     return (
