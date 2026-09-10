@@ -16,15 +16,17 @@ import { VIEW_PERMISSIONS } from '../../src/utils/permissions';
  * without anyone remembering to extend this file.
  */
 
-/*
- * Matched on the title every refusal shares, not on the shared component's
- * closing sentence: `audit-trail` refuses with a hand-built panel of its own —
- * different markup, hardcoded rose colours with no dark variant, and none of
- * the shared wording. The gate is real, only the presentation diverges, and
- * unifying the nine refusal sites is a phase-2 job. Matching the title keeps
- * this test true both before and after that.
- */
 const DENIED = /عدم دسترسی/;
+
+/*
+ * The line only the shared component prints.
+ *
+ * `audit-trail` used to refuse with a hand-built panel — different markup,
+ * hardcoded rose colours with no dark variant, none of this wording — so the
+ * refusals were nine screens with two voices. Asserting on this sentence for
+ * every gated view is what keeps the tenth from inventing a third.
+ */
+const SHARED_REFUSAL = /برای دریافت دسترسی با مدیر سیستم تماس بگیرید/;
 const views = Object.keys(VIEW_PERMISSIONS);
 
 const mount = async () => {
@@ -59,5 +61,7 @@ describe('every view in the policy table', () => {
     atRoute(`#/${view}`);
     await mount();
     expect(await screen.findByText(DENIED, {}, { timeout: 5000 })).toBeTruthy();
+    // …and it is the shared refusal, not a panel of this view's own.
+    expect(screen.getByText(SHARED_REFUSAL)).toBeTruthy();
   }, 15000);
 });

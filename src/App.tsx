@@ -62,6 +62,7 @@ import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { useToast } from './hooks/useToast';
+import { CategoryDenied, PermissionDenied } from './components/AccessDenied';
 import { describeError } from './utils/errorMessage';
 import { SystemClock } from './components/SystemClock';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
@@ -124,28 +125,6 @@ type PersistedViewState = Omit<ViewState, 'selectedVendor'> & {
 /** The page container every view is laid out in. */
 const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
 
-/**
- * What a module shows to someone who may not read it.
- *
- * Reading became a permission, so "the page is empty" and "you are not allowed
- * to see this" had to stop looking alike: an empty repository and a revoked one
- * rendered the same blank table, and the failed request read as a network error.
- */
-const AccessDenied: React.FC<{ title: string; detail: string; onHome: () => void }> = ({ title, detail, onHome }) => (
-  <div className="max-w-xl mx-auto my-12 p-8 bg-card border border-border rounded-2xl text-center space-y-4 shadow-xs">
-    <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300 flex items-center justify-center mx-auto">
-      <ShieldAlert className="w-6 h-6" />
-    </div>
-    <h2 className="text-base font-black text-foreground">{title}</h2>
-    <p className="text-xs text-muted-foreground leading-relaxed font-medium">{detail}</p>
-    <p className="text-2xs text-muted-foreground">
-      برای دریافت دسترسی با مدیر سیستم تماس بگیرید؛ سطح دسترسی هر کاربر در «مدیریت کاربران» تنظیم می‌شود.
-    </p>
-    <Button onClick={onHome} className="text-xs font-bold">
-      بازگشت به صفحه اصلی
-    </Button>
-  </div>
-);
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -1606,13 +1585,7 @@ export default function App() {
 
     // Every page built from the source list shows the same refusal, so it is
     // written once here rather than repeated at each branch.
-    const DENY_SOURCES = (
-      <AccessDenied
-        title="عدم دسترسی به اطلاعات سورس‌ها"
-        detail="حساب کاربری شما مجوز مشاهدهٔ سورس‌ها و تأمین‌کنندگان را ندارد."
-        onHome={() => navigate('home')}
-      />
-    );
+    const DENY_SOURCES = <PermissionDenied reason="sources" onHome={() => navigate('home')} />;
     // Held back until the server answers. Drawing the page first and replacing
     // it with a refusal a moment later would show it to somebody who may not
     // open it — briefly, but the data would have been on screen.
@@ -1635,20 +1608,8 @@ export default function App() {
         <Button onClick={() => setDataRevision(n => n + 1)} className="text-xs font-bold">تلاش دوباره</Button>
       </div>
     );
-    const DENY_ARCHIVE = (
-      <AccessDenied
-        title="عدم دسترسی به آرشیو کامل داده‌ها"
-        detail="حساب کاربری شما مجوز باز کردن آرشیو کامل را ندارد."
-        onHome={() => navigate('home')}
-      />
-    );
-    const DENY_DIRECTORY = (
-      <AccessDenied
-        title="عدم دسترسی به بررسی یکپارچه تأمین‌کنندگان"
-        detail="حساب کاربری شما مجوز باز کردن این نما را ندارد."
-        onHome={() => navigate('home')}
-      />
-    );
+    const DENY_ARCHIVE = <PermissionDenied reason="archive" onHome={() => navigate('home')} />;
+    const DENY_DIRECTORY = <PermissionDenied reason="supplier-audit" onHome={() => navigate('home')} />;
 
     if (formMode) {
       // The source form as a full page: it is the longest form in the app and
@@ -1664,15 +1625,7 @@ export default function App() {
       const formPermission: Permission = formMode === 'edit' ? 'vendor.edit' : 'vendor.create';
       if (!can(currentUser, formPermission)) {
         keyName = `source-form-denied-${formMode}`;
-        content = (
-          <AccessDenied
-            title={formMode === 'edit' ? 'عدم دسترسی به ویرایش سورس' : 'عدم دسترسی به ثبت سورس'}
-            detail={formMode === 'edit'
-              ? 'حساب کاربری شما مجوز «ویرایش سورس» را ندارد.'
-              : 'حساب کاربری شما مجوز «ثبت سورس جدید» را ندارد. این مجوز در ماژول مدیریت کاربران، ستون «ثبت» ردیف سورس‌ها تعیین می‌شود.'}
-            onHome={() => navigate('home')}
-          />
-        );
+        content = <PermissionDenied reason={formMode === 'edit' ? 'source-edit' : 'source-create'} onHome={() => navigate('home')} />;
       } else {
       content = (
         <VendorForm
@@ -1794,11 +1747,7 @@ export default function App() {
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, VIEW_PERMISSIONS.materials) ? (
-        <AccessDenied
-          title="عدم دسترسی به مخزن مواد اولیه"
-          detail="حساب کاربری شما مجوز مشاهدهٔ مخزن مواد اولیه را ندارد."
-          onHome={() => navigate('home')}
-        />
+        <PermissionDenied reason="materials" onHome={() => navigate('home')} />
       ) : (
         <MaterialRepositoryView 
           materials={materials}
@@ -1813,11 +1762,7 @@ export default function App() {
     } else if (view === 'business-partners') {
       keyName = 'business-partners';
       content = !can(currentUser, VIEW_PERMISSIONS['business-partners']) ? (
-        <AccessDenied
-          title="عدم دسترسی به مخزن شرکای تجاری"
-          detail="حساب کاربری شما مجوز مشاهدهٔ شرکای تجاری و ارزیابی فروشندگان را ندارد."
-          onHome={() => navigate('home')}
-        />
+        <PermissionDenied reason="business-partners" onHome={() => navigate('home')} />
       ) : (
         <BusinessPartnerRepositoryView
           partners={businessPartners}
@@ -1840,20 +1785,7 @@ export default function App() {
         content = <AuditTrailView currentUser={currentUser} />;
       } else {
         keyName = 'audit-denied';
-        content = (
-          <div className="p-8 max-w-xl mx-auto my-12 bg-rose-50 border border-rose-200 rounded-2xl text-center space-y-4 shadow-sm" style={{ direction: 'rtl' }}>
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <h2 className="text-base font-black text-rose-900">عدم دسترسی به ماژول Audit Trail</h2>
-            <p className="text-xs text-rose-700 leading-relaxed font-medium">
-              مشاهده ردیابی تغییرات، لاگ‌های امنیتی و فعالیت‌های کاربران طبق سیاست‌های امنیتی و GMP تنها در انحصار مدیران ارشد سیستم (Administrator) می‌باشد.
-            </p>
-            <Button variant="destructive" onClick={() => navigate('home')} className="text-xs font-bold">
-              بازگشت به صفحه اصلی
-            </Button>
-          </div>
-        );
+        content = <PermissionDenied reason="audit-trail" onHome={() => navigate('home')} />;
       }
     } else if (view === 'users') {
       // Opening the module is `users.read` now: the list is what the page is,
@@ -1865,24 +1797,14 @@ export default function App() {
         content = <UsersView currentUser={currentUser} />;
       } else {
         keyName = 'users-denied';
-        content = (
-          <AccessDenied
-            title="عدم دسترسی به مدیریت کاربران"
-            detail="تعریف و تغییر دسترسی پرسنل تنها در اختیار دارندگان مجوز «مدیریت کاربران» است."
-            onHome={() => navigate('home')}
-          />
-        );
+        content = <PermissionDenied reason="users" onHome={() => navigate('home')} />;
       }
     } else if (view === 'category' && categoryId) {
       keyName = `category-${categoryId}`;
       content = !can(currentUser, categoryPermission(categoryId)) ? (
-        categoryId === 'sample' || categoryId === 'blacklist' ? (
-          <AccessDenied
-            title={`عدم دسترسی به دستهٔ «${categoryLabels[categoryId]?.fa ?? categoryId}»`}
-            detail="حساب کاربری شما مجوز مشاهدهٔ این دسته را ندارد؛ ردیف‌های آن اصلاً برای این حساب فرستاده نمی‌شوند."
-            onHome={() => navigate('home')}
-          />
-        ) : DENY_SOURCES
+        categoryId === 'sample' || categoryId === 'blacklist'
+          ? <CategoryDenied categoryId={categoryId} onHome={() => navigate('home')} />
+          : DENY_SOURCES
       ) : <CategoryView vendors={vendors} isLoading={isSyncing && vendors.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
     } else {
       keyName = 'home-fallback';
