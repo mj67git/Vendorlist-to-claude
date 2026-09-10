@@ -55,6 +55,8 @@ import { CommandPalette } from './components/CommandPalette';
 import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
+import { useToast } from './hooks/useToast';
+import { SystemClock } from './components/SystemClock';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
 import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
@@ -68,40 +70,8 @@ import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
 
-/**
- * The header clock's date, read the way a date is spoken in Persian: day,
- * month, year, then the weekday.
- *
- * `toLocaleDateString` with all four parts returns "۱۴۰۵ شهریور ۴, چهارشنبه" —
- * year first and the weekday stranded behind a comma. The parts are requested
- * separately and assembled instead, which also avoids stripping punctuation out
- * of a formatted string afterwards.
- */
 /** The page container every view is laid out in. */
 const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
-
-function formatSystemDate(d: Date): string {
-  const day = d.toLocaleDateString('fa-IR', { day: 'numeric' });
-  const month = d.toLocaleDateString('fa-IR', { month: 'long' });
-  const year = d.toLocaleDateString('fa-IR', { year: 'numeric' });
-  const weekday = d.toLocaleDateString('fa-IR', { weekday: 'long' });
-  return `${day} ${month} ${year} · ${weekday}`;
-}
-
-/**
- * Everything the header clock shows, built in one place.
- *
- * The Gregorian date rides along because the people using this correspond with
- * suppliers abroad, where a Persian date means nothing. ISO order rather than a
- * localized form so it cannot be misread as day-first or month-first.
- */
-function buildSystemTime(d: Date) {
-  return {
-    faDate: formatSystemDate(d),
-    time: d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-    isoDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-  };
-}
 
 /**
  * What a module shows to someone who may not read it.
@@ -136,24 +106,6 @@ export default function App() {
     }
   });
 
-  const [systemTime, setSystemTime] = useState(() => buildSystemTime(new Date()));
-
-  // The clock used to tick every second, and since it lives on App every tick
-  // re-rendered the whole tree — sixty times a minute to move a digit nobody
-  // reads in a supplier-evaluation system. It now updates once a minute, and
-  // each tick is scheduled to land on the next minute boundary rather than a
-  // flat 60s later, so the displayed minute never lags behind the real one.
-  useEffect(() => {
-    let timer: number;
-    const tick = () => {
-      const d = new Date();
-      setSystemTime(buildSystemTime(d));
-      const msToNextMinute = 60_000 - (d.getSeconds() * 1000 + d.getMilliseconds());
-      timer = window.setTimeout(tick, msToNextMinute);
-    };
-    tick();
-    return () => window.clearTimeout(timer);
-  }, []);
 
 
   const [db, setDb] = useState<Vendor[]>(() => {
@@ -617,48 +569,16 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
   /**
-   * Whether the toast is reporting a failure.
+   * The toast lives in `useToast` now.
    *
-   * The toast used to infer this from a keyword regex over the message, which
-   * is a guess: "عدم دسترسی: … اجازهٔ انجام این عملیات را نمی‌دهد" matched none
-   * of the words, so a refused save was announced with a green check. Callers
-   * that know say so; the regex stays as the fallback for the rest.
+   * It was three pieces of state, a timer ref and a function here — plus
+   * sixteen call sites that set the message with a bare `setTimeout`, cleared
+   * no timer and set no kind. Everything goes through `notify` now, and the
+   * hook owns the timer, including cancelling it when the tree goes away.
    */
-  const [toastKind, setToastKind] = useState<'success' | 'error' | null>(null);
-  /**
-   * An optional button on the toast.
-   *
-   * Saving no longer moves the user somewhere else, so the way to reach the
-   * record just created is offered rather than imposed: whoever wants the new
-   * source's page clicks once, and whoever is entering a stack of records from
-   * an old file is left where they are. Without this the rule "saving never
-   * changes the page" would simply cost that first person a navigation.
-   */
-  const [toastAction, setToastAction] = useState<{ label: string; run: () => void } | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
+  const { toast, notify, dismiss: dismissToast } = useToast();
 
-  /** Show a toast and, when the caller knows, say which kind it is. */
-  const notify = (
-    message: string,
-    kind: 'success' | 'error' = 'success',
-    ms = kind === 'error' ? 6000 : 3000,
-    action?: { label: string; run: () => void } | null,
-  ) => {
-    // A toast carrying a button stays long enough to be pressed; the previous
-    // timer is cleared so a second toast cannot dismiss the first one early.
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    setToastKind(kind);
-    setToastMsg(message);
-    setToastAction(action ?? null);
-    const life = action ? Math.max(ms, 7000) : ms;
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMsg(null);
-      setToastKind(null);
-      setToastAction(null);
-    }, life);
-  };
   /**
    * How many changes other people made while a form on this screen was dirty.
    * Zero means there is nothing to offer; the bar under the header shows the
@@ -1058,12 +978,10 @@ export default function App() {
       downloadAnchor.click();
       downloadAnchor.remove();
       
-      setToastMsg('بانک اطلاعاتی لوکال با موفقیت دانلود شد!');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify('بانک اطلاعاتی لوکال با موفقیت دانلود شد!');
     } catch (err) {
       console.error("Failed to download backup JSON:", err);
-      setToastMsg('خطا در پشتیبان‌گیری از اطلاعات.');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify('خطا در پشتیبان‌گیری از اطلاعات.', 'error', 3000);
     }
   };
 
@@ -1077,8 +995,7 @@ export default function App() {
     setDb(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
     updateCurrentVendorInHistory(normalized);
     if (msg !== null) {
-      setToastMsg(msg || 'تغییرات با موفقیت ذخیره شد!');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify(msg || 'تغییرات با موفقیت ذخیره شد!');
     }
 
     if (isLocalMode()) {
@@ -1348,8 +1265,7 @@ export default function App() {
     knownTotalRef.current = null;
     setDb(prev => prev.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
-    setToastMsg('سورس با موفقیت حذف شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    notify('سورس با موفقیت حذف شد!');
     if (isLocalMode()) {
       const isSource = !!(removed?.isSample || removed?.category === 'sample');
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
@@ -1438,23 +1354,20 @@ export default function App() {
   // so the client only does an optimistic update and syncs to the API.
   const handleAddMaterial = (newMaterial: Material) => {
     setMaterials(prev => [newMaterial, ...prev]);
-    setToastMsg('ماده اولیه جدید با موفقیت اضافه شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    notify('ماده اولیه جدید با موفقیت اضافه شد!');
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: (newMaterial as any).nameFa || (newMaterial as any).name || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${(newMaterial as any).nameFa || (newMaterial as any).name || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
     authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
       .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
       .catch(err => {
         setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
-        setToastMsg(err.message || 'ثبت ماده در سرور ناموفق بود.');
-        setTimeout(() => setToastMsg(null), 5000);
+        notify(err.message || 'ثبت ماده در سرور ناموفق بود.', 'error', 5000);
       });
   };
 
   const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
     const oldMaterial = materials.find(m => m.id === updatedMaterial.id);
     setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? updatedMaterial : m)));
-    setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
-    setTimeout(() => setToastMsg(null), 3000);
+    notify('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
     // The copy this edit was based on. The server refuses with 409 when the row
     // has moved on since, so a form opened before somebody else's save cannot
@@ -1479,8 +1392,7 @@ export default function App() {
       })
       .catch(err => {
         if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
-        setToastMsg(err.message || 'ویرایش ماده در سرور ناموفق بود.');
-        setTimeout(() => setToastMsg(null), 5000);
+        notify(err.message || 'ویرایش ماده در سرور ناموفق بود.', 'error', 5000);
       });
   };
 
@@ -1489,8 +1401,7 @@ export default function App() {
     setMaterials(prev => prev.filter(m => m.id !== id));
     if (isLocalMode()) {
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: (removed as any)?.nameFa || (removed as any)?.name || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${(removed as any)?.nameFa || (removed as any)?.name || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
-      setToastMsg('ماده اولیه با موفقیت حذف شد!');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify('ماده اولیه با موفقیت حذف شد!');
       return;
     }
     try {
@@ -1499,8 +1410,7 @@ export default function App() {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'خطا در حذف');
       }
-      setToastMsg('ماده اولیه با موفقیت حذف شد!');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify('ماده اولیه با موفقیت حذف شد!');
     } catch (err: any) {
       // Put back the one row, rather than the whole list as it stood before the
       // request. Restoring a snapshot also un-does anything that arrived while
@@ -1508,8 +1418,7 @@ export default function App() {
       // refresh — and the user sees their own delete fail and someone else's
       // work disappear with it.
       if (removed) setMaterials(prev => (prev.some(m => m.id === id) ? prev : [removed, ...prev]));
-      setToastMsg(err.message || 'حذف ماده در سرور ناموفق بود.');
-      setTimeout(() => setToastMsg(null), 5000);
+      notify(err.message || 'حذف ماده در سرور ناموفق بود.', 'error', 5000);
     }
   };
 
@@ -1541,8 +1450,7 @@ export default function App() {
     setBusinessPartners(prev => [newPartner, ...prev]);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
     if (isLocalMode()) {
-      setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-      setTimeout(() => setToastMsg(null), 3000);
+      notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
       return;
     }
     authFetch('/api/business-partners', {
@@ -1565,8 +1473,7 @@ export default function App() {
     setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? updatedPartner : p)));
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
     if (isLocalMode()) {
-      setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-      setTimeout(() => setToastMsg(null), 3000);
+      notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
       return;
     }
     authFetch(`/api/business-partners/${updatedPartner.id}`, {
@@ -1603,8 +1510,7 @@ export default function App() {
     setBusinessPartners(prev => prev.filter(p => p.id !== id));
     if (isLocalMode()) {
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Delete', entityType: 'BusinessPartner', entityName: partner.name, severity: 'Critical', description: `حذف شریک تجاری "${partner.name}"`, before: partner, after: null, reason: 'حذف شریک تجاری' });
-      setToastMsg('شریک تجاری با موفقیت حذف شد!');
-      setTimeout(() => setToastMsg(null), 3000);
+      notify('شریک تجاری با موفقیت حذف شد!');
       return;
     }
     authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
@@ -1613,8 +1519,7 @@ export default function App() {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || 'حذف شریک تجاری در سرور ناموفق بود.');
         }
-        setToastMsg('شریک تجاری با موفقیت حذف شد!');
-        setTimeout(() => setToastMsg(null), 3000);
+        notify('شریک تجاری با موفقیت حذف شد!');
       })
       .catch(err => {
         setBusinessPartners(prev => (prev.some(p => p.id === id) ? prev : [partner, ...prev]));
@@ -2415,19 +2320,7 @@ export default function App() {
                   for foreign correspondence, which is a "look it up" fact, so
                   it moved into the chip's tooltip and the chip came back at
                   `md`. */}
-              <div
-                className="hidden md:flex items-center gap-2.5 px-2.5 lg:px-3 py-1 bg-muted/60 border border-border/80 rounded-xl text-xs font-sans shrink-0"
-                title={`تاریخ میلادی: ${systemTime.isoDate}`}
-              >
-                {/* Measured, not guessed: with the date in it the chip is wide
-                    enough to overflow the header at 820px — the width where the
-                    272px sidebar leaves the bar about 548px and nothing here
-                    shrinks. So the clock alone appears from `md` and the date
-                    joins it at `lg`, where there is room for both. */}
-                <span className="hidden lg:inline font-semibold text-foreground whitespace-nowrap">{systemTime.faDate}</span>
-                <span className="hidden lg:inline text-border">|</span>
-                <span className="font-mono font-bold text-primary tracking-wider leading-none" dir="ltr">{systemTime.time}</span>
-              </div>
+              <SystemClock />
 
               {/* This used to be a permanently green, permanently pulsing
                   "سیستم فعال" chip. A status that cannot change is not status,
@@ -2710,27 +2603,26 @@ export default function App() {
         )}
 
         {/* Global Toast (theme-aware; error vs. success styling) */}
-        {toastMsg && (() => {
-          const isError = toastKind ? toastKind === 'error' : /خطا|ناموفق|وجود ندارد|نمی‌تواند|نمی تواند|امکان حذف|عدم دسترسی/.test(toastMsg);
+        {toast && (() => {
+          const isError = toast.kind === 'error';
           return (
             <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
               {isError
                 ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
-              <span className="font-medium text-xs font-sans text-right">{toastMsg}</span>
-              {toastAction && (
+              <span className="font-medium text-xs font-sans text-right">{toast.message}</span>
+              {toast.action && (
                 <Button
                   type="button"
                   size="sm"
                   onClick={() => {
-                    const run = toastAction.run;
-                    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-                    setToastMsg(null); setToastKind(null); setToastAction(null);
+                    const run = toast.action!.run;
+                    dismissToast();
                     run();
                   }}
                   className="shrink-0 mr-1 h-7 px-2.5 text-2xs font-bold"
                 >
-                  {toastAction.label}
+                  {toast.action.label}
                 </Button>
               )}
             </div>
@@ -2744,8 +2636,7 @@ export default function App() {
             onClose={() => setShowChangePasswordModal(false)}
             onPasswordChanged={(updatedUser) => {
               setCurrentUser(updatedUser);
-              setToastMsg("کلمه عبور با موفقیت تغییر یافت");
-              setTimeout(() => setToastMsg(null), 3000);
+              notify("کلمه عبور با موفقیت تغییر یافت");
             }}
           />
         )}
