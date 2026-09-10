@@ -1,7 +1,7 @@
 {
   "name": "vlse",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "VLSE — Vendor List & Supplier Evaluation System",
   "engines": {
     "node": ">=20 <21"
