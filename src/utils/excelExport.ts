@@ -10,13 +10,14 @@ import * as XLSXModule from 'xlsx-js-style';
  */
 import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
-import { Vendor, Scores, BusinessPartner, Material } from '../types';
-import { isVendorRejected, isInBlacklistCategory } from './vendorState';
+import { Vendor, BusinessPartner, Material } from '../types';
+import { isVendorRejected, isInCategoryRegister } from './vendorState';
+import { describeSampleStatus, isSampleRecord } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
 import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
 import { calculateOverallScore } from './vendorUtils';
-import { canSupplySources } from './sopEvaluation';
+import { canSupplySources, describeGrade } from './sopEvaluation';
 import { getMaterialRole } from '../constants/materialRoles';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
 
@@ -29,6 +30,7 @@ import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from './auditTaxonomy';
  * neither column was ever coloured and forty lines of styling did nothing. A
  * named constant is checkable; `colIndex === 14` is not.
  */
+
 const COL = {
   INDEX: 0,
   NAME_FA: 1,
@@ -57,28 +59,25 @@ const COL = {
 const NOT_RECORDED = 'ثبت‌نشده';
 
 /**
- * Returns a descriptive Persian label for the material criticality (substance type).
+ * What a cell says when the question does not apply to this row at all — a
+ * sample has no risk assessment owed, which is a different statement from an
+ * assessment that is merely missing.
  */
-function getMaterialType(vendor: Vendor): string {
-  if (vendor.riskAssessment?.materialCriticality) {
-    const crit = vendor.riskAssessment.materialCriticality;
-    if (crit === 5) return 'ماده موثره دارویی (API)';
-    if (crit === 4) return 'اکسپیانت (Excipient)';
-    if (crit === 3) return 'حدواسط شیمیایی، حلال یا واکنشگر';
-    if (crit === 2) return 'اقلام بسته‌بندی اولیه';
-    if (crit === 1) return 'اقلام بسته‌بندی ثانویه';
-  }
+const NOT_APPLICABLE = 'موضوعیت ندارد';
 
-  const nameEnLower = (vendor.materialEn || '').toLowerCase();
-  const nameFa = vendor.material || '';
-
-  if (vendor.category === 'packaging') return 'اقلام بسته‌بندی';
-  if (nameEnLower.includes('excipient') || nameFa.includes('اکسپیانت')) return 'اکسپیانت (Excipient)';
-  if (nameEnLower.includes('intermediate') || nameFa.includes('حدواسط')) return 'حدواسط شیمیایی';
-  if (nameEnLower.includes('solvent') || nameFa.includes('حلال')) return 'حلال / واکنشگر';
-
-  return 'ماده موثره دارویی (API)'; // Default fallback matching industrial expectation
+/**
+ * When the laboratory last reported on a sample, or a dash.
+ *
+ * Records carry their date as text in whatever calendar the form wrote, so they
+ * are compared as strings rather than parsed — the goal is to name the newest
+ * entry, not to do arithmetic on it.
+ */
+function latestAnalysisDate(v: Vendor): string {
+  const dates = (v.analysisRecords || []).map(r => (r.date || '').trim()).filter(Boolean);
+  if (dates.length === 0) return NOT_RECORDED;
+  return dates.slice().sort()[dates.length - 1];
 }
+
 
 /**
  * Maps the English risk assessment level to formatted Persian text.
@@ -168,12 +167,7 @@ export function buildCategoryWorksheet(
   filterSummary?: string
 ): { ws: XLSX.WorkSheet, vendorCount: number } {
   // Filter appropriate vendors
-  const filteredVendors = vendors.filter(v => {
-    if (categoryId === 'all') return true;
-    if (categoryId === 'sample') return v.isSample || v.category === 'sample';
-    if (categoryId === 'blacklist') return isInBlacklistCategory(v);
-    return v.category === categoryId;
-  });
+  const filteredVendors = vendors.filter(v => isInCategoryRegister(v, categoryId));
 
   // Sort vendors by Persian material name so consecutive rows of identical materials group together for merging
   const sortedVendors = [...filteredVendors].sort((a, b) => {
@@ -181,6 +175,9 @@ export function buildCategoryWorksheet(
     const matB = b.material || '';
     return matA.localeCompare(matB, 'fa');
   });
+
+  /** Samples are graded by a laboratory verdict, not by a weighted score. */
+  const isSampleSheet = categoryId === 'sample';
 
   // Compile headers with requested structure and material repository columns
   const headers = [
@@ -197,8 +194,15 @@ export function buildCategoryWorksheet(
     'تأمین‌کننده',
     'نوع تأمین‌کننده',
     'آدرس و اطلاعات تماس',
-    'امتیاز ارزیابی کل (از ۱۰۰)',
-    'سطح ریسک کیفی',
+    /* The sample sheet answers different questions in these two cells.
+       A sample is never scored by the departments and never gets a risk
+       assessment — the interface hides both forms for it — so on the sample
+       sheet these columns were two guaranteed-empty tracks in a document that
+       gets handed to an auditor. The positions stay put, because the styling
+       map and anything keyed to a column index (a saved filter, a pivot,
+       somebody's macro) depend on them; only what they carry changes. */
+    isSampleSheet ? 'وضعیت نمونه' : 'امتیاز ارزیابی کل (از ۱۰۰)',
+    isSampleSheet ? 'تعداد نتایج آزمایشگاهی' : 'سطح ریسک کیفی',
     'کد QC',
     'سوابق انحرافات (OOS, OOT, Deviation, Rejection, Return Records)',
     // Appended at the end on purpose: anything keyed to the existing column
@@ -212,7 +216,7 @@ export function buildCategoryWorksheet(
     // which cannot be sorted, averaged or pivoted on. The number gets its own
     // cell rather than replacing that column, so nothing keyed to the existing
     // positions moves.
-    'امتیاز عددی (۰-۱۰۰)'
+    isSampleSheet ? 'تاریخ آخرین نتیجهٔ آزمایش' : 'امتیاز عددی (۰-۱۰۰)'
   ];
 
   // Map to Excel rows (with 1-based indexing)
@@ -226,6 +230,18 @@ export function buildCategoryWorksheet(
       : rank.label;
 
     const riskText = getRiskLevelFa(v.riskAssessment?.riskLevel);
+
+    /*
+     * Whether *this row* is a sample, which is not the same question as whether
+     * this is the sample sheet. The whole-archive sheet and the current-view
+     * export mix samples with sources, and there a sample was handed a source
+     * grade («Grade B») and a risk of «ارزیابی نشده» — a verdict nobody reached
+     * and a backlog nobody owes, the same two cells just corrected in the
+     * archive table. On a mixed sheet the headers stay the source ones, so the
+     * cells say what the row is instead of inventing a figure for it.
+     */
+    const sampleRow = isSampleRecord(v);
+    const sampleLabel = describeSampleStatus(v).label;
     const deviationSummary = getDeviationsSummary(v);
 
     // Extract material details from material repository
@@ -276,14 +292,14 @@ export function buildCategoryWorksheet(
       partnerInfo.name,
       partnerInfo.roleLabel,
       formatContactLine(partnerInfo),
-      scoreStr,
-      riskText,
+      isSampleSheet ? sampleLabel : sampleRow ? `نمونه — ${sampleLabel}` : scoreStr,
+      isSampleSheet ? (v.analysisRecords || []).length : sampleRow ? NOT_APPLICABLE : riskText,
       qcCodesStr,
       deviationSummary,
       chosen ? 'بله' : '—',
       chosen ? chosen.reason : '',
       chosen ? [chosen.decidedBy, chosenWhen].filter(Boolean).join(' — ') : '',
-      rank.score !== null ? rank.score : ''
+      isSampleSheet ? latestAnalysisDate(v) : sampleRow ? '' : (rank.score !== null ? rank.score : '')
     ];
   });
 
@@ -580,16 +596,16 @@ export function buildPartnersWorksheet(
     (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
 
   // نتیجهٔ ارزیابی فروشنده بر اساس گرید (هم‌راستا با ستون لیست شرکا)
-  const sopResultLabel = (grade?: string) => {
-    switch (grade) {
-      case 'A': return 'Approved';
-      case 'B': return 'Permit Approval';
-      case 'C': return 'Expired';
-      case 'Blacklist': return 'Black List';
-      case 'Pending Review': return 'Pending Review';
-      default: return grade || '—';
-    }
-  };
+  /*
+   * The verdict each grade stands for, from the shared table.
+   *
+   * This map answered «Permit Approval» for B and «Expired» for C — those are
+   * *document* statuses from the rubric, not verdicts about a company, so the
+   * sheet said something untrue about every B and C supplier and disagreed with
+   * the badge on screen. It also had no answer for `D`, the failing grade of
+   * the current rubric.
+   */
+  const sopResultLabel = (grade?: string) => describeGrade(grade).en;
 
   const headers = [
     'ردیف',
@@ -1008,7 +1024,11 @@ export function exportSupplierDossierToExcel(input: SupplierDossierInput) {
         ? [
             ['شریک تجاری مرتبط', linkedPartner?.name || '-'],
             ['امتیاز کل ارزیابی', sop.totalScore],
-            ['گرید ارزیابی', sop.grade],
+            // The letter and what it means: «D» alone tells a reader nothing,
+            // and the verdict is the half that matters on a filed document.
+            ['گرید ارزیابی', sop.grade === 'Not Evaluated'
+              ? 'ارزیابی نشده'
+              : `${sop.grade} — ${describeGrade(sop.grade).en} (${describeGrade(sop.grade).fa})`],
             ['آخرین به‌روزرسانی', sop.updatedAt ? new Date(sop.updatedAt).toLocaleDateString('fa-IR') : '-'],
             ['ثبت‌کننده', sop.updatedBy || '-'],
           ]

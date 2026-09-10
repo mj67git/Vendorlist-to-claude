@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { after, before, beforeEach } from 'node:test';
-import { api, db, login, resetAll, SKIP, startTestServer, stopTestServer } from './helpers/apiHarness';
+import { api, db, login, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit } from './helpers/apiHarness';
 import { effectivePermissions, roleTemplate } from '../src/utils/permissions';
 
 /**
@@ -33,13 +33,14 @@ async function savePermissions(token: string, username: string, permissions: str
 test('a narrowed list for a finance account comes back exactly as it was saved', SKIP, async () => {
   const token = await login('admin');
   const wanted = ['vendor.read', 'material.read', 'score.finance'];
+  const expected = wanted;
 
   const saved = await savePermissions(token, 'finance', wanted);
   assert.equal(saved.status, 200);
 
   const row = (await listUsers(token)).find(u => u.username === 'finance');
-  assert.deepEqual(row.permissions, wanted, 'the stored exception is what was sent');
-  assert.deepEqual(row.effectivePermissions, wanted, 'and it is what is in force');
+  assert.deepEqual(row.permissions, expected, 'the stored exception is what was sent');
+  assert.deepEqual(row.effectivePermissions, expected, 'and it is what is in force');
 });
 
 test('a scoring-only account keeps no reads it was not given', SKIP, async () => {
@@ -206,8 +207,12 @@ test('an account without the permission may not see or change accounts', SKIP, a
  */
 test('the permission itself opens the module, for an account that is not an administrator', SKIP, async () => {
   const adminToken = await login('admin');
+  // The module's own permissions, named one by one since the granular split:
+  // `users.manage` opens it, `users.read` lists the accounts and
+  // `users.permissions` is what hands access out.
   const granted = await savePermissions(adminToken, 'commercial', [
-    'vendor.read', 'material.read', 'partner.read', 'users.manage',
+    'vendor.read', 'material.read', 'partner.read',
+    'users.read', 'users.manage', 'users.permissions',
   ]);
   assert.equal(granted.status, 200);
 
@@ -281,13 +286,16 @@ test('the permission change is written to the audit trail with before and after'
   const token = await login('admin');
   await savePermissions(token, 'finance', ['score.finance']);
 
-  const entry = await db().auditLog.findFirst({
-    where: { entityId: 'finance', action: 'PERMISSION_CHANGE' }, orderBy: { timestamp: 'desc' },
-  });
+  const [entry] = await waitForAudit({ entityId: 'finance', action: 'PERMISSION_CHANGE' });
   assert.ok(entry, 'the change is recorded');
   assert.equal(entry.severity, 'Critical');
+  assert.equal(entry.event, 'user.permissions_changed');
   const after = typeof entry.afterData === 'string' ? JSON.parse(entry.afterData) : entry.afterData;
-  assert.deepEqual(after.permissions, ['score.finance']);
+  // The row now carries what moved rather than two copies of the whole list.
+  const permissions = after.changes.find((c: any) => c.field === 'permissions');
+  assert.deepEqual(permissions.to, ['score.finance']);
+  // `finance` had no stored exception list, so this write only grants.
+  assert.equal(after.facts.added, 1, 'and counts what was granted');
 });
 
 test('effectivePermissions agrees with what the endpoint reports', SKIP, async () => {

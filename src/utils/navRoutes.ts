@@ -12,8 +12,8 @@ export type RouteView =
   /** The worklist behind the dashboard's pending-action cards. */
   | 'tasks';
 
-/** The four backlogs the dashboard counts, each its own tab of the worklist. */
-export const TASK_KEYS = ['eval', 'risk', 'sop', 'irc'] as const;
+/** The backlogs the dashboard counts, each its own tab of the worklist. */
+export const TASK_KEYS = ['eval', 'risk', 'sop', 'irc', 'lab'] as const;
 export type TaskKey = (typeof TASK_KEYS)[number];
 
 export interface RouteState {

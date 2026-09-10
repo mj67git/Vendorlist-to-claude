@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Without this the browser asks for /favicon.ico on its own, the SPA
+         catch-all does not have one, and every page load logs a 404 — the only
+         console error left in the application. The company mark is already in
+         the bundle for the sidebar and the login page; Vite rewrites this path
+         to the built asset. -->
+    <link rel="icon" type="image/png" href="/src/assets/logo.png" />
     <title>Vendor List & Supplier Evaluation System (VLSE)</title>
   </head>
   <body>

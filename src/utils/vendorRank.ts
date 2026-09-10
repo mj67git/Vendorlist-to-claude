@@ -26,6 +26,25 @@ const GRADE_RANGES: Record<SourceGrade, string> = {
   D: '0 - 39',
 };
 
+/**
+ * The same bands, written the way a Persian sentence writes them.
+ *
+ * The map above is read back on the printed evaluation form, where the legend
+ * is bilingual and the Latin numerals are deliberate. On screen the bands
+ * belong to a Persian caption, so they are spelled out here instead of being
+ * transliterated at each call site — the arrangement `GRADE_RANGE_FA` in
+ * `sopEvaluation.ts` already uses for the seller rubric. A test asserts the two
+ * describe the same thresholds, because two maps of one rule drift.
+ */
+export const SOURCE_GRADE_RANGE_FA: Record<SourceGrade, string> = {
+  A: 'امتیاز ۸۰ تا ۱۰۰',
+  B: 'امتیاز ۶۰ تا ۷۹',
+  C: 'امتیاز ۴۰ تا ۵۹',
+  // «۰ تا ۳۹», not «زیر ۴۰»: the same two bounds the map above states, so the
+  // parity test can compare them as numbers rather than as prose.
+  D: 'امتیاز ۰ تا ۳۹',
+};
+
 export function gradeForScore(score: number): SourceGrade {
   if (score >= 80) return 'A';
   if (score >= 60) return 'B';

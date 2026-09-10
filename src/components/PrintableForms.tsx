@@ -1,15 +1,18 @@
-import React, { useEffect } from 'react';
+import React from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import { createPortal } from 'react-dom';
 import { 
   ChevronLeft, Printer, Shield, Warehouse, DollarSign, 
   AlertTriangle, Microscope, Handshake, CheckCircle, Star 
 } from 'lucide-react';
-import { Vendor, Grade, BusinessPartner, Material } from '../types';
+import { Vendor, BusinessPartner, Material } from '../types';
 import { calculateOverallScore } from '../utils/vendorUtils';
 import { getPartnerDetails } from '../utils/printablePartner';
 import { criterionCell, departmentNote, earnedCell } from '../utils/printableScores';
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
+import { describeSampleStatus, isSampleRecord } from '../utils/sampleStatus';
+import { toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
 import { describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
@@ -26,32 +29,17 @@ import temadLogo from '../assets/logo.png';
  * value to be filled in.
  */
 
-function getMaterialTypeLabel(v: Vendor) {
-  if (v.category === 'packaging') return 'اقلام بسته‌بندی';
-  if (v.category === 'sample') return 'نمونه تستی';
-  if (v.category === 'veterinary') return 'داروی دامی';
-  return 'ماده اولیه (Active / Excipient)';
-}
-
 /**
- * Dates on these forms mixed calendars: the print date was Jalali while the
- * evaluation and registration dates came straight from the record as
- * `2026-08-27`. One document should not carry two calendars, so anything that
- * parses as a Gregorian date is shown in Jalali and anything already Persian is
- * left exactly as entered.
+ * Open the print dialog, and say so.
+ *
+ * A printed form leaves the building exactly as a spreadsheet does, and it is
+ * the one way out that touches no server route at all — so the browser is
+ * where it has to be reported (see reportDataOut). The short delay is the
+ * original behaviour: the dialog is opened after the layout has settled.
  */
-function toJalaliDisplay(value: string | null | undefined): string {
-  const raw = (value || '').trim();
-  if (!raw) return 'ثبت‌نشده';
-  // Already Persian (Persian digits or a Jalali-looking year) — leave it alone.
-  if (/[۰-۹]/.test(raw) || /^1[34]\d{2}[/-]/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
-  try {
-    return d.toLocaleDateString('fa-IR');
-  } catch {
-    return raw;
-  }
+function printAndReport(label: string, rows?: number) {
+  reportDataOut('data.printed', label, rows);
+  setTimeout(() => window.print(), 100);
 }
 
 
@@ -100,7 +88,7 @@ export function PrintableArchiveList({
           <div className="text-xs text-slate-500">
             {vendors.length.toLocaleString('fa-IR')} ردیف آمادهٔ چاپ — برای ذخیره به‌صورت PDF، در پنجرهٔ چاپ گزینهٔ «Save as PDF» را انتخاب کنید.
           </div>
-          <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+          <button onClick={() => printAndReport('فهرست چاپی سورس‌ها', vendors.length)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
             <Printer className="w-5 h-5" />
             چاپ فهرست
           </button>
@@ -148,6 +136,12 @@ export function PrintableArchiveList({
                 // used to print as "new (۰)" and "— (۰)", which read on paper
                 // like a real, failing evaluation.
                 const gradeText = describeVendorRank(v).label;
+                // A sample is not scored by the departments and not risk
+                // assessed, so on paper it carries the laboratory's verdict and
+                // says plainly that the other two questions do not apply —
+                // exactly what the archive table on screen now shows.
+                const sampleRow = isSampleRecord(v);
+                const sampleLabel = describeSampleStatus(v).label;
                 return (
                   <tr key={v.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{(i + 1).toLocaleString('fa-IR')}</td>
@@ -155,12 +149,16 @@ export function PrintableArchiveList({
                     <td className="border border-slate-300 px-2 py-1">{v.material}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center font-mono">{v.cas || '—'}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center">
-                      {categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category}
+                      {sampleRow
+                        ? `نمونه — ${sampleLabel}`
+                        : (categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category)}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-center">{getDisplayCountry(v)}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{gradeText}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{sampleRow ? 'بدون گرید' : gradeText}</td>
                     <td className="border border-slate-300 px-2 py-1 text-center">
-                      {['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
+                      {sampleRow
+                        ? '—'
+                        : ['Low', 'Medium', 'High'].includes(String(v.riskAssessment?.riskLevel || ''))
                         ? v.riskAssessment!.riskLevel
                         : 'ارزیابی نشده'}
                     </td>
@@ -245,7 +243,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
               <ChevronLeft className="w-5 h-5" />
               بازگشت
             </button>
-            <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+            <button onClick={() => printAndReport(`فرم نمونهٔ «${vendor?.material || vendor?.name || ''}»`)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
               <Printer className="w-5 h-5" />
               چاپ فرم نمونه تستی
             </button>
@@ -591,7 +589,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
               <ChevronLeft className="w-5 h-5" />
               بازگشت
             </button>
-            <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+            <button onClick={() => printAndReport(`فرم ارزیابی «${vendor?.material || vendor?.name || ''}»`)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
               <Printer className="w-5 h-5" />
               چاپ فرم
             </button>
@@ -971,7 +969,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                 {/* SPS Index (Left Part - Green) */}
                 <div className={`w-[18%] ${getScoreColorClass(overall, true)} text-white flex flex-col items-center justify-center p-3 border-r border-blue-950`}>
                   <div className="text-[10px] sm:text-xs font-medium opacity-90 mb-1">شاخص (SPS)</div>
-                  <div className="text-3xl font-black font-sans tracking-tight">{overall || 0}</div>
+                  <div className="text-3xl font-black font-sans tracking-tight">{overall !== null ? overall : '—'}</div>
                 </div>
              </div>
 
@@ -1092,7 +1090,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     </div>
                     <div className="flex flex-col text-right">
                       <span className="text-xs text-slate-500 font-bold">جمع امتیاز نهایی</span>
-                      <span className="text-sm font-bold text-slate-700 font-mono mt-0.5">{overall || 0} از 100</span>
+                      <span className="text-sm font-bold text-slate-700 font-mono mt-0.5">{overall !== null ? `${overall} از 100` : 'ارزیابی نشده'}</span>
                     </div>
                   </div>
                   

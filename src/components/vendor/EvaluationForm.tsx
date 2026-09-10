@@ -6,7 +6,7 @@ import { ScoringGuide } from '../../components/ScoringGuide';
 import { Scores, User, Vendor } from '../../types';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
-import { calculateDeptAverage, getRawScoreValue, deconstructScores } from '../../utils/scoreUtils';
+import { calculateDeptAverage, getRawScoreValue } from '../../utils/scoreUtils';
 import { canScoreDepartment } from '../../utils/permissions';
 import { Textarea } from '../ui/textarea';
 

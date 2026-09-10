@@ -130,6 +130,31 @@ export function isInBlacklistCategory(v: AnyVendor): boolean {
 }
 
 /**
+ * Whether a source belongs in one category's register.
+ *
+ * One predicate because there are two readers of it — the page and the Excel
+ * sheet — and they disagreed. The page dropped rejected sources from an
+ * ordinary category (they are on the blacklist, not in the register), the sheet
+ * kept them, so «خارجی» drew 105 rows on screen and exported 140. A register
+ * and its own export disagreeing by 35 rows is the kind of evidence a GxP audit
+ * asks about.
+ *
+ * The rejected test is `isVendorRejected` (rule 11), not a hand-written
+ * comparison against `status` and `grade` — that hand-written pair was the
+ * other half of the divergence.
+ */
+export function isInCategoryRegister(v: AnyVendor, categoryId: string): boolean {
+  if (categoryId === 'all') return true;
+  if (categoryId === 'sample') return isSampleVendor(v);
+  if (categoryId === 'blacklist') return isInBlacklistCategory(v);
+  // A sample is a stage, not a category, and it has a register of its own. The
+  // flag and the category disagree on some rows — that is what `isSampleVendor`
+  // is for — so a record flagged as a sample while still filed under «خارجی»
+  // used to be counted in both registers at once.
+  return v?.category === categoryId && !isSampleVendor(v) && !isVendorRejected(v);
+}
+
+/**
  * The opening words of the activity-log line a sample's quality decision writes.
  *
  * A sample's verdict lives in `status`, which says *what* was decided but not
@@ -145,6 +170,26 @@ export function sampleDecisionLog(v: AnyVendor): { action: string; date?: string
   for (let i = logs.length - 1; i >= 0; i -= 1) {
     const entry = logs[i];
     if (entry && typeof entry.action === 'string' && entry.action.startsWith(SAMPLE_DECISION_PREFIX)) return entry;
+  }
+  return null;
+}
+
+/**
+ * The opening words of the activity-log line a departmental scoring writes.
+ *
+ * A source whose weighted score falls below 40 is blacklisted by the derivation
+ * itself — no reason is written into `rejectionReasons`, because nobody typed
+ * one. The scoring form does log who saved it and when, so the banner can name
+ * a person and a date instead of standing there with an empty list.
+ */
+export const SCORE_EVALUATION_PREFIX = 'ثبت ارزیابی نهایی سورس';
+
+/** The most recent scoring entry in a source's own history, or null. */
+export function latestScoreEvaluationLog(v: AnyVendor): { action: string; date?: string; user?: string } | null {
+  const logs = Array.isArray(v?.activityLogs) ? v.activityLogs : [];
+  for (let i = logs.length - 1; i >= 0; i -= 1) {
+    const entry = logs[i];
+    if (entry && typeof entry.action === 'string' && entry.action.startsWith(SCORE_EVALUATION_PREFIX)) return entry;
   }
   return null;
 }

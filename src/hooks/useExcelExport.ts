@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 
 export type ExcelExportModule = typeof import('../utils/excelExport');
 
@@ -21,12 +22,24 @@ export function useExcelExport() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const run = useCallback(async (fn: (xl: ExcelExportModule) => void | Promise<void>) => {
+  /**
+   * `report` names what left the building, for the audit trail.
+   *
+   * It sits here rather than at each button because this hook is the one path
+   * every export goes through, and an export nobody recorded is the one hole
+   * the trail cannot close later — the file is already on someone's disk. Only
+   * a finished export is reported: a failed one took nothing anywhere.
+   */
+  const run = useCallback(async (
+    fn: (xl: ExcelExportModule) => void | Promise<void>,
+    report?: { label: string; rows?: number },
+  ) => {
     setBusy(true);
     setError(null);
     try {
       const xl = await import('../utils/excelExport');
       await fn(xl);
+      if (report) reportDataOut('data.exported', report.label, report.rows);
     } catch (err) {
       console.error('Excel export failed:', err);
       setError('تهیهٔ خروجی اکسل ناموفق بود. اتصال شبکه را بررسی کنید و صفحه را دوباره بارگذاری کنید.');

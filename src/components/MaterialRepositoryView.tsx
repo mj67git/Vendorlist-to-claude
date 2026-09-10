@@ -9,6 +9,7 @@ import { Material, MaterialRole, Pharmacopoeia, User, Vendor } from '../types';
 import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
+import { indexSourcesByMaterial } from '../utils/materialSources';
 import { findDuplicateMaterial } from '../utils/materialDuplicates';
 import { useDirtySnapshot } from '../utils/useDirtySnapshot';
 import { authFetch, isLocalMode } from '../services/authFetch';
@@ -21,6 +22,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 interface Props {
@@ -114,25 +116,12 @@ export const MaterialRepositoryView: React.FC<Props> = ({
    * /api/materials/:id) and is the authority. This mirrors that count from the
    * data the client already holds so the number can be shown in the table and
    * the confirmation can be honest — a source with no `materialId` of its own
-   * is matched on its substance, the same way `resolveMaterialNames` does,
-   * because those are exactly the legacy rows whose link the client cannot see.
+   * is matched on its substance.
+   *
+   * Every record, samples included: a sample holds a `vendor_materials` row
+   * like any other and the delete is refused on it just the same.
    */
-  const vendorsByMaterial = useMemo(() => {
-    const eq = (a?: string | null, b?: string | null) =>
-      !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
-    const isRealCas = (c?: string | null) => !!c && !['n/a', 'na', '-', ''].includes(c.trim().toLowerCase());
-
-    const map = new Map<string, Vendor[]>();
-    for (const v of db) {
-      const material = v.materialId
-        ? materials.find(m => m.id === v.materialId)
-        : materials.find(m =>
-            eq(m.nameFa, v.material) || eq(m.nameEn, v.materialEn) || (eq(m.cas, v.cas) && isRealCas(m.cas)));
-      if (!material) continue;
-      map.set(material.id, [...(map.get(material.id) || []), v]);
-    }
-    return map;
-  }, [db, materials]);
+  const vendorsByMaterial = useMemo(() => indexSourcesByMaterial(db, materials), [db, materials]);
 
   const connectedVendors = materialToDelete ? vendorsByMaterial.get(materialToDelete.id) || [] : [];
 
@@ -512,38 +501,36 @@ export const MaterialRepositoryView: React.FC<Props> = ({
   }, [materials]);
 
   return (
-    <div className="w-full flex flex-col gap-6 fade-in pb-10">
-      {/* STATS CARDS */}
+    <div className="space-y-6 fade-in text-right pb-12">
+      {/* The overview tiles, from the shared component: this screen printed
+          its counts in Latin digits, put the English word first with the
+          Persian one in brackets on a single line, and had no loading state —
+          three ways of differing from the partner repository beside it. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        <div className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-muted text-foreground flex items-center justify-center shrink-0 border border-border">
-            <Archive className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-2xs font-bold text-muted-foreground uppercase tracking-wider">مجموع مواد</div>
-            <div className="text-xl font-black text-foreground font-mono mt-0.5">{materials.length}</div>
-          </div>
-        </div>
-        {MATERIAL_ROLES.map(role => {
-          const Icon = ROLE_ICONS[role.value];
-          return (
-            <div key={role.value} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${role.tone}`}>
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-2xs font-bold text-muted-foreground tracking-wider truncate">
-                  {role.labelEn} <span className="font-normal">({role.labelFa})</span>
-                </div>
-                <div className="text-xl font-black text-foreground font-mono mt-0.5">{roleCounts.get(role.value) || 0}</div>
-              </div>
-            </div>
-          );
-        })}
+        <StatTile
+          label="مجموع مواد"
+          hint="Total Materials"
+          hintDir="ltr"
+          value={materials.length}
+          icon={Archive}
+          tone="bg-muted text-foreground border-border"
+        />
+        {MATERIAL_ROLES.map(role => (
+          <StatTile
+            key={role.value}
+            label={role.labelFa}
+            hint={role.labelEn}
+            hintDir="ltr"
+            value={roleCounts.get(role.value) || 0}
+            icon={ROLE_ICONS[role.value]}
+            tone={role.tone}
+          />
+        ))}
       </div>
 
       {/* HEADER & FILTER BAR */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs">
+      <div className="bg-card p-5 sm:p-6 rounded-2xl border border-border shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <PageTitle
           eyebrow="Material Master Registry"
           eyebrowIcon={Database}
@@ -563,35 +550,46 @@ export const MaterialRepositoryView: React.FC<Props> = ({
             />
           </div>
           
-          <div className="flex gap-2 w-full sm:w-auto">
-            <select 
-              value={roleFilter} 
-              onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
-              className={cn(inputBaseClass, 'w-full sm:w-40')}
-            >
-              <option value="All">همه نقش‌ها</option>
-              {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
-            </select>
-            
-            <select 
-              value={pharmFilter} 
-              onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
-              className={cn(inputBaseClass, 'font-mono w-full sm:w-36')}
-            >
-              <option value="All">همه فارماکوپه‌ها</option>
-              {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-          </div>
-
           {can(currentUser, 'material.create') && (
             <Button
               onClick={handleOpenAdd}
-              className="w-full sm:w-auto text-xs font-bold shrink-0"
+              size="sm"
+              className="w-full sm:w-auto font-bold shrink-0"
             >
               <Plus />
               <span>ثبت ماده جدید</span>
             </Button>
           )}
+        </div>
+        </div>
+
+        {/* The filters on their own row under a rule, each one labelled — the
+            arrangement the partner repository uses. They used to sit inline
+            with the search and the action button, unlabelled, so what they
+            filtered could only be read off their default option. */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5 pt-3 border-t border-border">
+          <label className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-2xs font-bold text-muted-foreground">نقش ماده</span>
+            <select
+              value={roleFilter}
+              onChange={e => { setRoleFilter(e.target.value as any); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'w-full sm:w-52 font-medium')}
+            >
+              <option value="All">همه نقش‌ها</option>
+              {MATERIAL_ROLES.map(opt => <option key={opt.value} value={opt.value}>{roleOptionLabel(opt)}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-2xs font-bold text-muted-foreground">فارماکوپه</span>
+            <select
+              value={pharmFilter}
+              onChange={e => { setPharmFilter(e.target.value as any); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'font-mono w-full sm:w-44')}
+            >
+              <option value="All">همه فارماکوپه‌ها</option>
+              {pharmacopoeiaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -997,26 +995,30 @@ export const MaterialRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* پیش‌نمایش نام‌های استاندارد */}
-                  {/* Inverted on purpose: this is system output, not an input, and it has to
-                      read that way in both themes. `foreground`/`background` swap
-                      together, unlike the fixed slate gradient that used to be
-                      here — which vanished into a dark page. */}
-                  <div className="bg-foreground text-background p-4 sm:p-5 rounded-2xl border border-border shadow-md space-y-3">
-                    <div className="flex items-center gap-2 pb-2 border-b border-background/20">
-                      <Sparkles className="w-4 h-4 shrink-0" />
-                      <span className="text-xs font-bold">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
+                  {/* Card colours, not an inversion.
+                      Painting the foreground token on the background one made
+                      this near-black in the light theme: the one dark block on
+                      an otherwise light form, which reads as a rendering fault
+                      rather than as «this is what the system will write». It is
+                      a card now, marked as output by a primary-tinted border
+                      and the icon, the way the rest of the application marks a
+                      computed result. */}
+                  <div className="bg-muted p-4 sm:p-5 rounded-2xl border border-primary/30 shadow-xs space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-border">
+                      <Sparkles className="w-4 h-4 shrink-0 text-primary" />
+                      <span className="text-xs font-bold text-foreground">پیش‌نمایش نام‌های استاندارد تولیدشده در سیستم</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">نام استاندارد فارسی</label>
-                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-bold select-all">
+                        <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">نام استاندارد فارسی</label>
+                        <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs font-bold text-foreground select-all">
                           {generateStandardNameFa(formData)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-2xs font-bold text-background/70 uppercase tracking-wider block">Standard English Name</label>
-                        <div className="w-full px-3 py-2 bg-background/10 border border-background/20 rounded-lg text-xs font-mono font-bold select-all" dir="ltr">
+                        <label className="text-2xs font-bold text-muted-foreground uppercase tracking-wider block">Standard English Name</label>
+                        <div className="w-full px-3 py-2 bg-card border border-border rounded-lg text-xs font-mono font-bold text-foreground select-all" dir="ltr">
                           {generateStandardNameEn(formData)}
                         </div>
                       </div>

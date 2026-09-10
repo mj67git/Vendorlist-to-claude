@@ -1,15 +1,20 @@
-import React, { useMemo } from 'react';
-import { Award, Calendar, ClipboardList, ShieldAlert } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Award, Calendar, ClipboardList, Microscope, ShieldAlert } from 'lucide-react';
 import { BusinessPartner, User, Vendor } from '../../types';
-import type { TaskKey } from '../../utils/navRoutes';
+import { TASK_KEYS, type TaskKey } from '../../utils/navRoutes';
 import { EntityName } from '../EntityName';
+import { Pagination } from '../Pagination';
+import { PerPageSelect } from '../ui/per-page-select';
 import { GradeBadge } from '../GradeBadge';
 import { categoryLabels } from '../../constants/categories';
 import { can } from '../../utils/permissions';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
+import { describeVendorRank } from '../../utils/vendorRank';
+import { isVendorRejected } from '../../utils/vendorState';
+import { isSampleRecord } from '../../utils/sampleStatus';
 
 /**
- * The worklist behind the dashboard's four pending-action counters.
+ * The worklist behind the dashboard's pending-action counters.
  *
  * The dashboard used to jump straight into the *first* record of a backlog,
  * which told the user nothing about what else was waiting or which of the
@@ -17,7 +22,7 @@ import { checkLicenseExpiry } from '../../utils/vendorUtils';
  * inline, so the busier the backlog got the more the dashboard filled up —
  * exactly backwards, since a dashboard should summarise and hand off.
  *
- * One page with four tabs rather than four pages: the interaction is identical
+ * One page with tabs rather than a page each: the interaction is identical
  * in each, and someone clearing a backlog usually moves between them in one
  * sitting. Each tab is its own address (`#/tasks/risk`), so a colleague can be
  * sent straight to a backlog.
@@ -67,8 +72,11 @@ export const TASK_META: Record<TaskKey, {
     label: 'ارزیابی معوق فروشندگان',
     description: 'فروشندگانی که مدارک آن‌ها هنوز ارزیابی نشده است. با کلیک روی هر ردیف وارد مخزن شرکای تجاری می‌شوید.',
     icon: Award,
-    permission: 'partner.edit',
-    readOnlyNote: 'شما مجوز ویرایش شرکای تجاری ندارید؛ این فهرست فقط برای مشاهده است.',
+    // The work in this backlog is grading the documents, which is its own
+    // permission since the granular split — `partner.edit` would offer the
+    // list as actionable to whoever merely maintains the record.
+    permission: 'partner.evaluate',
+    readOnlyNote: 'شما مجوز ارزیابی مدارک فروشنده را ندارید؛ این فهرست فقط برای مشاهده است.',
   },
   irc: {
     label: 'IRC نزدیک انقضا یا منقضی',
@@ -77,22 +85,40 @@ export const TASK_META: Record<TaskKey, {
     permission: 'vendor.edit',
     readOnlyNote: 'شما مجوز ویرایش سورس ندارید؛ این فهرست فقط برای مشاهده است.',
   },
+  lab: {
+    label: 'آزمایش ثبت‌نشده',
+    description: 'رکوردهایی که هیچ نتیجهٔ آزمایشگاهی ندارند. نمونه‌ها اول می‌آیند، چون آزمایش تمام کاری است که یک نمونه برایش ثبت شده. نتیجه در تب آزمایشگاه پروندهٔ همان رکورد ثبت می‌شود.',
+    icon: Microscope,
+    permission: 'vendor.analysis',
+    readOnlyNote: 'شما مجوز ثبت نتایج آزمایشگاهی ندارید؛ این فهرست فقط برای مشاهده است.',
+  },
 };
 
 /**
- * The four backlogs, derived in one place so the dashboard counter and this
- * list can never disagree about what is outstanding.
+ * The backlogs, derived in one place so the dashboard counter and this list
+ * can never disagree about what is outstanding.
+ *
+ * That was the intent and not the fact: the dashboard kept its own copy of all
+ * the filters, and the two had already drifted — its licence backlog counted
+ * samples, this one does not. The dashboard calls this function now.
  */
 export function buildWorklist(
   key: TaskKey,
   db: Vendor[],
   partners: BusinessPartner[],
 ): WorklistItem[] {
-  const realVendors = db.filter(v => !v.isSample && v.category !== 'sample');
+  const realVendors = db.filter(v => !isSampleRecord(v));
 
   if (key === 'eval') {
+    /*
+     * «Not evaluated» means no department has scored it, derived the way the
+     * rest of the application derives a source grade. Reading the stored
+     * `grade` column instead — which is what this did — put a source with real
+     * scores but an empty column on the backlog for ever, and took a source
+     * off it on the strength of a stale letter nobody's scores support.
+     */
     return realVendors
-      .filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'))
+      .filter(v => !isVendorRejected(v) && describeVendorRank(v).grade === null)
       .map(v => ({
         id: v.id,
         vendor: v,
@@ -106,13 +132,13 @@ export function buildWorklist(
 
   if (key === 'risk') {
     return realVendors
-      .filter(v => v.status !== 'rejected' && !v.riskAssessment)
+      .filter(v => !isVendorRejected(v) && !v.riskAssessment)
       .map(v => ({
         id: v.id,
         vendor: v,
         title: v.name,
         subtitle: v.material || 'بدون ماده',
-        note: v.grade ? `گرید ${v.grade}` : 'بدون گرید',
+        note: describeVendorRank(v).grade ? `گرید ${describeVendorRank(v).grade}` : 'بدون گرید',
         tone: 'neutral' as const,
         order: 0,
       }));
@@ -130,6 +156,38 @@ export function buildWorklist(
         tone: 'warn' as const,
         order: 0,
       }));
+  }
+
+  if (key === 'lab') {
+    /*
+     * The one backlog that counts samples.
+     *
+     * A sample is a stage whose entire purpose is the bench: a sample with no
+     * result is the most overdue thing this list can hold, so excluding it the
+     * way the other tabs do would hide the larger half of the work. Sources
+     * belong here too — a registered source with no test on file is equally
+     * unfinished — so the two share the list and the row says which it is.
+     *
+     * Rejected records drop out, as in `eval` and `risk`: a record already
+     * turned down is not waiting on anybody.
+     */
+    return db
+      .filter(v => !isVendorRejected(v) && !(v.analysisRecords?.length))
+      .map(v => {
+        const sample = isSampleRecord(v);
+        return {
+          id: v.id,
+          vendor: v,
+          title: v.name,
+          subtitle: v.material || 'بدون ماده',
+          note: sample
+            ? 'نمونه'
+            : categoryLabels[v.category as keyof typeof categoryLabels]?.fa || v.category,
+          tone: sample ? ('warn' as const) : ('neutral' as const),
+          order: sample ? 0 : 1,
+        };
+      })
+      .sort((a, b) => a.order - b.order);
   }
 
   // irc — most urgent first, expired above merely expiring.
@@ -172,12 +230,38 @@ export function WorklistView({
 }: WorklistViewProps) {
   const meta = TASK_META[taskKey];
   const items = useMemo(() => buildWorklist(taskKey, db, partners), [taskKey, db, partners]);
-  const counts = useMemo(() => ({
-    eval: buildWorklist('eval', db, partners).length,
-    risk: buildWorklist('risk', db, partners).length,
-    sop: buildWorklist('sop', db, partners).length,
-    irc: buildWorklist('irc', db, partners).length,
-  }), [db, partners]);
+  // Counted from the key list rather than a hand-written object, so a tab added
+  // to `TASK_KEYS` cannot arrive with a missing counter on its own chip.
+  const counts = useMemo(() => Object.fromEntries(
+    TASK_KEYS.map(k => [k, buildWorklist(k, db, partners).length]),
+  ) as Record<TaskKey, number>, [db, partners]);
+
+  /*
+   * The backlog is paged like every other list in the application.
+   *
+   * It was the one full-page list that rendered every row at once: a category
+   * with a hundred overdue evaluations produced a hundred rows, and the only
+   * way through them was the scrollbar. Nothing here is different in kind from
+   * the archive or a category page, so it gets the same two controls.
+   */
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+
+  // Switching tab is a different backlog, so it starts at its own first page;
+  // changing the page size does too, or the reader lands mid-list.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [taskKey, perPage]);
+
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+  // Clamped on render: acting on an item removes it from the backlog, so the
+  // list shrinks under the reader and a page number past the end would show an
+  // empty panel instead of the work that is left.
+  const page = Math.min(currentPage, totalPages);
+  const startIndex = (page - 1) * perPage;
+  const endIndex = startIndex + perPage;
+  const pageItems = useMemo(() => items.slice(startIndex, endIndex), [items, startIndex, endIndex]);
 
   const mayAct = meta.permission === null || can(currentUser, meta.permission);
 
@@ -206,7 +290,7 @@ export function WorklistView({
 
       {/* Tabs — each is its own address, so a backlog can be linked directly. */}
       <div className="flex flex-wrap gap-2">
-        {(Object.keys(TASK_META) as TaskKey[]).map(k => {
+        {TASK_KEYS.map(k => {
           const m = TASK_META[k];
           const active = k === taskKey;
           return (
@@ -248,7 +332,7 @@ export function WorklistView({
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {items.map(item => (
+            {pageItems.map(item => (
               <li key={item.id}>
                 <button
                   type="button"
@@ -274,6 +358,22 @@ export function WorklistView({
               </li>
             ))}
           </ul>
+        )}
+
+        {totalItems > 0 && (
+          <div className="px-5 py-3 border-t border-border bg-muted/40 flex flex-col sm:flex-row sm:items-center gap-3">
+            <PerPageSelect value={perPage} onChange={setPerPage} />
+            <div className="flex-1 min-w-0">
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                onPageChange={setCurrentPage}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>

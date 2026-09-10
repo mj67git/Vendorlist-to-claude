@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeVendorRank } from '../src/utils/vendorRank';
+import { describeVendorRank, SOURCE_GRADE_RANGE_FA } from '../src/utils/vendorRank';
 import { applyDerivedState } from '../src/utils/vendorState';
 
 const scored = (over: any = {}) => ({
@@ -26,4 +26,26 @@ test('a rejected source that was never scored reports no rank rather than a made
     rejectionReasons: ['رد توسط مدیر کیفیت — تصمیم دستی'],
   }));
   assert.equal(describeVendorRank(v).evaluated, false);
+});
+
+test('the Persian bands and the printed ones describe the same thresholds', () => {
+  /*
+   * Two maps of one rule drift. The Latin map feeds `VendorRank.range` on the
+   * printed evaluation form, where the legend is bilingual; the Persian one is
+   * for captions on screen, where a Latin numeral is the only one on the page.
+   * Neither may quietly say a different number from the other, so the bands are
+   * read back out of both and compared.
+   */
+  const digits = (s: string) => s.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .match(/\d+/g)?.join('-') ?? '';
+
+  for (const grade of ['A', 'B', 'C', 'D'] as const) {
+    const fa = digits(SOURCE_GRADE_RANGE_FA[grade]);
+    // The Latin map is private, so it is read through the value it produces.
+    const latin = digits(describeVendorRank({
+      scores: null,
+      grade,
+    } as any).range);
+    assert.equal(fa, latin, `band ${grade} disagrees between the two maps`);
+  }
 });

@@ -5,18 +5,21 @@ import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
 import { PerPageSelect } from '../ui/per-page-select';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { PageTitle } from '../ui/page-title';
 import { SortHeader } from '../ui/sort-header';
+import { StatTile } from '../ui/stat-tile';
 import { TableEmptyRow } from '../ui/table-empty-row';
 import { TableSkeletonRows } from '../ui/table-skeleton-rows';
 import { calculateOverallScore, getDisplayCountry } from '../../utils/vendorUtils';
 import { isVendorRejected } from '../../utils/vendorState';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { categoryLabels } from '../../constants/categories';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
-import { SOP_DOCUMENTS_DEF } from '../../utils/sopEvaluation';
+import { GRADE_RANGE_FA, SOP_DOCUMENTS_DEF, describeGrade } from '../../utils/sopEvaluation';
 import { useExcelExport } from '../../hooks/useExcelExport';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { cleanPlaceholder, resolveVendorPartner } from '../../utils/vendorPartner';
@@ -65,6 +68,15 @@ export function supplierKey(name: string): string {
    contactInfo: string;
    registrationDate: string;
    vendors: Vendor[];
+   /**
+    * The company's real sources — everything in `vendors` that is not a sample.
+    *
+    * A sample is a material that arrived for testing, not a material this
+    * company supplies, so it must not be counted as one or let a company into
+    * the audit directory on its own. `vendors` keeps the sample rows because
+    * the company's own file should still show them.
+    */
+   sources: Vendor[];
    /**
     * What this company is, taken from its Business Partner record — never
     * guessed from the name. `unknown` is a real answer: a company with no
@@ -170,10 +182,12 @@ interface SourceSelection {
             contactInfo: v.contactInfo || '',
             registrationDate: v.registrationDate || '',
             vendors: [],
+            sources: [],
             role: 'unknown',
           };
         }
         groups[key].vendors.push(v);
+        if (!isSampleRecord(v)) groups[key].sources.push(v);
 
         // The role comes from the partner record behind the source, through the
         // same resolver the detail header uses, so a card and that header can
@@ -185,7 +199,14 @@ interface SourceSelection {
         }
       });
 
-      return Object.values(groups);
+      /*
+       * A company whose every row is a sample is not under audit yet: nothing
+       * of it is being supplied, nothing has been scored, and listing it here
+       * would inflate both the directory and the «بدون امتیاز ثبت‌شده» tile
+       * with a shortfall that does not exist. Its samples still live in the
+       * category that owns them.
+       */
+      return Object.values(groups).filter(g => g.sources.length > 0);
     }, [db, partners]);
 
     /**
@@ -199,7 +220,7 @@ interface SourceSelection {
     const averageScoreOf = useMemo(() => (group: SupplierGroup): number | null => {
       let sum = 0;
       let scored = 0;
-      group.vendors.forEach(v => {
+      group.sources.forEach(v => {
         const value = myDepartments.length === 1
           ? ((v.scores as any)?.[myDepartments[0]] || 0)
           : calculateOverallScore(v.scores, true);
@@ -211,6 +232,27 @@ interface SourceSelection {
       return scored > 0 ? Math.round(sum / scored) : null;
     }, [myDepartments]);
 
+    /**
+     * The overview strip, computed over the whole directory rather than the
+     * page on screen.
+     *
+     * This was the one repository with no counters at all: the module that
+     * exists to survey suppliers opened on a search box and a table, so the
+     * size and shape of the population it audits were only knowable by reading
+     * every row. The numbers come from `supplierGroups`, so they describe the
+     * directory and not whatever the search has narrowed it to.
+     */
+    const directoryStats = useMemo(() => {
+      const scores = supplierGroups.map(averageScoreOf).filter((n): n is number => n !== null);
+      return {
+        total: supplierGroups.length,
+        manufacturers: supplierGroups.filter(g => g.role === 'manufacturer').length,
+        suppliers: supplierGroups.filter(g => g.role === 'supplier').length,
+        unscored: supplierGroups.length - scores.length,
+        averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      };
+    }, [supplierGroups, averageScoreOf]);
+
     // Filter matching suppliers list
     const filteredSuppliers = useMemo(() => {
       const query = searchQuery.trim().toLowerCase();
@@ -220,7 +262,7 @@ interface SourceSelection {
         s.name.toLowerCase().includes(query) ||
         s.nameEn.toLowerCase().includes(query) ||
         s.country.toLowerCase().includes(query) ||
-        s.vendors.some(v => 
+        s.sources.some(v => 
           v.material.toLowerCase().includes(query) ||
           v.materialEn.toLowerCase().includes(query) ||
           (v.cas && v.cas.toLowerCase().includes(query))
@@ -234,7 +276,7 @@ interface SourceSelection {
         switch (sortField) {
           case 'role': return ROLE_LABEL[g.role];
           case 'country': return g.country || '';
-          case 'materials': return g.vendors.length;
+          case 'materials': return g.sources.length;
           // An unscored company sorts as the lowest score rather than being
           // dropped somewhere arbitrary — the same choice the users table makes
           // for "never signed in".
@@ -332,8 +374,20 @@ interface SourceSelection {
    const stats = useMemo(() => {
      if (!activeSupplier) return null;
 
-     const list = activeSupplier.vendors;
-     const totalItems = list.length;
+     /*
+      * The company's supply, which is what these figures are about: a sample is
+      * a material under test, so it has no department scores, no risk
+      * assessment, no licence and no source decision, and counting it here
+      * turned every one of those into a shortfall the company does not have
+      * («هیچ‌کدام از ۲ ماده ارزیابی ریسک ندارد» for a company with one material
+      * and one sample). The laboratory card below is the deliberate exception —
+      * testing is precisely what a sample is for — and `totalItems` stays over
+      * everything because its label says «ماده فعال یا نمونه».
+      */
+     const list = activeSupplier.sources;
+     const totalItems = activeSupplier.vendors.length;
+     /** Only the supply, for the cards whose denominator is a material we buy. */
+     const sourceItems = list.length;
 
      let scoredCount = 0;
      let scoresSum = 0;
@@ -403,7 +457,7 @@ interface SourceSelection {
 
      // Laboratory record across everything this company supplies.
      let pass = 0, conditional = 0, reject = 0;
-     list.forEach(v => (v.analysisRecords || []).forEach(r => {
+     activeSupplier.vendors.forEach(v => (v.analysisRecords || []).forEach(r => {
        if (r.decision === 'Pass') pass++;
        else if (r.decision === 'Approved Conditional') conditional++;
        else if (r.decision === 'Reject') reject++;
@@ -412,7 +466,7 @@ interface SourceSelection {
      const lab = {
        pass, conditional, reject, total: labTotal,
        rate: labTotal > 0 ? Math.round(((pass + conditional) / labTotal) * 100) : null,
-       materialsTested: list.filter(v => (v.analysisRecords || []).length > 0).length,
+       materialsTested: activeSupplier.vendors.filter(v => (v.analysisRecords || []).length > 0).length,
      };
 
      // Risk: the worst case matters more than the average. One High-risk
@@ -455,6 +509,7 @@ interface SourceSelection {
      return {
        chosenFor,
        totalItems,
+       sourceItems,
        avgPerformance,
        deptAverages,
        statusDistribution,
@@ -498,6 +553,45 @@ interface SourceSelection {
              <ChevronLeft className="rotate-180 text-muted-foreground" />
              <span>بازگشت به مانیتور جامع تامین‌کنندگان</span>
            </Button>
+         )}
+
+         {/* The directory export belongs in the header, where the archive, the
+             audit trail and the user module all put theirs — it used to sit
+             inside the search panel, so this was the one module whose export
+             was not where a reader had learned to look for it.
+
+             Only the per-company dossier could be exported before this button
+             existed, so the list a purchasing or quality review starts from had
+             to be retyped off the screen. It exports what the search has
+             narrowed to, in the order the table is sorted, so the file matches
+             what is on screen. */}
+         {!activeSupplier && canExport && (
+           <div className="flex flex-col items-start md:items-end gap-1">
+             <Button
+               type="button"
+               variant="success"
+               size="sm"
+               disabled={excel.busy || sortedSuppliers.length === 0}
+               onClick={() => excel.run(xl => xl.exportSupplierDirectoryToExcel(
+                 sortedSuppliers.map(g => ({
+                   name: g.name,
+                   nameEn: g.nameEn,
+                   role: ROLE_LABEL[g.role],
+                   country: g.country,
+                   materialCount: g.sources.length,
+                   materials: g.sources.map(v => v.material).filter(Boolean),
+                   averageScore: averageScoreOf(g),
+                 })),
+               ), { label: 'فهرست تأمین‌کنندگان', rows: sortedSuppliers.length })}
+               className="font-bold shrink-0"
+             >
+               {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+               <span>خروجی Excel</span>
+             </Button>
+             {excel.error && (
+               <p role="alert" className="text-2xs text-rose-600 dark:text-rose-400 font-bold">{excel.error}</p>
+             )}
+           </div>
          )}
  
        </div>
@@ -564,7 +658,7 @@ interface SourceSelection {
                           )}
                           <span className="mx-3 text-muted-foreground/50 font-normal">|</span>
                           <span className={activePartnerDetails.mfgPartner ? '' : 'text-sm font-semibold'}>
-                            گرید SOP : {activePartnerDetails.supGrade}
+                            گرید ارزیابی فروشنده : {describeGrade(activePartnerDetails.supGrade).fa || activePartnerDetails.supGrade}
                           </span>
                         </div>
                       )}
@@ -651,7 +745,7 @@ interface SourceSelection {
                  </>
                ) : (
                  <p className="text-2xs text-amber-700 dark:text-amber-400 mt-1">
-                   هیچ‌کدام از {stats.totalItems} ماده ارزیابی ریسک ندارد.
+                   هیچ‌کدام از {stats.sourceItems} ماده ارزیابی ریسک ندارد.
                  </p>
                )}
              </div>
@@ -706,7 +800,7 @@ interface SourceSelection {
                <div className="flex items-center justify-between gap-2 mb-3">
                  <span className="text-2xs font-bold text-muted-foreground flex items-center gap-2">
                    <Award className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                   ارزیابی مدارک SOP
+                   ارزیابی مدارک فروشنده
                  </span>
                  {activePartnerDetails?.supPartner && onNavigate && (
                    <button type="button" onClick={() => onNavigate('business-partners')}
@@ -719,13 +813,34 @@ interface SourceSelection {
                {activePartnerDetails?.supPartner?.evaluation ? (
                  <>
                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                     <GradeBadge
-                       grade={activePartnerDetails.supPartner.evaluation.grade as any}
-                       status={activePartnerDetails.supPartner.evaluation.status as any}
-                     />
-                     <span className="font-mono font-bold text-foreground text-sm">
-                       {activePartnerDetails.supPartner.evaluation.totalScore} <span className="text-2xs text-muted-foreground">از ۱۰۰</span>
-                     </span>
+                     {/* A supplier grade, from the supplier table.
+                         `GradeBadge` reads the *source* vocabulary — A, B, C,
+                         rejected — and everything it does not recognise falls
+                         through to its last branch, so this badge announced
+                         «Grade C» for a supplier graded `D`, for one carrying
+                         the retired `Blacklist`, and even for one never
+                         evaluated. `describeGrade` knows every supplier grade
+                         and its colour, and the band is printed beside it so a
+                         reader is not asked to remember the rubric. */}
+                     {(() => {
+                       const ev = activePartnerDetails.supPartner!.evaluation!;
+                       const label = describeGrade(ev.grade);
+                       const band = GRADE_RANGE_FA[ev.grade as keyof typeof GRADE_RANGE_FA];
+                       return (
+                         <>
+                           <span className={`px-2.5 py-1 rounded-lg text-2xs font-bold border ${label.tone}`}>
+                             {ev.grade === 'Not Evaluated' ? 'ارزیابی نشده' : `Grade ${ev.grade}`}
+                             {label.fa && ev.grade !== 'Not Evaluated' ? ` · ${label.fa}` : ''}
+                           </span>
+                           <span className="font-mono font-bold text-foreground text-sm">
+                             {ev.totalScore.toLocaleString('fa-IR')} <span className="text-2xs text-muted-foreground">از ۱۰۰</span>
+                             {band && band !== '—' && (
+                               <span className="text-2xs text-muted-foreground font-sans mr-2">(بازهٔ گرید: {band})</span>
+                             )}
+                           </span>
+                         </>
+                       );
+                     })()}
                      <span className="text-2xs text-muted-foreground">
                        آخرین ارزیابی: {activePartnerDetails.supPartner.evaluation.updatedAt
                          ? new Date(activePartnerDetails.supPartner.evaluation.updatedAt).toLocaleDateString('fa-IR')
@@ -772,7 +887,7 @@ interface SourceSelection {
                    <span className="text-2xs font-bold text-muted-foreground">سورس منتخب</span>
                  </div>
                  <div className="text-xl font-black font-mono leading-none text-foreground">
-                   {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.totalItems}</span>
+                   {stats.chosenFor.length}<span className="text-sm text-muted-foreground"> / {stats.sourceItems}</span>
                  </div>
                  <p className="text-2xs text-muted-foreground mt-1.5 leading-relaxed">
                    {stats.chosenFor.length > 0
@@ -794,7 +909,7 @@ interface SourceSelection {
                    materials,
                    chosenMaterials: stats.chosenFor.map(v => v.material),
                    soleSourceMaterials: stats.soleSource.map(v => v.material),
-                 }))}
+                 }), { label: `پروندهٔ ${activeSupplier.name}`, rows: activeSupplier.vendors.length })}
                >
                  <Briefcase />
                  {excel.busy ? 'در حال آماده‌سازی…' : 'خروجی پروندهٔ این تأمین‌کننده'}
@@ -888,7 +1003,21 @@ interface SourceSelection {
                            </div>
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center">
-                           <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                           {/*
+                             * A sample carries the label its own test gave it,
+                             * not a source grade: departments do not score a
+                             * sample and risk is not assessed for one, so a
+                             * grade badge here would show a verdict nobody
+                             * reached (the same reason the sample category
+                             * dropped its score and risk columns).
+                             */}
+                           {isSampleRecord(v) ? (
+                             <Badge variant={describeSampleStatus(v).variant} className="text-2xs font-bold px-2 py-0">
+                               {describeSampleStatus(v).label}
+                             </Badge>
+                           ) : (
+                             <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                           )}
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center whitespace-nowrap">
                            <Button
@@ -951,6 +1080,26 @@ interface SourceSelection {
        ) : (
          /* GLOBAL SEARCH & DISCOVERY DIRECTORY OF ALL UNIQUE SUPPLIERS */
          <div className="space-y-6">
+           {/* The counters every other repository opens with. */}
+           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+             {[
+               { label: 'کل تأمین‌کنندگان', hint: 'Total Suppliers', value: directoryStats.total, icon: Building2,
+                 tone: 'bg-muted text-foreground border-border' },
+               { label: 'تولیدکنندگان', hint: 'Manufacturers', value: directoryStats.manufacturers, icon: Factory,
+                 tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
+               { label: 'فروشندگان', hint: 'Suppliers', value: directoryStats.suppliers, icon: Handshake,
+                 tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
+               // «—» rather than a zero: no company scored yet is not an average
+               // of zero, and an audit overview must not invent one.
+               { label: 'میانگین امتیاز ممیزی', hint: 'Average Audit Score', value: directoryStats.averageScore ?? '—', icon: Award,
+                 tone: 'bg-primary/10 text-primary border-primary/20' },
+               { label: 'بدون امتیاز ثبت‌شده', hint: 'Not Yet Scored', value: directoryStats.unscored, icon: AlertTriangle,
+                 tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
+             ].map(card => (
+               <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
+             ))}
+           </div>
+
            {/* The search field every other repository uses.
 
                It was a bare `<input>` with hand-written classes inside a
@@ -984,39 +1133,8 @@ interface SourceSelection {
                  </button>
                )}
              </div>
-             {/* The directory itself, as a spreadsheet. Only the per-company
-                 dossier could be exported before, so the list a purchasing or
-                 quality review starts from had to be retyped off the screen.
-                 It exports what the search has narrowed to, in the order the
-                 table is sorted, so the file matches what is on screen. */}
-             {canExport && (
-             <Button
-               type="button"
-               variant="success"
-               size="sm"
-               disabled={excel.busy || sortedSuppliers.length === 0}
-               onClick={() => excel.run(xl => xl.exportSupplierDirectoryToExcel(
-                 sortedSuppliers.map(g => ({
-                   name: g.name,
-                   nameEn: g.nameEn,
-                   role: ROLE_LABEL[g.role],
-                   country: g.country,
-                   materialCount: g.vendors.length,
-                   materials: g.vendors.map(v => v.material).filter(Boolean),
-                   averageScore: averageScoreOf(g),
-                 })),
-               ))}
-               className="font-bold shrink-0"
-             >
-               {excel.busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
-               <span>خروجی Excel فهرست</span>
-             </Button>
-             )}
            </div>
-           {excel.error && (
-             <p role="alert" className="text-2xs text-rose-600 dark:text-rose-400 font-bold">{excel.error}</p>
-           )}
- 
+
            {/* The directory as a table.
 
                It was a three-column grid of cards, which is the one list shape
@@ -1076,8 +1194,8 @@ interface SourceSelection {
                    ) : (
                      paginatedSuppliers.map(supplier => {
                        const avgScore = averageScoreOf(supplier);
-                       const shown = supplier.vendors.slice(0, 2);
-                       const rest = supplier.vendors.length - shown.length;
+                       const shown = supplier.sources.slice(0, 2);
+                       const rest = supplier.sources.length - shown.length;
                        return (
                          <tr
                            key={supplier.key}
@@ -1120,7 +1238,7 @@ interface SourceSelection {
                            <td className="py-3 px-4">
                              <div className="flex flex-wrap items-center gap-1 max-w-[22rem]">
                                <span className="shrink-0 text-2xs font-mono font-bold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md">
-                                 {supplier.vendors.length.toLocaleString('fa-IR')}
+                                 {supplier.sources.length.toLocaleString('fa-IR')}
                                </span>
                                {shown.map(v => (
                                  <EntityName

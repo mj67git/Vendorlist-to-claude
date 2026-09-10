@@ -1,9 +1,7 @@
 import express from "express";
-import { AuditService } from "../../utils/auditService.js";
+import { recordEvent } from "../../utils/auditEvents.js";
 import { requirePrisma } from "../db/prisma.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
-import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { STALE_COPY_MESSAGE, lockRecordWrite, staleCopy } from "../http/recordLock.js";
 import { getVendorById } from "../repositories/vendorRepository.js";
 
@@ -84,29 +82,12 @@ export function sourceSelectionRoutes(): express.Router {
         update: { vendorId, reason: String(reason).trim(), decidedBy, decidedAt: new Date() },
       });
 
-      const now = new Date();
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "ارزیابی سورس‌ها",
-        action: previous ? "UPDATE_SOURCE_SELECTION" : "CREATE_SOURCE_SELECTION",
-        severity: "Warning",
-        description: previous && previous.vendorId !== vendorId
-          ? `سورس منتخب برای «${materialKey}» از یک تأمین‌کننده به «${vendor.name}» تغییر یافت.`
-          : `«${vendor.name}» به‌عنوان سورس منتخب برای «${materialKey}» ثبت شد.`,
-        entityType: "SourceSelection",
-        entityId: `${category}:${materialKey}`,
-        entityName: vendor.name,
-        eventType: "Data Change",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: String(reason).trim(),
-        beforeData: previous
-          ? { vendorId: previous.vendorId, reason: previous.reason, decidedBy: previous.decidedBy }
-          : null,
-        afterData: { vendorId, reason: String(reason).trim(), decidedBy, materialKey, category },
+      await recordEvent(req, {
+        event: previous && previous.vendorId !== vendorId ? "source.selection_changed" : "source.selected",
+        entity: { id: `${category}:${materialKey}`, name: vendor.name },
+        changes: previous ? [{ field: "vendorId", from: previous.vendorId, to: vendorId }] : [],
+        facts: { material: materialKey, category, vendorId },
+        reason: String(reason).trim(),
       });
 
       res.json({

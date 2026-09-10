@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach } from 'node:test';
 import {
-  api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer,
+  api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer, waitForAudit,
 } from './helpers/apiHarness';
 
 /**
@@ -35,12 +35,13 @@ test('a profile edit reaches the database and is audited with before and after',
   const row = await db().vendor.findUnique({ where: { id: FIXTURE.vendorId } });
   assert.equal(row.country, 'India');
 
-  const entry = await db().auditLog.findFirst({
-    where: { entityId: FIXTURE.vendorId }, orderBy: { timestamp: 'desc' },
-  });
+  const [entry] = await waitForAudit({ entityId: FIXTURE.vendorId });
   assert.ok(entry, 'every change is recorded');
-  assert.equal((entry.beforeData as any).country, 'Turkey');
-  assert.equal((entry.afterData as any).country, 'India');
+  // The row names what moved rather than carrying two copies of the source.
+  assert.equal(entry.beforeData, null);
+  const changed = (entry.afterData as any).changes.find((c: any) => c.field === 'country');
+  assert.equal(changed.from, 'Turkey');
+  assert.equal(changed.to, 'India');
 });
 
 test('the partner link is stored in its own column, not in the contact text', SKIP, async () => {
@@ -58,10 +59,9 @@ test('the partner link is stored in its own column, not in the contact text', SK
   assert.equal(row.supplierId, FIXTURE.supplierB, 'the change landed in the column');
   assert.ok(!String(row.contactInfo || '').includes('__BP_METAUI__'), 'and not in the text');
 
-  const entry = await db().auditLog.findFirst({
-    where: { entityId: FIXTURE.vendorId }, orderBy: { timestamp: 'desc' },
-  });
-  assert.equal((entry.afterData as any).supplierId, FIXTURE.supplierB, 'and it is on the record');
+  const [entry] = await waitForAudit({ entityId: FIXTURE.vendorId });
+  const link = (entry.afterData as any).changes.find((c: any) => c.field === 'supplierId');
+  assert.equal(link.to, FIXTURE.supplierB, 'and it is on the record');
 });
 
 test('a partner still linked to a source cannot be deleted', SKIP, async () => {
@@ -86,8 +86,6 @@ test('a second writer working from a stale copy is refused, not silently applied
   // so it protects nothing across containers or on the serverless deployment —
   // which is what the updatedAt precondition is for. Simulated here by moving
   // the row on after the request has read it.
-  const token = await login('admin');
-
   const before = await db().vendor.findUnique({ where: { id: FIXTURE.vendorId } });
   await db().vendor.update({
     where: { id: FIXTURE.vendorId },
@@ -220,12 +218,8 @@ test('a refused write is itself recorded', SKIP, async () => {
   // failure to log must not fail the request), so the row can land a moment
   // after the response. Wait for it rather than racing it — this test failed
   // roughly one run in ten for exactly that reason.
-  let entries = 0;
-  for (let attempt = 0; attempt < 20 && entries === 0; attempt++) {
-    entries = await db().auditLog.count({ where: { entityId: FIXTURE.vendorId } });
-    if (entries === 0) await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  assert.ok(entries >= 1, 'the attempt left a trace');
+  const entries = await waitForAudit({ entityId: FIXTURE.vendorId });
+  assert.ok(entries.length >= 1, 'the attempt left a trace');
 });
 
 test('the chosen-source decision requires a reason and is audited', SKIP, async () => {
@@ -242,11 +236,10 @@ test('the chosen-source decision requires a reason and is audited', SKIP, async 
   const stored = await db().sourceSelection.findFirst({ where: { vendorId: FIXTURE.vendorId } });
   assert.equal(stored.reason, 'تنها تأمین‌کنندهٔ دارای IRC معتبر');
 
-  const audited = await db().auditLog.findFirst({
-    where: { action: { contains: 'SOURCE_SELECTION' } },
-  });
+  const [audited] = await waitForAudit({ action: { contains: 'SOURCE_SELECTION' } });
   assert.ok(audited, 'the decision is on the audit trail');
-  assert.equal(audited.severity, 'Warning', 'a purchasing decision is not routine noise');
+  assert.equal(audited.event, 'source.selected');
+  assert.equal(audited.severity, 'Critical', 'a purchasing decision is not routine noise');
 });
 
 test('choosing the source needs the choosing permission, not the editing one', SKIP, async () => {

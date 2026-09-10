@@ -34,6 +34,7 @@ import {
   canSupplySources,
   GRADE_RANGE_FA
 } from '../utils/sopEvaluation';
+import { summarisePartners } from '../utils/partnerStats';
 import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { EntityName } from './EntityName';
@@ -45,6 +46,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import { Textarea } from './ui/textarea';
 
@@ -86,7 +88,7 @@ const collator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' })
 const GRADE_RANK: Record<string, number> = {
   // «Pending Review» is retired but kept in the order so a row stored under it
   // still sorts between C and Blacklist instead of falling to the bottom.
-  'A': 5, 'B': 4, 'C': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
+  'A': 6, 'B': 5, 'C': 4, 'D': 3, 'Pending Review': 2, 'Blacklist': 1, 'Not Evaluated': 0,
 };
 type SortOrder = 'asc' | 'desc';
 
@@ -296,31 +298,9 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
     return Array.from(new Set(list)).sort();
   }, [partners]);
 
-  // Comprehensive KPI Statistics
-  const stats = useMemo(() => {
-    const total = partners.length;
-    const manufacturers = partners.filter(p => p.type === 'Manufacturer').length;
-    const suppliers = partners.filter(p => p.type === 'Supplier');
-    const active = partners.filter(p => p.status === 'Active').length;
-    const inactive = partners.filter(p => p.status === 'Inactive').length;
-
-    // "Approved" used to mean grade A **or B**, but only grade A may be
-    // attached to a source and the server rejects the rest with 422 — so the
-    // card counted suppliers the system refuses. It now asks the same function
-    // the gate asks, and the two cards partition the suppliers exactly.
-    const eligibleSuppliers = suppliers.filter(s => canSupplySources(s).allowed).length;
-    const blockedSuppliers = suppliers.length - eligibleSuppliers;
-
-    return { 
-      total, 
-      manufacturers, 
-      suppliers: suppliers.length, 
-      active, 
-      inactive,
-      eligibleSuppliers,
-      blockedSuppliers
-    };
-  }, [partners]);
+  // Comprehensive KPI statistics. Shared with the dashboard, which shows the
+  // same register from the other end, so the two cannot report different sizes.
+  const stats = useMemo(() => summarisePartners(partners), [partners]);
 
   // Check if any filter is active
   const hasActiveFilters = useMemo(() => {
@@ -598,6 +578,12 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // both follow `partner.files` — seeing that a partner is graded B is a
   // different thing from taking its business licence off the system.
   const canFiles = can(currentUser, 'partner.files');
+  // Grading the documents and switching a partner off are decisions of their
+  // own since the granular split, and the server refuses them separately from
+  // `partner.edit` (rule 14). Commercial keeps the record and the status;
+  // quality awards the grade.
+  const canEvaluate = can(currentUser, 'partner.evaluate');
+  const canSetStatus = can(currentUser, 'partner.status');
 
   const handleDocFileView = async (doc: SOPDocumentEval, partnerId?: string) => {
     const url = await ensureDocDataUrl(doc, partnerId);
@@ -772,7 +758,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6 fade-in pb-12" style={{ direction: 'rtl' }}>
+    <div className="space-y-6 fade-in text-right pb-12">
       {/* KPI cards — same shape as the materials repository so the two
           repositories read as one product: one card per fact, icon tile on the
           side, number in mono. The gradient hero that used to sit above them
@@ -781,33 +767,18 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
           as it does in the materials view. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'کل شرکای تجاری', en: 'Total Partners', value: stats.total, Icon: Building2,
+          { label: 'کل شرکای تجاری', hint: 'Total Partners', value: stats.total, icon: Building2,
             tone: 'bg-muted text-foreground border-border' },
-          { label: 'تولیدکنندگان', en: 'Manufacturers', value: stats.manufacturers, Icon: Factory,
+          { label: 'تولیدکنندگان', hint: 'Manufacturers', value: stats.manufacturers, icon: Factory,
             tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
-          { label: 'فروشندگان', en: 'Suppliers', value: stats.suppliers, Icon: Handshake,
+          { label: 'فروشندگان', hint: 'Suppliers', value: stats.suppliers, icon: Handshake,
             tone: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900' },
-          { label: 'مجاز برای اتصال به سورس', en: 'Grade A · Approved', value: stats.eligibleSuppliers, Icon: ShieldCheck,
+          { label: 'مجاز برای اتصال به سورس', hint: 'Grade A · Approved', value: stats.eligibleSuppliers, icon: ShieldCheck,
             tone: 'bg-teal-50 text-teal-600 border-teal-100 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-900' },
-          { label: 'غیرمجاز برای اتصال', en: 'Below Grade A', value: stats.blockedSuppliers, Icon: AlertTriangle,
+          { label: 'غیرمجاز برای اتصال', hint: 'Below Grade A', value: stats.blockedSuppliers, icon: AlertTriangle,
             tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
         ].map(card => (
-          <div key={card.en} className="bg-card p-3 sm:p-4 rounded-xl border border-border shadow-xs flex items-center gap-3 transition-all hover:shadow-sm">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${card.tone}`}>
-              <card.Icon className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              {/* Wraps rather than truncating: «مجاز برای اتصال به سورس» is the
-                  whole point of the card and lost its ending at this width. */}
-              <div className="text-2xs font-bold text-muted-foreground leading-tight">{card.label}</div>
-              {/* The counts come from the same list the table shows, so they
-                  cannot claim a number while that list is still loading. */}
-              {isLoading
-                ? <div className="h-6 w-10 rounded bg-muted animate-pulse mt-1" />
-                : <div className="text-xl font-black text-foreground font-mono mt-0.5">{card.value}</div>}
-              <div className="text-2xs text-muted-foreground font-mono truncate">{card.en}</div>
-            </div>
-          </div>
+          <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
         ))}
       </div>
 
@@ -836,10 +807,14 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             {can(currentUser, 'data.export') && (
             <Button
               variant="secondary"
+              size="sm"
               disabled={excel.busy}
-              onClick={() => excel.run(xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []))}
+              onClick={() => excel.run(
+                xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []),
+                { label: 'شرکای تجاری', rows: filteredPartners.length },
+              )}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"
-              className="w-full sm:w-auto text-xs font-bold shrink-0"
+              className="w-full sm:w-auto font-bold shrink-0"
             >
               <Download />
               <span>{excel.busy ? 'در حال آماده‌سازی…' : 'خروجی اکسل'}</span>
@@ -852,7 +827,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
             {can(currentUser, 'partner.create') && (
               <Button
                 onClick={handleOpenAdd}
-                className="w-full sm:w-auto text-xs font-bold shrink-0"
+                size="sm"
+                className="w-full sm:w-auto font-bold shrink-0"
               >
                 <Plus />
                 <span>ثبت شریک تجاری جدید</span>
@@ -890,25 +866,20 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                 className={cn(inputBaseClass, 'w-full font-medium')}
               >
                 <option value="All">همه گریدها</option>
-                {/* The bands as the business states them. Written with the
-                    open upper edge («۷۹٫۹») rather than a whole number, because
-                    the boundary the code applies is «below 60», not «at most
-                    79»: a score that ever lands between the two must read as B
-                    here and not fall into a gap the label invented. */}
-                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
-                <option value="B">Grade B (با پایش: {GRADE_RANGE_FA['B']})</option>
-                <option value="C">Grade C (مشروط: {GRADE_RANGE_FA['C']})</option>
-                {/* «Pending Review» removed from this filter at the user's
-                    request. The grade itself still exists — the SOP rubric
-                    gives it to a supplier scoring 30-39 (rule 13) — so such a
-                    partner keeps its badge everywhere else and is reached
-                    through «همه گریدها».
+                {/* The bands as the business states them, from the one
+                    constant the evaluation panel also prints. The upper edge is
+                    written open («۸۹٫۹») rather than a whole number, because the
+                    boundary the code applies is «below 75», not «at most 89».
 
-                    The Blacklist range beside it said ۰-۳۹, which was never
-                    true: the rubric blacklists below 30 and only below 30. Left
-                    as it was, this list would now read as covering every score
-                    while quietly dropping the 30-39 band. */}
-                <option value="Blacklist">Blacklist (لیست سیاه: {GRADE_RANGE_FA['Blacklist']})</option>
+                    «Blacklist» is gone from this list with the rubric that
+                    produced it — the failing grade is D now. A partner still
+                    carrying the retired value keeps its badge everywhere else
+                    and is reached through «همه گریدها», and is rewritten from
+                    its own documents on the next load. */}
+                <option value="A">Grade A (تاییدشده: {GRADE_RANGE_FA['A']})</option>
+                <option value="B">Grade B (در انتظار تأیید: {GRADE_RANGE_FA['B']})</option>
+                <option value="C">Grade C (تأیید مشروط: {GRADE_RANGE_FA['C']})</option>
+                <option value="D">Grade D (مردود: {GRADE_RANGE_FA['D']})</option>
                 <option value="Not Evaluated">ارزیابی نشده</option>
               </select>
             </div>
@@ -1084,8 +1055,8 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                                   handleOpenEdit(partner);
                                   setActiveModalTab('evaluation');
                                 }}
-                                disabled={!can(currentUser, 'partner.edit')}
-                                title={can(currentUser, 'partner.edit') ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
+                                disabled={!canEvaluate}
+                                title={canEvaluate ? undefined : 'ثبت ارزیابی در دسترس نقش شما نیست.'}
                                 className="text-2xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                               >
                                 شروع ارزیابی
@@ -1500,6 +1471,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               {/* TAB 2: Supplier Evaluation (SOP) - Only visible when type === 'Supplier' */}
               {formData.type === 'Supplier' && activeModalTab === 'evaluation' && (
                 <div className="space-y-4">
+                  {!canEvaluate && (
+                    <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/60 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 text-2xs font-semibold leading-relaxed">
+                      این بخش برای شما فقط خواندنی است: ثبت وضعیت مدارک و در نتیجه تعیین گرید فروشنده، مجوز جداگانه‌ای دارد که حساب شما آن را ندارد.
+                    </div>
+                  )}
                   {/* Banner */}
                   <div className="p-3 bg-muted/60 border border-border rounded-xl flex items-center justify-between shadow-xs">
                     <div className="space-y-0.5">
@@ -1570,6 +1546,13 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                               <select
                                 value={doc.status || ''}
                                 onChange={e => handleDocStatusChange(def.key, e.target.value as SOPDocumentStatus)}
+                                // The grade follows from these five statuses,
+                                // and only a grade-A seller may be attached to
+                                // a source — so this control is the decision,
+                                // and the server refuses it without
+                                // `partner.evaluate`.
+                                disabled={!canEvaluate}
+                                title={canEvaluate ? undefined : 'ارزیابی مدارک فروشنده در دسترس نقش شما نیست.'}
                                 className={`w-full text-xs rounded-lg px-3 py-2 border font-bold focus:outline-none transition-colors ${
                                   !doc.status ? 'border-amber-300 bg-amber-50/50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200' : 'border-border bg-card text-foreground'
                                 }`}
@@ -1662,42 +1645,46 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                   </div>
 
                   {/* Summary Card (Live Real-time Calculated) */}
-                  {/* Inverted with tokens rather than a fixed slate gradient:
-                      this panel is the computed result, and it has to keep that
-                      contrast in both themes (same treatment as the standard-name
-                      preview in the materials repository). */}
-                  <div className="p-4 bg-foreground text-background rounded-2xl border border-border shadow-lg space-y-3">
-                    <div className="flex items-center justify-between border-b border-background/20 pb-2">
+                  {/* Card colours, not an inversion.
+                      This panel was painted foreground-on-background, which is
+                      near-black in the light theme: the one dark block on an
+                      otherwise light form, and the emphasis it bought was read
+                      as a rendering fault rather than as importance. It is a
+                      card now, and the emphasis comes from a primary-tinted
+                      border and the figures themselves, which is how the rest
+                      of the application marks a result. */}
+                  <div className="p-4 bg-muted rounded-2xl border border-primary/30 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-xs font-bold flex items-center gap-1.5">
-                        <Award className="w-4 h-4 shrink-0" />
+                        <Award className="w-4 h-4 shrink-0 text-primary" />
                         <span>نتیجهٔ ارزیابی فروشنده (Live Result)</span>
                       </span>
-                      <span className="text-2xs text-background/70 font-mono">
+                      <span className="text-2xs text-muted-foreground font-mono">
                         {computedEval.grade === 'Not Evaluated' ? 'در انتظار امتیازدهی' : 'محاسبه خودکار'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Total Score */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">مجموع امتیاز (Total Score)</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">مجموع امتیاز (Total Score)</span>
                         <div className="text-xl font-black font-mono">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="text-background/60 text-sm">-- / ۱۰۰</span>
+                            <span className="text-muted-foreground text-sm">-- / ۱۰۰</span>
                           ) : (
                             <>
-                              {computedEval.totalScore} <span className="text-xs text-background/70">/ ۱۰۰</span>
+                              {computedEval.totalScore.toLocaleString('fa-IR')} <span className="text-xs text-muted-foreground">/ ۱۰۰</span>
                             </>
                           )}
                         </div>
                       </div>
 
                       {/* Grade */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">رتبه کیفیت (Grade)</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">رتبه کیفیت (Grade)</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
+                            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border">
                               ارزیابی نشده
                             </span>
                           ) : (
@@ -1711,11 +1698,11 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                       </div>
 
                       {/* Supplier Status */}
-                      <div className="bg-background/10 border border-background/20 p-3 rounded-xl text-center space-y-1">
-                        <span className="text-2xs text-background/70 font-bold block">وضعیت Supplier Status</span>
+                      <div className="bg-card border border-border p-3 rounded-xl text-center space-y-1">
+                        <span className="text-2xs text-muted-foreground font-bold block">وضعیت Supplier Status</span>
                         <div className="flex items-center justify-center">
                           {computedEval.grade === 'Not Evaluated' ? (
-                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-background/10 text-background border border-background/20">
+                            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border">
                               در انتظار ارزیابی
                             </span>
                           ) : (
@@ -1733,16 +1720,16 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                         heart to read their own number. The ranges come from the
                         same constant the repository filter prints, so the two
                         cannot drift apart again. */}
-                    <div className="mt-3 pt-3 border-t border-background/20 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
+                    <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-2xs font-mono">
                       {([
-                        { g: 'A' as const, dot: 'bg-emerald-400', label: 'Grade A' },
-                        { g: 'B' as const, dot: 'bg-blue-400', label: 'Grade B' },
-                        { g: 'C' as const, dot: 'bg-amber-400', label: 'Grade C' },
-                        { g: 'Blacklist' as const, dot: 'bg-rose-400', label: 'Blacklist' },
+                        { g: 'A' as const, dot: 'bg-emerald-500', label: 'Grade A' },
+                        { g: 'B' as const, dot: 'bg-blue-500', label: 'Grade B' },
+                        { g: 'C' as const, dot: 'bg-amber-500', label: 'Grade C' },
+                        { g: 'D' as const, dot: 'bg-rose-500', label: 'Grade D' },
                       ]).map(band => (
-                        <span key={band.g} className="flex items-center gap-1.5 text-background/80">
+                        <span key={band.g} className="flex items-center gap-1.5 text-muted-foreground">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${band.dot}`} aria-hidden />
-                          <span className="font-bold text-background">{band.label}</span>
+                          <span className="font-bold text-foreground">{band.label}</span>
                           <span>{GRADE_RANGE_FA[band.g]}</span>
                         </span>
                       ))}
@@ -1886,7 +1873,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {can(currentUser, 'partner.edit') && selectedPartner.status !== 'Blacklisted' && (
+                {canSetStatus && selectedPartner.status !== 'Blacklisted' && (
                   <Button
                     type="button"
                     variant="destructive"
@@ -1899,7 +1886,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                     <span>لیست سیاه</span>
                   </Button>
                 )}
-                {can(currentUser, 'partner.edit') && selectedPartner.status === 'Blacklisted' && (
+                {canSetStatus && selectedPartner.status === 'Blacklisted' && (
                   <Button
                     type="button"
                     variant="outline"

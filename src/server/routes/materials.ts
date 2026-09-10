@@ -1,15 +1,13 @@
 import express from "express";
 import { STALE_COPY_MESSAGE, serializeWrites, staleCopy } from "../http/recordLock.js";
-import { AuditService } from "../../utils/auditService.js";
-import { findDuplicateMaterial, type MaterialKeyFields } from "../../utils/materialDuplicates.js";
+import { diffFields, recordEvent } from "../../utils/auditEvents.js";
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
 import {
-  asText, listMaterials, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
+  listMaterials, mapMaterialToClient, materialDataFromBody, rejectDuplicateMaterial,
 } from "../repositories/materialRepository.js";
 import { requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 
 /**
  * The material master repository.
@@ -63,23 +61,11 @@ export function materialRoutes(): express.Router {
       const nameEn = data.nameEn;
 
       // Audit Log for Material Creation
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Create",
-        severity: "Information",
-        description: `ماده دارویی جدید با عنوان ${name} (${nameEn}) به مستندات مرجع مواد اضافه شد.`,
-        entityType: "Material",
-        entityId: materialId,
-        entityName: name,
-        reasonForChange: reasonForChange || "تعریف محصول جدید جهت فرآیند ارزیابی تأمین‌کننده",
-        beforeData: null,
-        afterData: newMaterial
+      await recordEvent(req, {
+        event: "material.created",
+        entity: { id: materialId, name },
+        facts: { nameEn, cas: data.cas },
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, material: newMaterial });
@@ -148,24 +134,13 @@ export function materialRoutes(): express.Router {
       const updated = await prisma.material.update({ where: { id }, data: incoming });
       const updatedMaterial = mapMaterialToClient(updated);
 
-      // Audit Log for Material Update
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Update",
-        severity: "Information",
-        description: `اطلاعات مستندات مرجع ماده دارویی ${current.name} بروزرسانی گردید.`,
-        entityType: "Material",
-        entityId: id,
-        entityName: updatedMaterial.nameFa,
-        reasonForChange: reasonForChange || "اصلاح مشخصات مرجع ماده",
-        beforeData: originalData,
-        afterData: updatedMaterial
+      // Audit Log for Material Update. Only the fields that moved, and no row
+      // at all when the save changed nothing.
+      await recordEvent(req, {
+        event: "material.updated",
+        entity: { id, name: updatedMaterial.nameFa },
+        changes: diffFields(originalData, updatedMaterial, Object.keys(updatedMaterial)),
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, material: updatedMaterial });
@@ -193,51 +168,25 @@ export function materialRoutes(): express.Router {
       const isUsed = usedCount > 0;
 
       if (isUsed) {
-        // Audit Log for Rejected Deletion
-        const now = new Date();
-        const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        await AuditService.createAuditRecord({
-          auditId,
-          userId: req.user.username,
-          userName: req.user.name,
-          role: req.user.role,
-          module: "مدیریت مواد",
-          action: "Delete",
-          severity: "Critical",
-          description: `تلاش ناموفق برای حذف ماده "${current.name}". ماده در سورس‌های ثبت‌شده استفاده شده است.`,
-          entityType: "Material",
-          entityId: id,
-          entityName: current.name,
-          reasonForChange: "Attempted delete of referenced record",
-          beforeData: null,
-          afterData: null
+        // A refused deletion is a security event, not a material event: the
+        // material did not change, someone tried to remove one that is in use.
+        await recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Material", id, name: current.name },
+          facts: { attempted: "حذف ماده", usedBySources: usedCount },
         });
 
         return res.status(400).json({ error: "امکان حذف این ماده وجود ندارد. این ماده در یک یا چند Source ثبت شده است و حذف آن باعث از بین رفتن یکپارچگی اطلاعات و سوابق تاریخی سیستم می‌شود." });
       }
 
-      const beforeData = { name: current.name, nameEn: current.nameEn, cas: current.cas, irc: current.irc };
-
       await prisma.material.delete({ where: { id } });
 
-      // Audit Log for Material Deletion
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Delete",
-        severity: "Critical",
-        description: `ماده دارویی ${current.name} از بانک مستندات مرجع مواد حذف گردید.`,
-        entityType: "Material",
-        entityId: id,
-        entityName: current.name,
-        reasonForChange,
-        beforeData,
-        afterData: null
+      // Audit Log for Material Deletion — identity and reason, no copy of the
+      // record that no longer exists (rule 16).
+      await recordEvent(req, {
+        event: "material.deleted",
+        entity: { id, name: current.name },
+        reason: reasonForChange,
       });
 
       res.json({ success: true });
@@ -291,23 +240,16 @@ export function materialRoutes(): express.Router {
         },
       });
 
-      const now = new Date();
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Update",
-        severity: "Information",
-        description: `${isReplacement ? "جایگزینی" : "بارگذاری"} فایل Specification برای ماده ${current.name} (${fileName}).`,
-        entityType: "Material",
-        entityId: id,
-        entityName: current.name,
-        reasonForChange: reasonForChange || (isReplacement ? "جایگزینی مدرک مشخصات فنی" : "بارگذاری مدرک مشخصات فنی"),
-        // The blob is never written into the audit row; only what changed about it.
-        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
-        afterData: { specificationFile: fileName, specificationFileSize: fileSize ?? null },
+      // The blob is never written into the audit row; only its name and size.
+      await recordEvent(req, {
+        event: "material.spec_uploaded",
+        entity: { id, name: current.name },
+        facts: {
+          fileName,
+          fileSize: fileSize ?? null,
+          replaced: isReplacement ? current.specificationFile : null,
+        },
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, material: mapMaterialToClient(updated) });
@@ -351,22 +293,11 @@ export function materialRoutes(): express.Router {
         },
       });
 
-      const now = new Date();
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Delete",
-        severity: "Warning",
-        description: `فایل Specification ماده ${current.name} حذف شد (${current.specificationFile || "بدون نام"}).`,
-        entityType: "Material",
-        entityId: id,
-        entityName: current.name,
-        reasonForChange: (req.query.reasonForChange as string) || "حذف مدرک مشخصات فنی",
-        beforeData: { specificationFile: current.specificationFile, specificationFileSize: current.specificationFileSize },
-        afterData: null,
+      await recordEvent(req, {
+        event: "material.spec_removed",
+        entity: { id, name: current.name },
+        facts: { fileName: current.specificationFile },
+        reason: (req.query.reasonForChange as string) || null,
       });
 
       res.json({ success: true, material: mapMaterialToClient(updated) });
@@ -394,23 +325,11 @@ export function materialRoutes(): express.Router {
       // NOTE: the materials table has no status column yet; status change is
       // recorded in the audit trail only until a dedicated column is added.
 
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت مواد",
-        action: "Update",
-        severity: "Warning",
-        description: `تغییر وضعیت انطباق کیفی ماده ${current.name} از ${oldStatus} به ${newStatus} به دلیل عدم رعایت الزامات فارماکوپه‌ای`,
-        entityType: "Material",
-        entityId: id,
-        entityName: current.name,
-        reasonForChange: reasonForChange || "عدم تمدید گواهینامه‌های GMP سورس سازنده",
-        beforeData: { status: oldStatus },
-        afterData: { status: newStatus }
+      await recordEvent(req, {
+        event: "material.status_changed",
+        entity: { id, name: current.name },
+        changes: [{ field: "status", from: oldStatus, to: newStatus }],
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, status: newStatus });

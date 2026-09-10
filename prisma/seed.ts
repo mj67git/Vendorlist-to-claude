@@ -74,7 +74,11 @@ async function main() {
   
   console.log('🗑️ Cleaning up existing database records...');
   // Delete in correct order of dependency
-  await prisma.auditLog.deleteMany();
+  // `audit_log` refuses row deletes (the append-only trigger added in
+  // 20260909100000), so a fresh seed clears it the one way the trigger does not
+  // block. Seeding is a "start this database over" operation, not an edit to a
+  // trail anyone is relying on.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_log"');
   await prisma.evaluation.deleteMany();
   await prisma.vendorMaterial.deleteMany();
   await prisma.material.deleteMany();
@@ -145,7 +149,7 @@ async function main() {
   
   console.log('🌱 Inserting Materials...');
   const mMap = parsed.materials || {};
-  for (const [id, m] of Object.entries(mMap)) {
+  for (const m of Object.values(mMap)) {
     const val: any = m;
     await prisma.material.create({
       data: {
@@ -160,7 +164,7 @@ async function main() {
   
   console.log('🌱 Inserting Vendor-Material Links...');
   const lMap = parsed.vendor_materials || {};
-  for (const [id, l] of Object.entries(lMap)) {
+  for (const l of Object.values(lMap)) {
     const val: any = l;
     await prisma.vendorMaterial.create({
       data: {
@@ -175,7 +179,7 @@ async function main() {
   
   console.log('🌱 Inserting Evaluations...');
   const eMap = parsed.evaluations || {};
-  for (const [id, ev] of Object.entries(eMap)) {
+  for (const ev of Object.values(eMap)) {
     const val: any = ev;
     await prisma.evaluation.create({
       data: {

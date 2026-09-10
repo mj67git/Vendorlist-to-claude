@@ -5,7 +5,10 @@ export type SampleVerdictTone = 'gradeA' | 'gradeC' | 'gradeReject' | 'outline';
 export interface SampleVerdict {
   /** True once somebody has recorded a decision about this sample. */
   decided: boolean;
+  /** The short form, for the badges inside table rows. */
   label: string;
+  /** The full sentence, for a page header that has room for one. */
+  title: string;
   variant: SampleVerdictTone;
 }
 
@@ -22,14 +25,31 @@ export interface SampleVerdict {
  */
 export function describeSampleStatus(vendor: any): SampleVerdict {
   if (isVendorRejected(vendor)) {
-    return { decided: true, label: 'Reject', variant: 'gradeReject' };
+    return { decided: true, label: 'Reject', title: 'نمونه: مردود (Rejected)', variant: 'gradeReject' };
   }
-  if (vendor?.status === 'approved') return { decided: true, label: 'Approved', variant: 'gradeA' };
-  if (vendor?.status === 'conditional') return { decided: true, label: 'Conditional', variant: 'gradeC' };
-  return { decided: false, label: 'آزمایش نشده', variant: 'outline' };
+  if (vendor?.status === 'approved') {
+    return { decided: true, label: 'Approved', title: 'نمونه: تایید شده (Approved)', variant: 'gradeA' };
+  }
+  if (vendor?.status === 'conditional') {
+    return { decided: true, label: 'Conditional', title: 'نمونه: تایید مشروط (Conditional)', variant: 'gradeC' };
+  }
+  return { decided: false, label: 'آزمایش نشده', title: 'نمونه: آزمایش نشده (Untested)', variant: 'outline' };
 }
 
 /** True for a sample nobody has ruled on yet. */
 export function isUntestedSample(vendor: any): boolean {
   return !describeSampleStatus(vendor).decided;
+}
+
+/**
+ * Is this record a sample?
+ *
+ * Read both fields, always. `isSample` is the flag the form sets and
+ * `category === 'sample'` is where the record lives; a row that carries one
+ * without the other used to be judged differently by different screens — the
+ * source page hid its scoring forms on the flag alone while the lists filtered
+ * on either.
+ */
+export function isSampleRecord(vendor: any): boolean {
+  return !!vendor?.isSample || vendor?.category === 'sample';
 }

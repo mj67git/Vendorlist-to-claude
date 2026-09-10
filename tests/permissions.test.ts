@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  can, canScoreDepartment, canScoreAny, scorableDepartments,
+  can, canScoreDepartment, canScoreAny, categoryPermission, scorableDepartments,
   forbiddenScoreChanges, forbiddenRawScoreChanges,
   effectivePermissions, hasCustomPermissions, roleTemplate, sanitizePermissions,
   ALL_PERMISSIONS, SCORING_DEPARTMENTS, type Permission, type Role,
+  modulePermissionsOf, ownedModulePermissions, permissionOwner, PERMISSION_MODULES,
+  SOURCE_LIST_VIEWS, VIEW_PERMISSIONS,
 } from '../src/utils/permissions';
 
 /**
@@ -12,15 +14,21 @@ import {
  * so a change to the policy that nobody meant shows up as a failing test rather
  * than as a role quietly gaining or losing an ability in production.
  */
-const READ_ALL: Permission[] = ['vendor.read', 'material.read', 'partner.read'];
+const READ_ALL: Permission[] = [
+  'vendor.read', 'material.read', 'partner.read',
+  // The four read-only views built on source data became permissions of their
+  // own in the granular split (1405/06/17), so an account can be given the
+  // archive without the blacklist. Every working role reads all of them.
+  'archive.read', 'supplier-audit.read', 'sample.read', 'blacklist.read',
+];
 
 /** Every read a stored override predating read permissions is credited with. */
 const LEGACY_READS: Permission[] = [...READ_ALL, 'partner.files'];
 
 const MATRIX: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
-  commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'vendor.select', 'partner.create', 'partner.edit', 'partner.delete', 'score.commercial'],
-  qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'vendor.risk', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
+  commercial: [...READ_ALL, 'partner.files', 'vendor.create', 'vendor.edit', 'vendor.select', 'partner.create', 'partner.edit', 'partner.delete', 'partner.status', 'score.commercial'],
+  qa: [...READ_ALL, 'partner.files', 'vendor.analysis', 'sample.decide', 'partner.evaluate', 'vendor.risk', 'material.create', 'material.edit', 'material.delete', 'score.qa'],
   planning: [...READ_ALL, 'score.planning'],
   finance: [...READ_ALL, 'score.finance'],
   lab: [...READ_ALL, 'vendor.analysis'],
@@ -268,26 +276,30 @@ test('a retired permission keeps exactly the access it used to grant', () => {
   const vendor = { role: 'finance', permissions: ['vendor.write'] };
   assert.equal(can(vendor, 'vendor.create'), true);
   assert.equal(can(vendor, 'vendor.edit'), true);
+  // The source verdict was split out of `vendor.edit`, so it comes along.
+  assert.equal(can(vendor, 'vendor.decide'), true);
   assert.equal(can(vendor, 'vendor.delete'), false);
 
   // The three writes are what `partner.write` meant, and nothing more: a row
   // that also needs the reads gets them from the migration, not from here.
   const partner = { role: 'finance', permissions: ['partner.write'] };
   assert.deepEqual(effectivePermissions(partner),
-    ['partner.create', 'partner.edit', 'partner.delete']);
+    ['partner.create', 'partner.edit', 'partner.delete', 'partner.evaluate', 'partner.status']);
 });
 
-test('an override naming only a dropped permission falls back to the role', () => {
-  // archive.read enforced nothing and was removed. Expanding it to an empty set
-  // must read as "no override" rather than as "allowed nothing".
-  const user = { role: 'qa', permissions: ['archive.read'] };
+test('an override naming only an unknown permission falls back to the role', () => {
+  // A stored name nobody recognises expands to an empty set, which must read as
+  // "no override" rather than as "allowed nothing" — otherwise one stale entry
+  // locks an account out of everything. (`archive.read` used to be the example
+  // here; the granular split made it a real permission again.)
+  const user = { role: 'qa', permissions: ['permission.that.no.longer.exists'] };
   assert.deepEqual(effectivePermissions(user), roleTemplate('qa'));
   assert.equal(can(user, 'vendor.analysis'), true);
 });
 
 test('sanitizePermissions keeps only known names, deduplicated and ordered', () => {
   assert.deepEqual(sanitizePermissions(['bogus', 'audit.read', 'vendor.write', 'audit.read']),
-    ['vendor.create', 'vendor.edit', 'audit.read']);
+    ['vendor.create', 'vendor.edit', 'vendor.decide', 'audit.read']);
   assert.deepEqual(sanitizePermissions('nonsense' as any), []);
   assert.deepEqual(sanitizePermissions(null), []);
 });
@@ -368,4 +380,93 @@ test('raw per-question scores are checked the same way', () => {
 test('an absent payload changes nothing', () => {
   assert.deepEqual(forbiddenScoreChanges('finance', { qa: 1 }, null), []);
   assert.deepEqual(forbiddenRawScoreChanges('finance', { qa: {} }, undefined), []);
+});
+
+test('the two categories that are their own read say so', () => {
+  // The sidebar and the category page ask this rather than testing `vendor.read`
+  // everywhere: without these two the server sends fewer rows, so a page that
+  // checked only the general read would draw an empty table and blame the data.
+  assert.equal(categoryPermission('sample'), 'sample.read');
+  assert.equal(categoryPermission('blacklist'), 'blacklist.read');
+  for (const ordinary of ['foreign', 'domestic', 'veterinary', 'packaging', null, undefined]) {
+    assert.equal(categoryPermission(ordinary), 'vendor.read', `${ordinary}`);
+  }
+});
+
+test('a permission shown in two rows is set in exactly one of them', () => {
+  // The samples row shows the source's create, edit and delete, because a sample
+  // is a source record wearing a label. Two live switches for one permission
+  // would let the dialog contradict itself, and closing the samples list would
+  // revoke registering a source — so the first row owns it and the rest mirror.
+  const samples = PERMISSION_MODULES.find(m => m.key === 'samples')!;
+  assert.deepEqual(ownedModulePermissions(samples), ['sample.read', 'sample.decide']);
+  assert.ok(modulePermissionsOf(samples).includes('vendor.create'), 'it is still shown');
+  assert.equal(permissionOwner('vendor.create'), 'vendors', 'and set in the sources row');
+
+  // Every permission any row shows has exactly one owner, and every row owns
+  // what nobody showed before it — so no permission is unreachable in the form.
+  const settable = new Set<Permission>();
+  for (const module of PERMISSION_MODULES) {
+    for (const permission of ownedModulePermissions(module)) {
+      assert.ok(!settable.has(permission), `${permission} is offered by two rows`);
+      settable.add(permission);
+    }
+  }
+  for (const module of PERMISSION_MODULES) {
+    for (const permission of modulePermissionsOf(module)) {
+      assert.ok(settable.has(permission), `${permission} appears but can be set nowhere`);
+    }
+  }
+});
+
+test('every permission the policy defines can be reached in the form', () => {
+  // A permission the dialog cannot set is one an administrator can only grant by
+  // editing the database — the state this module was written to end.
+  const settable = new Set(PERMISSION_MODULES.flatMap(m => modulePermissionsOf(m)));
+  const scoring = ALL_PERMISSIONS.filter(p => p.startsWith('score.'));
+  for (const permission of ALL_PERMISSIONS) {
+    if (scoring.includes(permission)) continue;   // its own section in the dialog
+    assert.ok(settable.has(permission), `${permission} has no row`);
+  }
+});
+
+test('every gated view names a real permission, and the two the list serves are among them', () => {
+  // The sidebar, the command palette, the page itself and — for the archive and
+  // the directory — the server all read this table. The palette was the last
+  // holdout: it offered every page to everybody, so an account whose sidebar
+  // hid the archive could still reach it from ⌘K and land on a refusal.
+  for (const [view, permission] of Object.entries(VIEW_PERMISSIONS)) {
+    assert.ok(ALL_PERMISSIONS.includes(permission), `${view} names ${permission}, which is not a permission`);
+  }
+  for (const view of SOURCE_LIST_VIEWS) {
+    assert.ok(VIEW_PERMISSIONS[view], `${view} is served by the source list but has no permission`);
+  }
+  // Every working role can open the two views; only a deliberate exception list
+  // closes them, which is what makes the setting worth having.
+  for (const role of ['commercial', 'qa', 'planning', 'finance', 'lab'] as Role[]) {
+    for (const view of SOURCE_LIST_VIEWS) {
+      assert.equal(can(role, VIEW_PERMISSIONS[view]), true, `${role} should open ${view} by default`);
+    }
+  }
+  const narrowed = { role: 'planning', permissions: ['vendor.read', 'score.planning'] };
+  assert.equal(can(narrowed, VIEW_PERMISSIONS.archive), false, 'and an exception list closes it');
+});
+
+test('the dialog notes stay one short sentence each', () => {
+  // They did not: thirteen rows carried 2,700 characters, the tallest row was
+  // six times the shortest, and a 1366×768 laptop showed two rows of a
+  // thirteen-row matrix. The reasoning belongs in the code and in CLAUDE.md;
+  // what the dialog needs is the one line that answers the question in front of
+  // the administrator. This keeps the prose from creeping back.
+  const LIMIT = 100;
+  for (const module of PERMISSION_MODULES) {
+    if (module.note) {
+      assert.ok(module.note.length <= LIMIT,
+        `«${module.title}» has a ${module.note.length}-character note; keep it under ${LIMIT}`);
+    }
+    for (const extra of module.extras || []) {
+      assert.ok(extra.note.length <= LIMIT,
+        `«${extra.label}» has a ${extra.note.length}-character note; keep it under ${LIMIT}`);
+    }
+  }
 });

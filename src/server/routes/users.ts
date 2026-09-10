@@ -1,14 +1,13 @@
 import express from "express";
-import { AuditService } from "../../utils/auditService.js";
+import { diffFields, recordEvent } from "../../utils/auditEvents.js";
 import {
-  ALL_PERMISSIONS, effectivePermissions, sanitizePermissions, type Permission,
+  can, effectivePermissions, sanitizePermissions,
 } from "../../utils/permissions.js";
 import { requirePrisma } from "../db/prisma.js";
 import {
   checkAdminSafety, checkPermissionSafety, requireAuth, requirePermission,
 } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import {
   ALLOWED_USER_ROLES, getAllUsers, getUserByUsername, normalizeUserRole,
   type UserRoleValue,
@@ -58,7 +57,7 @@ function refuseAdminGrant(actor: any, nextRole: string | undefined): string | nu
 export function userRoutes(): express.Router {
   const router = express.Router();
 
-  router.get("/api/users", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.get("/api/users", requireAuth, requirePermission("users.read"), async (req: any, res) => {
     try {
       const usersList = (await getAllUsers()).map(u => ({
         username: u.username,
@@ -112,6 +111,16 @@ export function userRoutes(): express.Router {
         return res.status(400).json({ error: "فیلد permissions باید یک آرایه باشد." });
       }
 
+      // Creating an account with a ready-made exception list is the same act as
+      // editing one, so it is held to the same permission. An account created
+      // on its role template needs only `users.manage`.
+      if (Array.isArray(permissions) && permissions.length > 0
+        && !can(req.account, "users.permissions")) {
+        return res.status(403).json({
+          error: "عدم دسترسی: تعیین فهرست دسترسی‌ها نیازمند مجوز جداگانه است.",
+        });
+      }
+
       const refusedOnCreate = refuseAdminGrant(req.account, role);
       if (refusedOnCreate) return res.status(403).json({ error: refusedOnCreate });
 
@@ -144,26 +153,11 @@ export function userRoutes(): express.Router {
       });
 
       // Log creation to Audit Trail
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "CREATE_USER",
-        severity: "Information",
-        description: `کاربر جدید با نام کاربری ${key} و سمت ${newUser.role} توسط ${req.user.name} ایجاد شد.`,
-        entityType: "User",
-        entityId: key,
-        entityName: cleanName,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange || "تعریف دسترسی پرسنل جدید فرآیندی",
-        beforeData: null,
-        afterData: { username: key, name: cleanName, role: newUser.role, permissions: newUser.permissions }
+      await recordEvent(req, {
+        event: "user.created",
+        entity: { id: key, name: cleanName },
+        facts: { username: key, role: newUser.role },
+        reason: reasonForChange || null,
       });
 
       // The stored record, not the submitted one: the response used to echo the
@@ -214,6 +208,14 @@ export function userRoutes(): express.Router {
       if (role) current.role = role;
 
       if (permissions) {
+        // The same list the dedicated route writes, so it needs the same
+        // permission. Otherwise `users.manage` alone would still hand out
+        // access through this endpoint and the split would only look real.
+        if (!can(req.account, "users.permissions")) {
+          return res.status(403).json({
+            error: "عدم دسترسی: تغییر فهرست دسترسی‌ها نیازمند مجوز جداگانه است.",
+          });
+        }
         current.permissions = sanitizePermissions(permissions);
       } else if (roleChanged) {
         // Moving someone to a new role clears their old exceptions. Carrying
@@ -232,27 +234,17 @@ export function userRoutes(): express.Router {
         },
       });
 
-      // Log update to Audit Trail
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "UPDATE_USER",
-        severity: "Warning",
-        description: `مشخصات حساب کاربری ${targetUsername} توسط ${req.user.name} ویرایش گردید.`,
-        entityType: "User",
-        entityId: targetUsername,
-        entityName: current.name,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange || "بروزرسانی سمت سازمانی / دسترسی‌های سیستمی",
-        beforeData: originalData,
-        afterData: { name: current.name, role: current.role, permissions: current.permissions || [], isActive: current.isActive !== false }
+      // Log update to Audit Trail. An edit that changed nothing writes no row.
+      await recordEvent(req, {
+        event: "user.updated",
+        entity: { id: targetUsername, name: current.name },
+        changes: diffFields(originalData, {
+          name: current.name,
+          role: current.role,
+          permissions: current.permissions || [],
+          isActive: current.isActive !== false,
+        }, ["name", "role", "permissions", "isActive"]),
+        reason: reasonForChange || null,
       });
 
       res.json({
@@ -282,31 +274,14 @@ export function userRoutes(): express.Router {
       if (unsafeDelete) return res.status(400).json({ error: unsafeDelete });
 
       const reasonForChange = req.query.reasonForChange as string || "حذف دسترسی پرسنل تسویه شده";
-      const beforeData = { username: current.username, name: current.name, role: current.role, permissions: current.permissions || [] };
-
       await requirePrisma().user.delete({ where: { username: targetUsername } });
 
-      // Log deletion to Audit Trail
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "DELETE_USER",
-        severity: "Critical",
-        description: `حساب کاربری پرسنل با نام کاربری ${targetUsername} توسط ${req.user.name} به طور کامل از سامانه حذف گردید.`,
-        entityType: "User",
-        entityId: targetUsername,
-        entityName: current.name,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange,
-        beforeData,
-        afterData: null
+      // Log deletion to Audit Trail — who deleted whom, and why. The account's
+      // former permissions are not copied into the row (rule 16).
+      await recordEvent(req, {
+        event: "user.deleted",
+        entity: { id: targetUsername, name: current.name },
+        reason: reasonForChange,
       });
 
       res.json({ success: true });
@@ -356,26 +331,15 @@ export function userRoutes(): express.Router {
         },
       });
 
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "ROLE_CHANGE",
-        severity: "Critical",
-        description: `تغییر سمت سازمانی کاربر ${targetUsername} از ${oldRole} به ${role} توسط ${req.user.name}`,
-        entityType: "User",
-        entityId: targetUsername,
-        entityName: current.name,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange || "ارتقای سطح دسترسی سازمانی",
-        beforeData: { role: oldRole, permissions: oldPermissions },
-        afterData: { role, permissions: current.permissions ?? [] }
+      await recordEvent(req, {
+        event: "user.role_changed",
+        entity: { id: targetUsername, name: current.name },
+        changes: diffFields(
+          { role: oldRole, permissions: oldPermissions },
+          { role, permissions: current.permissions ?? [] },
+          ["role", "permissions"],
+        ),
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, role, permissionsReset: roleChanged && oldPermissions.length > 0 });
@@ -387,7 +351,7 @@ export function userRoutes(): express.Router {
   // An admin sets a temporary password for someone who is locked out. The
   // account is flagged to change it on the next sign-in, so the admin never
   // ends up knowing a password the user keeps using.
-  router.post("/api/users/:username/reset-password", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.post("/api/users/:username/reset-password", requireAuth, requirePermission("users.password"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -413,27 +377,11 @@ export function userRoutes(): express.Router {
         },
       });
 
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "RESET_PASSWORD",
-        severity: "Critical",
-        description: `کلمه عبور حساب کاربری ${targetUsername} توسط ${req.user.name} بازنشانی شد و تغییر آن در ورود بعدی الزامی گردید.`,
-        entityType: "User",
-        entityId: targetUsername,
-        entityName: current.name,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange || "بازنشانی کلمه عبور به درخواست کاربر",
-        // The password itself is never recorded — only the fact of the reset.
-        beforeData: { mustChangePassword: current.mustChangePassword !== false },
-        afterData: { mustChangePassword: true, passwordReset: true }
+      // The password itself is never recorded — only the fact of the reset.
+      await recordEvent(req, {
+        event: "user.password_reset",
+        entity: { id: targetUsername, name: current.name },
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true });
@@ -443,7 +391,7 @@ export function userRoutes(): express.Router {
     }
   });
 
-  router.put("/api/users/:username/permissions", requireAuth, requirePermission("users.manage"), async (req: any, res) => {
+  router.put("/api/users/:username/permissions", requireAuth, requirePermission("users.permissions"), async (req: any, res) => {
     try {
       const targetUsername = req.params.username.toLowerCase();
       const current = await getUserByUsername(targetUsername);
@@ -472,26 +420,17 @@ export function userRoutes(): express.Router {
         data: { permissions: cleaned },
       });
 
-      const now = new Date();
-      const auditId = `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await AuditService.createAuditRecord({
-        auditId,
-        userId: req.user.username,
-        userName: req.user.name,
-        role: req.user.role,
-        module: "مدیریت کاربران",
-        action: "PERMISSION_CHANGE",
-        severity: "Critical",
-        description: `بروزرسانی مجوزهای دسترسی کاربر ${targetUsername} توسط مدیر سیستم`,
-        entityType: "User",
-        entityId: targetUsername,
-        entityName: current.name,
-        eventType: "Authorization",
-        ipAddress: getClientIp(req),
-        userAgent: getUserAgent(req),
-        reasonForChange: reasonForChange || "تغییر اختیارات فرآیندی در ماژول‌های سامانه",
-        beforeData: { permissions: oldPermissions },
-        afterData: { permissions: cleaned }
+      // The counts are what a reviewer reads first — "three granted, one taken"
+      // — with the lists themselves in the change entry underneath.
+      await recordEvent(req, {
+        event: "user.permissions_changed",
+        entity: { id: targetUsername, name: current.name },
+        changes: diffFields({ permissions: oldPermissions }, { permissions: cleaned }, ["permissions"]),
+        facts: {
+          added: cleaned.filter(p => !oldPermissions.includes(p)).length,
+          removed: oldPermissions.filter(p => !cleaned.includes(p)).length,
+        },
+        reason: reasonForChange || null,
       });
 
       res.json({ success: true, permissions: cleaned });

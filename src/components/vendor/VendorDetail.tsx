@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, ExternalLink, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '../../components/ui/button';
 import { EntityName } from '../../components/EntityName';
@@ -11,13 +11,15 @@ import { authFetch } from '../../services/authFetch';
 import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from '../../types';
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
+import { formatLogTimestamp, toJalaliDisplay } from '../../utils/dateDisplay';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
-import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog, latestScoreEvaluationLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -50,11 +52,18 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // Only the stages the current user is allowed to perform are shown.
   const canRisk = can(currentUser, 'vendor.risk');
   const canAnalysis = can(currentUser, 'vendor.analysis');
+  // The two verdict boxes used to hang off `vendor.analysis`, which is the
+  // permission for *recording a test result* — a different act from ruling on
+  // it, and one the server never accepted for this: it demanded `vendor.edit`,
+  // so the box was offered to accounts the endpoint refused. Each box now shows
+  // the permission the server actually asks for (rule 14).
+  const canDecideSample = can(currentUser, 'sample.decide');
+  const canDecideSource = can(currentUser, 'vendor.decide');
   const canEditVendor = can(currentUser, 'vendor.edit');
   const canDeleteVendor = can(currentUser, 'vendor.delete');
   const evalStages = [
-    ...(!vendor.isSample ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
-    ...(!vendor.isSample && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
+    ...(!isSampleRecord(vendor) ? [{ id: 'score', title: 'امتیازدهی دپارتمان‌ها', icon: DollarSign }] : []),
+    ...(!isSampleRecord(vendor) && canRisk ? [{ id: 'risk', title: 'ارزیابی ریسک', icon: ShieldAlert }] : []),
     ...(canAnalysis ? [{ id: 'analysis', title: 'ثبت نتایج آزمایشگاهی', icon: Microscope }] : []),
   ];
   const [evalStageRaw, setEvalStageRaw] = useState<string>(evalStages[0]?.id || 'score');
@@ -379,26 +388,26 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
   // Score history reconstructed from the audit trail (SPS over time).
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   useEffect(() => {
-    if (vendor.isSample) return;
+    if (isSampleRecord(vendor)) return;
     let cancelled = false;
     authFetch(`/api/vendors/${vendor.id}/score-history`)
       .then(res => (res.ok ? res.json() : []))
       .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setScoreHistory(data.filter(d => d.totalSPS !== null)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [vendor.id, vendor.isSample, vendor.scores]);
+  }, [vendor.id, vendor.isSample, vendor.category, vendor.scores]);
 
   // Risk assessment history reconstructed from the audit trail (SRI/RPN over time).
   const [riskHistory, setRiskHistory] = useState<any[]>([]);
   useEffect(() => {
-    if (vendor.isSample) return;
+    if (isSampleRecord(vendor)) return;
     let cancelled = false;
     authFetch(`/api/vendors/${vendor.id}/risk-history`)
       .then(res => (res.ok ? res.json() : []))
       .then((data: any[]) => { if (!cancelled && Array.isArray(data)) setRiskHistory(data); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [vendor.id, vendor.isSample, vendor.riskAssessment]);
+  }, [vendor.id, vendor.isSample, vendor.category, vendor.riskAssessment]);
 
   const overall = calculateOverallScore(vendor.scores, true);
   let displayedScore: number | null = overall;
@@ -423,7 +432,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
   // Which catalogue entry actually carries the standard name for this source's
   // material — see utils/materialNames for why the linked record is not always it.
-  const { material: matchedMaterial, standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
+  const { standardNameFa: displayStandardNameFa, standardNameEn: displayStandardNameEn } =
     resolveMaterialNames(vendor, materials);
 
 
@@ -540,16 +549,21 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
 
             {/* Label وضعیت / گرید */}
             <div className="mt-1">
-              {vendor.isSample ? (
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold shadow-2xs ${
-                  vendor.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
-                  vendor.status === 'conditional' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                  'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                }`}>
-                  <ClipboardCheck className="w-4 h-4 ml-1.5" />
-                  {vendor.status === 'approved' ? 'نمونه: تایید شده (Approved)' :
-                   vendor.status === 'conditional' ? 'نمونه: تایید مشروط (Conditional)' : 'نمونه: مردود (Rejected)'}
-                </div>
+              {isSampleRecord(vendor) ? (
+                /* From `describeSampleStatus`, like the eight other surfaces
+                   that show a sample's verdict — and for the reason that helper
+                   exists. This badge used to be a three-way ternary with no
+                   fourth branch, so a sample registered five seconds ago, with
+                   no laboratory record and nobody's decision behind it, was
+                   announced as «مردود» on its own page. A verdict nobody gave
+                   is the one thing this screen must never state. */
+                <Badge
+                  variant={describeSampleStatus(vendor).variant}
+                  className="gap-1.5 py-1 px-3 text-xs font-bold shadow-2xs"
+                >
+                  <ClipboardCheck className="w-4 h-4 shrink-0" />
+                  {describeSampleStatus(vendor).title}
+                </Badge>
               ) : (
                 <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
               )}
@@ -608,203 +622,217 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
         return null;
       })()}
 
-      {/* 1. اطلاعات تامین کننده */}
-      <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
-        <div className="flex items-center gap-2.5 mb-5 border-b border-border pb-3">
-          <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-          <h3 className="font-bold text-foreground text-sm">مشخصات فنی و اطلاعات عمومی</h3>
-        </div>
-        
-        <div className="flex flex-col gap-5 text-sm">
-          {/* مشخصات اصلی ماده اولیه و کدهای ثبتی */}
-          <div className="space-y-4">
-            {/* جعبه شاخص ماده اولیه */}
-            <div className="bg-muted/40 border border-border rounded-xl p-4 shadow-inner space-y-3">
+      {/* 1. اطلاعات تامین کننده
+       *
+       * Two reference blocks side by side on a wide screen, because that is
+       * what they are: a dozen short facts a reader checks, not the work of
+       * the page. Measured before this, the card alone stood 835px tall on a
+       * 1440×900 screen — 93% of the viewport for twelve facts — and the
+       * evaluation, the risk assessment and the laboratory records all began
+       * below the fold. Three things made it that tall: two single-line cards
+       * stretched to the height of a seven-line neighbour by the grid, a
+       * standard-name box whose padding was most of it, and a contact panel of
+       * three nested frames around 166px of text.
+       */}
+      <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm text-right">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* مشخصات فنی */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5 border-b border-border pb-2.5">
+              <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+              <h3 className="font-bold text-foreground text-sm">مشخصات فنی و اطلاعات عمومی</h3>
+            </div>
+
+            {/* The two standard names, as one pair. They are the record's
+                identity, so they keep their weight — but not a box of their
+                own inside a box. */}
+            <div>
+              <div className="text-muted-foreground text-2xs font-medium">نام استاندارد</div>
+              <div className="font-black text-foreground text-base sm:text-lg leading-snug" title={displayStandardNameFa}>
+                {displayStandardNameFa}
+              </div>
+              <div className="text-xs font-mono font-bold text-muted-foreground" dir="ltr">
+                {displayStandardNameEn}
+              </div>
+            </div>
+
+            {/* The registry facts, in the label-above-value grid the partner
+                repository already uses. One line per fact rather than one card
+                per fact, so nothing is stretched to a neighbour's height. */}
+            {/* Two columns, so the four registry facts fill two even rows.
+                At three they left a ragged half-row, which is the same empty
+                space this card was rebuilt to stop producing. */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-xs border-t border-border/60 pt-3">
               <div>
-                <div className="text-muted-foreground text-xs font-bold mb-1">نام استاندارد فارسی:</div>
-                <div className="font-black text-foreground text-lg sm:text-xl leading-relaxed" title={displayStandardNameFa}>
-                  {displayStandardNameFa}
-                </div>
+                <span className="text-muted-foreground text-2xs block font-medium">شمارهٔ CAS</span>
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '—'}
+                </span>
               </div>
-              <div className="pt-2.5 border-t border-border/60">
-                <div className="text-muted-foreground text-xs font-bold mb-1">نام استاندارد انگلیسی:</div>
-                <div className="text-sm sm:text-base font-mono font-bold text-foreground" dir="ltr">
-                  {displayStandardNameEn}
-                </div>
-              </div>
-            </div>
 
-            {/* کارت‌های فرعی مشخصات عددی */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">شمارهٔ CAS</div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
-                    {vendor.cas && vendor.cas.trim() && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : '-'}
-                  </div>
-                </div>
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">
+                  {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
+                </span>
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '—'}
+                </span>
               </div>
-              
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">
-                    {vendor.category === 'veterinary' ? 'کد IVC' : 'کد IRC'}
-                  </div>
-                  <div className="font-mono text-foreground font-bold bg-muted text-center py-1.5 px-3 rounded-lg border border-border text-sm" dir="ltr">
-                    {vendor.irc && vendor.irc.trim() && vendor.irc.toLowerCase() !== 'n/a' && vendor.irc.toLowerCase() !== 'unknown' ? vendor.irc : '-'}
-                  </div>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-border space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground font-medium">تاریخ دریافت / صدور:</span>
-                    <span className="font-mono font-bold text-foreground" dir="ltr">
-                      {vendor.lastAudit || vendor.registrationDate || 'ثبت نشده'}
+
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">تاریخ صدور</span>
+                {/* Shown in the calendar the rest of the page uses. A row saved
+                    without this date used to carry the server's Gregorian
+                    fallback while the row beside it carried Jalali, so one
+                    screen printed two calendars. */}
+                <span className="font-bold font-mono text-foreground block" dir="ltr">
+                  {toJalaliDisplay(vendor.lastAudit || vendor.registrationDate, '—')}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground text-2xs block font-medium">انقضای مجوز</span>
+                {vendor.ircExpiryDate ? (() => {
+                  const check = checkLicenseExpiry(vendor.ircExpiryDate);
+                  const tone = check.status === 'expired'
+                    ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300'
+                    : check.status === 'expiring_soon'
+                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300'
+                      : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300';
+                  const word = check.status === 'expired' ? 'منقضی'
+                    : check.status === 'expiring_soon' ? `${check.daysLeft} روز` : 'معتبر';
+                  return (
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-bold font-mono text-foreground" dir="ltr">{vendor.ircExpiryDate}</span>
+                      <span className={`px-1.5 rounded text-2xs font-bold shrink-0 ${tone}`}>{word}</span>
                     </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground font-medium">تاریخ انقضای مجوز:</span>
-                    {vendor.ircExpiryDate ? (() => {
-                      const check = checkLicenseExpiry(vendor.ircExpiryDate);
-                      return (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-foreground" dir="ltr">
-                            {vendor.ircExpiryDate}
-                          </span>
-                          {check.status === 'expired' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300">
-                              منقضی
-                            </span>
-                          )}
-                          {check.status === 'expiring_soon' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-300">
-                              {check.daysLeft} روز
-                            </span>
-                          )}
-                          {check.status === 'valid' && (
-                            <span className="px-1.5 py-0.2 rounded text-2xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300">
-                              معتبر
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })() : (
-                      <span className="text-muted-foreground font-mono">ثبت نشده</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card border border-border rounded-xl p-4 shadow-xs text-right flex flex-col justify-between">
-                <div>
-                  <div className="text-muted-foreground text-xs mb-1.5">کد داخلی سامانه</div>
-                  <div className="font-mono text-muted-foreground text-center py-1.5 px-3 text-sm" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
-                    {vendor.id.substring(0, 8).toUpperCase()}
-                  </div>
-                </div>
+                  );
+                })() : (
+                  <span className="text-muted-foreground font-mono block">ثبت نشده</span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده) */}
-          <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 text-foreground font-bold text-xs sm:text-sm border-b border-border/60 pb-3">
-              <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              <span>اطلاعات تماس و آدرس</span>
+          {/* اطلاعات تماس و آدرسِ شریکِ این سورس (یکی است: فروشنده یا تولیدکننده)
+              One frame, not three: the partner's name is this block's own
+              sub-heading rather than the header of a card inside a card. */}
+          <div className="space-y-3 lg:border-r lg:border-border/60 lg:pr-5">
+            <div className="flex items-center gap-2.5 border-b border-border pb-2.5">
+              <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+              <h3 className="font-bold text-foreground text-sm">اطلاعات تماس و آدرس</h3>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div className="bg-card border border-border/80 rounded-xl p-4 shadow-2xs space-y-2 text-right">
-                <div className={`flex items-center gap-2 font-extrabold text-sm border-b border-border pb-2 ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
-                  {partnerIsManufacturer
-                    ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
-                  {/* The role label is kept out of the clip so it cannot spend
-                      the budget the partner name needs. */}
-                  <span className="shrink-0">{sourcePartner.roleLabel}:</span>
-                  <EntityName name={sourcePartner.name} lines={2} />
-                </div>
+            <div className={`flex items-center gap-2 font-extrabold text-xs ${partnerIsManufacturer ? 'text-indigo-900 dark:text-indigo-300' : 'text-emerald-900 dark:text-emerald-300'}`}>
+              {partnerIsManufacturer
+                ? <Factory className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                : <Handshake className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+              {/* The role label is kept out of the clip so it cannot spend the
+                  budget the partner name needs. */}
+              <span className="shrink-0">{sourcePartner.roleLabel}:</span>
+              <EntityName name={sourcePartner.name} lines={2} />
+            </div>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed pt-1 max-w-[75ch]">
-                  <div className="flex items-start gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                    <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
-                  </div>
-
-                  {sourcePartner.address && (
-                    <div className="flex items-start gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <span><strong>آدرس:</strong> {sourcePartner.address}</span>
-                    </div>
-                  )}
-
-                  {sourcePartner.contactPerson && (
-                    <div className="flex items-center gap-1.5">
-                      <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span><strong>شخص رابط:</strong> {sourcePartner.contactPerson}</span>
-                    </div>
-                  )}
-
-                  {(sourcePartner.phone || sourcePartner.email) && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-                      {sourcePartner.phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
-                        </div>
-                      )}
-                      {sourcePartner.email && (
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
-                    && !sourcePartner.email && !sourcePartner.website && (
-                    <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
-                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>
-                        اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
-                        از همان‌جا قابل تکمیل است.
-                      </span>
-                    </div>
-                  )}
-
-                  {sourcePartner.website && (
-                    <div className="flex items-center gap-1.5 pt-0.5" dir="ltr">
-                      <a href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`} target="_blank" rel="noreferrer" className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono text-2xs">
-                        {sourcePartner.website}
-                      </a>
-                    </div>
-                  )}
-                </div>
+            {/* Phone, then email, then the website — one line each, so every
+                entry starts at the same edge with its own icon. The direction
+                belongs on the value, which is what is Latin — never on the
+                row, which is what holds the icon. */}
+            <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed max-w-[75ch]">
+              <div className="flex items-start gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                <span><strong>کشور / شهر:</strong> {formatLocation(sourcePartner) || 'ثبت‌نشده'}</span>
               </div>
 
+              {sourcePartner.address && (
+                <div className="flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <span><strong>آدرس:</strong> {sourcePartner.address}</span>
+                </div>
+              )}
+
+              {sourcePartner.contactPerson && (
+                <div className="flex items-center gap-1.5">
+                  <UserIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span><strong>شخص رابط:</strong> {sourcePartner.contactPerson}</span>
+                </div>
+              )}
+
+              {sourcePartner.phone && (
+                <div className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span dir="ltr" className="font-mono">{sourcePartner.phone}</span>
+                </div>
+              )}
+
+              {sourcePartner.email && (
+                <div className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span dir="ltr" className="font-mono">{sourcePartner.email}</span>
+                </div>
+              )}
+
+              {sourcePartner.website && (
+                <div className="flex items-center gap-1.5">
+                  {/* The same icon the partner repository gives a website, so
+                      one record does not carry two vocabularies. */}
+                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <a
+                    href={sourcePartner.website.startsWith('http') ? sourcePartner.website : `https://${sourcePartner.website}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    dir="ltr"
+                    className="text-cyan-700 dark:text-cyan-300 hover:underline font-mono"
+                  >
+                    {sourcePartner.website}
+                  </a>
+                </div>
+              )}
+
+              {!sourcePartner.address && !sourcePartner.contactPerson && !sourcePartner.phone
+                && !sourcePartner.email && !sourcePartner.website && (
+                <div className="flex items-start gap-1.5 pt-1 text-muted-foreground">
+                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    اطلاعات تماس این شریک در مخزن شرکای تجاری ثبت نشده است؛
+                    از همان‌جا قابل تکمیل است.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
+        </div>
 
-          {/* سوابق انحرافات */}
-          {vendor.rejectionReasons && vendor.rejectionReasons.length > 0 && (
-            <div className="bg-muted/60 border border-border/50 rounded-xl p-5 shadow-xs">
-              <div className="flex items-center gap-2 mb-3 text-foreground font-bold text-xs sm:text-sm">
-                <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                <span>سوابق انحرافات</span>
-              </div>
-              <div className="text-foreground font-medium text-sm leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
-                <ul className="list-disc list-inside space-y-1.5">
-                  {vendor.rejectionReasons.map((reason, idx) => (
-                    <li key={idx} className="break-words">{reason}</li>
-                  ))}
-                </ul>
-              </div>
+        {/* سوابق انحرافات — full width beneath both columns, because a list
+            of stated reasons is prose, not a fact to line up in a grid. */}
+        {vendor.rejectionReasons && vendor.rejectionReasons.length > 0 && (
+          <div className="mt-5 bg-muted/60 border border-border/50 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-2 text-foreground font-bold text-xs sm:text-sm">
+              <AlertTriangle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+              <span>سوابق انحرافات</span>
             </div>
-          )}
+            <div className="text-foreground font-medium text-xs leading-relaxed whitespace-pre-wrap text-right max-w-[75ch]" dir="auto">
+              <ul className="list-disc list-inside space-y-1.5">
+                {vendor.rejectionReasons.map((reason, idx) => (
+                  <li key={idx} className="break-words">{reason}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* The record's own identifier, in the footnote it deserves. It used
+            to hold a third of the registry row while its own tooltip said it
+            is not a regulatory code — it is how support finds the row. */}
+        <div className="mt-4 pt-3 border-t border-border/60 text-2xs text-muted-foreground">
+          <span>کد داخلی سامانه: </span>
+          <span className="font-mono" dir="ltr" title="شناسهٔ داخلی رکورد؛ کد ثبتی رگولاتوری نیست.">
+            {vendor.id.substring(0, 8).toUpperCase()}
+          </span>
         </div>
       </div>
 
-      {vendor.isSample && (
+      {isSampleRecord(vendor) && (
         <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <div className="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 text-indigo-600 dark:text-indigo-400">
             <Info className="w-5 h-5" />
@@ -823,7 +851,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               <AlertTriangle className="w-8 h-8" />
             </div>
             <div className="text-right flex-1 min-w-0">
-              {vendor.isSample || vendor.category === 'sample' ? (
+              {isSampleRecord(vendor) ? (
                 <>
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <h3 className="text-lg font-black text-rose-900 dark:text-rose-300">وضعیت: نمونه مردود در کنترل کیفیت (QC Rejected Sample)</h3>
@@ -925,16 +953,77 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               ) : (
                 <>
                   <h3 className="text-lg font-bold text-rose-800 dark:text-rose-300 mb-1">وضعیت: لیست سیاه — تامین‌کننده رد صلاحیت شده</h3>
-                  <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است (Disqualified due to critical non-conformities):</p>
-                  
-                  <ul className="space-y-2">
-                    {vendor.rejectionReasons?.map((reason, idx) => (
-                      <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
-                        <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
-                        {reason}
-                      </li>
-                    ))}
-                  </ul>
+
+                  {/* Why this source is on the blacklist — including the case
+                      nobody wrote a sentence for.
+                      
+                      A source reaches this state three ways: an explicit
+                      decision, a laboratory record, or a weighted score that
+                      fell below 40. Only the first two write into
+                      `rejectionReasons`, and this panel printed that list and
+                      nothing else — so a score-driven rejection produced the
+                      sentence «به دلایل زیر … حذف شده است:» above an empty list.
+                      It promised reasons and gave none, on the one path where
+                      the reason is a plain fact the page already knows.
+
+                      The English gloss that used to sit inside this Persian
+                      sentence is gone with it: an LTR phrase spliced into RTL
+                      text without isolation broke across lines as
+                      «-conformities):». */}
+                  {(() => {
+                    const stated = (vendor.rejectionReasons || []).filter(r => typeof r === 'string' && r.trim());
+                    const scoreLog = latestScoreEvaluationLog(vendor);
+                    // Through the shared formatter, not raw: the stored value is
+                    // a machine timestamp («1405-06-06T09:56:00.000Z») and it
+                    // was being printed at the reader as one.
+                    const scoreStamp = formatLogTimestamp(scoreLog?.date);
+                    const stamp = scoreLog
+                      ? `${scoreLog.user ? `${scoreLog.user}` : 'کاربر سیستم'}${scoreStamp ? ` · ${scoreStamp}` : ''}`
+                      : null;
+
+                    if (stated.length > 0) {
+                      return (
+                        <>
+                          <p className="text-rose-700 dark:text-rose-300 text-sm mb-5 max-w-2xl font-semibold">این تامین‌کننده به دلایل زیر از لیست تامین‌کنندگان مجاز حذف شده است:</p>
+                          <ul className="space-y-2">
+                            {stated.map((reason, idx) => (
+                              <li key={idx} className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex gap-3 items-start font-medium shadow-sm">
+                                <span className="bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 font-bold">{idx + 1}</span>
+                                <span className="break-words">{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      );
+                    }
+
+                    // Derived from the score, which is the only thing that put
+                    // it here. `overall` is the same weighted total the header
+                    // circle shows, so the banner and the number agree.
+                    const scored = overall !== null;
+                    return (
+                      <>
+                        <p className="text-rose-700 dark:text-rose-300 text-sm mb-4 max-w-2xl font-semibold">
+                          {scored
+                            ? 'دلیل جداگانه‌ای ثبت نشده است؛ این وضعیت از امتیاز ارزیابی به‌دست آمده است:'
+                            : 'دلیل ثبت‌شده‌ای برای این وضعیت در سامانه نیست.'}
+                        </p>
+                        {scored && (
+                          <div className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-sm font-medium shadow-sm space-y-1.5">
+                            <p className="text-rose-800 dark:text-rose-300 leading-relaxed">
+                              امتیاز وزنی این سورس <span className="font-mono font-black">{overall?.toLocaleString('fa-IR')}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
+                            </p>
+                            {stamp && (
+                              <p className="text-2xs text-muted-foreground">آخرین ثبت امتیاز: {stamp}</p>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-2xs text-rose-700 dark:text-rose-400 mt-3 leading-relaxed">
+                          این وضعیت ذخیره نشده، بلکه از امتیازها محاسبه می‌شود: با اصلاح امتیاز دپارتمان‌ها و رسیدن به ۴۰ یا بالاتر، خودبه‌خود برداشته می‌شود.
+                        </p>
+                      </>
+                    );
+                  })()}
 
                   {/* The banner used to end with a machine-shaped footer line —
                       «IRC_ISSUE_DATE: N/A» — and it was wrong three times over.
@@ -990,7 +1079,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 2. اول بخش امتیاز دهی بیاد */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'score') && (
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm overflow-hidden text-right">
           <div className="border-b border-border px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
@@ -1031,7 +1120,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 </div>
                 <EvaluationForm vendor={vendor} onSave={onSave} onClose={() => setShowAdminScoresEdit(false)} currentUser={currentUser} onDirtyChange={setScoresDirty} />
               </div>
-            ) : vendor.scores ? (
+            ) : overall !== null ? (
+              /*
+               * `vendor.scores` on its own was the wrong test: the object exists
+               * on a source nobody has scored, with every department at zero, so
+               * this branch drew a full evaluation — a weighted total, four
+               * department cards whose criteria all read «۵ / ۵» because an
+               * unset raw value falls back to the maximum, and a radar collapsed
+               * on the origin. The empty state below was already written and
+               * could never be reached. `overall` is null exactly when no
+               * department carries a score, which is the question being asked.
+               */
               <div className="space-y-6">
                 {/* Weighted average score, beautifully centered and designed */}
                 {currentUser?.role === 'admin' ? (
@@ -1065,6 +1164,17 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     {FORM_LAYOUT.map(layout => {
                       const deptScore = vendor.scores[layout.id as keyof typeof vendor.scores];
                       if (deptScore === undefined || deptScore === null) return null;
+                      /*
+                       * A department with no score of its own is left out, not
+                       * drawn as a zero. `getRawScoreValue` answers 5 when it
+                       * has nothing recorded — right for the form, where a
+                       * slider must sit somewhere, and wrong here: on a source
+                       * scored by one department the other three appeared as
+                       * full marks on every criterion. Zero and «not recorded»
+                       * are the same state throughout this application
+                       * (rule 14), so this is the same test the server uses.
+                       */
+                      if (!(deptScore > 0)) return null;
                       
                       // Only the department a user may score is shown to them.
                       if (!canScoreDepartment(currentUser, layout.id)) return null;
@@ -1117,7 +1227,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground text-xs bg-muted/50 rounded-xl border border-dashed border-border">
-                هیچ امتیازی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
+                هیچ امتیازدهی برای این تامین‌کننده ثبت نشده است. لطفاً نسبت به ثبت ارزیابی اقدام کنید.
               </div>
             )}
           </div>
@@ -1125,7 +1235,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* Score history & trend (reconstructed from the audit trail) */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'score') && scoreHistory.length > 0 && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'score') && scoreHistory.length > 0 && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
@@ -1198,7 +1308,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
       )}
 
       {/* 3. ارزیابی ریسک تامین کنندگان */}
-      {!vendor.isSample && (!showEvalWizard || evalStage === 'risk') && canRisk && (
+      {!isSampleRecord(vendor) && (!showEvalWizard || evalStage === 'risk') && canRisk && (
         <div className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm text-right">
           <div className="flex items-center justify-between gap-3 mb-5 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
@@ -1573,7 +1683,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                     this block is inside `analysisRecords.length > 0` — so the
                     control cannot become the old dropdown under a new name and
                     approve a sample nobody has tested. */}
-                {(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                {isSampleRecord(vendor) && canDecideSample && (
                   <div className={`rounded-xl p-4 border ${
                     vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800'
                     : vendor.status === 'approved' ? 'bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
@@ -1602,7 +1712,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                           </p>
                           {log && (
                             <blockquote className="bg-card border border-border rounded-lg px-3 py-2">
-                              <span className="block text-2xs font-bold text-muted-foreground mb-0.5">دلیل ثبت‌شده{log.user ? ` — ${log.user}` : ''}{log.date ? ` · ${log.date}` : ''}:</span>
+                              <span className="block text-2xs font-bold text-muted-foreground mb-0.5">دلیل ثبت‌شده{log.user ? ` — ${log.user}` : ''}{formatLogTimestamp(log.date) ? ` · ${formatLogTimestamp(log.date)}` : ''}:</span>
                               <p className="text-2xs text-foreground leading-relaxed whitespace-pre-wrap">{log.action.replace(new RegExp(`^${SAMPLE_DECISION_PREFIX}:\\s*`), '')}</p>
                             </blockquote>
                           )}
@@ -1654,7 +1764,7 @@ export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser
                 )}
 
                 {/* Admin decision box for sources/suppliers (not samples) */}
-                {!(vendor.isSample || vendor.category === 'sample') && canAnalysis && (
+                {!isSampleRecord(vendor) && canDecideSource && (
                   <div className={`rounded-xl p-4 border ${vendor.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-amber-50/40 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <ShieldAlert className={`w-4 h-4 ${vendor.status === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />

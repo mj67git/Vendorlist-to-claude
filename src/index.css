@@ -265,6 +265,26 @@ body {
   button, a, tr, .card, [role="button"], input, select, textarea {
     @apply transition-all duration-200 ease-in-out;
   }
+
+  /*
+   * The half of the interface the browser draws itself.
+   *
+   * Every colour above is ours, but the checkbox glyph, the list a `<select>`
+   * drops open, the scrollbars, the date picker and the focus ring are the
+   * browser's — and it picks light or dark from `color-scheme`, not from our
+   * tokens. It was left at `normal`, so in dark mode an unticked checkbox was a
+   * white square on a navy panel (the permission matrix has fifty-two of them)
+   * and every dropdown opened a sheet of white. One declaration per theme fixes
+   * all of it, and `light` is stated rather than assumed so a browser or an OS
+   * set to dark does not restyle the light theme's controls.
+   */
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
 }
 
 /* 

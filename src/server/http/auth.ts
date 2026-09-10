@@ -110,22 +110,33 @@ export async function checkPermissionSafety(
   nextPermissions: Permission[],
 ): Promise<string | null> {
   const target = targetUsername.toLowerCase();
-  const keepsAdmin = nextPermissions.includes("users.manage");
-  if (keepsAdmin) return null;
+  // Both halves are checked since the granular split: `users.manage` opens the
+  // module and `users.permissions` is what actually hands access out, so losing
+  // the last holder of either one is a door closing behind everybody. A list
+  // naming `users.manage` carries `users.permissions` with it, so the common
+  // case still passes on the first test.
+  const guarded: Array<[Permission, string]> = [
+    ["users.manage", "مدیریت کاربران"],
+    ["users.permissions", "تعیین سطح دسترسی کاربران"],
+  ];
 
-  if (actor.username.toLowerCase() === target) {
-    return "برداشتن دسترسی «مدیریت کاربران» از حساب خودتان امکان‌پذیر نیست.";
-  }
+  for (const [permission, label] of guarded) {
+    if (nextPermissions.includes(permission)) continue;
 
-  const current = await getUserByUsername(target);
-  if (!current || current.isActive === false) return null;
-  if (!can(current, "users.manage")) return null;
+    if (actor.username.toLowerCase() === target) {
+      return `برداشتن دسترسی «${label}» از حساب خودتان امکان‌پذیر نیست.`;
+    }
 
-  const others = (await getAllUsers()).filter(
-    u => u.username.toLowerCase() !== target && u.isActive !== false && can(u, "users.manage"),
-  );
-  if (others.length === 0) {
-    return "این تنها حساب دارای دسترسی «مدیریت کاربران» است؛ ابتدا این دسترسی را به کاربر دیگری بدهید.";
+    const current = await getUserByUsername(target);
+    if (!current || current.isActive === false) return null;
+    if (!can(current, permission)) continue;
+
+    const others = (await getAllUsers()).filter(
+      u => u.username.toLowerCase() !== target && u.isActive !== false && can(u, permission),
+    );
+    if (others.length === 0) {
+      return `این تنها حساب دارای دسترسی «${label}» است؛ ابتدا این دسترسی را به کاربر دیگری بدهید.`;
+    }
   }
   return null;
 }
@@ -143,6 +154,37 @@ export function requirePermission(permission: Permission) {
         return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
       }
       if (!can(account, permission)) {
+        return res.status(403).json({
+          error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
+        });
+      }
+      req.account = account;
+      next();
+    } catch (err: any) {
+      console.error("Permission check failed:", err);
+      return res.status(500).json({ error: "بررسی سطح دسترسی با خطا مواجه شد." });
+    }
+  };
+}
+
+/**
+ * Open a route to any one of several permissions.
+ *
+ * For an endpoint that carries more than one kind of write: the source profile
+ * route accepts both an ordinary edit and the qualification verdict, and which
+ * one a request is doing can only be known by comparing its payload with the
+ * stored record. So the middleware admits anyone entitled to *something* here
+ * and the handler decides the rest — the alternative, one permission on the
+ * route, is what made the verdict answerable to `vendor.edit`.
+ */
+export function requireAnyPermission(...permissions: Permission[]) {
+  return async function (req: any, res: any, next: any) {
+    try {
+      const account = await getUserByUsername(req.user?.username || "");
+      if (!account || account.isActive === false) {
+        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+      }
+      if (!permissions.some(permission => can(account, permission))) {
         return res.status(403).json({
           error: "عدم دسترسی: سطح دسترسی شما اجازهٔ انجام این عملیات را نمی‌دهد.",
         });

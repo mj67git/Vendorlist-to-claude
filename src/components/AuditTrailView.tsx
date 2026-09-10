@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import { 
-  Search, Filter, SlidersHorizontal, ChevronLeft, X, Eye, 
-  Clock, ShieldAlert, CheckCircle, AlertTriangle, FileText, 
-  Activity, User as UserIcon, HelpCircle, Layers, ClipboardList,
-  RotateCcw, Calendar, Key, AlertCircle, Loader2, FlaskConical,
-  Calculator, Award, TrendingUp, Cpu
+  Search, SlidersHorizontal, ChevronLeft, X,
+  ShieldAlert, CheckCircle, AlertTriangle, FileText,
+  User as UserIcon, ClipboardList,
+  RotateCcw, AlertCircle, Loader2, FlaskConical,
+  Calculator, Award
 } from 'lucide-react';
 import jalaali from 'jalaali-js';
 import { Button } from './ui/button';
@@ -13,7 +14,8 @@ import { Pagination } from './Pagination';
 import { PerPageSelect } from './ui/per-page-select';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import {
-  AUDIT_ACTION_LABELS, AUDIT_EVENT_GROUPS, AUDIT_MODULE_LABELS, severityMatches,
+  ALL_AUDIT_EVENTS, AUDIT_ACTION_LABELS, AUDIT_EVENTS, AUDIT_EVENT_GROUPS,
+  AUDIT_FIELD_LABELS, AUDIT_MODULE_LABELS, auditRowValues, severityMatches,
 } from '../utils/auditTaxonomy';
 import { authFetch, isLocalMode } from '../services/authFetch';
 import { can } from '../utils/permissions';
@@ -26,6 +28,7 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 
 export interface AuditLog {
@@ -39,8 +42,21 @@ export interface AuditLog {
   recordName: string;
   severity: 'Info' | 'Warning' | 'Critical' | string;
   description: string;
+  /**
+   * The change, as before/after values.
+   *
+   * Since the audit rewrite the stored row holds a list of changed fields
+   * rather than two record copies; `auditRowValues` turns either shape into
+   * this pair so the panel below renders both the same way.
+   */
   before: Record<string, any> | string | null;
   after: Record<string, any> | string | null;
+  /** Exactly what is stored, for the raw JSON section. */
+  raw?: { before: any; after: any };
+  /** Named values for events that are not a field edit — a QC code, a count. */
+  facts?: Record<string, any> | null;
+  /** The event name from the closed vocabulary. Empty on rows written before it. */
+  event?: string;
   reason: string;
   correlationId: string;
   entityType?: string;
@@ -128,34 +144,6 @@ function InfoIcon(props: any) {
   return <CheckCircle className="w-3.5 h-3.5" {...props} />;
 }
 
-// Persian labels for common audit field keys (fallback: raw key).
-const fieldKeyLabels: Record<string, string> = {
-  // Collections. These are compared item by item (see computeFieldDiff), so the
-  // label names the collection and the value names what actually moved.
-  activityLogs: 'سابقهٔ فعالیت', analysisRecords: 'نتایج آزمایشگاهی',
-  documents: 'مدارک', sopDocuments: 'مدارک', permissions: 'دسترسی‌ها',
-  riskAssessment: 'ارزیابی ریسک', evaluation: 'ارزیابی فروشنده',
-  // Accounts and partners.
-  isActive: 'وضعیت فعال بودن', email: 'ایمیل', phone: 'تلفن', city: 'شهر',
-  address: 'آدرس', website: 'وبسایت', contactPerson: 'مسئول تماس', type: 'نوع شریک',
-  // Sources.
-  supplierId: 'فروشنده', manufacturerId: 'تولیدکننده', isSample: 'نمونه',
-  ircExpiryDate: 'انقضای IRC', lastAudit: 'تاریخ صدور IRC', registrationDate: 'تاریخ ثبت',
-  materialId: 'مادهٔ مرتبط', comments: 'توضیحات', recordedBy: 'ثبت‌کنندهٔ نتیجه',
-  action: 'اقدام', user: 'کاربر', file: 'فایل', fileName: 'نام فایل',
-  status: 'وضعیت', grade: 'گرید', name: 'نام', nameEn: 'نام لاتین', country: 'کشور',
-  material: 'ماده', materialEn: 'ماده (لاتین)', cas: 'CAS', irc: 'IRC', category: 'دسته',
-  contactInfo: 'اطلاعات تماس', totalSPS: 'امتیاز SPS', scores: 'نمرات', riskLevel: 'سطح ریسک',
-  riskScore: 'RPN', sri: 'SRI', decision: 'تصمیم', deviationReason: 'انحراف', qcCode: 'کد QC',
-  evaluator: 'ارزیاب', role: 'نقش', username: 'نام کاربری', mustChangePassword: 'اجبار تغییر رمز',
-  initialSampleStatus: 'وضعیت اولیهٔ نمونه', rejectionReasons: 'دلایل رد', totalScore: 'امتیاز کل',
-  // Source selection (PUT /api/source-selections) and risk assessment.
-  vendorId: 'سورس منتخب', materialKey: 'ماده', reason: 'دلیل انتخاب', decidedBy: 'تصمیم‌گیرنده',
-  rpn: 'RPN', SRI: 'SRI', materialCriticality: 'بحرانیت ماده', detectability: 'قابلیت تشخیص',
-  probability: 'احتمال وقوع', sps: 'امتیاز SPS', date: 'تاریخ',
-  commercialScore: 'امتیاز بازرگانی', qualityScore: 'امتیاز کیفی',
-  planningScore: 'امتیاز برنامه‌ریزی', financeScore: 'امتیاز مالی',
-};
 
 /**
  * Jalali `YYYY/MM/DD` → an ISO instant the API can compare against.
@@ -347,7 +335,7 @@ export function computeFieldDiffDetailed(before: any, after: any, prefix = ''): 
     }
 
     const path = prefix ? `${prefix}.${k}` : k;
-    const label = fieldKeyLabels[k];
+    const label = AUDIT_FIELD_LABELS[k];
 
     if (Array.isArray(bv) || Array.isArray(av)) {
       const collection = diffCollection(
@@ -404,9 +392,21 @@ export function toAuditLog(l: any): AuditLog {
     recordName: l.entityName || l.entityId || 'مشخصات',
     severity: l.severity === 'Critical' ? 'Critical' : l.severity === 'Warning' ? 'Warning' : 'Info',
     description: l.description || '',
-    before: l.beforeData,
-    after: l.afterData,
-    reason: l.reasonForChange || 'تایید فرآیندی',
+    event: l.event || '',
+    // Rows written since the audit rewrite name what moved (`changes`) instead
+    // of carrying two copies of the record; `auditRowValues` presents both
+    // shapes as the before/after pair this panel has always diffed, so an old
+    // row and a new one read the same way in the detail view.
+    ...(() => {
+      const { before, after } = auditRowValues(l);
+      return { before, after };
+    })(),
+    raw: { before: l.beforeData ?? null, after: l.afterData ?? null },
+    facts: (l.afterData && typeof l.afterData === 'object' ? (l.afterData as any).facts : null) || null,
+    // No invented default. The panel used to print «تایید فرآیندی» under
+    // "stated reason" for every record that had none, which is a sentence
+    // nobody wrote attributed to whoever made the change.
+    reason: l.reasonForChange || '',
     correlationId: l.correlationId || 'N/A',
     eventType: l.eventType || l.afterData?.eventType || l.module || 'User Activity',
     // Read from the record's own columns; the `afterData` lookups are the
@@ -428,6 +428,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
   const [filterModule, setFilterModule] = useState('all');
   const [filterGroup, setFilterGroup] = useState('all');
   const [filterAction, setFilterAction] = useState('all');
+  const [filterEvent, setFilterEvent] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
   /** Did the action happen: Success, Failed or Blocked. */
   const [filterResult, setFilterResult] = useState('all');
@@ -436,7 +437,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const advancedFilterCount = [filterUser, filterModule, filterGroup, filterAction, filterSeverity, filterResult].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
+  const advancedFilterCount = [filterUser, filterModule, filterGroup, filterEvent, filterAction, filterSeverity, filterResult].filter(v => v !== 'all').length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
 
   // Sorting States
   const [sortField, setSortField] = useState<'date' | 'user'>('date');
@@ -493,6 +494,28 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
     failed: 0,
   });
 
+  /**
+   * The vocabulary, grouped under the module each event belongs to.
+   *
+   * Built from `AUDIT_EVENTS` rather than typed out here, so an event added to
+   * the vocabulary appears in the filter without anyone remembering to add it —
+   * the same reason the module and action lists read from their label tables.
+   */
+  const eventOptions = useMemo(() => {
+    const byModule = new Map<string, { value: string; label: string }[]>();
+    for (const event of ALL_AUDIT_EVENTS) {
+      const def = AUDIT_EVENTS[event];
+      const list = byModule.get(def.module) || [];
+      list.push({ value: event, label: def.label });
+      byModule.set(def.module, list);
+    }
+    return Array.from(byModule.entries()).map(([module, events]) => ({
+      module,
+      label: AUDIT_MODULE_LABELS[module] || module,
+      events,
+    }));
+  }, []);
+
   // Dynamic filter lists for select options.
   // Only users that really appear in the log: offering demo names guaranteed an
   // empty result, since no such record exists in the database.
@@ -547,6 +570,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
           if (filterUser !== 'all' && l.user !== filterUser) return false;
           if (filterModule !== 'all' && l.module !== filterModule) return false;
           if (groupModules && !groupModules.includes(l.module)) return false;
+          if (filterEvent !== 'all' && l.event !== filterEvent) return false;
           if (filterAction !== 'all' && l.action !== filterAction) return false;
           if (activeSev !== 'all' && !severityMatches(activeSev).includes(l.severity)) return false;
           if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
@@ -572,6 +596,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
         userId: filterUser !== 'all' ? filterUser : '',
         module: filterModule !== 'all' ? filterModule : '',
         group: filterGroup !== 'all' ? filterGroup : '',
+        event: filterEvent !== 'all' ? filterEvent : '',
         action: filterAction !== 'all' ? filterAction : '',
         severity: activeSeverity !== 'all' ? activeSeverity : '',
         result: filterResult !== 'all' ? filterResult : '',
@@ -599,7 +624,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filterUser, filterModule, filterGroup, filterAction, filterSeverity, filterResult, quickSeverityFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
+  }, [currentPage, filterUser, filterModule, filterGroup, filterEvent, filterAction, filterSeverity, filterResult, quickSeverityFilter, startDate, endDate, searchQuery, itemsPerPage, sortField, sortDirection]);
 
   // Fetch metrics and filters
   const fetchStatsAndFilters = useCallback(async () => {
@@ -688,10 +713,13 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
         const l = await response.json();
         setSelectedLog(prev => {
           if (!prev || prev.id !== log.id) return prev;
+          const { before, after } = auditRowValues(l);
           return {
             ...prev,
-            before: l.beforeData,
-            after: l.afterData,
+            before,
+            after,
+            raw: { before: l.beforeData ?? null, after: l.afterData ?? null },
+            facts: (l.afterData && typeof l.afterData === 'object' ? l.afterData.facts : null) || null,
             reason: l.reasonForChange || prev.reason,
             correlationId: l.correlationId || prev.correlationId,
             result: l.result || prev.result,
@@ -723,6 +751,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
     setFilterUser('all');
     setFilterModule('all');
     setFilterGroup('all');
+    setFilterEvent('all');
     setFilterAction('all');
     setFilterSeverity('all');
     setFilterResult('all');
@@ -776,6 +805,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
           if (filterUser !== 'all' && l.user !== filterUser) return false;
           if (filterModule !== 'all' && l.module !== filterModule) return false;
           if (groupModules && !groupModules.includes(l.module)) return false;
+          if (filterEvent !== 'all' && l.event !== filterEvent) return false;
           if (filterAction !== 'all' && l.action !== filterAction) return false;
           if (activeSev !== 'all' && !severityMatches(activeSev).includes(l.severity)) return false;
           if (q && !(`${l.user} ${l.module} ${l.recordName} ${l.action} ${l.description}`.toLowerCase().includes(q))) return false;
@@ -802,6 +832,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             userId: filterUser !== 'all' ? filterUser : '',
             module: filterModule !== 'all' ? filterModule : '',
             group: filterGroup !== 'all' ? filterGroup : '',
+            event: filterEvent !== 'all' ? filterEvent : '',
             action: filterAction !== 'all' ? filterAction : '',
             severity: activeSev !== 'all' ? activeSev : '',
             result: filterResult !== 'all' ? filterResult : '',
@@ -835,6 +866,9 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
       // already reports a failure under the button.
       const { exportAuditToExcel } = await import('../utils/excelExport');
       exportAuditToExcel(rows);
+      // Exporting the trail is itself an export, and the trail is the last
+      // place that should have a blind spot about what left it.
+      reportDataOut('data.exported', 'ردیابی تغییرات', rows.length);
       setExportNotice(null);
     } catch (err) {
       console.error('Audit export failed:', err);
@@ -866,11 +900,13 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
   };
 
   return (
-    <div className="space-y-6 text-right pb-12 w-full">
+    <div className="space-y-6 fade-in text-right pb-12 w-full">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-5">
+        {/* Same Latin caption shape as the archive and the user module. */}
         <PageTitle
-          icon={ClipboardList}
+          eyebrow="Audit Trail & Change Control"
+          eyebrowIcon={ClipboardList}
           title="ردیابی تغییرات"
           subtitle="سامانه مانیتورینگ فعالیت‌های سیستم و تاریخچه تغییرات فرآیندی (GMP Compliance)"
         />
@@ -937,7 +973,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
           for its own sake. This module is an investigation tool, and a number
           whose meaning is "how many records match this filter" is the only kind
           it needs. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {([
           {
             key: 'all', label: 'کل رویدادها', value: stats.total,
@@ -973,23 +1009,18 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             tone: 'text-rose-700 dark:text-rose-300',
           },
         ] as const).map(tile => (
-          <button
+          /* Still a filter, not just a counter: `StatTile` renders a real
+             button when it is given an action, and keeps the pressed state so
+             the tile that is currently narrowing the table says so. */
+          <StatTile
             key={tile.key}
-            type="button"
+            label={tile.label}
+            value={tile.value}
+            hint={tile.hint}
+            valueClassName={(tile as any).tone}
+            active={tile.active}
             onClick={() => { tile.apply(); setCurrentPage(1); }}
-            aria-pressed={tile.active}
-            className={`text-right rounded-xl border p-3 transition-colors ${
-              tile.active
-                ? 'bg-accent border-foreground/30'
-                : 'bg-card border-border hover:bg-accent/60'
-            }`}
-          >
-            <span className="text-2xs font-bold text-muted-foreground block">{tile.label}</span>
-            <span className={`text-xl font-black font-mono block leading-tight ${(tile as any).tone || 'text-foreground'}`}>
-              {tile.value.toLocaleString('fa-IR')}
-            </span>
-            <span className="text-2xs text-muted-foreground block truncate">{tile.hint}</span>
-          </button>
+          />
         ))}
       </div>
 
@@ -1117,6 +1148,28 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
               <option value="all">همه گروه‌ها</option>
               {Object.entries(AUDIT_EVENT_GROUPS).map(([key, g]) => (
                 <option key={key} value={key}>{g.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Event — the sharpest filter there is: one name from the closed
+              vocabulary, rather than a module and a verb that have to be
+              combined to mean "a source was disqualified". Grouped by module so
+              a list of forty names stays readable. */}
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-2xs font-bold">رویداد</label>
+            <select
+              value={filterEvent}
+              onChange={e => { setFilterEvent(e.target.value); setCurrentPage(1); }}
+              className={cn(inputBaseClass, 'w-full font-medium')}
+            >
+              <option value="all">همهٔ رویدادها</option>
+              {eventOptions.map(group => (
+                <optgroup key={group.module} label={group.label}>
+                  {group.events.map(ev => (
+                    <option key={ev.value} value={ev.value}>{ev.label}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -1334,8 +1387,12 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
               <tr className="bg-muted text-muted-foreground text-xs font-bold border-b border-border">
                 <SortHeader field="date" label="تاریخ و ساعت" width="16%" sortField={sortField} sortOrder={sortDirection} onSort={handleSort} />
                 <SortHeader field="user" label="کاربر" width="18%" sortField={sortField} sortOrder={sortDirection} onSort={handleSort} />
-                <th className="py-3 px-4 w-[15%]">ماژول</th>
-                <th className="py-3 px-4 w-[10%]">عملیات</th>
+                {/* One column instead of the module and the action side by
+                    side. Those two were a category and a verb that a reader had
+                    to put back together — «مدیریت مواد» + «حذف» — while the row
+                    already carries the sentence the vocabulary wrote for it.
+                    The module stays underneath as the smaller fact it is. */}
+                <th className="py-3 px-4 w-[32%]">رویداد</th>
                 <th className="py-3 px-4 w-[15%]">رکورد هدف</th>
                 {/* Not sortable, and no longer pretending to be: the column
                     stores free text with two spellings for one level
@@ -1352,8 +1409,8 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                    answer to the new one is exactly the confusion to avoid. */
                 <TableSkeletonRows
                   rows={7}
-                  columns={6}
-                  width={c => (c === 0 ? '70%' : c > 3 ? '4rem' : '55%')}
+                  columns={5}
+                  width={c => (c === 0 ? '70%' : c === 2 ? '85%' : c > 2 ? '4rem' : '55%')}
                 />
               ) : logs.length > 0 ? (
                 logs.map((log) => {
@@ -1385,11 +1442,16 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                           </div>
                         </div>
                       </td>
-                      {/* Same label the module filter shows, so the two read alike. */}
-                      <td className="py-3.5 px-4 text-muted-foreground font-semibold">{AUDIT_MODULE_LABELS[log.module] || log.module}</td>
+                      {/* The sentence the event wrote for itself, with the
+                          module beneath it in the same label the filter uses.
+                          A row from before the rewrite has no sentence of its
+                          own, so the action's label stands in. */}
                       <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded-md text-2xs font-bold border inline-block ${actMeta.bg}`}>
-                          {actMeta.label}
+                        <span className="block text-foreground font-semibold leading-relaxed">
+                          {log.description || actMeta.label}
+                        </span>
+                        <span className="block text-muted-foreground text-2xs mt-0.5">
+                          {AUDIT_MODULE_LABELS[log.module] || log.module}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-foreground font-bold max-w-[150px] xl:max-w-[18rem]">
@@ -1407,7 +1469,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
               ) : (
                 advancedFilterCount > 0 || searchQuery || quickSeverityFilter ? (
                   <TableEmptyRow
-                    colSpan={6}
+                    colSpan={5}
                     icon={AlertCircle}
                     message="هیچ رکورد لاگی با مشخصات انتخابی یافت نشد."
                     action={
@@ -1418,7 +1480,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                   />
                 ) : (
                   <TableEmptyRow
-                    colSpan={6}
+                    colSpan={5}
                     icon={AlertCircle}
                     message="هنوز هیچ رویدادی در سامانه ثبت نشده است."
                     note="هر تغییری در سورس‌ها، مواد، شرکا و کاربران به‌صورت خودکار همین‌جا ثبت می‌شود."
@@ -1513,7 +1575,12 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                   that, so it now sits below, in a section that starts closed. */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-black text-foreground">آنچه تغییر کرد</span>
+                  {/* An export, a sign-in or a lab result changed no field of
+                      any record: they carry named values instead, so calling
+                      that section "what changed" described the wrong thing. */}
+                  <span className="text-xs font-black text-foreground">
+                    {selectedLog.facts && !selectedLog.raw?.after?.changes ? 'جزئیات رویداد' : 'آنچه تغییر کرد'}
+                  </span>
                   {!isLoadingDetail && (() => {
                     const n = isNonDataEvent(selectedLog) ? 0 : computeFieldDiffDetailed(selectedLog.before, selectedLog.after).rows.length;
                     return (
@@ -1592,8 +1659,8 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                       <details className="mt-2">
                         <summary className="text-2xs text-muted-foreground cursor-pointer hover:text-muted-foreground select-none">نمایش داده خام JSON (before / after)</summary>
                         <div className="grid grid-cols-1 gap-2 mt-2" dir="ltr">
-                          <pre className="whitespace-pre-wrap font-mono text-2xs text-rose-800 bg-rose-50/50 border border-rose-100 p-2 rounded-lg overflow-x-auto">{selectedLog.before ? (typeof selectedLog.before === 'object' ? JSON.stringify(selectedLog.before, null, 2) : String(selectedLog.before)) : 'null'}</pre>
-                          <pre className="whitespace-pre-wrap font-mono text-2xs text-emerald-800 bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg overflow-x-auto">{selectedLog.after ? (typeof selectedLog.after === 'object' ? JSON.stringify(selectedLog.after, null, 2) : String(selectedLog.after)) : 'null'}</pre>
+                          <pre className="whitespace-pre-wrap font-mono text-2xs text-rose-800 bg-rose-50/50 border border-rose-100 p-2 rounded-lg overflow-x-auto">{(() => { const v = selectedLog.raw ? selectedLog.raw.before : selectedLog.before; return v ? (typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)) : 'null'; })()}</pre>
+                          <pre className="whitespace-pre-wrap font-mono text-2xs text-emerald-800 bg-emerald-50/50 border border-emerald-100 p-2 rounded-lg overflow-x-auto">{(() => { const v = selectedLog.raw ? selectedLog.raw.after : selectedLog.after; return v ? (typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)) : 'null'; })()}</pre>
                         </div>
                       </details>
                     </div>
@@ -1608,12 +1675,14 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                   gone from this panel. It is still written to every record and
                   still searchable from the list; what changed is that the panel
                   does not print two sentences for one event. */}
-              <div className="space-y-1.5">
-                <span className="text-2xs font-bold text-muted-foreground block">دلیل ثبت‌شده</span>
-                <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
-                  {selectedLog.reason}
+              {selectedLog.reason && (
+                <div className="space-y-1.5">
+                  <span className="text-2xs font-bold text-muted-foreground block">دلیل ثبت‌شده</span>
+                  <div className="bg-muted border border-border p-3 rounded-xl text-foreground text-xs leading-relaxed font-medium">
+                    {selectedLog.reason}
+                  </div>
                 </div>
-              </div>
+              )}
 
 
               {/* What else happened because of the same action.

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { reportDataOut } from '../services/reportDataOut';
 import {
   AlertCircle, AlertTriangle, CheckCircle, FileSpreadsheet, History, KeyRound, Loader2,
   Pencil, Plus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserX,
@@ -15,12 +16,15 @@ import { cn } from '../lib/utils';
 import { SortHeader } from './ui/sort-header';
 import { TableEmptyRow } from './ui/table-empty-row';
 import { PageTitle } from './ui/page-title';
+import { StatTile } from './ui/stat-tile';
 import { TableSkeletonRows } from './ui/table-skeleton-rows';
 import {
-  ALL_PERMISSIONS, can, LOCKED_REASONS, PERMISSION_LABELS, PERMISSION_MODULES,
-  roleTemplate, type ModuleAction, type Permission, type PermissionModule,
+  ALL_PERMISSIONS, can, LOCKED_REASONS, ownedModulePermissions, PERMISSION_LABELS,
+  PERMISSION_MODULES, permissionOwner, roleTemplate,
+  type ModuleAction, type Permission, type PermissionModule,
 } from '../utils/permissions';
 import { AUDIT_ACTION_LABELS, AUDIT_MODULE_LABELS } from '../utils/auditTaxonomy';
+import { InfoHint } from './ui/info-hint';
 
 /**
  * The four columns of the module grid, right to left as the page reads.
@@ -73,10 +77,6 @@ const MODULE_SHORT: Record<string, string> = {
  * An always-open cell counts as granted, since nothing can take it away.
  */
 function moduleLetters(module: PermissionModule, draft: Permission[]): string {
-  // A view over another module's data has no permission of its own; it reports
-  // the read it follows, so the matrix and the export say plainly whether the
-  // page is reachable.
-  if (module.derivedFrom) return draft.includes(module.derivedFrom) ? 'R' : '';
   const crud = ACTION_COLUMNS
     .filter(col => {
       const cell = module.actions[col.key];
@@ -91,17 +91,10 @@ function moduleLetters(module: PermissionModule, draft: Permission[]): string {
   return [...crud, ...extras].join('');
 }
 
-/** Every permission a module can grant, its non-CRUD extras included. */
-function allModulePermissions(module: PermissionModule): Permission[] {
-  return [...new Set([...modulePermissions(module), ...(module.extras || []).map(x => x.permission)])];
-}
-
-/** The distinct permissions a module row can actually toggle. */
-function modulePermissions(module: PermissionModule): Permission[] {
-  const found = ACTION_COLUMNS
-    .map(col => module.actions[col.key])
-    .filter((p): p is Permission => p !== null && p !== 'open');
-  return [...new Set(found)];
+/** The row a mirrored cell is really set in. */
+function ownerModule(permission: Permission): PermissionModule | undefined {
+  const key = permissionOwner(permission);
+  return PERMISSION_MODULES.find(m => m.key === key);
 }
 
 /**
@@ -187,6 +180,14 @@ export function UsersView({ currentUser }: UsersViewProps) {
   // Reading the trail is its own permission; administering accounts does not
   // grant it, so the activity button is only offered to someone who holds both.
   const canReadAudit = can(currentUser, 'audit.read');
+  // The module's own work is three permissions since the granular split:
+  // opening it and editing accounts (`users.manage`), handing access out
+  // (`users.permissions`) and setting a temporary password (`users.password`).
+  // The server enforces each separately, so the buttons follow one by one
+  // rather than all appearing for whoever can open the page (rule 14).
+  const canManageUsers = can(currentUser, 'users.manage');
+  const canSetPermissions = can(currentUser, 'users.permissions');
+  const canResetPassword = can(currentUser, 'users.password');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [page, setPage] = useState(1);
@@ -203,6 +204,23 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const [resetError, setResetError] = useState<string | null>(null);
 
   const [permTarget, setPermTarget] = useState<ManagedUser | null>(null);
+  /**
+   * Whether every row prints its explanation, or keeps it behind its ⓘ.
+   *
+   * Off by default, and remembered: an administrator setting up an account
+   * reads the notes once and then wants the matrix, which is thirteen rows of
+   * checkboxes the prose was burying. The choice is a preference of the person,
+   * not of the account being edited, so it lives in localStorage rather than in
+   * the permission draft.
+   */
+  const [showNotes, setShowNotes] = useState(() => {
+    try { return localStorage.getItem('users_perm_notes') === '1'; } catch { return false; }
+  });
+  const toggleNotes = () => setShowNotes(prev => {
+    const next = !prev;
+    try { localStorage.setItem('users_perm_notes', next ? '1' : '0'); } catch { /* private mode */ }
+    return next;
+  });
   const [permDraft, setPermDraft] = useState<Permission[]>([]);
   const [permError, setPermError] = useState<string | null>(null);
   const [permSaving, setPermSaving] = useState(false);
@@ -353,6 +371,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
       // the bundle and this page is not an export tool until the button is used.
       const { exportUserAccessToExcel } = await import('../utils/excelExport');
       exportUserAccessToExcel(rows, moduleTitles);
+      reportDataOut('data.exported', 'سطوح دسترسی کاربران', rows.length);
     } catch (err: any) {
       setActionError('تهیهٔ خروجی Excel ناموفق بود. دوباره تلاش کنید.');
       console.error('User access export failed:', err);
@@ -485,14 +504,18 @@ export function UsersView({ currentUser }: UsersViewProps) {
    * page the reader cannot open. So ticking any action of a module turns its
    * read on, and turning its read off clears the rest of the row.
    */
-  const togglePermission = (permission: Permission) => {
-    const module = PERMISSION_MODULES.find(m =>
-      ACTION_COLUMNS.some(c => m.actions[c.key] === permission)
-      || m.single === permission
-      || (m.extras || []).some(x => x.permission === permission));
+  const togglePermission = (permission: Permission, from?: PermissionModule) => {
+    // The row is passed in by the cell that was clicked. Searching for it by
+    // permission would find the wrong one now that the samples row shows the
+    // source's create/edit/delete: ticking «ثبت» there would switch on the
+    // sources read instead of the samples one.
+    const module = from ?? ownerModule(permission);
     const read = module?.actions.view;
     const readPerm = read && read !== 'open' ? read : null;
-    const rowPerms = module ? allModulePermissions(module) : [];
+    // Turning a row's view off clears only what that row owns. The mirrored
+    // cells are the other row's permissions and must survive, or closing the
+    // samples list would also revoke registering a source.
+    const rowPerms = module ? ownedModulePermissions(module) : [];
 
     setPermDraft(prev => {
       const on = prev.includes(permission);
@@ -511,7 +534,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
 
   /** The row's master tick: all of this module's actions on, or all off. */
   const toggleModule = (module: PermissionModule) => {
-    const owned = allModulePermissions(module);
+    const owned = ownedModulePermissions(module);
     if (owned.length === 0) return;
     setPermDraft(prev => {
       const allOn = owned.every(p => prev.includes(p));
@@ -567,25 +590,24 @@ export function UsersView({ currentUser }: UsersViewProps) {
   const isSelf = (u: ManagedUser) => u.username.toLowerCase() === currentUser.username.toLowerCase();
 
   return (
-    <div className="space-y-5 fade-in">
-      {/* HEADER */}
-      <div className="bg-card border border-border rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="space-y-6 fade-in text-right">
+      {/* HEADER — the underlined row the archive, the audit trail and the
+          integrated supplier review all use. This screen was the one carrying
+          its title inside a card, so the page began differently from every
+          other module before a word of it was read. */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
+        {/* The Latin caption above the Persian title, the shape the archive
+            and the integrated supplier review use — this screen carried the
+            tinted icon tile instead, so two headers in the same family opened
+            differently. */}
         <PageTitle
-          icon={UserCog}
+          eyebrow="User Access Management"
+          eyebrowIcon={UserCog}
           title="مدیریت کاربران سامانه"
           subtitle="تعریف دسترسی پرسنل، تغییر سمت سازمانی و کنترل وضعیت حساب‌ها — تمامی تغییرات در ردیابی تغییرات (Audit) ثبت می‌شود."
         />
 
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <Input
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="جستجوی کاربر..."
-              className="pr-9 pl-3 w-full sm:w-56"
-            />
-          </div>
           {/* Administering accounts and taking a file of them out of the
               system are two different permissions. */}
           {can(currentUser, 'data.export') && (
@@ -601,41 +623,55 @@ export function UsersView({ currentUser }: UsersViewProps) {
             <span>خروجی Excel</span>
           </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={openCreate}
-            className="font-bold shrink-0"
-          >
-            <Plus />
-            <span>کاربر جدید</span>
-          </Button>
+          {canManageUsers && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={openCreate}
+              className="font-bold shrink-0"
+            >
+              <Plus />
+              <span>کاربر جدید</span>
+            </Button>
+          )}
         </div>
       </div>
 
       {/* KPI STRIP — the same four-card shape the other repositories use. The
           numbers are counted from the loaded list, so they never claim more
           than the table can show. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {[
           { label: 'کل کاربران', value: users.length, hint: 'حساب تعریف‌شده در سامانه' },
           { label: 'حساب فعال', value: activeCount, hint: `${(users.length - activeCount).toLocaleString('fa-IR')} حساب غیرفعال` },
           { label: 'مدیر فعال', value: activeAdmins, hint: 'دارندهٔ دسترسی کامل' },
           { label: 'دسترسی سفارشی', value: customCount, hint: `${neverSignedIn.toLocaleString('fa-IR')} حساب هنوز وارد نشده` },
         ].map(card => (
-          <div key={card.label} className="bg-card border border-border rounded-2xl p-4 shadow-xs">
-            <span className="text-2xs font-bold text-muted-foreground block">{card.label}</span>
-            <span className="text-xl font-black text-foreground block mt-1">
-              {loading ? '—' : card.value.toLocaleString('fa-IR')}
-            </span>
-            <span className="text-2xs text-muted-foreground block mt-0.5">{card.hint}</span>
-          </div>
+          <StatTile key={card.label} {...card} loading={loading} />
         ))}
       </div>
 
       {/* FILTER BAR — the three questions an access review asks. Native selects
           styled from `inputBaseClass`, like every other filter in the app. */}
       <div className="bg-card border border-border rounded-2xl p-4 shadow-xs flex flex-wrap items-end gap-3">
+        {/* The search sits with the filters it works alongside, the way the
+            other three modules arrange it — it used to live in the header, so
+            this screen asked its narrowing questions in two places. */}
+        <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
+          <span className="text-2xs font-bold text-muted-foreground">جستجو</span>
+          <div className="relative">
+            <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-muted-foreground">
+              <Search className="w-4 h-4" />
+            </span>
+            <Input
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="جستجوی نام، نام کاربری یا سمت…"
+              className="pr-10 pl-3 w-full"
+              aria-label="جستجوی کاربر"
+            />
+          </div>
+        </label>
         <label className="flex flex-col gap-1">
           <span className="text-2xs font-bold text-muted-foreground">سمت سازمانی</span>
           <select
@@ -765,9 +801,10 @@ export function UsersView({ currentUser }: UsersViewProps) {
                       <th scope="row" className="sticky right-0 z-10 bg-card py-2.5 px-4 text-right font-bold border-b border-l border-border">
                         <button
                           type="button"
-                          onClick={() => openPermissions(u)}
-                          className="text-right hover:text-primary transition-colors"
-                          title={`ویرایش سطح دسترسی ${u.name}`}
+                          onClick={() => canSetPermissions && openPermissions(u)}
+                          disabled={!canSetPermissions}
+                          className="text-right hover:text-primary transition-colors disabled:hover:text-foreground disabled:cursor-default"
+                          title={canSetPermissions ? `ویرایش سطح دسترسی ${u.name}` : u.name}
                         >
                           <span className="block text-xs font-bold text-foreground">{u.name}</span>
                           <span className="block text-2xs font-medium text-muted-foreground">
@@ -958,15 +995,19 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-center gap-1">
-                      <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
-                        className="text-muted-foreground hover:text-primary">
-                        <Pencil />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
-                        onClick={() => openPermissions(u)}
-                        className="text-muted-foreground hover:text-primary">
-                        <SlidersHorizontal />
-                      </Button>
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="ویرایش" onClick={() => openEdit(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <Pencil />
+                        </Button>
+                      )}
+                      {canSetPermissions && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="سطح دسترسی"
+                          onClick={() => openPermissions(u)}
+                          className="text-muted-foreground hover:text-primary">
+                          <SlidersHorizontal />
+                        </Button>
+                      )}
                       {canReadAudit && (
                         <Button type="button" variant="ghost" size="icon-xs" title="فعالیت اخیر"
                           onClick={() => openActivity(u)}
@@ -974,23 +1015,29 @@ export function UsersView({ currentUser }: UsersViewProps) {
                           <History />
                         </Button>
                       )}
-                      <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
-                        onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
-                        className="text-muted-foreground hover:text-amber-600">
-                        <KeyRound />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
-                        disabled={isSelf(u)}
-                        onClick={() => setActive(u, !u.isActive)}
-                        className="text-muted-foreground hover:text-rose-600">
-                        {u.isActive ? <UserX /> : <CheckCircle />}
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
-                        disabled={isSelf(u)}
-                        onClick={() => setDeleteTarget(u)}
-                        className="text-muted-foreground hover:text-rose-600">
-                        <Trash2 />
-                      </Button>
+                      {canResetPassword && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="بازنشانی کلمه عبور"
+                          onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(null); }}
+                          className="text-muted-foreground hover:text-amber-600">
+                          <KeyRound />
+                        </Button>
+                      )}
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title={u.isActive ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                          disabled={isSelf(u)}
+                          onClick={() => setActive(u, !u.isActive)}
+                          className="text-muted-foreground hover:text-rose-600">
+                          {u.isActive ? <UserX /> : <CheckCircle />}
+                        </Button>
+                      )}
+                      {canManageUsers && (
+                        <Button type="button" variant="ghost" size="icon-xs" title="حذف کامل"
+                          disabled={isSelf(u)}
+                          onClick={() => setDeleteTarget(u)}
+                          className="text-muted-foreground hover:text-rose-600">
+                          <Trash2 />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1298,7 +1345,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
       <FormModal
         open={!!permTarget}
         onClose={() => setPermTarget(null)}
-        size="md"
+        // Thirteen rows with their own explanatory ticks since the granular
+        // split; at `md` the table scrolled sideways to reach the delete column.
+        size="lg"
         labelledBy="users-perm-title"
         unsavedChanges={permDirty}
         unsavedLabel="تغییرات سطح دسترسی"
@@ -1372,11 +1421,33 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   checkbox only where the server can tell that action apart;
                   everywhere else it is locked and says why, so no tick in this
                   dialog promises a control that does not exist. */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-2xs text-muted-foreground font-semibold">
+                  {PERMISSION_MODULES.length.toLocaleString('fa-IR')} ماژول · هر ستون یک عملیات
+                </span>
+                {/* One switch for the whole dialog rather than an expander per
+                    row: whoever wants the reasoning wants it while reading the
+                    policy, not one module at a time. */}
+                <label className="inline-flex items-center gap-1.5 cursor-pointer text-2xs font-bold text-muted-foreground hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={showNotes}
+                    onChange={toggleNotes}
+                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                  />
+                  نمایش توضیحات
+                </label>
+              </div>
               <div className="overflow-x-auto -mx-2 px-2">
                 <table className="w-full min-w-[520px] border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <th className="text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
+                      {/* `w-full` on this one header hands the module column every pixel the
+                          fixed action columns do not need. Without it the auto layout
+                          split the table evenly and the notes wrapped at about 28
+                          characters, three lines each, next to five columns of
+                          whitespace. */}
+                      <th className="w-full text-right text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 pr-1">ماژول</th>
                       {ACTION_COLUMNS.map(col => (
                         <th key={col.key} className="text-center text-2xs font-bold text-muted-foreground uppercase tracking-wide pb-2 px-1 w-16">
                           <span className="block">{col.label}</span>
@@ -1388,7 +1459,9 @@ export function UsersView({ currentUser }: UsersViewProps) {
                   </thead>
                   <tbody>
                     {PERMISSION_MODULES.map(module => {
-                      const owned = allModulePermissions(module);
+                      // The master tick sets what this row owns; a mirrored
+                      // cell is settable in the row it belongs to.
+                      const owned = ownedModulePermissions(module);
                       const granted = owned.filter(p => permDraft.includes(p));
                       const allOn = owned.length > 0 && granted.length === owned.length;
                       const someOn = granted.length > 0 && !allOn;
@@ -1415,67 +1488,52 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               >
                                 {moduleLetters(module, permDraft) || '—'}
                               </span>
+                              {module.note && !showNotes && (
+                                <InfoHint text={module.note} label={`توضیح ${module.title}`} />
+                              )}
                             </div>
-                            {module.note && (
-                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[26ch]">
+                            {module.note && showNotes && (
+                              <span className="text-2xs text-muted-foreground leading-relaxed block mt-0.5 max-w-[72ch]">
                                 {module.note}
                               </span>
                             )}
                             {/* Abilities that are not one of the four columns get
                                 their own tick here rather than a fifth column
-                                that would be empty on every other row. */}
-                            {(module.extras || []).map(extra => (
-                              <label key={extra.permission}
-                                className="flex items-start gap-1.5 mt-1.5 cursor-pointer max-w-[26ch]">
-                                <input
-                                  type="checkbox"
-                                  checked={permDraft.includes(extra.permission)}
-                                  onChange={() => togglePermission(extra.permission)}
-                                  className="w-3.5 h-3.5 mt-0.5 accent-primary cursor-pointer shrink-0"
-                                />
-                                <span>
-                                  <span className="text-2xs font-bold text-foreground">
-                                    {extra.label}
-                                    <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
+                                that would be empty on every other row. Chips
+                                rather than stacked paragraphs: three of them on
+                                the partners row used to make it 293px tall, six
+                                times the height of a row with nothing to say. */}
+                            {(module.extras || []).length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {(module.extras || []).map(extra => (
+                                  <span key={extra.permission} className="inline-flex items-center gap-1">
+                                    <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-border bg-muted/50 px-1.5 py-0.5 hover:bg-accent transition-colors">
+                                      <input
+                                        type="checkbox"
+                                        checked={permDraft.includes(extra.permission)}
+                                        onChange={() => togglePermission(extra.permission, module)}
+                                        className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0"
+                                      />
+                                      <span className="text-2xs font-bold text-foreground whitespace-nowrap">
+                                        {extra.label}
+                                        <span className="font-mono text-2xs text-muted-foreground"> ({extra.letter})</span>
+                                      </span>
+                                    </label>
+                                    {!showNotes && <InfoHint text={extra.note} label={`توضیح ${extra.label}`} />}
                                   </span>
-                                  <span className="text-2xs text-muted-foreground leading-relaxed block">
-                                    {extra.note}
-                                  </span>
-                                </span>
-                              </label>
+                                ))}
+                              </div>
+                            )}
+                            {showNotes && (module.extras || []).map(extra => (
+                              <span key={`note-${extra.permission}`}
+                                className="text-2xs text-muted-foreground leading-relaxed block mt-1 max-w-[72ch]">
+                                <span className="font-bold text-foreground">{extra.label}:</span> {extra.note}
+                              </span>
                             ))}
                           </td>
 
                           {ACTION_COLUMNS.map(col => {
                             const cell = module.actions[col.key];
-                            // A view over another module's data: one locked
-                            // tick across the row, reflecting the permission it
-                            // follows. An enabled checkbox here would promise a
-                            // control the server cannot enforce — both pages
-                            // read `GET /api/vendors` like every source view —
-                            // and an empty row would leave an administrator
-                            // wondering whether the page is reachable at all.
-                            if (module.derivedFrom) {
-                              if (col.key !== 'view') return null;
-                              const follows = permDraft.includes(module.derivedFrom);
-                              return (
-                                <td key={col.key} colSpan={4} className="py-2.5 px-1 text-center border-t border-border/70">
-                                  <span className="inline-flex flex-col items-center gap-0.5">
-                                    <input
-                                      type="checkbox"
-                                      checked={follows}
-                                      disabled
-                                      aria-label={`${module.title} — ${LOCKED_REASONS.derived}`}
-                                      title={`${LOCKED_REASONS.derived} (${PERMISSION_LABELS[module.derivedFrom]})`}
-                                      className="w-4 h-4 accent-primary opacity-60 cursor-not-allowed"
-                                    />
-                                    <span className="text-2xs text-muted-foreground">
-                                      تابع «{PERMISSION_LABELS[module.derivedFrom]}»
-                                    </span>
-                                  </span>
-                                </td>
-                              );
-                            }
                             // A module whose every action is the same permission
                             // gets one checkbox across the whole row, rather
                             // than the same tick repeated in four columns.
@@ -1492,7 +1550,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                     <input
                                       type="checkbox"
                                       checked={checked}
-                                      onChange={() => togglePermission(perm)}
+                                      onChange={() => togglePermission(perm, module)}
                                       aria-label={`${module.title} — ${PERMISSION_LABELS[perm]}`}
                                       className="w-4 h-4 accent-primary cursor-pointer"
                                     />
@@ -1526,6 +1584,30 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               return <td key={col.key} className="py-2.5 px-1 border-t border-border/70" />;
                             }
 
+                            // The same permission shown by an earlier row: it
+                            // is displayed so the row reads completely, but it
+                            // is set where it belongs. Two live checkboxes for
+                            // one permission would let the dialog contradict
+                            // itself between rows.
+                            const mirrorOf = permissionOwner(cell) !== module.key
+                              ? ownerModule(cell)
+                              : null;
+                            if (mirrorOf) {
+                              return (
+                                <td key={col.key} className="py-2.5 px-1 text-center border-t border-border/70">
+                                  <input
+                                    type="checkbox"
+                                    checked={permDraft.includes(cell)}
+                                    disabled
+                                    readOnly
+                                    aria-label={`${module.title} — ${PERMISSION_LABELS[cell]} (${LOCKED_REASONS.mirrored})`}
+                                    title={`${LOCKED_REASONS.mirrored} — ردیف «${mirrorOf.title}»`}
+                                    className="w-4 h-4 accent-primary opacity-50 cursor-not-allowed"
+                                  />
+                                </td>
+                              );
+                            }
+
                             const checked = permDraft.includes(cell);
                             const inTemplate = template.includes(cell);
                             const merged = !!module.single && col.key === 'create';
@@ -1537,7 +1619,7 @@ export function UsersView({ currentUser }: UsersViewProps) {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={() => togglePermission(cell)}
+                                    onChange={() => togglePermission(cell, module)}
                                     aria-label={`${module.title} — ${PERMISSION_LABELS[cell]}`}
                                     className="w-4 h-4 accent-primary cursor-pointer"
                                   />
@@ -1559,18 +1641,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
                           })}
 
                           <td className="py-2.5 px-1 text-center border-t border-border/70">
-                            {/* A derived row has nothing to select all of, and
-                                an empty disabled box beside a ticked locked one
-                                reads as a contradiction. It gets the same dash
-                                every other unavailable cell gets. */}
-                            {module.derivedFrom ? (
-                              <span
-                                className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-border bg-muted text-muted-foreground text-2xs cursor-help"
-                                title={LOCKED_REASONS.derived}
-                              >
-                                —
-                              </span>
-                            ) : (
                             <input
                               type="checkbox"
                               checked={allOn}
@@ -1581,7 +1651,6 @@ export function UsersView({ currentUser }: UsersViewProps) {
                               title={owned.length === 0 ? LOCKED_REASONS.none : `دسترسی کامل به ${module.title}`}
                               className="w-4 h-4 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             />
-                            )}
                           </td>
                         </tr>
                       );
@@ -1644,6 +1713,8 @@ export function UsersView({ currentUser }: UsersViewProps) {
               <p className="text-2xs text-muted-foreground leading-relaxed border-t border-border/60 pt-3">
                 خانه‌های خاکستری قابل تغییر نیستند. علامت <span className="font-bold">✓</span> یعنی همهٔ کاربران
                 واردشده آن بخش را می‌بینند و <span className="font-bold">—</span> یعنی آن عملیات در آن ماژول وجود ندارد.
+                تیکِ خاکستری یعنی همان مجوز در ردیف دیگری تنظیم می‌شود و اینجا فقط نشان داده شده است — مثل ثبت و ویرایش
+                نمونه، که همان مجوزهای سورس‌اند.
                 نشانهٔ <span className="text-emerald-700 dark:text-emerald-400 font-bold">+</span> و
                 <span className="text-rose-700 dark:text-rose-400 font-bold"> −</span> یعنی این مورد نسبت به الگوی سمت
                 افزوده یا سلب شده است.

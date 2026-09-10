@@ -124,6 +124,27 @@ test('the file itself is served from its own endpoint', SKIP, async () => {
   assert.equal(res.body.fileDataUrl, BLOB);
 });
 
+test('taking a document out of the system is recorded', SKIP, async () => {
+  // Reads are not audited — opening a partner's page writes nothing — but a
+  // document leaving the company is the exception the trail exists for, and
+  // unlike a spreadsheet it passes through a route, so nobody has to be taken
+  // at their word for it.
+  const token = await login('admin');
+  await createWithFile(token);
+  await api(`/api/business-partners/${PARTNER}/documents/businessLicense/file`, { token });
+
+  const deadline = Date.now() + 2000;
+  let row: any = null;
+  while (Date.now() < deadline && !row) {
+    row = await db().auditLog.findFirst({ where: { event: 'partner.document_downloaded' } });
+    if (!row) await new Promise(r => setTimeout(r, 25));
+  }
+  assert.ok(row, 'the download is on the trail');
+  assert.equal(row.entityId, PARTNER);
+  assert.equal(row.userId, 'admin');
+  assert.ok(!JSON.stringify(row.afterData).includes(BLOB), 'and the file itself is not copied into it');
+});
+
 test('an evaluation removed from a partner takes its documents with it', SKIP, async () => {
   const token = await login('admin');
   await createWithFile(token);

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ChevronDown, Download, ExternalLink, FileText, ListChecks, Printer, Search, Star, X } from 'lucide-react';
+import { Archive, ChevronDown, ClipboardList, Download, ExternalLink, FileText, ListChecks, Printer, Search, ShieldAlert, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
 import { GradeBadge } from '../../components/GradeBadge';
 import { cn } from '../../lib/utils';
@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/button';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { PageTitle } from '../../components/ui/page-title';
 import { SortHeader } from '../../components/ui/sort-header';
+import { StatTile } from '../../components/ui/stat-tile';
 import { TableEmptyRow } from '../../components/ui/table-empty-row';
 import { TableSkeletonRows } from '../../components/ui/table-skeleton-rows';
 import { PrintableArchiveList, PrintableEvaluationForm } from '../../components/PrintableForms';
@@ -19,8 +20,9 @@ import { authFetch, isLocalMode } from '../../services/authFetch';
 import { describeSelection, selectionForVendor, type SourceSelectionRecord } from '../../utils/sourceSelection';
 import { can } from '../../utils/permissions';
 import { cleanPlaceholder } from '../../utils/vendorPartner';
-import { isInBlacklistCategory, isVendorRejected } from '../../utils/vendorState';
-import { describeSampleStatus } from '../../utils/sampleStatus';
+import { isInBlacklistCategory, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
+import { describeVendorRank } from '../../utils/vendorRank';
 import { getDisplayCountry } from '../../utils/vendorUtils';
 
 // extracted from App.tsx
@@ -53,7 +55,15 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
   const [gradeFilter, setGradeFilter] = useState('');
   const [riskFilter, setRiskFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  /**
+   * Country, taken from the record the same way the column prints it.
+   *
+   * This slot held a status filter, which duplicated work the other three
+   * already did — «مردود» is the blacklist entry of the category filter and the
+   * rejected entry of the grade filter — while country, the one column with no
+   * filter of its own, could only be reached through free-text search.
+   */
+  const [countryFilter, setCountryFilter] = useState('');
   
   const [printingVendor, setPrintingVendor] = useState<Vendor | null>(null);
   const [printingList, setPrintingList] = useState(false);
@@ -117,7 +127,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, perPage]);
+  }, [searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, perPage]);
 
   /**
    * The per-category button exports that category, so the on-screen filters do
@@ -125,8 +135,25 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * beside it exports what is actually on screen.
    */
   const handleExportCategory = (catId: string, catLabel: string) => {
-    void excel.run(xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections));
+    void excel.run(
+      xl => xl.exportCategoryToExcel(db, catId, catLabel, partners, materials, selections),
+      { label: `آرشیو — ${catLabel}`, rows: db.length },
+    );
   };
+
+  /**
+   * The column prints the first word of the display country, so the filter
+   * keys on exactly that: an imported record whose country field holds a whole
+   * address would otherwise put its street on the dropdown and match nothing a
+   * reader can see.
+   */
+  const countryKey = (v: Vendor): string => (getDisplayCountry(v) || '').trim().split(' ')[0];
+
+  const countryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    db.forEach(v => { const k = countryKey(v); if (k) seen.add(k); });
+    return [...seen].sort((a, b) => archiveCollator.compare(a, b));
+  }, [db]);
 
   const filteredDb = useMemo(() => {
     return db.filter(v => {
@@ -145,7 +172,20 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           (p.id === v.manufacturerId || p.id === v.supplierId) &&
           ((p.name || '').toLowerCase().includes(term) || (p.nameEn || '').toLowerCase().includes(term)));
         
-      const matchGrade = gradeFilter ? v.grade === gradeFilter : true;
+      // A sample's stored grade is not shown and does not mean anything — the
+      // row prints «بدون گرید» — so it must not answer a grade filter either,
+      // or narrowing to «گرید B» returned rows displaying no grade at all.
+      /*
+       * The grade is derived from the department scores, not read off the
+       * stored column. The archive's own spreadsheet already derived it
+       * (`describeVendorRank`), so the register on screen and the file taken
+       * out of it could name different grades for the same source.
+       */
+      const matchGrade = gradeFilter
+        ? (!isSampleRecord(v) && (gradeFilter === 'rejected'
+            ? isVendorRejected(v)
+            : describeVendorRank(v).grade === gradeFilter))
+        : true;
       const matchCategory = categoryFilter 
         ? ((categoryFilter as string) === 'sample'
             ? (v.isSample || v.category === 'sample')
@@ -155,20 +195,30 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             ? (v.isSample && isVendorRejected(v))
             : (categoryFilter as string) === 'blacklist'
             ? isInBlacklistCategory(v)
-            : (v.category === categoryFilter && v.status !== 'rejected' && v.grade !== 'rejected')
+            // The ordinary categories, from the one predicate that defines
+            // them (rule 11d). The hand-written pair that stood here is what
+            // rule 11 forbids: a source an administrator disqualified without a
+            // failing score passed straight through it.
+            : isInCategoryRegister(v, categoryFilter as string)
           )
         : true;
-      const matchStatus = statusFilter ? v.status === statusFilter : true;
+      // `__none__` rather than the empty string, which already means "no
+      // filter": a record with no country recorded is a real thing to look for.
+      const matchCountry = countryFilter
+        ? (countryFilter === '__none__' ? !countryKey(v) : countryKey(v) === countryFilter)
+        : true;
       const riskLevel = v.riskAssessment?.riskLevel || 'Unknown';
       const matchRisk = riskFilter 
+        // `None` is unreachable — the risk dropdown offers only Low/Medium/High
+        // — so it is left exactly as it was rather than given new behaviour.
         ? (riskFilter === 'None' ? (!v.riskAssessment) : riskLevel === riskFilter) 
         : true;
       
       const matchSelected = onlySelected ? !!selectionForVendor(v, selections) : true;
 
-      return matchSearch && matchGrade && matchRisk && matchCategory && matchStatus && matchSelected;
+      return matchSearch && matchGrade && matchRisk && matchCategory && matchCountry && matchSelected;
     });
-  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, statusFilter, onlySelected, selections, partners]);
+  }, [db, searchTerm, gradeFilter, riskFilter, categoryFilter, countryFilter, onlySelected, selections, partners]);
 
   const selectedCount = useMemo(
     () => db.filter(v => !!selectionForVendor(v, selections)).length,
@@ -187,7 +237,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
         case 'country': return getDisplayCountry(v) || '';
         // Grade and risk are ranked, not alphabetical: "A" above "B" and
         // "High" above "Low" is the order a reviewer means by "sort by risk".
-        case 'grade': return GRADE_ORDER[String(v.grade)] ?? -1;
+        case 'grade': return isVendorRejected(v) ? 0 : (GRADE_ORDER[String(describeVendorRank(v).grade)] ?? -1);
         case 'risk': return RISK_ORDER[String(v.riskAssessment?.riskLevel)] ?? 0;
         case 'updated': return v.updatedAt ? new Date(v.updatedAt).getTime() : 0;
         default: return v.name || '';
@@ -219,11 +269,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
     setCategoryFilter('');
     setRiskFilter('');
     setGradeFilter('');
-    setStatusFilter('');
+    setCountryFilter('');
     setOnlySelected(false);
     setCurrentPage(1);
   };
-  const anyFilterSet = !!(searchTerm || categoryFilter || riskFilter || gradeFilter || statusFilter || onlySelected);
+  const anyFilterSet = !!(searchTerm || categoryFilter || riskFilter || gradeFilter || countryFilter || onlySelected);
 
   const ITEMS_PER_PAGE = perPage;
   const totalItems = filteredDb.length;
@@ -246,16 +296,33 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
    * our Grade A foreign suppliers". Built from the controls that are actually
    * set, so an unfiltered print says so plainly.
    */
+  /**
+   * The counters every other repository opens with, over the whole archive
+   * rather than the filtered view: this screen is the register of everything
+   * held, so its overview has to answer «چقدر داریم» before the filters narrow
+   * it. The filtered count keeps its own place on the filter bar.
+   */
+  const archiveStats = useMemo(() => {
+    const samples = db.filter(isSampleRecord);
+    const sources = db.filter(v => !isSampleRecord(v));
+    return {
+      total: db.length,
+      sources: sources.length,
+      samples: samples.length,
+      blacklisted: db.filter(isVendorRejected).length,
+    };
+  }, [db]);
+
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
     if (categoryFilter) parts.push(`دسته: ${categoryLabels[categoryFilter as keyof typeof categoryLabels]?.fa || categoryFilter}`);
     if (gradeFilter) parts.push(`گرید: ${gradeFilter}`);
     if (riskFilter) parts.push(`ریسک: ${riskFilter}`);
-    if (statusFilter) parts.push(`وضعیت: ${statusFilter}`);
+    if (countryFilter) parts.push(`کشور: ${countryFilter === '__none__' ? 'ثبت‌نشده' : countryFilter}`);
     if (onlySelected) parts.push('فقط سورس‌های منتخب');
     if (searchTerm.trim()) parts.push(`جستجو: «${searchTerm.trim()}»`);
     return parts.length ? parts.join(' · ') : 'بدون فیلتر — کل آرشیو';
-  }, [categoryFilter, gradeFilter, riskFilter, statusFilter, onlySelected, searchTerm]);
+  }, [categoryFilter, gradeFilter, riskFilter, countryFilter, onlySelected, searchTerm]);
 
   if (printingList) {
     return (
@@ -282,7 +349,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
 
   return (
     <div className="space-y-6 fade-in text-right">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
         {/* The title leads, on the right, the way every other module's header
             reads. It used to be second in the DOM with `order` classes trying
             to place it — but this container is RTL, so `order-1` put the export
@@ -312,7 +379,11 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="success"
-            onClick={() => excel.run(xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections))}
+            size="sm"
+            onClick={() => excel.run(
+              xl => xl.exportFullArchiveMultiSheetExcel(db, partners, materials, selections),
+              { label: 'آرشیو کامل (چند شیتی)', rows: db.length },
+            )}
             disabled={excel.busy}
             title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
           >
@@ -326,6 +397,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="outline"
+            size="sm"
             onClick={() => setPrintingList(true)}
             title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
           >
@@ -342,9 +414,13 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
           <Button
             type="button"
             variant="outline"
-            onClick={() => excel.run(xl => xl.exportCategoryToExcel(
-              filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
-            ))}
+            size="sm"
+            onClick={() => excel.run(
+              xl => xl.exportCategoryToExcel(
+                filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
+              ),
+              { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
+            )}
             disabled={excel.busy}
             title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
           >
@@ -361,6 +437,7 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setExportMenuOpen(o => !o)}
               aria-haspopup="menu"
               aria-expanded={exportMenuOpen}
@@ -410,6 +487,23 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
         </div>
         )}
 
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'کل رکوردها', hint: 'Total Records', value: archiveStats.total, icon: Archive,
+            tone: 'bg-muted text-foreground border-border' },
+          { label: 'سورس‌ها', hint: 'Sources', value: archiveStats.sources, icon: FileText,
+            tone: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900' },
+          { label: 'نمونه‌ها', hint: 'Samples', value: archiveStats.samples, icon: ClipboardList,
+            tone: 'bg-primary/10 text-primary border-primary/20' },
+          { label: 'سورس‌های منتخب', hint: 'Chosen Sources', value: selectedCount, icon: Star,
+            tone: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900' },
+          { label: 'در لیست سیاه', hint: 'Blacklisted', value: archiveStats.blacklisted, icon: ShieldAlert,
+            tone: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900' },
+        ].map(card => (
+          <StatTile key={card.hint} {...card} hintDir="ltr" loading={isLoading} />
+        ))}
       </div>
 
       {/* Search and filters.
@@ -466,14 +560,14 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
               ],
             },
             {
-              key: 'status', label: 'وضعیت', value: statusFilter, setValue: setStatusFilter,
+              key: 'country', label: 'کشور', value: countryFilter, setValue: setCountryFilter,
               options: [
-                { val: '', label: 'همهٔ وضعیت‌ها' }, { val: 'approved', label: 'تأییدشده' },
-                { val: 'conditional', label: 'مشروط' }, { val: 'new', label: 'جدید / در انتظار' },
-                { val: 'rejected', label: 'مردود' },
+                { val: '', label: 'همهٔ کشورها' },
+                ...countryOptions.map(c => ({ val: c, label: c })),
+                { val: '__none__', label: 'بدون کشور ثبت‌شده' },
               ],
             },
-          ] as const).map(filter => (
+          ]).map(filter => (
             <label key={filter.key} className="flex flex-col gap-1 min-w-[150px] flex-1 md:flex-none">
               <span className="text-2xs font-bold text-muted-foreground">{filter.label}</span>
               <select
@@ -613,13 +707,24 @@ export function ArchiveView({ db, currentUser, partners = [], materials = [], on
                       <div className="font-mono text-muted-foreground text-xs truncate mt-0.5">{v.cas || 'N/A'}</div>
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">
-                      <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                      {/* A sample has no grade to show: departments do not
+                          score it, so a grade badge here asserted a verdict
+                          nobody reached. Its own verdict — the laboratory's —
+                          is already printed in the category cell, so this one
+                          says plainly that the question does not apply. */}
+                      {isSampleRecord(v) ? (
+                        <span className="text-2xs text-muted-foreground" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</span>
+                      ) : (
+                        <GradeBadge grade={describeVendorRank(v).grade} status={v.status} scores={v.scores} />
+                      )}
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">
                       {/* "Not assessed" is a finding of its own — the risk
                           backlog on the dashboard counts exactly these — so it
                           is named rather than left blank. */}
-                      {risk ? (
+                      {isSampleRecord(v) ? (
+                        <span className="text-2xs text-muted-foreground" title="برای نمونه ارزیابی ریسک انجام نمی‌شود">—</span>
+                      ) : risk ? (
                         <span className={`text-2xs font-bold px-2 py-0.5 rounded-md border ${
                           risk === 'High'
                             ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900'

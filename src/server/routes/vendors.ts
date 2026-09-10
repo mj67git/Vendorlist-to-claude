@@ -1,27 +1,29 @@
 import express from "express";
-import { AuditService } from "../../utils/auditService.js";
-import { calculateGradeAndStatus } from "../../utils/sopEvaluation.js";
+import { auditRowValues, diffFields, recordEvent } from "../../utils/auditEvents.js";
 import {
   vendorAnalysisSchema, vendorContactSchema, vendorLogsSchema, vendorProfileSchema,
   vendorRiskSchema, vendorSchema, vendorScoreSchema,
 } from "../../utils/validation.js";
 import {
-  canScoreDepartment, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  can, forbiddenRawScoreChanges, forbiddenScoreChanges,
+  SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission,
 } from "../../utils/permissions.js";
+import {
+  forbiddenSampleScoring, forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
+} from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
 import {
   CALCULATION_WEIGHTS, GRADE_TIERS, calculateRoundedWeightedScore,
-  calculateWeightedScore, rankVendor,
+  calculateWeightedScore,
 } from "../domain/vendorEvaluation.js";
-import { requireAuth, requirePermission } from "../http/auth.js";
+import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getClientIp, getUserAgent } from "../http/requestInfo.js";
 import { getUserByUsername } from "../repositories/userRepository.js";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampInt } from "../http/query.js";
 import { STALE_COPY_MESSAGE, staleCopy } from "../http/recordLock.js";
 import {
-  countVendors, deleteVendorFromDb, getRankingSnapshot, getVendorById, getVendorRank,
+  countVendors, deleteVendorFromDb, getVendorById,
   getVendorChangesSince, getVendorsList, saveVendorToDb, serializeVendorWrites,
 } from "../repositories/vendorRepository.js";
 
@@ -40,6 +42,155 @@ import {
  * Score and risk history are reconstructed from `audit_log` rather than stored
  * twice; the audit trail already holds every before/after pair.
  */
+
+/**
+ * Which event a source save actually is.
+ *
+ * `PATCH /profile` and `POST /vendors` replace the whole record, so a
+ * disqualification and a change of phone number arrive through the same door —
+ * the same reason the permission guard has to compare the payload with what is
+ * stored (rule 14). Reading the verdict off the saved record keeps the trail
+ * saying «رد صلاحیت» where a person would say it, instead of filing it as one
+ * more edit. Returns null for an ordinary edit.
+ */
+function verdictEvent(before: any, after: any): "source.disqualified" | "source.reinstated" | null {
+  const rejected = (v: any) => v?.status === "rejected" || v?.grade === "rejected" || v?.grade === "black list";
+  if (rejected(after) && !rejected(before)) return "source.disqualified";
+  if (!rejected(after) && rejected(before)) return "source.reinstated";
+  return null;
+}
+
+/** The FMEA parameters worth naming, under the names the risk history reads. */
+function riskChanges(before: any, after: any) {
+  const flatten = (r: any) => r && {
+    rpn: r.riskScore ?? r.rpn,
+    sri: r.sri,
+    riskLevel: r.riskLevel,
+    severity: r.materialCriticality ?? r.severity,
+    occurrence: r.probability ?? r.occurrence,
+    detectability: r.detectability ?? r.detection,
+  };
+  return diffFields(flatten(before), flatten(after), [
+    "rpn", "sri", "riskLevel", "severity", "occurrence", "detectability",
+  ]);
+}
+
+/**
+ * The assessment as it now stands.
+ *
+ * Repeated alongside the changes because the risk history plots a point per
+ * row, and a save that moved only the risk level would otherwise leave the
+ * chart without an RPN to draw.
+ */
+function riskFacts(risk: any) {
+  return {
+    riskLevel: risk?.riskLevel ?? null,
+    riskScore: risk?.riskScore ?? risk?.rpn ?? null,
+    sri: risk?.sri ?? null,
+    materialCriticality: risk?.materialCriticality ?? risk?.severity ?? null,
+    probability: risk?.probability ?? risk?.occurrence ?? null,
+    detectability: risk?.detectability ?? risk?.detection ?? null,
+  };
+}
+
+/**
+ * Refuse a payload that decides something the caller may not decide.
+ *
+ * `vendor.edit` and `vendor.analysis` open endpoints that replace the whole
+ * record, so the qualification verdict rides along inside an ordinary edit.
+ * This compares it against what is stored, answers 403 when the caller is not
+ * entitled to the change, and records the attempt — a blocked write is evidence
+ * too, the same reasoning as the IRC and SOP refusals below.
+ *
+ * Returns true when the request has been answered and the handler must stop.
+ */
+async function refuseUnauthorisedVerdict(
+  req: any, res: any, current: any, incoming: any,
+  options: { requireEditForTheRest?: boolean } = {},
+): Promise<boolean> {
+  // The stored user record, not the token: a seven-day JWT carries only the
+  // role, so a permission taken away today would otherwise keep working until
+  // it expired (rule 14).
+  const actor = await getUserByUsername(req.user?.username || "");
+  if (!actor || actor.isActive === false) {
+    res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+    return true;
+  }
+  // The other half of the same question: this route also accepts ordinary
+  // edits, and the middleware could only ask whether the caller may do *one* of
+  // the two. Whoever holds the verdict but not `vendor.edit` may state the
+  // verdict and nothing else.
+  if (options.requireEditForTheRest && !can(actor as any, "vendor.edit")) {
+    // An empty field and an absent one are the same fact here: the form posts
+    // `''` where the record holds null, and treating that as an edit would
+    // refuse every verdict that arrives through the whole-record form.
+    const settled = (value: any) => JSON.stringify(value === '' || value === undefined ? null : value);
+    const otherChanges = Object.keys(incoming || {}).filter(key => {
+      if (VERDICT_FIELDS.includes(key as any) || key === 'reasonForChange' || key === 'reason') return false;
+      if (key === 'expectedUpdatedAt') return false;
+      return settled(incoming[key]) !== settled(current?.[key]);
+    });
+    if (otherChanges.length > 0) {
+      res.status(403).json({
+        error: `عدم دسترسی: ویرایش سورس نیازمند مجوز «ویرایش سورس» است (تلاش برای تغییر: ${otherChanges.join('، ')}).`,
+      });
+      return true;
+    }
+  }
+
+  const refusal = forbiddenVerdictChange(actor as any, current, incoming);
+  if (!refusal) return false;
+
+  const isSample = refusal.permission === 'sample.decide';
+  const what = isSample ? "تصمیم کیفی نمونه" : "رد صلاحیت یا بازگردانی سورس";
+  recordEvent(req, {
+    event: "access.denied",
+    entity: {
+      type: isSample ? "Sample" : "Source",
+      id: current.id,
+      name: current.material || current.name || "سورس",
+    },
+    facts: { attempted: what, permission: refusal.permission, fields: refusal.fields.join("، ") },
+  });
+
+  res.status(403).json({
+    error: `عدم دسترسی: ${what} نیازمند مجوز جداگانه است و این حساب آن را ندارد.`,
+  });
+  return true;
+}
+
+/**
+ * The read-only views that are their own permission.
+ *
+ * The archive and the supplier directory read the same rows as the category
+ * pages, so there is no row filter that expresses them — what distinguishes
+ * them is the view being opened. The client names the view it is loading and
+ * the server answers whether that account may open it, which is what keeps the
+ * tick in the permission form from being decoration (rule 14).
+ */
+const GATED_VIEWS: Record<string, Permission> = Object.fromEntries(
+  SOURCE_LIST_VIEWS.map(view => [view, VIEW_PERMISSIONS[view]]),
+);
+
+/**
+ * The same answer as `getVendorChangesSince`, for an account that is served
+ * fewer rows.
+ *
+ * Derived state cannot be filtered in SQL (rule 11), so this reads the list and
+ * filters it — one full read per poll, for restricted accounts only. It is the
+ * price of the count agreeing with the list the same account is given.
+ */
+async function visibleChangesSince(actor: any, since: Date | null) {
+  const visible = readableVendors(actor, await getVendorsList());
+  const changed = visible
+    .map(v => ({ id: v.id, updatedAt: v.updatedAt ?? null }))
+    .filter(row => {
+      if (!since) return false;
+      const at = row.updatedAt ? new Date(row.updatedAt) : null;
+      return !!at && !Number.isNaN(at.getTime()) && at > since;
+    });
+  return { changed, total: visible.length };
+}
 
 export function vendorRoutes(): express.Router {
   const router = express.Router();
@@ -61,9 +212,28 @@ export function vendorRoutes(): express.Router {
    */
   router.get("/api/vendors", requireAuth, requirePermission("vendor.read"), async (req: any, res) => {
     try {
+      const view = typeof req.query.view === "string" ? req.query.view : null;
+      if (view !== null) {
+        const needed = GATED_VIEWS[view];
+        if (!needed) {
+          return res.status(400).json({ error: "نمای درخواستی معتبر نیست." });
+        }
+        if (!can(req.account, needed)) {
+          return res.status(403).json({
+            error: "عدم دسترسی: سطح دسترسی شما اجازهٔ باز کردن این نما را نمی‌دهد.",
+          });
+        }
+      }
+
+      // Samples and the blacklist are categories of source rather than separate
+      // tables, so an account without those reads is served fewer rows — the
+      // permission has to be a filter here, or the whole register arrives and
+      // only the page declines to draw it.
+      const everything = readsEverySource(req.account);
       const paged = req.query.page !== undefined || req.query.limit !== undefined;
       if (!paged) {
-        res.json(await getVendorsList());
+        const rows = await getVendorsList();
+        res.json(everything ? rows : readableVendors(req.account, rows));
         return;
       }
 
@@ -72,6 +242,24 @@ export function vendorRoutes(): express.Router {
       // whole-table response paging exists to avoid.
       const page = clampInt(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
       const limit = clampInt(req.query.limit, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+
+      if (!everything) {
+        // A restricted account cannot be paged in the database, because being
+        // blacklisted is derived rather than stored (rule 11) and there is no
+        // column to filter on. The window is taken after filtering instead, so
+        // the totals it reports are the totals of what this account can see —
+        // paging over an unfiltered count would hand out short pages and a
+        // number that disagrees with them.
+        const visible = readableVendors(req.account, await getVendorsList());
+        const start = (page - 1) * limit;
+        res.json({
+          items: visible.slice(start, start + limit),
+          total: visible.length,
+          page, limit,
+          pages: Math.max(1, Math.ceil(visible.length / limit)),
+        });
+        return;
+      }
 
       const total = await countVendors();
       const items = await getVendorsList(undefined, { skip: (page - 1) * limit, take: limit });
@@ -99,7 +287,13 @@ export function vendorRoutes(): express.Router {
     try {
       const raw = typeof req.query.since === "string" ? new Date(req.query.since) : null;
       const since = raw && !Number.isNaN(raw.getTime()) ? raw : null;
-      const { changed, total } = await getVendorChangesSince(since);
+      // A restricted account is polled against what it can see. The client
+      // notices a deletion by the total changing, so a count that includes rows
+      // this account is never sent would make every sample write look like a
+      // deletion and trigger a pointless refetch on the hour.
+      const { changed, total } = readsEverySource(req.account)
+        ? await getVendorChangesSince(since)
+        : await visibleChangesSince(req.account, since);
       // The client's next `since` comes from here, not from its own clock: the
       // two machines disagree, and a browser running a minute fast would ask
       // for a window that has not happened yet and miss every write inside it.
@@ -121,8 +315,9 @@ export function vendorRoutes(): express.Router {
         orderBy: { timestamp: "asc" },
       });
       const history = rows.map((r) => {
-        const after: any = r.afterData || {};
-        const before: any = r.beforeData || {};
+        // `auditRowValues` reads both shapes: the named changes written since
+        // the audit rewrite, and the whole-record copies stored before it.
+        const { before, after } = auditRowValues(r as any);
         return {
           id: r.id,
           date: r.timestamp.toISOString(),
@@ -149,8 +344,7 @@ export function vendorRoutes(): express.Router {
         orderBy: { timestamp: "asc" },
       });
       const history = rows.map((r) => {
-        const after: any = r.afterData || {};
-        const before: any = r.beforeData || {};
+        const { before, after } = auditRowValues(r as any);
         return {
           id: r.id,
           date: r.timestamp.toISOString(),
@@ -182,13 +376,11 @@ export function vendorRoutes(): express.Router {
     
       const v = validationResult.data;
     
-      // Fix material ID generation to prevent replacing when cas/irc are empty
-      if (!v.cas && !v.irc && v.material) {
-        const matNameClean = v.material.replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
-        v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      } else {
-        v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      }
+      // An id for a source that arrived without one. The branch that used to
+      // stand here tested whether the record had a CAS or an IRC and then built
+      // the identical id either way \u2014 the material-name slug it computed for the
+      // "special" case was never read.
+      v.id = v.id || `vend_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
     
       const existing = await getVendorById(v.id);
 
@@ -199,25 +391,12 @@ export function vendorRoutes(): express.Router {
 
       const sopError = await sopSupplierViolation((v as any).supplierId, (existing as any)?.supplierId);
       if (sopError) {
-        AuditService.createAuditRecord({
-          auditId: `AUD-SOP-${Date.now()}`,
-          userId: req.user?.username,
-          userName: req.user?.name || req.user?.username,
-          role: req.user?.role,
-          module: "Source Management",
-          eventType: "Data Change",
-          ipAddress: getClientIp(req),
-          userAgent: getUserAgent(req),
-          entityType: "Source",
-          entityId: v.id,
-          entityName: (v as any).material || v.name || "سورس",
-          action: "Create - Blocked",
-          severity: "Warning",
-          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
-          beforeData: null,
-          afterData: { supplierId: (v as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Source", id: v.id, name: (v as any).material || v.name || "سورس" },
+          facts: { attempted: "ثبت سورس با فروشندهٔ فاقد گرید A", supplierId: (v as any).supplierId },
+          reason: sopError,
+        });
         return res.status(422).json({ error: sopError });
       }
 
@@ -226,51 +405,18 @@ export function vendorRoutes(): express.Router {
 
       // Audit Trail integration
       const isSource = !!(v.isSample || v.category === 'sample' || existing?.isSample || existing?.category === 'sample');
-      const moduleName = isSource ? "Source Management" : "Supplier Management";
       const entityType = isSource ? "Source" : "Supplier";
       const entityName = isSource ? (updated.material || updated.name || "سورس") : (updated.name || "تامین‌کننده");
-      const userObj = req.user || {};
       const reasonForChange = req.body.reasonForChange || req.body.reason || null;
 
       if (!existing) {
         // Create Operation
-        const afterData = isSource ? {
-          sourceName: updated.material || updated.name,
-          supplier: updated.name,
-          material: updated.material,
-          category: updated.category,
-          isSample: updated.isSample,
-          initialSampleStatus: updated.initialSampleStatus || 'approved',
-          approvalStatus: updated.status || 'approved',
-          country: updated.country,
-          contactInfo: updated.contactInfo
-        } : {
-          supplierName: updated.name,
-          supplierNameEn: updated.nameEn,
-          country: updated.country,
-          contactInfo: updated.contactInfo,
-          category: updated.category,
-          status: updated.status,
-          grade: updated.grade,
-          riskLevel: updated.riskAssessment ? (typeof updated.riskAssessment === 'string' ? updated.riskAssessment : JSON.stringify(updated.riskAssessment)) : null
-        };
-
-        await AuditService.createAuditRecord({
-          auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-CRT-${Date.now()}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'user',
-          module: moduleName,
-          entityType,
-          entityId: updated.id,
-          entityName,
-          action: "Create",
-          severity: "Information",
-          description: isSource ? `ثبت سورس جدید "${entityName}"` : `ثبت تامین‌کننده جدید "${entityName}"`,
-          reasonForChange: reasonForChange || (isSource ? "ثبت سورس جدید در سیستم" : "ثبت تامین‌کننده جدید در سیستم"),
-          beforeData: null,
-          afterData
-        }).catch(err => console.error("Audit logging failed on POST /api/vendors create:", err));
+        await recordEvent(req, {
+          event: "source.created",
+          entity: { type: entityType, id: updated.id, name: entityName },
+          facts: { material: updated.material, supplier: updated.name, category: updated.category },
+          reason: reasonForChange || null,
+        });
       } else {
         // Update Operation - track diffs
         const beforeData: Record<string, any> = {};
@@ -281,7 +427,6 @@ export function vendorRoutes(): express.Router {
           'material', 'materialEn', 'cas', 'irc', 'isSample', 'initialSampleStatus'
         ];
 
-        let isCritical = false;
         let hasChanges = false;
 
         fieldsToTrack.forEach(field => {
@@ -291,33 +436,16 @@ export function vendorRoutes(): express.Router {
             beforeData[field] = oldVal ?? null;
             afterData[field] = newVal ?? null;
             hasChanges = true;
-
-            if (field === 'status' || field === 'grade' || field === 'initialSampleStatus') {
-              if (newVal === 'rejected' || newVal === 'black list' || newVal === 'reject') {
-                isCritical = true;
-              }
-            }
           }
         });
 
         if (hasChanges) {
-          const severity = isCritical ? "Critical" : "Warning";
-          await AuditService.createAuditRecord({
-            auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-UPD-${Date.now()}`,
-            userId: userObj.username || 'system',
-            userName: userObj.name || userObj.username || 'کاربر سیستم',
-            role: userObj.role || 'user',
-            module: moduleName,
-            entityType,
-            entityId: updated.id,
-            entityName,
-            action: "Update",
-            severity,
-            description: isSource ? `ویرایش سورس "${entityName}"` : `ویرایش تامین‌کننده "${entityName}"`,
-            reasonForChange: reasonForChange || (isSource ? "ویرایش اطلاعات سورس" : "ویرایش اطلاعات تامین‌کننده"),
-            beforeData,
-            afterData
-          }).catch(err => console.error("Audit logging failed on POST /api/vendors update:", err));
+          await recordEvent(req, {
+            event: verdictEvent(existing, updated) || "source.updated",
+            entity: { type: entityType, id: updated.id, name: entityName },
+            changes: diffFields(beforeData, afterData, Object.keys(afterData)),
+            reason: reasonForChange || null,
+          });
         }
       }
 
@@ -326,23 +454,13 @@ export function vendorRoutes(): express.Router {
         const oldRisk = existing?.riskAssessment || null;
         const newRisk = updated?.riskAssessment || null;
         if (JSON.stringify(oldRisk) !== JSON.stringify(newRisk) && newRisk) {
-          const riskCritical = newRisk.riskLevel === 'High';
-          await AuditService.createAuditRecord({
-            auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-RSK-${Date.now()}`,
-            userId: userObj.username || 'system',
-            userName: newRisk.evaluator || userObj.name || userObj.username || 'کاربر سیستم',
-            role: userObj.role || 'user',
-            module: "Risk Management",
-            entityType: "Risk Assessment",
-            entityId: updated.id,
-            entityName,
-            action: oldRisk ? "Update" : "Create",
-            severity: riskCritical ? "Critical" : "Warning",
-            description: `ثبت/به‌روزرسانی ارزیابی ریسک "${entityName}" — سطح ریسک: ${newRisk.riskLevel}، RPN: ${newRisk.riskScore}، SRI: ${newRisk.sri}`,
-            reasonForChange: reasonForChange || "ثبت ارزیابی ریسک FMEA",
-            beforeData: oldRisk,
-            afterData: newRisk
-          }).catch(err => console.error("Audit logging failed on risk assessment:", err));
+          await recordEvent(req, {
+            event: "risk.assessed",
+            entity: { type: "Risk Assessment", id: updated.id, name: entityName },
+            changes: riskChanges(oldRisk, newRisk),
+            facts: riskFacts(newRisk),
+            reason: reasonForChange || null,
+          });
         }
       } catch (e) {
         console.error("Risk audit block error:", e);
@@ -357,7 +475,12 @@ export function vendorRoutes(): express.Router {
   });
 
   // Update vendor profile (Unified Database)
-  router.patch("/api/vendors/:id/profile", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
+  // Not one permission: this endpoint carries both the ordinary edit and the
+  // qualification verdict, and which one a request is making is only knowable
+  // by comparing it with the stored record. `refuseUnauthorisedVerdict` splits
+  // them; the middleware only keeps out callers entitled to neither.
+  router.patch("/api/vendors/:id/profile", requireAuth,
+    requireAnyPermission("vendor.edit", "vendor.decide", "sample.decide"), serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -372,6 +495,7 @@ export function vendorRoutes(): express.Router {
         return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
       }
       const p = validationResult.data;
+      if (await refuseUnauthorisedVerdict(req, res, current, p, { requireEditForTheRest: true })) return;
       const updatedVendor = {
         ...current,
         ...p
@@ -383,49 +507,26 @@ export function vendorRoutes(): express.Router {
         // too — it says someone tried to put an invalid licence number on a
         // regulated record — and auditing one refusal but not the other made
         // the trail inconsistent about what counts as an event.
-        AuditService.createAuditRecord({
-          auditId: `AUD-IRC-${Date.now()}`,
-          userId: req.user?.username,
-          userName: req.user?.name || req.user?.username,
-          role: req.user?.role,
-          module: "Source Management",
-          eventType: "Data Change",
-          ipAddress: getClientIp(req),
-          userAgent: getUserAgent(req),
-          entityType: "Source",
-          entityId: id,
-          entityName: current.material || current.name || "سورس",
-          action: "Update - Blocked",
-          severity: "Warning",
-          description: `ویرایش سورس به دلیل نامعتبر بودن کد IRC رد شد: ${ircError}`,
-          reasonForChange: "قاعدهٔ IRC: کد باید دقیقاً ۱۶ رقم عددی باشد",
-          beforeData: { irc: (current as any).irc ?? null },
-          afterData: { irc: (p as any).irc ?? null, refusal: ircError },
-        }).catch(err => console.error("Audit logging failed on IRC refusal:", err));
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Source", id, name: current.material || current.name || "سورس" },
+          facts: { attempted: "ثبت کد IRC نامعتبر" },
+          reason: ircError,
+        });
         return res.status(422).json({ error: ircError });
       }
 
       const sopError = await sopSupplierViolation((updatedVendor as any).supplierId, (current as any).supplierId);
       if (sopError) {
-        AuditService.createAuditRecord({
-          auditId: `AUD-SOP-${Date.now()}`,
-          userId: req.user?.username,
-          userName: req.user?.name || req.user?.username,
-          role: req.user?.role,
-          module: "Source Management",
-          eventType: "Data Change",
-          ipAddress: getClientIp(req),
-          userAgent: getUserAgent(req),
-          entityType: "Source",
-          entityId: id,
-          entityName: current.material || current.name || "سورس",
-          action: "Update - Blocked",
-          severity: "Warning",
-          description: `ثبت سورس به دلیل عدم احراز شرایط SOP فروشنده رد شد: ${sopError}`,
-          reasonForChange: "دستورالعمل ارزیابی فروشنده: فقط فروشندهٔ دارای گرید A قابل انتخاب است",
-          beforeData: null,
-          afterData: { supplierId: (updatedVendor as any).supplierId, refusal: sopError },
-        }).catch(err => console.error("Audit logging failed on supplier-grade refusal:", err));
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Source", id, name: current.material || current.name || "سورس" },
+          facts: {
+            attempted: "اتصال فروشندهٔ فاقد گرید A به سورس",
+            supplierId: (updatedVendor as any).supplierId,
+          },
+          reason: sopError,
+        });
         return res.status(422).json({ error: sopError });
       }
 
@@ -434,15 +535,12 @@ export function vendorRoutes(): express.Router {
 
       // Audit Trail Integration
       const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const moduleName = isSource ? "Source Management" : "Supplier Management";
       const entityType = isSource ? "Source" : "Supplier";
       const entityName = isSource ? (result.material || result.name) : result.name;
-      const userObj = req.user || {};
       const reasonForChange = req.body.reasonForChange || req.body.reason || null;
 
       const beforeData: Record<string, any> = {};
       const afterData: Record<string, any> = {};
-      let isCritical = false;
       let hasChanges = false;
 
       Object.keys(p).forEach(key => {
@@ -452,32 +550,19 @@ export function vendorRoutes(): express.Router {
           beforeData[key] = oldVal ?? null;
           afterData[key] = newVal ?? null;
           hasChanges = true;
-          if (key === 'status' || key === 'grade' || key === 'initialSampleStatus') {
-            if (newVal === 'rejected' || newVal === 'black list' || newVal === 'reject') {
-              isCritical = true;
-            }
-          }
         }
       });
 
       if (hasChanges) {
-        const severity = isCritical ? "Critical" : "Warning";
-        await AuditService.createAuditRecord({
-          auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-PRF-${Date.now()}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'user',
-          module: moduleName,
-          entityType,
-          entityId: id,
-          entityName,
-          action: "Update",
-          severity,
-          description: isSource ? `ویرایش پروفایل سورس "${entityName}"` : `ویرایش پروفایل تامین‌کننده "${entityName}"`,
-          reasonForChange: reasonForChange || (isSource ? "بروزرسانی مشخصات سورس" : "بروزرسانی مشخصات تامین‌کننده"),
-          beforeData,
-          afterData
-        }).catch(err => console.error("Audit logging failed on profile update:", err));
+        // A qualification verdict travels inside an ordinary profile save, so
+        // which event this is depends on what moved — the same comparison the
+        // permission guard makes (rule 14).
+        await recordEvent(req, {
+          event: verdictEvent(current, result) || "source.updated",
+          entity: { type: entityType, id, name: entityName },
+          changes: diffFields(beforeData, afterData, Object.keys(afterData)),
+          reason: reasonForChange || null,
+        });
       }
 
       console.log(`[UnifiedDB] Saved fine-grained profile details for vendor: ${id}`);
@@ -514,10 +599,8 @@ export function vendorRoutes(): express.Router {
 
       // Audit Trail Integration
       const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const moduleName = isSource ? "Source Management" : "Supplier Management";
       const entityType = isSource ? "Source" : "Supplier";
       const entityName = isSource ? (result.material || result.name) : result.name;
-      const userObj = req.user || {};
 
       const beforeData: Record<string, any> = {};
       const afterData: Record<string, any> = {};
@@ -540,22 +623,12 @@ export function vendorRoutes(): express.Router {
       }
 
       if (hasChanges) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-CNT-${Date.now()}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'user',
-          module: moduleName,
-          entityType,
-          entityId: id,
-          entityName,
-          action: "Update",
-          severity: "Warning",
-          description: isSource ? `بروزرسانی اطلاعات تماس سورس "${entityName}"` : `بروزرسانی اطلاعات تماس تامین‌کننده "${entityName}"`,
-          reasonForChange: req.body.reasonForChange || req.body.reason || "تغییر اطلاعات تماس یا آخرین تاریخ ممیزی",
-          beforeData,
-          afterData
-        }).catch(err => console.error("Audit logging failed on contact update:", err));
+        await recordEvent(req, {
+          event: "source.updated",
+          entity: { type: entityType, id, name: entityName },
+          changes: diffFields(beforeData, afterData, Object.keys(afterData)),
+          reason: req.body.reasonForChange || req.body.reason || null,
+        });
       }
 
       console.log(`[UnifiedDB] Saved fine-grained contact details for vendor: ${id}`);
@@ -601,8 +674,27 @@ export function vendorRoutes(): express.Router {
         });
       }
 
-      const allVendorsBefore = await getRankingSnapshot();
-      const prevRank = getVendorRank(id, allVendorsBefore);
+      // A sample has no departmental score to give. Refused rather than
+      // dropped: a request that stores nothing must not answer 200, or the
+      // caller records a scoring that never happened.
+      const scoredSample = forbiddenSampleScoring(current, s);
+      if (scoredSample.length > 0) {
+        recordEvent(req, {
+          event: "access.denied",
+          entity: { type: "Vendor", id, name: current.name },
+          facts: {
+            attempted: "امتیازدهی دپارتمانی به نمونه",
+            fields: scoredSample.join("، "),
+          },
+        });
+        return res.status(422).json({
+          error: "نمونه با نظر آزمایشگاه تصمیم‌گیری می‌شود و امتیاز دپارتمانی نمی‌گیرد.",
+        });
+      }
+
+      // The stated grounds for a rejection travel with the scores, so the
+      // verdict has to be checked on this route as well as on the profile.
+      if (await refuseUnauthorisedVerdict(req, res, current, s)) return;
 
       const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
       const prevSPS = Math.round(
@@ -646,9 +738,6 @@ export function vendorRoutes(): express.Router {
       await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
-      const allVendorsAfter = await getRankingSnapshot();
-      const newRank = getVendorRank(id, allVendorsAfter);
-
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
       const newSPS = Math.round(
         calculateWeightedScore(newScores, CALCULATION_WEIGHTS) * 10,
@@ -656,76 +745,29 @@ export function vendorRoutes(): express.Router {
 
       // Audit Trail Integration
       const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const moduleName = isSource ? "Source Management" : "Supplier Management";
       const entityName = isSource ? (result.material || result.name) : result.name;
-      const userObj = req.user || {};
 
-      const isCritical = result.status === 'rejected' || result.grade === 'rejected' || result.grade === 'black list';
-      const severity = isCritical ? "Critical" : "Warning";
 
-      // 1. Audit SPS Score Update
-      await AuditService.createAuditRecord({
-        auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-SCR-${Date.now()}`,
-        userId: userObj.username || 'system',
-        userName: userObj.name || userObj.username || 'کاربر سیستم',
-        role: userObj.role || 'user',
-        module: moduleName,
-        entityType: "Score",
-        entityId: id,
-        entityName,
-        action: "Update",
-        severity,
-        description: isSource 
-          ? `ثبت ارزیابی و تغییر امتیاز SPS سورس "${entityName}" (SPS: ${prevSPS} -> ${newSPS}, Grade: ${prevGrade} -> ${result.grade})`
-          : `ثبت ارزیابی و تغییر امتیاز SPS تامین‌کننده "${entityName}" (SPS: ${prevSPS} -> ${newSPS}, Grade: ${prevGrade} -> ${result.grade})`,
-        reasonForChange: req.body.reasonForChange || req.body.reason || "ثبت/ویرایش امتیازات ارزیابی دوره‌ای بخش‌های مختلف",
-        beforeData: {
-          totalSPS: prevSPS,
-          grade: prevGrade,
-          qualityScore: prevScores.qa,
-          financeScore: prevScores.finance,
-          commercialScore: prevScores.commercial,
-          planningScore: prevScores.planning,
-          status: current.status
-        },
-        afterData: {
-          totalSPS: newSPS,
-          grade: result.grade,
-          qualityScore: newScores.qa,
-          financeScore: newScores.finance,
-          commercialScore: newScores.commercial,
-          planningScore: newScores.planning,
-          status: result.status
-        }
-      }).catch(err => console.error("Audit logging failed on scores update:", err));
+      // 1. Audit SPS Score Update. The department scores travel as one field
+      // because they are saved as one object; `facts` repeats the resulting SPS
+      // and grade so the score history can plot a point from any recorded row.
+      const scoreChanges = diffFields(
+        { totalSPS: prevSPS, grade: prevGrade, scores: prevScores, status: current.status },
+        { totalSPS: newSPS, grade: result.grade, scores: newScores, status: result.status },
+        ["totalSPS", "grade", "scores", "status"],
+      );
+      await recordEvent(req, {
+        event: "source.scored",
+        entity: { type: "Score", id, name: entityName },
+        changes: scoreChanges,
+        facts: scoreChanges.length > 0 ? { totalSPS: newSPS, grade: result.grade, scores: newScores } : undefined,
+        reason: req.body.reasonForChange || req.body.reason || null,
+      });
 
-      // 2. Audit Ranking Change if Rank Position Changed
-      if (prevRank !== newRank && prevRank > 0 && newRank > 0) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-RNK-SYS-${Date.now()}`,
-          userId: 'system',
-          userName: 'سیستم (خودکار)',
-          role: 'system',
-          module: moduleName,
-          entityType: "Ranking",
-          entityId: id,
-          entityName,
-          action: "System Calculation",
-          severity: "Information",
-          description: `تغییر خودکار رتبه تامین‌کننده/سورس "${entityName}" در جدول رتبه‌بندی (رتبه قبلی: ${prevRank}, رتبه جدید: ${newRank})`,
-          reasonForChange: "SPS score recalculated",
-          beforeData: {
-            previousRank: prevRank,
-            previousSPS: prevSPS,
-            previousGrade: prevGrade
-          },
-          afterData: {
-            newRank: newRank,
-            newSPS: newSPS,
-            newGrade: result.grade
-          }
-        }).catch(err => console.error("Audit logging failed on ranking change:", err));
-      }
+      // The rank is derived from the SPS that was just recorded, so a second
+      // row saying it moved adds a line to the trail without adding a fact to
+      // it. Dropped with the rewrite (rule 16: no event that reports a
+      // recalculation of what the previous row already states).
 
       console.log(`[UnifiedDB] Saved fine-grained scores details & updated business calculations for vendor: ${id}`);
       res.json({ success: true, part: "scores", vendor: result });
@@ -735,7 +777,15 @@ export function vendorRoutes(): express.Router {
   });
 
   // Update vendor activity logs (Unified Database)
-  router.patch("/api/vendors/:id/logs", requireAuth, requirePermission("vendor.edit"), serializeVendorWrites, async (req: any, res) => {
+  // Appending to the activity log is a byproduct of acting on the record, not
+  // an edit of its own: the sample verdict writes its line here, and quality
+  // holds `sample.decide` without `vendor.edit`, so a single permission on this
+  // route refused the second half of a decision the same request had just been
+  // allowed to make. Whoever may only decide may only append — removing an
+  // entry is still an edit, and that is enforced below.
+  router.patch("/api/vendors/:id/logs", requireAuth,
+    requireAnyPermission("vendor.edit", "vendor.decide", "sample.decide", "vendor.analysis"),
+    serializeVendorWrites, async (req: any, res) => {
     try {
       const { id } = req.params;
       const current = await getVendorById(id);
@@ -750,6 +800,24 @@ export function vendorRoutes(): express.Router {
         return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
       }
       const l = validationResult.data;
+
+      // Only `vendor.edit` may rewrite history. For everyone else the submitted
+      // list has to start with the stored one, entry for entry: new lines at the
+      // end are the record of what they did, while a changed or missing line is
+      // somebody editing the trail with a permission that was granted for a
+      // decision.
+      if (l.activityLogs && !can(req.account, "vendor.edit")) {
+        const before = (current.activityLogs || []) as any[];
+        const after = l.activityLogs as any[];
+        const appendOnly = after.length >= before.length
+          && before.every((entry, i) => JSON.stringify(entry) === JSON.stringify(after[i]));
+        if (!appendOnly) {
+          return res.status(403).json({
+            error: "عدم دسترسی: تغییر یا حذف سوابق فعالیت نیازمند مجوز «ویرایش سورس» است.",
+          });
+        }
+      }
+
       const updatedVendor = {
         ...current,
         activityLogs: l.activityLogs ?? current.activityLogs
@@ -763,26 +831,12 @@ export function vendorRoutes(): express.Router {
       const prevLogs = current.activityLogs || [];
       const nextLogs = updatedVendor.activityLogs || [];
       if (JSON.stringify(prevLogs) !== JSON.stringify(nextLogs)) {
-        const userObj = req.user || {};
-        const now = new Date();
-        await AuditService.createAuditRecord({
-          auditId: `AUD-${now.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'user',
-          module: "Source Management",
-          entityType: "ActivityLog",
-          entityId: id,
-          entityName: current.name || id,
-          action: nextLogs.length >= prevLogs.length ? "Create" : "Delete",
-          severity: nextLogs.length < prevLogs.length ? "Warning" : "Information",
-          description: nextLogs.length >= prevLogs.length
-            ? `ثبت سابقهٔ فعالیت برای سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`
-            : `حذف سابقهٔ فعالیت از سورس "${current.name || id}" (${prevLogs.length} → ${nextLogs.length} مورد)`,
-          reasonForChange: (req.body?.reasonForChange as string) || "ویرایش سوابق فعالیت سورس",
-          beforeData: { activityLogCount: prevLogs.length, activityLogs: prevLogs },
-          afterData: { activityLogCount: nextLogs.length, activityLogs: nextLogs },
-        }).catch(err => console.error("Audit logging failed on activity logs update:", err));
+        await recordEvent(req, {
+          event: "source.updated",
+          entity: { type: "ActivityLog", id, name: current.name || id },
+          changes: [{ field: "activityLogCount", from: prevLogs.length, to: nextLogs.length }],
+          reason: (req.body?.reasonForChange as string) || null,
+        });
       }
       res.json({ success: true, part: "logs", vendor: result });
     } catch (err: any) {
@@ -827,7 +881,6 @@ export function vendorRoutes(): express.Router {
         return { pass, conditional, reject };
       };
 
-      const prevCounters = countDecisions(prevRecords);
       const newCounters = countDecisions(newRecords);
 
       // Saving a laboratory record no longer moves a sample's status.
@@ -856,7 +909,6 @@ export function vendorRoutes(): express.Router {
       await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
 
-      const userObj = req.user || {};
       const entityName = isSampleRecord ? (result.material || result.name) : result.name;
       const reasonInput = req.body.reasonForChange || req.body.reason || null;
 
@@ -874,189 +926,70 @@ export function vendorRoutes(): express.Router {
 
       // Added Record(s) Audit
       for (const rec of addedRecs) {
-        const isReject = rec.decision === 'Reject';
-        await AuditService.createAuditRecord({
-          auditId: `AUD-LAB-CRT-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'lab',
-          module: "Laboratory",
-          entityType: "Laboratory Result",
-          entityId: id,
-          entityName: `${entityName} (کد QC: ${rec.qcCode || 'N/A'})`,
-          action: "Create",
-          severity: isReject ? "Critical" : "Information",
-          description: `ثبت نتیجه آزمایشگاهی جدید برای سورس "${entityName}" با کد آزمون ${rec.qcCode || 'N/A'} (تصمیم: ${rec.decision})`,
-          reasonForChange: reasonInput || "ثبت جدید آنالیز کنترل کیفیت",
-          beforeData: null,
-          afterData: {
-            sourceId: id,
-            sourceName: entityName,
-            material: current.material || entityName,
-            testName: rec.qcCode,
-            testResult: rec.comments || 'مطابق مشخصات',
-            decision: rec.decision,
-            date: rec.date,
-            recordedBy: rec.recordedBy || userObj.name,
-            previousCounters: prevCounters,
-            newCounters: newCounters
-          }
-        }).catch(err => console.error("Audit logging failed on lab result create:", err));
+        await recordEvent(req, {
+          event: "lab.result_added",
+          entity: { type: "Laboratory Result", id, name: entityName },
+          facts: { qcCode: rec.qcCode || null, decision: rec.decision, date: rec.date },
+          reason: reasonInput || null,
+        });
       }
 
       // Updated Record(s) Audit
       for (const rec of updatedRecs) {
         const prevRec = prevRecords.find((p: any) => p.id === rec.id) || {};
-        const isReject = rec.decision === 'Reject';
-        await AuditService.createAuditRecord({
-          auditId: `AUD-LAB-UPD-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'lab',
-          module: "Laboratory",
-          entityType: "Laboratory Result",
-          entityId: id,
-          entityName: `${entityName} (کد QC: ${rec.qcCode || 'N/A'})`,
-          action: "Update",
-          severity: isReject ? "Critical" : "Warning",
-          description: `ویرایش نتیجه آزمایشگاهی برای سورس "${entityName}" (تغییر تصمیم از ${prevRec.decision} به ${rec.decision})`,
-          reasonForChange: reasonInput || "ویرایش آنالیز آزمایشگاه",
-          beforeData: {
-            sourceId: id,
-            sourceName: entityName,
-            material: current.material || entityName,
-            testName: prevRec.qcCode,
-            testResult: prevRec.comments,
-            decision: prevRec.decision,
-            date: prevRec.date,
-            previousCounters: prevCounters
-          },
-          afterData: {
-            sourceId: id,
-            sourceName: entityName,
-            material: current.material || entityName,
-            testName: rec.qcCode,
-            testResult: rec.comments,
-            decision: rec.decision,
-            date: rec.date,
-            newCounters: newCounters
-          }
-        }).catch(err => console.error("Audit logging failed on lab result update:", err));
+        await recordEvent(req, {
+          event: "lab.result_updated",
+          entity: { type: "Laboratory Result", id, name: entityName },
+          changes: diffFields(prevRec, rec, ["decision", "qcCode", "date", "comments"]),
+          facts: { qcCode: rec.qcCode || null },
+          reason: reasonInput || null,
+        });
       }
 
-      // Deleted Record(s) Audit
+      // Deleted Record(s) Audit — the QC code and the verdict that was removed,
+      // not a copy of the record (rule 16).
       for (const rec of deletedRecs) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-LAB-DEL-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'lab',
-          module: "Laboratory",
-          entityType: "Laboratory Result",
-          entityId: id,
-          entityName: `${entityName} (کد QC: ${rec.qcCode || 'N/A'})`,
-          action: "Delete",
-          severity: "Critical",
-          description: `حذف نتیجه آزمایشگاهی سورس "${entityName}" با کد QC: ${rec.qcCode || 'N/A'} (تصمیم قبلی: ${rec.decision})`,
-          reasonForChange: reasonInput || "حذف رکورد نتایج آزمایشگاه",
-          beforeData: {
-            sourceId: id,
-            sourceName: entityName,
-            material: current.material || entityName,
-            testName: rec.qcCode,
-            testResult: rec.comments,
-            decision: rec.decision,
-            date: rec.date,
-            recordedBy: rec.recordedBy,
-            previousCounters: prevCounters
-          },
-          afterData: {
-            deleted: true,
-            newCounters: newCounters
-          }
-        }).catch(err => console.error("Audit logging failed on lab result delete:", err));
+        await recordEvent(req, {
+          event: "lab.result_removed",
+          entity: { type: "Laboratory Result", id, name: entityName },
+          facts: { qcCode: rec.qcCode || null, decision: rec.decision },
+          reason: reasonInput || null,
+        });
       }
 
-      // Fallback general audit if list array changed without specific diffs
-      if (addedRecs.length === 0 && updatedRecs.length === 0 && deletedRecs.length === 0 && JSON.stringify(prevRecords) !== JSON.stringify(newRecords)) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-LAB-GEN-${Date.now()}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'lab',
-          module: "Laboratory",
-          entityType: "Laboratory Result",
-          entityId: id,
-          entityName,
-          action: "Update",
-          severity: newCounters.reject > 0 ? "Critical" : "Warning",
-          description: `بروزرسانی سوابق آزمایشگاهی سورس "${entityName}"`,
-          reasonForChange: reasonInput || "بروزرسانی نتایج آنالیز",
-          beforeData: { previousCounters: prevCounters, count: prevRecords.length },
-          afterData: { newCounters: newCounters, count: newRecords.length }
-        }).catch(err => console.error("Audit logging failed on general analysis update:", err));
+      // Fallback when the list changed without any record being added, edited
+      // or removed — a reordering, say. Reported as a count so the row still
+      // says something rather than repeating the list.
+      if (addedRecs.length === 0 && updatedRecs.length === 0 && deletedRecs.length === 0
+        && JSON.stringify(prevRecords) !== JSON.stringify(newRecords)) {
+        await recordEvent(req, {
+          event: "lab.result_updated",
+          entity: { type: "Laboratory Result", id, name: entityName },
+          changes: [{ field: "analysisRecordCount", from: prevRecords.length, to: newRecords.length }],
+          reason: reasonInput || null,
+        });
       }
 
-      // 2. Audit Sample Status Changes (System Auto Update or Restore)
+      // 2. The effective status the lab result drove. Recorded as the same
+      // disqualification and reinstatement a person can make, because that is
+      // what it is — only the actor differs, and the actor is a column.
       if (isSystemAutoReject) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-SRC-SYS-REJ-${Date.now()}`,
-          userId: 'system',
-          userName: 'سیستم (خودکار)',
-          role: 'system',
-          module: "Source Management",
-          entityType: "Source",
-          entityId: id,
-          entityName,
-          action: "System Update",
-          severity: "Critical",
-          description: `تغییر خودکار وضعیت موثر سورس "${entityName}" به علت ثبت نتیجه مردودی آزمایشگاه (Reject Count >= 1)`,
-          reasonForChange: "Effective Sample Status changed automatically because Reject Count >= 1",
-          beforeData: {
-            previousStatus: current.status,
-            previousEffectiveStatus: current.status,
-            previousRejectCount: prevCounters.reject,
-            previousPassCount: prevCounters.pass,
-            previousConditionalCount: prevCounters.conditional
-          },
-          afterData: {
-            newStatus: "rejected",
-            newEffectiveStatus: "rejected",
-            newRejectCount: newCounters.reject,
-            newPassCount: newCounters.pass,
-            newConditionalCount: newCounters.conditional
-          }
-        }).catch(err => console.error("Audit logging failed on auto reject status change:", err));
+        await recordEvent(req, {
+          event: "source.disqualified",
+          actor: { username: "system", name: "سیستم (خودکار)", role: "system" },
+          entity: { type: "Source", id, name: entityName },
+          changes: [{ field: "status", from: current.status, to: "rejected" }],
+          facts: { rejectCount: newCounters.reject },
+          reason: "ثبت نتیجهٔ مردود آزمایشگاه",
+        });
       } else if (isSystemAutoRestore) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-SRC-SYS-RST-${Date.now()}`,
-          userId: 'system',
-          userName: 'سیستم (خودکار)',
-          role: 'system',
-          module: "Source Management",
-          entityType: "Source",
-          entityId: id,
-          entityName,
-          action: "System Update",
-          severity: "Warning",
-          description: `بازگردانی خودکار وضعیت موثر سورس "${entityName}" به وضعیت اولیه (${finalStatus}) پس از برطرف شدن عدم‌تاییدهای آزمایشگاه`,
-          reasonForChange: "No active laboratory rejection exists. Status restored from Initial Sample Status",
-          beforeData: {
-            previousStatus: current.status,
-            previousEffectiveStatus: "rejected",
-            previousRejectCount: prevCounters.reject,
-            previousPassCount: prevCounters.pass,
-            previousConditionalCount: prevCounters.conditional
-          },
-          afterData: {
-            newStatus: finalStatus,
-            newEffectiveStatus: finalStatus,
-            initialSampleStatus: current.initialSampleStatus || "approved",
-            newRejectCount: newCounters.reject,
-            newPassCount: newCounters.pass,
-            newConditionalCount: newCounters.conditional
-          }
-        }).catch(err => console.error("Audit logging failed on auto restore status change:", err));
+        await recordEvent(req, {
+          event: "source.reinstated",
+          actor: { username: "system", name: "سیستم (خودکار)", role: "system" },
+          entity: { type: "Source", id, name: entityName },
+          changes: [{ field: "status", from: "rejected", to: finalStatus }],
+          reason: "دیگر نتیجهٔ مردود فعالی وجود ندارد",
+        });
       }
 
       console.log(`[UnifiedDB] Saved fine-grained analysis record & Phase 5 Audit logged for vendor: ${id}`);
@@ -1091,113 +1024,28 @@ export function vendorRoutes(): express.Router {
 
       // Audit Trail Integration
       const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const moduleName = isSource ? "Source Management" : "Supplier Management";
       const entityName = isSource ? (result.material || result.name) : result.name;
-      const userObj = req.user || {};
 
       const prevRisk = current.riskAssessment || null;
       const newRisk = result.riskAssessment || {};
 
-      const isCreate = !prevRisk;
-      const actionType = isCreate ? "Create" : "Update";
       const reasonInput = req.body.reasonForChange || req.body.reason || "ویرایش پارامترهای FMEA / RPN / SRI";
 
-      const beforeObj = prevRisk ? {
-        material: current.material || entityName,
-        supplier: entityName,
-        riskCategory: current.category || 'General',
-        severity: prevRisk.materialCriticality ?? prevRisk.severity,
-        occurrence: prevRisk.probability ?? prevRisk.occurrence,
-        detectability: prevRisk.detectability ?? prevRisk.detection,
-        rpn: prevRisk.riskScore ?? prevRisk.rpn,
-        sri: prevRisk.sri,
-        riskLevel: prevRisk.riskLevel,
-        failureMode: prevRisk.failureMode,
-        effect: prevRisk.effect,
-        cause: prevRisk.cause,
-        evaluator: prevRisk.evaluator,
-        date: prevRisk.date
-      } : null;
-
-      const afterObj = {
-        material: result.material || entityName,
-        supplier: entityName,
-        riskCategory: result.category || 'General',
-        severity: newRisk.materialCriticality ?? newRisk.severity,
-        occurrence: newRisk.probability ?? newRisk.occurrence,
-        detectability: newRisk.detectability ?? newRisk.detection,
-        rpn: newRisk.riskScore ?? newRisk.rpn,
-        sri: newRisk.sri,
-        riskLevel: newRisk.riskLevel,
-        failureMode: newRisk.failureMode,
-        effect: newRisk.effect,
-        cause: newRisk.cause,
-        evaluator: newRisk.evaluator,
-        date: newRisk.date
-      };
-
       // 1. User Change Audit
-      await AuditService.createAuditRecord({
-        auditId: `AUD-RSK-USR-${Date.now()}`,
-        userId: userObj.username || 'system',
-        userName: userObj.name || userObj.username || 'کاربر سیستم',
-        role: userObj.role || 'user',
-        module: "Risk Assessment",
-        entityType: "Risk Assessment",
-        entityId: id,
-        entityName,
-        action: actionType,
-        severity: newRisk.riskLevel === 'High' ? "Critical" : "Warning",
-        description: isCreate 
-          ? `ثبت ارزیابی ریسک جدید (FMEA) برای سورس/تامین‌کننده "${entityName}"`
-          : `ویرایش پارامترهای FMEA توسط کاربر برای سورس/تامین‌کننده "${entityName}"`,
-        reasonForChange: reasonInput,
-        beforeData: beforeObj,
-        afterData: afterObj
-      }).catch(err => console.error("Audit logging failed on user risk change:", err));
+      await recordEvent(req, {
+        event: "risk.assessed",
+        entity: { type: "Risk Assessment", id, name: entityName },
+        // The FMEA parameters only: `beforeObj` also carries the material and
+        // the supplier, which do not change here and are named in the columns.
+        changes: riskChanges(prevRisk, newRisk),
+        facts: riskFacts(newRisk),
+        reason: reasonInput || null,
+      });
 
-      // 2. System Calculation Audit (if RPN / SRI / Risk Level recalculated)
-      const prevRPN = prevRisk?.riskScore ?? prevRisk?.rpn;
-      const newRPN = newRisk.riskScore ?? newRisk.rpn;
-      const prevSRI = prevRisk?.sri;
-      const newSRI = newRisk.sri;
-      const prevLevel = prevRisk?.riskLevel;
-      const newLevel = newRisk.riskLevel;
-
-      const rpnRecalculated = prevRisk && (prevRPN !== newRPN || prevSRI !== newSRI || prevLevel !== newLevel);
-
-      if (rpnRecalculated) {
-        await AuditService.createAuditRecord({
-          auditId: `AUD-RSK-SYS-${Date.now()}`,
-          userId: 'system',
-          userName: 'سیستم (خودکار)',
-          role: 'system',
-          module: "Risk Assessment",
-          entityType: "FMEA",
-          entityId: id,
-          entityName,
-          action: "System Calculation",
-          severity: newLevel === 'High' ? "Critical" : "Information",
-          description: `محاسبه مجدد خودکار RPN / SRI و تعیین سطح ریسک (RPN: ${prevRPN} -> ${newRPN}, SRI: ${prevSRI} -> ${newSRI}, Level: ${prevLevel} -> ${newLevel})`,
-          reasonForChange: "RPN recalculated automatically based on updated risk parameters",
-          beforeData: {
-            previousRPN: prevRPN,
-            previousSRI: prevSRI,
-            previousRiskLevel: prevLevel,
-            previousSeverity: beforeObj?.severity,
-            previousOccurrence: beforeObj?.occurrence,
-            previousDetectability: beforeObj?.detectability
-          },
-          afterData: {
-            newRPN: newRPN,
-            newSRI: newSRI,
-            newRiskLevel: newLevel,
-            newSeverity: afterObj.severity,
-            newOccurrence: afterObj.occurrence,
-            newDetectability: afterObj.detectability
-          }
-        }).catch(err => console.error("Audit logging failed on system RPN calculation:", err));
-      }
+      // The RPN, the SRI and the risk level are computed from the severity,
+      // occurrence and detectability that the row above already records, so a
+      // second "recalculated" row restated the first one. Dropped with the
+      // rewrite.
 
       console.log(`[UnifiedDB] Saved fine-grained risk assessment & FMEA audit for vendor: ${id}`);
       res.json({ success: true, part: "risk", vendor: result });
@@ -1221,27 +1069,14 @@ export function vendorRoutes(): express.Router {
       const success = await deleteVendorFromDb(id);
       if (success) {
         const isSource = !!(current.isSample || current.category === 'sample');
-        const moduleName = isSource ? "Source Management" : "Supplier Management";
-        const entityType = isSource ? "Source" : "Supplier";
+          const entityType = isSource ? "Source" : "Supplier";
         const entityName = isSource ? (current.material || current.name) : current.name;
-        const userObj = req.user || {};
-
-        await AuditService.createAuditRecord({
-          auditId: `AUD-${isSource ? 'SRC' : 'SUP'}-DEL-${Date.now()}`,
-          userId: userObj.username || 'system',
-          userName: userObj.name || userObj.username || 'کاربر سیستم',
-          role: userObj.role || 'user',
-          module: moduleName,
-          entityType,
-          entityId: id,
-          entityName,
-          action: "Delete",
-          severity: "Critical",
-          description: isSource ? `حذف سورس "${entityName}"` : `حذف تامین‌کننده "${entityName}"`,
-          reasonForChange: req.body?.reasonForChange || req.body?.reason || "حذف رکورد توسط کاربر",
-          beforeData: current,
-          afterData: null
-        }).catch(err => console.error("Audit logging failed on delete vendor:", err));
+  
+        await recordEvent(req, {
+          event: "source.deleted",
+          entity: { type: entityType, id, name: entityName },
+          reason: req.body?.reasonForChange || req.body?.reason || null,
+        });
 
         console.log(`[UnifiedDB] Deleted vendor relational files: ${id}`);
         res.json({ success: true });

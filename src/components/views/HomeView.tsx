@@ -1,18 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, Calendar, ChevronLeft, ClipboardList, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
+import { Award, BadgeCheck, Boxes, Building2, Calendar, ChevronLeft, ClipboardList, FlaskConical, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
-import { EntityName } from '../../components/EntityName';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
+import { StatTile } from '../../components/ui/stat-tile';
 import { categoryLabels } from '../../constants/categories';
 import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { isVendorRejected } from '../../utils/vendorState';
+import { adminRejectionReason, isInCategoryRegister, isSampleVendor, isVendorRejected } from '../../utils/vendorState';
+import { describeVendorRank, SOURCE_GRADE_RANGE_FA } from '../../utils/vendorRank';
+import { describeSampleStatus } from '../../utils/sampleStatus';
+import { countMaterialsWithSources, indexSourcesByMaterial } from '../../utils/materialSources';
+import { summarisePartners } from '../../utils/partnerStats';
+import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
+import { buildWorklist } from './WorklistView';
+// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
+import temadLogo from '../../assets/logo.png';
 
 // extracted from App.tsx
 
@@ -31,10 +38,28 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   const sampleCount = db.length - sourceVendors.length;
 
   const stats = useMemo(() => {
-    const rejected = sourceVendors.filter(isVendorRejected).length;
-    const gradeA = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'A').length;
-    const gradeB = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'B').length;
-    const gradeC = sourceVendors.filter(v => !isVendorRejected(v) && v.grade === 'C').length;
+    /*
+     * The grade is derived from the department scores, not read off the stored
+     * `grade` column — the two diverge in the data, and every other screen (the
+     * source page, the archive, the spreadsheet) already derives it through
+     * `describeVendorRank`. Counting the column here made the dashboard the one
+     * place in the application that disagreed with the rest about a company's
+     * grade, and the widget's own title says the scores are what it counts.
+     *
+     * One pass over the population fills all five buckets: the five separate
+     * `filter` walks this replaces grew with the register, and this page is the
+     * first thing every user loads.
+     */
+    let rejected = 0, gradeA = 0, gradeB = 0, gradeC = 0;
+    for (const v of sourceVendors) {
+      if (isVendorRejected(v)) { rejected++; continue; }
+      switch (describeVendorRank(v).grade) {
+        case 'A': gradeA++; break;
+        case 'B': gradeB++; break;
+        case 'C': gradeC++; break;
+        default: break;
+      }
+    }
     return {
       total: sourceVendors.length,
       gradeA, gradeB, gradeC, rejected,
@@ -45,41 +70,102 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
     };
   }, [sourceVendors]);
 
-  const rejectedVendors = db.filter(isVendorRejected);
+  /**
+   * How much of the catalogue is actually bought.
+   *
+   * The sources only, never the samples: the tile beside this one counts «کل
+   * سورس‌ها … به‌جز نمونه‌ها», and one row of figures must not use two meanings
+   * of the word. The materials repository asks the same function over every
+   * record, because there the question is what a delete would break.
+   */
+  const materialsInUse = useMemo(
+    () => countMaterialsWithSources(indexSourcesByMaterial(sourceVendors, materials)),
+    [sourceVendors, materials],
+  );
 
-  const expiringVendors = useMemo(() => {
-    return db
-      .filter(v => !!v.ircExpiryDate && v.ircExpiryDate.trim() !== '' && v.ircExpiryDate.trim().toLowerCase() !== 'n/a')
-      .map(v => ({
-        vendor: v,
-        check: checkLicenseExpiry(v.ircExpiryDate)
-      }))
-      .filter(item => item.check.status === 'expiring_soon' || item.check.status === 'expired')
-      .sort((a, b) => (a.check.daysLeft || 0) - (b.check.daysLeft || 0));
-  }, [db]);
+  const partnerStats = useMemo(() => summarisePartners(partners || []), [partners]);
 
-  // Grade distribution for the donut (semantic ordinal grade colours).
+  /*
+   * Grade distribution for the donut (semantic ordinal grade colours).
+   *
+   * The band each grade stands for travels with the slice. It used to be the
+   * subtitle of a row of cards that repeated these same five figures directly
+   * above the ring, and when those went the bands were the only thing on them
+   * the ring did not already say.
+   */
   const gradeDistribution = useMemo(() => [
-      { name: 'گرید A', value: stats.gradeA, color: '#10b981' },
-      { name: 'گرید B', value: stats.gradeB, color: '#3b82f6' },
-      { name: 'گرید C', value: stats.gradeC, color: '#f59e0b' },
-      { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48' },
-      { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8' },
+      { name: 'گرید A', value: stats.gradeA, color: '#10b981', hint: SOURCE_GRADE_RANGE_FA.A },
+      { name: 'گرید B', value: stats.gradeB, color: '#3b82f6', hint: SOURCE_GRADE_RANGE_FA.B },
+      { name: 'گرید C', value: stats.gradeC, color: '#f59e0b', hint: SOURCE_GRADE_RANGE_FA.C },
+      // Not simply grade D: a source also reaches this state by an explicit
+      // decision rather than by its score alone (rule 11).
+      { name: 'لیست سیاه', value: stats.rejected, color: '#e11d48', hint: 'امتیاز زیر ۴۰ یا رد صریح' },
+      { name: 'بدون گرید', value: stats.ungraded, color: '#94a3b8', hint: 'هنوز ارزیابی نشده' },
     ].filter(d => d.value > 0), [stats]);
 
-  // Pending-actions center: real, actionable quality gaps.
-  const pendingActions = useMemo(() => {
-    const realVendors = sourceVendors;
-    const notEvaluated = realVendors.filter(v => v.status !== 'rejected' && !(v.grade === 'A' || v.grade === 'B' || v.grade === 'C'));
-    const noRisk = realVendors.filter(v => v.status !== 'rejected' && !v.riskAssessment);
-    const sopPending = (partners || []).filter(p => p.type === 'Supplier' && (!p.evaluation || p.evaluation.grade === 'Not Evaluated'));
-    return [
-      { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: notEvaluated.length, icon: ClipboardList, tone: 'amber' },
-      { key: 'risk', label: 'ریسک ثبت‌نشده', count: noRisk.length, icon: ShieldAlert, tone: 'orange' },
-      { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: sopPending.length, icon: Award, tone: 'blue' },
-      { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: expiringVendors.length, icon: Calendar, tone: 'rose' },
+  /**
+   * The seller-evaluation mix, from the five documents each seller submitted.
+   *
+   * Manufacturers are not in the population at all: they are never evaluated
+   * against the SOP (rule 4), so counting them would report a backlog that
+   * cannot exist. The grade is recomputed from the documents rather than read
+   * off the stored column, for the same reason rule 13 gives — a stored row can
+   * disagree with its own documents, and `reconcileSupplierEvaluation` is what
+   * the rest of the application trusts.
+   *
+   * «ارزیابی نشده» is a slice of its own so the ring adds up to the number of
+   * sellers. The source donut beside it silently dropped exactly that group
+   * once, and the total stopped meaning anything.
+   */
+  const supplierGradeDistribution = useMemo(() => {
+    let a = 0, b = 0, c = 0, rejected = 0, none = 0;
+    for (const p of partners || []) {
+      if (p.type !== 'Supplier') continue;
+      const grade = reconcileSupplierEvaluation(p).evaluation?.grade;
+      switch (grade) {
+        case 'A': a++; break;
+        case 'B': b++; break;
+        case 'C': c++; break;
+        // The failing grade is `D` under the 90/75/60 rubric (rule 13).
+        // `Blacklist` is the retired name for the same thing and still appears
+        // on rows written before the change, so both land in one slice — while
+        // this counted only `Blacklist`, a rejected seller fell through to
+        // `default` and the dashboard called it «ارزیابی نشده», disagreeing
+        // with the repository table two clicks away, which said D.
+        case 'D': case 'Blacklist': rejected++; break;
+        default: none++; break;
+      }
+    }
+    const slices = [
+      { name: 'گرید A', value: a, color: '#10b981' },
+      { name: 'گرید B', value: b, color: '#3b82f6' },
+      { name: 'گرید C', value: c, color: '#f59e0b' },
+      { name: 'گرید D (مردود)', value: rejected, color: '#e11d48' },
+      { name: 'ارزیابی نشده', value: none, color: '#94a3b8' },
     ];
-  }, [sourceVendors, partners, expiringVendors]);
+    return { slices: slices.filter(d => d.value > 0), total: a + b + c + rejected + none };
+  }, [partners]);
+
+  /*
+   * Pending-actions centre: real, actionable quality gaps.
+   *
+   * Counted by `buildWorklist`, the same function the کارتابل itself uses, so
+   * the tile and the list it opens cannot disagree. They already did: this kept
+   * its own copy of all four filters, its licence backlog counted samples while
+   * the list excluded them, and its «not evaluated» test read the stored grade
+   * column rather than deriving from the department scores — so a source with
+   * real scores and an empty column sat on the dashboard for ever.
+   */
+  const pendingActions = useMemo(() => ([
+    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', db, partners || []).length, icon: ClipboardList, tone: 'amber' },
+    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
+    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },
+    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', db, partners || []).length, icon: Calendar, tone: 'rose' },
+    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', db, partners || []).length, icon: Microscope, tone: 'blue' },
+  ]), [db, partners]);
+
+  /** The same count, reused by the laboratory card rather than rebuilt there. */
+  const labBacklog = pendingActions.find(a => a.key === 'lab')?.count ?? 0;
 
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
@@ -128,22 +214,68 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
 
   return (
     <div className="space-y-7 fade-in">
-      {/* PAGE HEADER — the system's own name is already in the sidebar and the
-          browser tab; repeating it a third time cost the top 180px of a screen
-          that is opened several times a day. */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
-        <h2 className="text-lg font-black text-foreground tracking-tight">خلاصهٔ وضعیت تامین‌کنندگان</h2>
-        {/* Offered only to an account that may actually register a source.
-            The endpoint has always refused the save without `vendor.create`;
-            showing the button to everyone meant a department without the
-            permission could fill in the longest form in the application and
-            learn at the last step that it was never allowed to. */}
-        {can(currentUser, 'vendor.create') && (
-          <Button onClick={onOpenSourceForm} className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0">
-            <Plus className="w-4 h-4" />
-            ثبت سورس جدید
-          </Button>
-        )}
+      {/* THE BANNER — the one place in the application that says what this
+          system is.
+
+          The name used to be left off this page deliberately, because the
+          sidebar and the browser tab both carry it and a third heading cost the
+          top of a screen people open several times a day. It comes back as a
+          single band roughly the height of the row it replaces: the deep navy
+          reads as the product's own identity rather than borrowing the blue the
+          rest of the interface uses for actions, and the register button lives
+          inside the band so the colour runs the full width instead of stopping
+          short of it.
+
+          The tones are fixed rather than tokenised on purpose — this is a brand
+          surface, like the sign-in card, and it must look the same in both
+          themes; only the border below it follows the theme. The logo is dark
+          navy on transparency, so it sits on a white plate to stay legible. */}
+      <div className="relative overflow-hidden rounded-2xl border border-border shadow-sm bg-gradient-to-l from-teal-800 via-slate-900 to-slate-950">
+        {/* A soft highlight so the band is not a flat rectangle. Decorative, so
+            it is hidden from assistive technology and cannot catch a click. */}
+        <div aria-hidden className="pointer-events-none absolute -top-16 -left-16 w-64 h-64 rounded-full bg-teal-400/15 blur-3xl" />
+
+        {/* Stacks below `lg`, because the breakpoint measures the window and the
+            sidebar takes a third of it: at a 768px tablet this band is only
+            about 470px wide, and side by side the Persian title broke onto
+            three lines while the Latin one was cut mid-word. */}
+        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-4 min-w-0">
+            {/* `sm:` and not a custom `xs:` — Tailwind v4 has no such breakpoint here,
+                so the plate was hidden at every width. */}
+            <span className="hidden sm:inline-flex items-center justify-center bg-white rounded-xl px-3 py-2 shrink-0 shadow-sm">
+              <img src={temadLogo} alt="تماد" className="h-11 w-auto object-contain" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-teal-300 text-2xs font-bold uppercase tracking-[0.18em] font-mono lg:truncate" dir="ltr">
+                Vendor List &amp; Supplier Evaluation System
+              </p>
+              <h2 className="text-white text-base sm:text-lg font-black tracking-tight mt-1">
+                سامانهٔ ارزیابی و رتبه‌بندی تأمین‌کنندگان
+              </h2>
+            </div>
+          </div>
+
+          {/* Offered only to an account that may actually register a source.
+              The endpoint has always refused the save without `vendor.create`;
+              showing the button to everyone meant a department without the
+              permission could fill in the longest form in the application and
+              learn at the last step that it was never allowed to.
+
+              Solid white on the dark band: the default button is the same blue
+              family as the ground behind it here, and a primary button on a
+              primary-adjacent field is the contrast failure this band would
+              otherwise introduce. */}
+          {can(currentUser, 'vendor.create') && (
+            <Button
+              onClick={onOpenSourceForm}
+              className="h-10 px-5 shadow-sm gap-2 text-sm font-bold shrink-0 bg-white text-slate-900 hover:bg-white/90"
+            >
+              <Plus className="w-4 h-4" />
+              ثبت سورس جدید
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* WHAT NEEDS DOING — first, and full width.
@@ -157,7 +289,9 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
           <h3 className="font-bold text-foreground text-sm">کارهای معوق</h3>
           <span className="text-2xs text-muted-foreground">— برای رسیدگی روی هر مورد کلیک کنید</span>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Five backlogs, so the row divides at three then five rather than
+            leaving the last card stranded alone under a row of four. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {pendingActions.map(a => {
             // Opening the backlog, not the first record in it: jumping
             // straight into one of twelve told the user neither which record
@@ -185,87 +319,109 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         </div>
       </div>
 
-      {/* KPI ROW */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {[
-          { label: 'کل سورس‌ها', value: stats.total, color: 'text-primary', badgeVariant: 'info' as const, sub: sampleCount > 0 ? `بدون احتساب ${sampleCount} نمونه` : 'به‌جز نمونه‌ها', percent: 100 },
-          { label: 'گرید A', value: stats.gradeA, color: 'text-emerald-600 dark:text-emerald-400', badgeVariant: 'gradeA' as const, sub: 'امتیاز ۸۰ تا ۱۰۰ (تایید کامل)', percent: stats.total > 0 ? Math.round((stats.gradeA/stats.total)*100) : 0 },
-          { label: 'گرید B', value: stats.gradeB, color: 'text-blue-600 dark:text-blue-400', badgeVariant: 'gradeB' as const, sub: 'امتیاز ۶۰ تا ۷۹ (تایید با پایش)', percent: stats.total > 0 ? Math.round((stats.gradeB/stats.total)*100) : 0 },
-          { label: 'گرید C', value: stats.gradeC, color: 'text-amber-600 dark:text-amber-400', badgeVariant: 'gradeC' as const, sub: 'امتیاز ۴۰ تا ۵۹ (مشروط)', percent: stats.total > 0 ? Math.round((stats.gradeC/stats.total)*100) : 0 },
-          { label: 'بدون گرید', value: stats.ungraded, color: 'text-muted-foreground', badgeVariant: 'info' as const, sub: 'هنوز ارزیابی نشده‌اند', percent: stats.total > 0 ? Math.round((stats.ungraded/stats.total)*100) : 0 },
-          { label: 'لیست سیاه', value: stats.rejected, color: 'text-rose-600 dark:text-rose-400', badgeVariant: 'gradeReject' as const, sub: 'مردود یا لیست سیاه', percent: stats.total > 0 ? Math.round((stats.rejected/stats.total)*100) : 0 }
-        ].map(s => (
-          <Card key={s.label} className="p-4 space-y-2.5 bg-card border-border/80 hover:border-primary/30 transition-all">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-foreground">{s.label}</span>
-              <Badge variant={s.badgeVariant} className="text-2xs px-1.5 py-0 font-mono shrink-0">
-                {s.percent}%
-              </Badge>
-            </div>
-            {/* The progress bar that used to sit here measured each number
-                against the total it was already a percentage of, and painted
-                every one of them the same blue — so the "total" card carried a
-                permanently full bar of itself. The badge already says it. */}
-            <div className={`text-3xl font-black tabular-nums font-mono ${s.color}`}>
-              {s.value}
-            </div>
-            <div className="text-2xs text-muted-foreground leading-snug">{s.sub}</div>
-          </Card>
-        ))}
+      {/* WHAT IS ON FILE — one tile per register, and nothing that is drawn
+          again further down.
+
+          Five of the six cards that used to stand here were the grade mix —
+          gradeA, gradeB, gradeC, ungraded and the blacklist — which is exactly
+          what the ring below them draws, so the same five figures were printed
+          twice within one scroll, and the blacklist a third time on its own
+          category card. What was genuinely missing was the size of the other
+          two registers, and neither appears anywhere else on this page.
+
+          `StatTile` is the tile both repository screens open with, so the
+          dashboard now counts in the same shape — and in Persian digits, which
+          the hand-built cards here never did. A tile with somewhere to go is a
+          real button, which is the other half of what that component settles.
+
+          A fixed three-column class, never one built from the number of tiles:
+          Tailwind cannot see a class name that is assembled at runtime, and
+          with one or two tiles these simply stretch. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <StatTile
+          label="کل سورس‌ها"
+          value={stats.total}
+          hint={sampleCount > 0 ? `بدون احتساب ${sampleCount.toLocaleString('fa-IR')} نمونه` : 'به‌جز نمونه‌ها'}
+          icon={Boxes}
+          tone="bg-muted text-foreground border-border"
+          onClick={() => onNavigate('archive')}
+        />
+
+        {/* Gated, and gated on the whole tile rather than on its number.
+            `useCachedCollection` empties the collection for an account without
+            the read, so an ungated tile would print a confident zero for a
+            register the user is simply not being sent. UX only, as ever — the
+            server is what actually refuses the page (rule 14). */}
+        {can(currentUser, 'material.read') && (
+          <StatTile
+            label="مواد اولیه"
+            value={materials.length}
+            hint={`${materialsInUse.toLocaleString('fa-IR')} ماده دارای سورس`}
+            icon={FlaskConical}
+            tone="bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900"
+            onClick={() => onNavigate('materials')}
+          />
+        )}
+
+        {can(currentUser, 'partner.read') && (
+          <StatTile
+            label="شرکای تجاری"
+            value={partnerStats.total}
+            hint={`${partnerStats.manufacturers.toLocaleString('fa-IR')} تولیدکننده · ${partnerStats.suppliers.toLocaleString('fa-IR')} فروشنده`}
+            icon={Building2}
+            tone="bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900"
+            onClick={() => onNavigate('business-partners')}
+          />
+        )}
       </div>
 
-      {/* GRADE MIX + ACTIVITY are grouped below the numbers they explain. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Grade distribution donut */}
-        <Card className="p-5 bg-card border-border/80">
-          <div className="flex items-center gap-2 mb-3">
-            <PieChartIcon className="w-4 h-4 text-primary" />
-            <h3 className="font-bold text-foreground text-sm">توزیع گرید کیفی</h3>
-          </div>
-          {gradeDistribution.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground text-xs">داده‌ای برای نمایش نیست.</div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="h-44 w-1/2" dir="ltr">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={gradeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={2} strokeWidth={2}>
-                      {gradeDistribution.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
-                    </Pie>
-                    <RTooltip contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }} formatter={(v: any, n: any) => [`${v} (${stats.total > 0 ? Math.round((v/stats.total)*100) : 0}%)`, n]} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 space-y-1.5">
-                {gradeDistribution.map(d => (
-                  <div key={d.name} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-foreground font-medium">
-                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
-                      {d.name}
-                    </span>
-                    <span className="font-mono font-bold text-foreground">{d.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
+      {/* HOW GOOD IS IT — the three distributions, below the registers they
+          describe.
 
-        {/* Lab pass rate — beside the grade mix, since both summarise quality. */}
-        <Card className="p-5 bg-card border-border/80 lg:col-span-2">
+          Three equal columns: the two distributions read as a pair — the same
+          ring, the same legend, the same colour per grade — and the laboratory
+          rate sits with them because all three answer «چقدر خوب است آنچه
+          داریم؟». The lab card used to take two thirds of the row on its own. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Source grades, from the department scores. */}
+        <GradeDonutCard
+          icon={PieChartIcon}
+          title="توزیع گرید کیفی سورس‌ها"
+          subtitle="بر اساس امتیاز دپارتمان‌ها"
+          slices={gradeDistribution}
+          total={stats.total}
+          emptyMessage="داده‌ای برای نمایش نیست."
+          onOpen={() => onNavigate('archive')}
+          openLabel="مشاهده در آرشیو کل داده‌ها"
+        />
+
+        {/* Seller grades, from the five submitted documents. */}
+        <GradeDonutCard
+          icon={BadgeCheck}
+          title="توزیع گرید کیفی ارزیابی فروشندگان"
+          subtitle="بر اساس مدارک ارسالی"
+          slices={supplierGradeDistribution.slices}
+          total={supplierGradeDistribution.total}
+          emptyMessage="فروشنده‌ای ثبت نشده است."
+          onOpen={() => onNavigate('business-partners')}
+          openLabel="مشاهده در مخزن شرکای تجاری"
+        />
+
+        {/* Lab pass rate — the third answer to the same question. */}
+        <Card className="p-5 bg-card border-border/80 flex flex-col">
           <div className="flex items-center gap-2 mb-3">
             <Microscope className="w-4 h-4 text-primary" />
             <h3 className="font-bold text-foreground text-sm">نرخ قبولی آزمایشگاه</h3>
           </div>
           {labStats.total === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
+            <div className="text-center py-10 text-muted-foreground text-xs">نتیجهٔ آزمایشی ثبت نشده است.</div>
           ) : (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-              <div className="shrink-0 text-center sm:text-right">
-                <div className={`text-4xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
+            <div className="flex-1 flex flex-col justify-center gap-3">
+              <div className="text-center">
+                <div className={`text-3xl font-black font-mono ${labStats.rate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : labStats.rate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{labStats.rate}%</div>
                 <div className="text-2xs text-muted-foreground mt-0.5">از مجموع {labStats.total} آزمون</div>
               </div>
-              <div className="flex-1 space-y-2">
+              <div className="space-y-2">
                 <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted">
                   <div className="h-full bg-emerald-500" style={{ width: `${(labStats.pass / labStats.total) * 100}%` }} />
                   <div className="h-full bg-blue-500" style={{ width: `${(labStats.cond / labStats.total) * 100}%` }} />
@@ -280,11 +436,219 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
               </div>
             </div>
           )}
+          {/* This card stood without a link for a while, because the only
+              destination on offer was the worklist's «سورس‌های ارزیابی‌نشده»
+              tab — departmental scores, a different set and a different
+              subject. `#/tasks/lab` is the missing one: the records this rate
+              says nothing about, because they have no result on file at all.
+
+              It is the complement of the rate rather than its population, and
+              says so. Present in both states so the card does not change height
+              as the backlog clears, and `mt-auto` to sit on the same line as
+              the link in the two cards beside it. */}
+          {labBacklog > 0 ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('tasks', null, 'lab')}
+              className="mt-auto pt-3 text-2xs font-bold text-primary hover:underline text-right cursor-pointer"
+            >
+              {labBacklog.toLocaleString('fa-IR')} رکورد بدون نتیجهٔ آزمایش ←
+            </button>
+          ) : (
+            <p className="mt-auto pt-3 text-2xs font-bold text-muted-foreground text-right">
+              آزمایش همهٔ رکوردها ثبت شده است.
+            </p>
+          )}
         </Card>
       </div>
 
-      {/* RECENT ACTIVITY — a plain full-width list rather than a fourth card
-          grid, so the page stops repeating one layout family end to end. */}
+      {/* The expiring-licence list used to be rendered here. It moved to the
+          worklist (#/tasks/irc): the dashboard grew longer exactly as the
+          backlog grew, which is backwards — a dashboard should summarise and
+          hand off. The counter in the pending-actions card is the entry point. */}
+
+      {/* CATEGORY CARDS */}
+      <div>
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h3 className="font-bold text-foreground text-sm">دسته‌بندی‌های تامین</h3>
+          <span className="text-xs text-muted-foreground">انتخاب دسته‌بندی برای مدیریت تخصصی</span>
+        </div>
+        {/* Six cards now that the blacklist has one, so the row divides evenly
+            instead of leaving a single card stranded on a second line. */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {(Object.entries(categoryLabels) as [Category, any][]).map(([id, meta]) => {
+            /*
+             * The card's population, from the one predicate that answers it
+             * (rule 11d).
+             *
+             * The blacklist and the samples are each their own register — a
+             * state and a stage, not categories — and an ordinary category
+             * excludes the rows that belong to them. This card wrote that rule
+             * out by hand, the category page wrote a third version of it, and
+             * the spreadsheet a fourth; «خارجی» drew 105 rows on screen and
+             * exported 140. Now the four ask `isInCategoryRegister`.
+             */
+            const isBlacklistCard = id === 'blacklist';
+            const catVendors = db.filter(v => isInCategoryRegister(v, id));
+
+            /*
+             * What the card counts, in the vocabulary of the thing it counts.
+             *
+             * A source category shows its grade mix — A, B, C and the ones
+             * nobody has scored — because a source *has* a grade and that is
+             * the word the source page, the archive column and the dashboard
+             * donut all use for it. It used to read «تأییدشده / مشروط», which
+             * is the sample vocabulary (Approved / Conditional) borrowed for
+             * records that are graded, not judged; and the middle figure
+             * quietly held grade D as well, so a source scoring below 40 was
+             * counted as «conditional».
+             *
+             * The grade is derived from the department scores, never read off
+             * the stored column, so this row and the donut above it cannot
+             * disagree about the same source.
+             */
+            type CardRow = { key: string; label: string; value: number; tone: string; bar: string };
+            let rows: CardRow[];
+
+            if (isBlacklistCard) {
+              // A verdict, not a mix of qualities: what is worth knowing is how
+              // a source got here — a person's decision, or its own score.
+              let explicit = 0;
+              for (const v of catVendors) if (adminRejectionReason(v)) explicit++;
+              rows = [
+                { key: 'explicit', label: 'رد صریح', value: explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-500' },
+                { key: 'low', label: 'امتیاز پایین', value: catVendors.length - explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-400' },
+              ];
+            } else if (id === 'sample') {
+              // The sample's own three words, from `describeSampleStatus`.
+              let approved = 0, decided = 0;
+              for (const v of catVendors) {
+                const d = describeSampleStatus(v);
+                if (!d.decided) continue;
+                decided++;
+                if (d.label === 'Approved') approved++;
+              }
+              rows = [
+                { key: 'approved', label: 'تأییدشده', value: approved, tone: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' },
+                { key: 'other', label: 'مشروط یا رد', value: decided - approved, tone: 'text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
+                { key: 'untested', label: 'آزمایش‌نشده', value: catVendors.length - decided, tone: 'text-muted-foreground', bar: 'bg-slate-400 dark:bg-slate-600' },
+              ];
+            } else {
+              const g = { A: 0, B: 0, C: 0, D: 0, none: 0 };
+              for (const v of catVendors) {
+                const grade = describeVendorRank(v).grade;
+                if (grade === 'A' || grade === 'B' || grade === 'C') g[grade]++;
+                else if (grade === 'D') g.D++;
+                else g.none++;
+              }
+              rows = [
+                { key: 'A', label: 'گرید A', value: g.A, tone: 'text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500' },
+                { key: 'B', label: 'گرید B', value: g.B, tone: 'text-blue-600 dark:text-blue-400', bar: 'bg-blue-500' },
+                { key: 'C', label: 'گرید C', value: g.C, tone: 'text-amber-600 dark:text-amber-400', bar: 'bg-amber-500' },
+                // Grade D only reaches a category card while its scoring is
+                // unfinished — a completed one below 40 is blacklisted and
+                // counted in the warning line instead — so it is named rather
+                // than folded into a band it does not belong to.
+                ...(g.D > 0 ? [{ key: 'D', label: 'گرید D', value: g.D, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-500' }] : []),
+                { key: 'none', label: 'بدون امتیاز', value: g.none, tone: 'text-muted-foreground', bar: 'bg-slate-400 dark:bg-slate-600' },
+              ];
+            }
+
+            // Only what is actually wrong, and only when something is: a line
+            // that always shows «۰ مورد» teaches the reader to stop looking at
+            // it. The blacklist card is the one place the rejected count is the
+            // subject rather than a warning.
+            const expiring = isBlacklistCard ? 0 : catVendors.filter(v => {
+              const st = checkLicenseExpiry(v.ircExpiryDate).status;
+              return st === 'expired' || st === 'expiring_soon';
+            }).length;
+            // The complement of the register above: the rows this category
+            // would hold if they had not been disqualified. Same two exclusions
+            // as `isInCategoryRegister`, with the verdict inverted.
+            const rejected = isBlacklistCard ? 0 : db.filter(v =>
+              v.category === id && !isSampleVendor(v) && isVendorRejected(v)).length;
+
+            const total = catVendors.length;
+            const style = categoryCardStyles[id] || categoryCardStyles.foreign;
+
+            return (
+              <Card 
+                key={id}
+                onClick={() => onNavigate('category', id)}
+                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${total === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-all duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
+                    <meta.icon className="w-6 h-6" />
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                
+                <div>
+                  <h3 className="font-black text-foreground leading-tight text-base tracking-tight group-hover:text-primary transition-colors">{meta.fa}</h3>
+                  <div className="text-muted-foreground text-2xs mt-0.5 font-mono uppercase tracking-wider">{meta.en}</div>
+                </div>
+
+                <div className="border-t border-border/70 pt-3 space-y-2">
+                  <div className="flex items-end justify-between gap-2">
+                    <div className={`font-mono text-3xl font-black leading-none transition-all duration-300 group-hover:scale-105 origin-left ${total === 0 ? 'text-muted-foreground' : style.statText}`}>
+                      {total.toLocaleString('fa-IR')}
+                    </div>
+                    {/* Stacked lines rather than columns: the labels are long
+                        enough that side by side they were cut off at the card's
+                        edge, and a label clipped without an ellipsis reads as a
+                        different word. */}
+                    <div className="space-y-0.5 text-2xs min-w-0">
+                      {rows.map(r => (
+                        <div key={r.key} className="flex items-center justify-end gap-1.5">
+                          <span className="text-muted-foreground">{r.label}</span>
+                          <span className={`font-mono font-black ${r.tone}`}>{r.value.toLocaleString('fa-IR')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* The same figures as one bar, so the shape of the category
+                      reads without arithmetic. Decorative: the numbers above
+                      already carry the information. */}
+                  {total > 0 && (
+                    <div aria-hidden className="h-1.5 w-full rounded-full overflow-hidden flex bg-muted">
+                      {rows.map(r => (
+                        <div key={r.key} className={`h-full ${r.bar}`} style={{ width: `${(r.value / total) * 100}%` }} />
+                      ))}
+                    </div>
+                  )}
+
+                  {(rejected > 0 || expiring > 0) && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs font-bold pt-0.5">
+                      {rejected > 0 && (
+                        <span className="text-rose-600 dark:text-rose-400">
+                          {rejected.toLocaleString('fa-IR')} در لیست سیاه
+                        </span>
+                      )}
+                      {expiring > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          {expiring.toLocaleString('fa-IR')} مجوز منقضی یا نزدیک انقضا
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* RECENT ACTIVITY — last on the page, and a plain full-width list
+          rather than a fourth card grid so the page stops repeating one layout
+          family end to end.
+
+          It used to sit between the distributions and the category cards,
+          which put a feed of individual edits in the middle of a summary and
+          pushed the six registers below the fold. A dashboard reads
+          top-down — what needs doing, what is on file, how good it is, where
+          to go — and «what just happened» is the footnote to all of it. */}
       <div>
         <div className="flex items-center gap-2 mb-2">
           <History className="w-4 h-4 text-primary" />
@@ -315,59 +679,76 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
         )}
       </div>
 
-      {/* The expiring-licence list used to be rendered here. It moved to the
-          worklist (#/tasks/irc): the dashboard grew longer exactly as the
-          backlog grew, which is backwards — a dashboard should summarise and
-          hand off. The counter in the pending-actions card is the entry point. */}
-
-      {/* CATEGORY CARDS */}
-      <div>
-        <div className="flex items-center justify-between mb-3 px-1">
-          <h3 className="font-bold text-foreground text-sm">دسته‌بندی‌های تامین</h3>
-          <span className="text-xs text-muted-foreground">انتخاب دسته‌بندی برای مدیریت تخصصی</span>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {(Object.entries(categoryLabels) as [Category, any][]).filter(([id]) => id !== 'blacklist').map(([id, meta]) => {
-            const catVendors = db.filter(v => id === 'sample' ? (v.category === 'sample' || v.isSample) : (v.category === id && v.status !== 'rejected' && v.grade !== 'rejected'));
-            const verified = id === 'sample' 
-              ? catVendors.filter(v => v.status === 'approved').length 
-              : catVendors.filter(v => v.grade === 'A' || v.grade === 'B').length;
-            const other = catVendors.length - verified;
-            const verifiedLabel = 'تایید شده';
-            const otherLabel = id === 'sample' ? 'مشروط / رد' : 'سایر';
-            const style = categoryCardStyles[id] || categoryCardStyles.foreign;
-
-            return (
-              <Card 
-                key={id}
-                onClick={() => onNavigate('category', id)}
-                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${catVendors.length === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-all duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
-                    <meta.icon className="w-6 h-6" />
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                </div>
-                
-                <div>
-                  <h3 className="font-black text-foreground leading-tight text-base tracking-tight group-hover:text-primary transition-colors">{meta.fa}</h3>
-                  <div className="text-muted-foreground text-2xs mt-0.5 font-mono uppercase tracking-wider">{meta.en}</div>
-                </div>
-
-                <div className="border-t border-border/70 pt-3 flex items-center justify-between">
-                  <div className={`font-mono text-3xl font-black transition-all duration-300 group-hover:scale-105 origin-left ${catVendors.length === 0 ? 'text-muted-foreground' : style.statText}`}>{catVendors.length}</div>
-                  <div className="text-right">
-                    <div className="text-foreground font-bold text-xs">{verified} {verifiedLabel}</div>
-                    <div className="text-muted-foreground text-2xs mt-0.5">{other} {otherLabel}</div>
-                  </div>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      </div>
-
     </div>
+  );
+}
+
+
+/**
+ * One distribution ring with its legend.
+ *
+ * Two widgets on this page answer the same shape of question about different
+ * populations, so they share a component rather than a copy: the four table
+ * primitives in this project were split into four diverging copies exactly this
+ * way, and one of them ended up reading fake rows to a screen reader.
+ */
+function GradeDonutCard({ icon: Icon, title, subtitle, slices, total, emptyMessage, onOpen, openLabel }: {
+  icon: React.ComponentType<{ className?: string }>,
+  title: string,
+  subtitle: string,
+  /** `hint` is the band the slice stands for, under its name in the legend. */
+  slices: { name: string, value: number, color: string, hint?: string }[],
+  total: number,
+  emptyMessage: string,
+  onOpen: () => void,
+  openLabel: string,
+}) {
+  return (
+    <Card className="p-5 bg-card border-border/80 flex flex-col">
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-primary" />
+        <h3 className="font-bold text-foreground text-sm">{title}</h3>
+      </div>
+      <p className="text-2xs text-muted-foreground mt-0.5 mb-3">{subtitle}</p>
+      {slices.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-center py-10 text-muted-foreground text-xs">{emptyMessage}</div>
+      ) : (
+        <div className="flex-1 flex items-center gap-2">
+          <div className="h-40 w-1/2" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2} strokeWidth={2}>
+                  {slices.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
+                </Pie>
+                <RTooltip
+                  contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }}
+                  formatter={(v: any, n: any) => [`${v} (${total > 0 ? Math.round((v / total) * 100) : 0}%)`, n]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-1 space-y-1.5">
+            {slices.map(d => (
+              <div key={d.name} className="flex items-start justify-between gap-2 text-xs">
+                <span className="flex items-start gap-1.5 text-foreground font-medium min-w-0">
+                  {/* The swatch sits on the first line of a two-line entry
+                      rather than centred against both, so a legend with bands
+                      and one without still line up with the ring. */}
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 mt-1" style={{ background: d.color }} />
+                  <span className="min-w-0">
+                    {d.name}
+                    {d.hint && <span className="block text-2xs text-muted-foreground font-normal">{d.hint}</span>}
+                  </span>
+                </span>
+                <span className="font-mono font-bold text-foreground shrink-0">{d.value.toLocaleString('fa-IR')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <button type="button" onClick={onOpen} className="mt-3 text-2xs font-bold text-primary hover:underline text-right">
+        {openLabel}
+      </button>
+    </Card>
   );
 }

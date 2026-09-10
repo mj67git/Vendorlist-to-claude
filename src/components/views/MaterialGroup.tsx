@@ -7,10 +7,11 @@ import { Card } from '../../components/ui/card';
 import { BusinessPartner, Category, Scores, User, Vendor } from '../../types';
 import { isVendorRejected } from '../../utils/vendorState';
 import { RankBadge } from '../../components/RankBadge';
-import { describeSampleStatus } from '../../utils/sampleStatus';
+import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
 import { calculateOverallScore, checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
 import { resolveVendorPartner } from '../../utils/vendorPartner';
 import { MaterialsComparisonSection, type SourceSelectionRecord } from './MaterialsComparisonSection';
+import { categoryLabels } from '../../constants/categories';
 
 // extracted from App.tsx
 
@@ -155,8 +156,20 @@ export const MaterialGroup: React.FC<{
                         <span>{partnerName}</span>
                       </div>
 
-                      {/* Metadata line (English name, country, licence expiry) */}
+                      {/* Metadata line (origin category, English name, country, licence expiry) */}
                       <div className="flex items-center gap-1.5 text-2xs text-muted-foreground flex-wrap">
+                        {/* Where the source was bought before it was
+                            disqualified. Named on the blacklist alone: every
+                            other page holds one category and the whole page
+                            already says which, but this register mixes them and
+                            the row was the one place that never said so — the
+                            filter and the sort beside it would otherwise sort by
+                            something invisible. */}
+                        {categoryId === 'blacklist' && vendor.category && categoryLabels[vendor.category as Category] && (
+                          <Badge variant="outline" className="text-2xs px-1.5 py-0 font-medium shrink-0">
+                            {categoryLabels[vendor.category as Category].fa}
+                          </Badge>
+                        )}
                         {vendor.nameEn && vendor.nameEn.trim() && vendor.nameEn.toLowerCase() !== 'n/a' && vendor.nameEn.toLowerCase() !== 'unknown' && (
                           <span className="font-mono text-2xs text-muted-foreground">{vendor.nameEn}</span>
                         )}
@@ -211,7 +224,7 @@ export const MaterialGroup: React.FC<{
                         ) : (
                           <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
                         )}
-                        {(() => {
+                        {!isSampleRecord(vendor) && (() => {
                           const shown = currentUser?.role === 'admin'
                             ? calculateOverallScore(vendor.scores)
                             : (vendor.scores?.[currentUser?.role as keyof Scores] || null);
@@ -222,7 +235,7 @@ export const MaterialGroup: React.FC<{
                             </span>
                           );
                         })()}
-                        {vendor.riskAssessment && (
+                        {!isSampleRecord(vendor) && vendor.riskAssessment && (
                           <Badge
                             variant={
                               vendor.riskAssessment.riskLevel === 'Low' ? 'gradeA' :
@@ -253,8 +266,19 @@ export const MaterialGroup: React.FC<{
                         `grade`, which for a rejected source has been stamped
                         «rejected» and would have repeated the page's own name on
                         every row. */}
-                    <div className="hidden sm:grid items-center gap-4 grid-cols-[8rem_7rem_7rem] xl:grid-cols-[10rem_9rem_9rem]">
-                    {/* Column 1: Score */}
+                    <div className={`hidden sm:grid items-center gap-4 ${
+                      isSampleRecord(vendor)
+                        ? 'grid-cols-[8rem] xl:grid-cols-[10rem]'
+                        : 'grid-cols-[8rem_7rem_7rem] xl:grid-cols-[10rem_9rem_9rem]'
+                    }`}>
+                    {/* Columns 1 and 2 belong to a source, not a sample.
+                        A sample is never scored by the departments and never
+                        gets a risk assessment — the source page says so in as
+                        many words and hides both forms — yet this row kept two
+                        tracks for them and filled one with a bare dash and the
+                        other with «سطح ریسک —». Two thirds of the metric block
+                        described work nobody is ever asked to do. */}
+                    {!isSampleRecord(vendor) && (
                     <div className="flex flex-col items-center justify-center text-center">
                       {currentUser?.role === 'admin' ? (
                         vendor.scores && calculateOverallScore(vendor.scores) !== null ? (
@@ -280,8 +304,10 @@ export const MaterialGroup: React.FC<{
                         )
                       )}
                     </div>
+                    )}
 
                     {/* Column 2: Risk Level */}
+                    {!isSampleRecord(vendor) && (
                     <div className="flex flex-col items-center justify-center text-center">
                         <div className="text-2xs text-muted-foreground mb-0.5">سطح ریسک</div>
                         {vendor.riskAssessment ? (
@@ -299,6 +325,7 @@ export const MaterialGroup: React.FC<{
                           <span className="text-2xs text-muted-foreground">-</span>
                         )}
                     </div>
+                    )}
 
                     {/* Column 3: Grade / Status */}
                     <div className="flex flex-col items-center justify-center text-center">

@@ -1,7 +1,11 @@
 {
-  "name": "react-example",
+  "name": "vlse",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "VLSE — Vendor List & Supplier Evaluation System",
+  "engines": {
+    "node": ">=20 <21"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

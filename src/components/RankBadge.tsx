@@ -29,9 +29,21 @@ export function RankBadge({ vendor, className }: { vendor: Pick<Vendor, 'scores'
   if (!rank.evaluated || !rank.grade) {
     return <span className={cn('text-2xs text-muted-foreground', className)}>{rank.label}</span>;
   }
+  /*
+   * The grade only — the score is already on the row.
+   *
+   * `rank.label` reads «Grade B (69)», which is right for a printed form or a
+   * spreadsheet cell standing on its own. In the material table this badge sits
+   * directly beside the «امتیاز کل» cell, so the number was printed twice in one
+   * row. It stays reachable on hover rather than being thrown away.
+   */
   return (
-    <Badge variant={VARIANTS[rank.grade]} className={cn('text-2xs font-bold px-2 py-0', className)}>
-      {rank.label}
+    <Badge
+      variant={VARIANTS[rank.grade]}
+      className={cn('text-2xs font-bold px-2 py-0', className)}
+      title={rank.score !== null ? `${rank.label}` : undefined}
+    >
+      Grade {rank.grade}
     </Badge>
   );
 }

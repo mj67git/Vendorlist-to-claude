@@ -5,7 +5,9 @@ import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
+import { isSampleVendor, isVendorRejected } from '../../utils/vendorState';
 import { calculateOverallScore } from '../../utils/vendorUtils';
+import { jalaliIsoParts } from '../../utils/dateDisplay';
 import type { SourceSelectionRecord } from '../../utils/sourceSelection';
 
 // extracted from App.tsx
@@ -43,14 +45,11 @@ export type { SourceSelectionRecord };
  */
 export const formatGroupDate = (value: string | null): string | null => {
   if (!value) return null;
-  const isoLike = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!isoLike) return value;
-
-  const [, year, month, day] = isoLike;
-  const y = parseInt(year, 10);
-  // A Jalali year written in ISO punctuation. Keep the numbers, change only
-  // the separators — converting it would move it by six centuries.
-  if (y >= 1300 && y <= 1499) return `${y}/${month}/${day}`;
+  // The «Jalali year in ISO punctuation» rule lives in one place now; this
+  // panel and the activity-log stamps had each worked it out separately.
+  const parts = jalaliIsoParts(value);
+  if (parts) return `${Number(parts.y)}/${parts.m}/${parts.d}`;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value)) return value;
 
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fa-IR');
@@ -74,7 +73,11 @@ export const MaterialsComparisonSection: React.FC<{
     return null;
   }
 
-  const validVendors = (vendors || []).filter(v => !v.isSample && v.status !== 'rejected' && v.grade !== 'rejected');
+  // Who is actually in the running: samples are not sources, and a
+  // disqualified source is not a candidate. The verdict is the derived one
+  // (rule 11) — the stored pair this used to compare let a source rejected by
+  // decision rather than by score stay in the recommendation.
+  const validVendors = (vendors || []).filter(v => !isSampleVendor(v) && !isVendorRejected(v));
   
   if (validVendors.length === 0) return null;
 

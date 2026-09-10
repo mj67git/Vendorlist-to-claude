@@ -32,19 +32,43 @@ export interface MaterialNames {
   standardNameEn: string;
 }
 
+/** Whether a catalogue entry is the substance this source names. */
+const sameSubstance = (
+  vendor: Pick<Vendor, 'material' | 'materialEn' | 'cas'>,
+) => (m: Material) =>
+  eq(m.nameFa, vendor.material) ||
+  eq(m.standardNameFa, vendor.material) ||
+  eq(m.nameEn, vendor.materialEn) ||
+  eq(m.standardNameEn, vendor.materialEn) ||
+  (eq(m.cas, vendor.cas) && isRealCas(m.cas));
+
+/**
+ * The catalogue entry a source belongs to: its link, or the entry for the same
+ * substance.
+ *
+ * Exported because the same question is asked away from the names — the
+ * materials table counts the sources attached to each row and its delete
+ * confirmation names them. That count used to re-implement this test with a
+ * narrower predicate (no standard names), so a legacy source stored under a
+ * material's standard name was invisible to it while the source's own page
+ * resolved it correctly. The clause order is part of the contract: `find`
+ * takes the first hit, so two readers only agree while they ask in the same
+ * order.
+ */
+export function matchMaterialForVendor(
+  vendor: Pick<Vendor, 'materialId' | 'material' | 'materialEn' | 'cas'>,
+  materials: Material[] = [],
+): Material | undefined {
+  const linked = vendor.materialId ? materials.find(m => m.id === vendor.materialId) : undefined;
+  return linked || materials.find(sameSubstance(vendor));
+}
+
 export function resolveMaterialNames(
   vendor: Pick<Vendor, 'materialId' | 'material' | 'materialEn' | 'cas'>,
   materials: Material[] = [],
 ): MaterialNames {
-  const isSameSubstance = (m: Material) =>
-    eq(m.nameFa, vendor.material) ||
-    eq(m.standardNameFa, vendor.material) ||
-    eq(m.nameEn, vendor.materialEn) ||
-    eq(m.standardNameEn, vendor.materialEn) ||
-    (eq(m.cas, vendor.cas) && isRealCas(m.cas));
-
-  const linked = vendor.materialId ? materials.find(m => m.id === vendor.materialId) : undefined;
-  const material = linked || materials.find(isSameSubstance);
+  const isSameSubstance = sameSubstance(vendor);
+  const material = matchMaterialForVendor(vendor, materials);
 
   const namedSource = hasStandardName(material)
     ? material

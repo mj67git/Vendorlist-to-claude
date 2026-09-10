@@ -230,6 +230,12 @@ model Vendor {
   // material row for the same substance.
   irc                 String? @map("irc")
   ircExpiryDate       String? @map("irc_expiry_date")
+  // The date the licence was issued, in the Jalali calendar the form collects.
+  // The form has always asked for it and the source page has always printed it,
+  // but there was no column: the value was accepted, carried through the whole
+  // save and dropped, and the page quietly showed the registration date in its
+  // place.
+  lastAudit           String? @map("last_audit")
 
   // Links to the business partners, enforced by the database.
   //
@@ -406,6 +412,11 @@ model AuditLog {
   ipAddress       String?  @map("ip_address") @db.VarChar(64)
   userAgent       String?  @map("user_agent") @db.Text
   eventType       String?  @map("event_type") @db.VarChar(50)
+  // The event name from the closed vocabulary in `src/utils/auditTaxonomy.ts`.
+  // Nullable on purpose: rows written before this column existed have none, and
+  // so do the hand-written call sites that have not moved to `recordEvent` yet.
+  // `eventType` above is a different, older thing and is left alone.
+  event           String?  @map("event") @db.VarChar(60)
   // Did the recorded action happen? `Success`, `Failed` or `Blocked`. Before
   // this column the answer lived only in the wording of `action`, which no
   // filter could depend on. Derived centrally — see `resultFor` in
@@ -425,6 +436,13 @@ model AuditLog {
   @@index([correlationId])
   @@index([result])
   @@index([sessionId])
+  @@index([event])
+  @@index([entityType])
+  // The trail's own query is "the newest rows, narrowed by module or by user".
+  // The single-column indexes above answer the filter but not the order, so the
+  // page paid for a sort on every request.
+  @@index([timestamp(sort: Desc), module])
+  @@index([timestamp(sort: Desc), userId])
   @@map("audit_log")
 }
 

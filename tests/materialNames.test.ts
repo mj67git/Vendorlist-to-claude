@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveMaterialNames } from '../src/utils/materialNames';
+import { matchMaterialForVendor, resolveMaterialNames } from '../src/utils/materialNames';
 import type { Material, Vendor } from '../src/types';
 
 const material = (o: Partial<Material>): Material =>
@@ -70,4 +70,34 @@ test('a placeholder CAS does not make two unrelated materials the same substance
   const names = resolveMaterialNames(v, [other]);
   assert.equal(names.standardNameFa, 'ماده ما');
   assert.equal(names.material, undefined);
+});
+
+test('the matcher answers with the record, in a fixed clause order', () => {
+  /*
+   * `matchMaterialForVendor` is the half of the resolution the materials table
+   * also asks, so its answer has to be the one the source's own page gets.
+   * `find` takes the first hit, which makes the clause order part of the
+   * contract: the link first, then the Persian name, then the standard Persian
+   * name, then the English pair, then the CAS.
+   */
+  const linked = { id: 'M1', nameFa: 'استون', nameEn: 'Acetone', cas: '67-64-1' } as any;
+  const other = { id: 'M2', nameFa: 'دیگری', standardNameFa: 'استون', nameEn: 'Other', cas: 'N/A' } as any;
+
+  // The link wins over any name match elsewhere in the catalogue.
+  assert.equal(
+    matchMaterialForVendor({ materialId: 'M1', material: 'استون', materialEn: '', cas: '' }, [other, linked])?.id,
+    'M1',
+  );
+
+  // With no link, the plain Persian name is asked before the standard one, so
+  // the catalogue order decides only between equally-good matches.
+  assert.equal(
+    matchMaterialForVendor({ materialId: '', material: 'استون', materialEn: '', cas: '' }, [linked, other])?.id,
+    'M1',
+  );
+
+  assert.equal(
+    matchMaterialForVendor({ materialId: '', material: 'چیز دیگری', materialEn: '', cas: '' }, [linked])?.id,
+    undefined,
+  );
 });

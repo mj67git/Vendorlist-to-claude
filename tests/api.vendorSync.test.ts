@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach } from 'node:test';
 import {
-  api, db, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer,
+  api, FIXTURE, login, profileBody, resetAll, SKIP, startTestServer, stopTestServer,
 } from './helpers/apiHarness';
 
 /**
