@@ -30,6 +30,17 @@ export default defineConfig(() => {
            */
           manualChunks(id: string) {
             if (!id.includes('node_modules')) return;
+            /*
+             * The class-name helpers go with the UI primitives that use them.
+             *
+             * Left to rollup, `clsx` and `tailwind-merge` landed in `charts`,
+             * because `recharts` depends on them too. Every button in the
+             * application calls `cn()`, so the entry chunk then had a static
+             * import into the chart bundle, and the browser preloaded 114 KB of
+             * charting library on every page — the exact cost splitting the
+             * chunk was meant to avoid.
+             */
+            if (/[\\/]node_modules[\\/](clsx|tailwind-merge|class-variance-authority)[\\/]/.test(id)) return 'ui';
             if (/[\\/]node_modules[\\/](recharts|d3-|victory-)/.test(id)) return 'charts';
             if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
             if (/[\\/]node_modules[\\/](@radix-ui|motion|framer-motion|lucide-react)/.test(id)) return 'ui';

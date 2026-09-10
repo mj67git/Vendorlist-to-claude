@@ -27,6 +27,13 @@ const UsersView = React.lazy(() => import('./components/UsersView').then(m => ({
 const MaterialRepositoryView = React.lazy(() => import('./components/MaterialRepositoryView').then(m => ({ default: m.MaterialRepositoryView })));
 const BusinessPartnerRepositoryView = React.lazy(() => import('./components/BusinessPartnerRepositoryView').then(m => ({ default: m.BusinessPartnerRepositoryView })));
 const WorklistView = React.lazy(() => import('./components/views/WorklistView').then(m => ({ default: m.WorklistView })));
+/*
+ * The source page joins them, for the library it draws with rather than for
+ * its own size: it is the other eager importer of `recharts`, which is the
+ * largest thing in the bundle and was therefore downloaded by everyone who
+ * opened the dashboard, whether or not they ever opened a source.
+ */
+const VendorDetail = React.lazy(() => import('./components/vendor/VendorDetail').then(m => ({ default: m.VendorDetail })));
 
 /** What a page looks like while its code is on the way. */
 function PageLoading() {
@@ -37,7 +44,6 @@ function PageLoading() {
     </div>
   );
 }
-import { VendorDetail } from './components/vendor/VendorDetail';
 import { CategoryView } from './components/views/CategoryView';
 import { HomeView } from './components/views/HomeView';
 import { VendorForm } from './components/vendor/VendorForm';
