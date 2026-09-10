@@ -89,6 +89,13 @@ jobs:
       - name: Tests
         run: bunx tsx --test --test-concurrency=1 tests/*.test.ts
 
+      # The render tests mount the real React tree in jsdom, which node's own
+      # test runner cannot do: `App.tsx` imports a PNG and the components import
+      # CSS. Vitest is the Vite pipeline itself, so the same config that builds
+      # the application builds the test. They need no database.
+      - name: Render tests
+        run: bunx vitest run --config vitest.config.ts
+
       # Frontend only: the full `npm run build` also runs the migration script,
       # which has already run against the service container above.
       - name: Build frontend

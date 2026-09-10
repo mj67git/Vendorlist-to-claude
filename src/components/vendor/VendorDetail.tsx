@@ -27,7 +27,7 @@ import { Textarea } from '../ui/textarea';
 
 // extracted from App.tsx
 
-export function VendorDetail({ vendor, db, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, db: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
+export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, currentUser, materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onEditVendor }: { vendor: Vendor, vendors: Vendor[], onBack: () => void, onSave: (v: Vendor, msg?: string | null) => void, onDelete: (id: string) => void, currentUser: User, materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onEditVendor?: () => void }) {
   // Editing the source profile happens on its own page
   // (#/…/vendor/<id>/edit), which carries its own guard. But two forms live
   // *here* as inline sections — department scoring and the FMEA risk assessment

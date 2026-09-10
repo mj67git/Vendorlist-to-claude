@@ -18,7 +18,7 @@ import { Textarea } from '../ui/textarea';
 // extracted from App.tsx
 
 // --- View: Vendor Form (Add / Edit) ---
-export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, db = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void | Promise<Vendor | null | void>, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, db?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: (saved?: Vendor | null) => void }) {
+export function VendorForm({ onClose, onSave, categoryId, existingVendor, currentUser, vendors = [], materials = [], onAddMaterial, partners = [], onAddPartner, registerNavGuard, onSaved }: { onClose: () => void, onSave: (v: Vendor, msg?: string | null) => void | Promise<Vendor | null | void>, categoryId: Category, existingVendor?: Vendor, currentUser: User | null, vendors?: Vendor[], materials?: Material[], onAddMaterial?: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, registerNavGuard?: (fn: (() => boolean) | null) => void, onSaved?: (saved?: Vendor | null) => void }) {
   const [isSuccess, setIsSuccess] = useState(false);
   
 

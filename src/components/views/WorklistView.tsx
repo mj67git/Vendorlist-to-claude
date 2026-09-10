@@ -104,10 +104,10 @@ export const TASK_META: Record<TaskKey, {
  */
 export function buildWorklist(
   key: TaskKey,
-  db: Vendor[],
+  vendors: Vendor[],
   partners: BusinessPartner[],
 ): WorklistItem[] {
-  const realVendors = db.filter(v => !isSampleRecord(v));
+  const realVendors = vendors.filter(v => !isSampleRecord(v));
 
   if (key === 'eval') {
     /*
@@ -171,7 +171,7 @@ export function buildWorklist(
      * Rejected records drop out, as in `eval` and `risk`: a record already
      * turned down is not waiting on anybody.
      */
-    return db
+    return vendors
       .filter(v => !isVendorRejected(v) && !(v.analysisRecords?.length))
       .map(v => {
         const sample = isSampleRecord(v);
@@ -217,7 +217,7 @@ const TONE_CLASSES: Record<string, string> = {
 
 interface WorklistViewProps {
   taskKey: TaskKey;
-  db: Vendor[];
+  vendors: Vendor[];
   partners: BusinessPartner[];
   currentUser: User | null;
   onSelectVendor: (vendor: Vendor) => void;
@@ -226,15 +226,15 @@ interface WorklistViewProps {
 }
 
 export function WorklistView({
-  taskKey, db, partners, currentUser, onSelectVendor, onNavigate, onSwitchTask,
+  taskKey, vendors, partners, currentUser, onSelectVendor, onNavigate, onSwitchTask,
 }: WorklistViewProps) {
   const meta = TASK_META[taskKey];
-  const items = useMemo(() => buildWorklist(taskKey, db, partners), [taskKey, db, partners]);
+  const items = useMemo(() => buildWorklist(taskKey, vendors, partners), [taskKey, vendors, partners]);
   // Counted from the key list rather than a hand-written object, so a tab added
   // to `TASK_KEYS` cannot arrive with a missing counter on its own chip.
   const counts = useMemo(() => Object.fromEntries(
-    TASK_KEYS.map(k => [k, buildWorklist(k, db, partners).length]),
-  ) as Record<TaskKey, number>, [db, partners]);
+    TASK_KEYS.map(k => [k, buildWorklist(k, vendors, partners).length]),
+  ) as Record<TaskKey, number>, [vendors, partners]);
 
   /*
    * The backlog is paged like every other list in the application.
@@ -269,7 +269,7 @@ export function WorklistView({
     if (item.vendor) {
       // The record is pushed onto the stack, so Back comes straight back here
       // with the rest of the backlog still listed.
-      const full = db.find(v => v.id === item.vendor!.id) || item.vendor;
+      const full = vendors.find(v => v.id === item.vendor!.id) || item.vendor;
       onSelectVendor(full);
       return;
     }

@@ -585,7 +585,7 @@ export function exportFullArchiveMultiSheetExcel(
  */
 export function buildPartnersWorksheet(
   partners: BusinessPartner[],
-  db: Vendor[] = []
+  vendors: Vendor[] = []
 ): { ws: XLSX.WorkSheet; count: number } {
   const statusFa = (s: string) =>
     s === 'Active' ? 'فعال (Active)' :
@@ -593,7 +593,7 @@ export function buildPartnersWorksheet(
     'غیرفعال (Inactive)';
 
   const connectedCount = (p: BusinessPartner) =>
-    (db || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
+    (vendors || []).filter(v => v.manufacturerId === p.id || v.supplierId === p.id || v.id === p.id).length;
 
   // نتیجهٔ ارزیابی فروشنده بر اساس گرید (هم‌راستا با ستون لیست شرکا)
   /*
@@ -757,11 +757,11 @@ export function buildPartnersWorksheet(
  */
 export function exportBusinessPartnersToExcel(
   partners: BusinessPartner[],
-  db: Vendor[] = []
+  vendors: Vendor[] = []
 ) {
   const wb = XL.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
-  const { ws } = buildPartnersWorksheet(partners, db);
+  const { ws } = buildPartnersWorksheet(partners, vendors);
   XL.utils.book_append_sheet(wb, ws, 'شرکای تجاری');
 
   const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');

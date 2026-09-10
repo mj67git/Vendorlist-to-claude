@@ -56,7 +56,7 @@ interface Props {
   onEditPartner: (partner: BusinessPartner) => void;
   onDeletePartner: (id: string) => void;
   currentUser: User | null;
-  db?: Vendor[];
+  vendors?: Vendor[];
   /** True while the first fetch is still in flight, so the table shows
       skeletons instead of claiming there are no partners. */
   isLoading?: boolean;
@@ -98,7 +98,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   onEditPartner,
   onDeletePartner,
   currentUser,
-  db = [],
+  vendors = [],
   isLoading = false
 }) => {
   // Search & Filters state
@@ -170,7 +170,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // Sources (vendors) linked to a partner — via manufacturerId / supplierId, or
   // a vendor whose id equals the partner id (legacy name-based linkage).
   const getConnectedSources = (partner: BusinessPartner) =>
-    (db || []).filter(v => v.manufacturerId === partner.id || v.supplierId === partner.id || v.id === partner.id);
+    (vendors || []).filter(v => v.manufacturerId === partner.id || v.supplierId === partner.id || v.id === partner.id);
 
   const renderConnectedSources = (partner: BusinessPartner) => {
     const sources = getConnectedSources(partner);
@@ -468,7 +468,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
   // Deletion Constraints Check
   const handleDeletePartnerClick = (partner: BusinessPartner) => {
     if (partner.type === 'Manufacturer') {
-      const connectedSources = db.filter(v => v.manufacturerId === partner.id);
+      const connectedSources = vendors.filter(v => v.manufacturerId === partner.id);
       if (connectedSources.length > 0) {
         setDeleteConstraintError({
           name: partner.name,
@@ -478,7 +478,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
         return;
       }
     } else if (partner.type === 'Supplier') {
-      const connectedSources = db.filter(v => v.supplierId === partner.id || v.id === partner.id);
+      const connectedSources = vendors.filter(v => v.supplierId === partner.id || v.id === partner.id);
       if (connectedSources.length > 0) {
         setDeleteConstraintError({
           name: partner.name,
@@ -810,7 +810,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
               size="sm"
               disabled={excel.busy}
               onClick={() => excel.run(
-                xl => xl.exportBusinessPartnersToExcel(filteredPartners, db || []),
+                xl => xl.exportBusinessPartnersToExcel(filteredPartners, vendors || []),
                 { label: 'شرکای تجاری', rows: filteredPartners.length },
               )}
               title="خروجی اکسل از شرکای تجاری (طبق فیلترهای فعلی)"

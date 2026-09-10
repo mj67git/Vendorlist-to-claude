@@ -23,7 +23,7 @@ import { Textarea } from '../ui/textarea';
 // extracted from App.tsx
 
 export function CategoryView({ 
-  db, 
+  vendors, 
   isLoading = false,
   categoryId, 
   onSelectVendor, 
@@ -34,7 +34,7 @@ export function CategoryView({
   onAddMaterial,
   partners = []
 }: { 
-  db: Vendor[], 
+  vendors: Vendor[], 
   isLoading?: boolean,
   categoryId: Category, 
   onSelectVendor: any, 
@@ -173,8 +173,8 @@ export function CategoryView({
   const meta = categoryLabels[categoryId];
   
   const categoryVendors = useMemo(
-    () => db.filter(v => isInCategoryRegister(v, categoryId)),
-    [db, categoryId],
+    () => vendors.filter(v => isInCategoryRegister(v, categoryId)),
+    [vendors, categoryId],
   );
   
   /** The four sample verdicts, counted once and from the one helper. */
@@ -424,8 +424,8 @@ export function CategoryView({
             <Button 
               type="button" 
               onClick={() => excel.run(
-                xl => xl.exportCategoryToExcel(db, categoryId, meta.fa, partners, materials, selections),
-                { label: `دستهٔ ${meta.fa}`, rows: db.length },
+                xl => xl.exportCategoryToExcel(vendors, categoryId, meta.fa, partners, materials, selections),
+                { label: `دستهٔ ${meta.fa}`, rows: vendors.length },
               )}
               disabled={excel.busy}
               className="flex items-center gap-2 text-xs font-bold shadow-xs cursor-pointer active:scale-95"

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Award, BadgeCheck, Boxes, Building2, Calendar, ChevronLeft, ClipboardList, FlaskConical, History, Microscope, PieChart as PieChartIcon, Plus, ShieldAlert } from 'lucide-react';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { StatTile } from '../../components/ui/stat-tile';
 import { categoryLabels } from '../../constants/categories';
+import type { NavigateFn } from '../../utils/navStack';
+import type { TaskKey } from '../../utils/navRoutes';
 import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
@@ -18,24 +19,26 @@ import { reconcileSupplierEvaluation } from '../../utils/sopEvaluation';
 import { checkLicenseExpiry } from '../../utils/vendorUtils';
 import { categoryCardStyles } from '../../constants/categoryCardStyles';
 import { buildWorklist } from './WorklistView';
+
+const DonutRing = React.lazy(() => import('../charts/DonutRing'));
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../../assets/logo.png';
 
 // extracted from App.tsx
 
-export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
+export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { vendors: Vendor[], onNavigate: NavigateFn, onSelectVendor: (v: Vendor) => void, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
   /**
    * The supplier population, excluding sample records.
    *
-   * `stats` used to count `db` outright while the pending-actions panel below
+   * `stats` used to count `vendors` outright while the pending-actions panel below
    * deliberately filtered samples out, so the same screen showed two different
    * definitions of "supplier" without saying so.
    */
   const sourceVendors = useMemo(
-    () => db.filter(v => !v.isSample && v.category !== 'sample'),
-    [db],
+    () => vendors.filter(v => !v.isSample && v.category !== 'sample'),
+    [vendors],
   );
-  const sampleCount = db.length - sourceVendors.length;
+  const sampleCount = vendors.length - sourceVendors.length;
 
   const stats = useMemo(() => {
     /*
@@ -156,13 +159,13 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
    * column rather than deriving from the department scores — so a source with
    * real scores and an empty column sat on the dashboard for ever.
    */
-  const pendingActions = useMemo(() => ([
-    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', db, partners || []).length, icon: ClipboardList, tone: 'amber' },
-    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
-    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },
-    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', db, partners || []).length, icon: Calendar, tone: 'rose' },
-    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', db, partners || []).length, icon: Microscope, tone: 'blue' },
-  ]), [db, partners]);
+  const pendingActions = useMemo((): { key: TaskKey; label: string; count: number; icon: React.ComponentType<{ className?: string }>; tone: string }[] => ([
+    { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', vendors, partners || []).length, icon: ClipboardList, tone: 'amber' },
+    { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', vendors, partners || []).length, icon: ShieldAlert, tone: 'orange' },
+    { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', vendors, partners || []).length, icon: Award, tone: 'blue' },
+    { key: 'irc', label: 'مجوز IRC نزدیک انقضا یا منقضی', count: buildWorklist('irc', vendors, partners || []).length, icon: Calendar, tone: 'rose' },
+    { key: 'lab', label: 'آزمایش ثبت‌نشده', count: buildWorklist('lab', vendors, partners || []).length, icon: Microscope, tone: 'blue' },
+  ]), [vendors, partners]);
 
   /** The same count, reused by the laboratory card rather than rebuilt there. */
   const labBacklog = pendingActions.find(a => a.key === 'lab')?.count ?? 0;
@@ -170,14 +173,14 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
   // Lab pass-rate across all sources.
   const labStats = useMemo(() => {
     let pass = 0, cond = 0, rej = 0;
-    for (const v of db) for (const r of (v.analysisRecords || [])) {
+    for (const v of vendors) for (const r of (v.analysisRecords || [])) {
       if (r.decision === 'Pass') pass++;
       else if (r.decision === 'Approved Conditional') cond++;
       else if (r.decision === 'Reject') rej++;
     }
     const total = pass + cond + rej;
     return { pass, cond, rej, total, rate: total > 0 ? Math.round(((pass + cond) / total) * 100) : 0 };
-  }, [db]);
+  }, [vendors]);
 
   // Recent audit activity (works in local mode; backend fetch otherwise).
   const [recentAudit, setRecentAudit] = useState<any[]>([]);
@@ -203,7 +206,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
       .then(j => { if (!cancelled && j?.data) setRecentAudit(withoutSignInNoise(j.data)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [currentUser, db, partners, materials]);
+  }, [currentUser, vendors, partners, materials]);
 
   const toneClasses: Record<string, string> = {
     amber: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800',
@@ -489,7 +492,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
              * exported 140. Now the four ask `isInCategoryRegister`.
              */
             const isBlacklistCard = id === 'blacklist';
-            const catVendors = db.filter(v => isInCategoryRegister(v, id));
+            const catVendors = vendors.filter(v => isInCategoryRegister(v, id));
 
             /*
              * What the card counts, in the vocabulary of the thing it counts.
@@ -565,7 +568,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
             // The complement of the register above: the rows this category
             // would hold if they had not been disqualified. Same two exclusions
             // as `isInCategoryRegister`, with the verdict inverted.
-            const rejected = isBlacklistCard ? 0 : db.filter(v =>
+            const rejected = isBlacklistCard ? 0 : vendors.filter(v =>
               v.category === id && !isSampleVendor(v) && isVendorRejected(v)).length;
 
             const total = catVendors.length;
@@ -715,17 +718,14 @@ function GradeDonutCard({ icon: Icon, title, subtitle, slices, total, emptyMessa
       ) : (
         <div className="flex-1 flex items-center gap-2">
           <div className="h-40 w-1/2" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={slices} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2} strokeWidth={2}>
-                  {slices.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--card)" />)}
-                </Pie>
-                <RTooltip
-                  contentStyle={{ fontFamily: 'Vazirmatn FD', fontSize: 12, borderRadius: 10, border: '1px solid var(--border)' }}
-                  formatter={(v: any, n: any) => [`${v} (${total > 0 ? Math.round((v / total) * 100) : 0}%)`, n]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {/* The chart library is a third of the first load and only two
+                cards on this page draw with it, so it arrives after the page
+                does. The legend beside this is plain markup and is already on
+                screen; the box keeps its height so nothing shifts when the
+                ring lands. */}
+            <React.Suspense fallback={<div className="w-full h-full rounded-full bg-muted/40" aria-hidden="true" />}>
+              <DonutRing slices={slices} total={total} />
+            </React.Suspense>
           </div>
           <div className="flex-1 space-y-1.5">
             {slices.map(d => (
