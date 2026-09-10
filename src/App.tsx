@@ -1074,7 +1074,7 @@ export default function App() {
     ownWritesRef.current.add(normalized.id);
     const original = db.find(v => v.id === normalized.id);
 
-    setDb(db.map(v => v.id === normalized.id ? normalized : v));
+    setDb(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
     updateCurrentVendorInHistory(normalized);
     if (msg !== null) {
       setToastMsg(msg || 'تغییرات با موفقیت ذخیره شد!');
@@ -1346,7 +1346,7 @@ export default function App() {
     ownWritesRef.current.add(vendorId);
     // Our own removal moves the register size too; re-baseline on the next poll.
     knownTotalRef.current = null;
-    setDb(db.filter(v => v.id !== vendorId));
+    setDb(prev => prev.filter(v => v.id !== vendorId));
     handleSelectVendor(null);
     setToastMsg('سورس با موفقیت حذف شد!');
     setTimeout(() => setToastMsg(null), 3000);
@@ -1396,7 +1396,7 @@ export default function App() {
     // new row is not read as somebody else's change to the register size.
     ownWritesRef.current.add(normalized.id);
     knownTotalRef.current = null;
-    setDb([normalized, ...db]);
+    setDb(prev => [normalized, ...prev]);
     // No action button on the toast any more: the form now takes the user to
     // the new source's own page, so «مشاهده و امتیازدهی» would point at the
     // page they are already standing on.
@@ -1437,7 +1437,7 @@ export default function App() {
   // Material changes are persisted and audited server-side (module "مدیریت مواد"),
   // so the client only does an optimistic update and syncs to the API.
   const handleAddMaterial = (newMaterial: Material) => {
-    setMaterials([newMaterial, ...materials]);
+    setMaterials(prev => [newMaterial, ...prev]);
     setToastMsg('ماده اولیه جدید با موفقیت اضافه شد!');
     setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: (newMaterial as any).nameFa || (newMaterial as any).name || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${(newMaterial as any).nameFa || (newMaterial as any).name || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
@@ -1452,7 +1452,7 @@ export default function App() {
 
   const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
     const oldMaterial = materials.find(m => m.id === updatedMaterial.id);
-    setMaterials(materials.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
+    setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? updatedMaterial : m)));
     setToastMsg('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
     setTimeout(() => setToastMsg(null), 3000);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
@@ -1485,9 +1485,8 @@ export default function App() {
   };
 
   const handleDeleteMaterial = async (id: string) => {
-    const snapshot = materials;
     const removed = materials.find(m => m.id === id);
-    setMaterials(materials.filter(m => m.id !== id));
+    setMaterials(prev => prev.filter(m => m.id !== id));
     if (isLocalMode()) {
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: (removed as any)?.nameFa || (removed as any)?.name || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${(removed as any)?.nameFa || (removed as any)?.name || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
       setToastMsg('ماده اولیه با موفقیت حذف شد!');
@@ -1503,7 +1502,12 @@ export default function App() {
       setToastMsg('ماده اولیه با موفقیت حذف شد!');
       setTimeout(() => setToastMsg(null), 3000);
     } catch (err: any) {
-      setMaterials(snapshot);
+      // Put back the one row, rather than the whole list as it stood before the
+      // request. Restoring a snapshot also un-does anything that arrived while
+      // the request was in flight — another operator's edit, a background
+      // refresh — and the user sees their own delete fail and someone else's
+      // work disappear with it.
+      if (removed) setMaterials(prev => (prev.some(m => m.id === id) ? prev : [removed, ...prev]));
       setToastMsg(err.message || 'حذف ماده در سرور ناموفق بود.');
       setTimeout(() => setToastMsg(null), 5000);
     }
@@ -1534,8 +1538,7 @@ export default function App() {
   };
 
   const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
-    const snapshot = businessPartners;
-    setBusinessPartners([newPartner, ...businessPartners]);
+    setBusinessPartners(prev => [newPartner, ...prev]);
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
     if (isLocalMode()) {
       setToastMsg(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
@@ -1551,15 +1554,15 @@ export default function App() {
         notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
       })
       .catch(err => {
-        setBusinessPartners(snapshot);
+        // Take back this row only — see the note on the material delete.
+        setBusinessPartners(prev => prev.filter(p => p.id !== newPartner.id));
         notify(err.message || 'ثبت شریک تجاری در سرور ناموفق بود.', 'error');
       });
   };
 
   const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
-    const snapshot = businessPartners;
     const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
-    setBusinessPartners(businessPartners.map(p => p.id === updatedPartner.id ? updatedPartner : p));
+    setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? updatedPartner : p)));
     if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
     if (isLocalMode()) {
       setToastMsg(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
@@ -1586,7 +1589,7 @@ export default function App() {
         notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
       })
       .catch(err => {
-        setBusinessPartners(snapshot);
+        if (oldPartner) setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? oldPartner : p)));
         notify(err.message || 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.', 'error');
       });
   };
@@ -1597,8 +1600,7 @@ export default function App() {
 
     // The server enforces referential integrity and audits both the blocked
     // attempt and the successful delete; revert optimistically on rejection.
-    const snapshot = businessPartners;
-    setBusinessPartners(businessPartners.filter(p => p.id !== id));
+    setBusinessPartners(prev => prev.filter(p => p.id !== id));
     if (isLocalMode()) {
       appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Delete', entityType: 'BusinessPartner', entityName: partner.name, severity: 'Critical', description: `حذف شریک تجاری "${partner.name}"`, before: partner, after: null, reason: 'حذف شریک تجاری' });
       setToastMsg('شریک تجاری با موفقیت حذف شد!');
@@ -1615,7 +1617,7 @@ export default function App() {
         setTimeout(() => setToastMsg(null), 3000);
       })
       .catch(err => {
-        setBusinessPartners(snapshot);
+        setBusinessPartners(prev => (prev.some(p => p.id === id) ? prev : [partner, ...prev]));
         notify(err.message || 'حذف شریک تجاری در سرور ناموفق بود.', 'error');
       });
   };
