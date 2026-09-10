@@ -215,248 +215,290 @@ export const MaterialsComparisonSection: React.FC<{
 
   return (
     <div className="mx-6 my-6 p-5 bg-muted/50 rounded-2xl border border-border/80 space-y-4">
-      {/* One header, one verdict.
+      {/* The header states the subject and the formula, and nothing else.
 
-          The panel used to open with a title, a suggestion chip, a bar chart,
-          a QC table repeating the same seven sources, and a side column whose
-          lower third was empty — 1115px for three evaluated sources. Everything
-          a source is judged on now sits on that source's own row. */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
-        <div>
-          <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-            <Activity className="w-4 h-4 text-primary" />
-            مقایسه و انتخاب سورس این ماده
-          </h4>
-          <p className="text-2xs text-muted-foreground mt-1">
-            امتیاز موتور = امتیاز پایه (از ۱۰۰) × ضریب ریسک × ضریب آزمایشگاه
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2 self-start">
-          <div className="min-w-0">
-            <div className="text-2xs text-muted-foreground font-bold">پیشنهاد سیستم</div>
-            <EntityName name={bestVendor.name} lines={1} className="text-xs font-bold text-primary" />
-          </div>
-          <div className="text-center shrink-0 border-r border-primary/20 pr-3">
-            <div className="font-mono font-black text-primary text-base leading-tight" dir="ltr">
-              {bestVendor.engineScore.toFixed(1)}
-            </div>
-            <div className="text-2xs text-muted-foreground font-bold">امتیاز موتور</div>
-          </div>
-        </div>
-      </div>
-
-      {isLevel && (
-        <p className="text-2xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 leading-relaxed flex items-start gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>
-            اختلاف امتیاز نفر اول و دوم کمتر از {DECISIVE_MARGIN} است؛ موتور نمی‌تواند بینشان تفکیک
-            معناداری قائل شود. انتخاب نهایی باید بر پایهٔ قضاوت کارشناسی و ثبت دلیل انجام شود.
-          </span>
+          It used to carry a «پیشنهاد سیستم» chip with the winner's name and
+          score. That name already appears on its own row, in the explanation
+          line and in the decision box, so the chip was the fourth telling of
+          one fact and cost a full row of height. Everything a source is judged
+          on sits on that source's own row; everything said about the ranking
+          sits in the column beside it. */}
+      <div>
+        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+          <Activity className="w-4 h-4 text-primary" />
+          مقایسه و انتخاب سورس این ماده
+        </h4>
+        <p className="text-2xs text-muted-foreground mt-1">
+          امتیاز موتور = امتیاز پایه (از ۱۰۰) × ضریب ریسک × ضریب آزمایشگاه
         </p>
-      )}
-
-      {/* The ranking. One row per source, carrying everything that used to be
-          split between the chart and the QC table. */}
-      <div className="space-y-2">
-        {ranked.map(item => {
-          const isBest = item.vendor.id === bestVendor.vendor.id;
-          const isChosen = selection?.vendorId === item.vendor.id;
-          const width = Math.max(2, (item.engineScore / barCeiling) * 100);
-          return (
-            <div
-              key={item.vendor.id}
-              className={`rounded-xl border p-3 ${
-                isBest ? 'bg-primary/5 border-primary/25' : 'bg-card border-border'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <EntityName name={item.name} lines={2} className="font-bold text-foreground text-xs" />
-                  {isBest && !isLevel && (
-                    <span className="text-2xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-lg font-bold shrink-0">
-                      پیشنهاد سیستم
-                    </span>
-                  )}
-                  {isChosen && (
-                    <span className="text-2xs text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded-lg font-bold shrink-0">
-                      منتخب
-                    </span>
-                  )}
-                </div>
-                <div className="text-left shrink-0">
-                  <span className="font-mono font-black text-sm text-foreground" dir="ltr">
-                    {item.engineScore.toFixed(1)}
-                  </span>
-                  <span className="text-2xs text-muted-foreground font-normal"> (پایه {item.score})</span>
-                </div>
-              </div>
-
-              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden mt-2">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${isBest ? 'bg-primary' : 'bg-slate-400 dark:bg-slate-500'}`}
-                  style={{ width: `${width}%` }}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                <span className="text-2xs px-2 py-0.5 rounded-lg border border-border bg-card text-muted-foreground font-medium">
-                  {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'}
-                </span>
-                <span
-                  className={`text-2xs px-2 py-0.5 rounded-lg border font-mono ${
-                    item.scoredDepartments === 4
-                      ? 'bg-card text-muted-foreground border-border'
-                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
-                  }`}
-                  title={`امتیاز ${item.scoredDepartments} دپارتمان از ۴ ثبت شده است.`}
-                >
-                  {item.scoredDepartments}/۴ دپارتمان
-                </span>
-                {riskChip(item)}
-                {labChip(item)}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Sources with no score at all: counted and named, not ranked. */}
-        {unscored.length > 0 && (
-          <details className="group rounded-xl border border-dashed border-border bg-card/60">
-            <summary className="cursor-pointer select-none px-3 py-2.5 text-2xs font-bold text-muted-foreground hover:text-foreground flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                {unscored.length} سورس بدون امتیاز — هنوز ارزیابی نشده‌اند
-              </span>
-              <span className="font-mono">۰/۴ دپارتمان</span>
-            </summary>
-            <ul className="px-3 pb-3 pt-0 space-y-1">
-              {unscored.map(item => (
-                <li key={item.vendor.id} className="flex items-center justify-between gap-2 text-2xs text-muted-foreground border-t border-border/60 pt-1.5">
-                  <EntityName name={item.name} lines={1} className="text-foreground font-medium" />
-                  <span className="shrink-0">
-                    {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'} ·{' '}
-                    {item.hasRisk ? 'ریسک ثبت‌شده' : 'بدون ارزیابی ریسک'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
       </div>
 
-      {/* Why the winner won — and the one guide, which used to be two.
+      {/* Two columns on a wide screen: the ranking on the right, everything
+          said *about* it on the left.
 
-          «چطور محاسبه می‌شود؟» explained the engine and «فرمول محاسبه» explained
-          the lab multiplier, in two separate boxes a screen apart. They are one
-          subject and are now one panel. */}
-      <div className="bg-card border border-border rounded-xl p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs text-foreground">
-            <strong className="font-bold">چرا {bestVendor.name}:</strong>{' '}
-            <span className="font-mono" dir="ltr">
-              {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} ={' '}
-              <strong className="text-primary text-sm">{bestVendor.engineScore.toFixed(1)}</strong>
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowEngineGuide(v => !v)}
-            className="text-2xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
-          >
-            <span>راهنمای محاسبه</span>
-            <motion.span
-              animate={{ rotate: showEngineGuide ? 180 : 0 }}
-              transition={{ duration: 0.15 }}
-              className="inline-block"
-            >
-              <ChevronDown className="w-3 h-3" />
-            </motion.span>
-          </button>
+          Stacked, these four blocks ran about 490px for a single source while
+          the 1000px width beside them sat empty. The first grid item lands on
+          the right in RTL, so the list needs no `order` of its own.
+
+          `xl` and not `lg`: with the sidebar, an `lg` viewport leaves the panel
+          around 700px, and a 320px column would squeeze the names. It is the
+          same breakpoint the source rows above use (`MaterialGroup.tsx`).
+
+          `minmax(0,1fr)` keeps a long name from widening the column instead of
+          wrapping to its second line (rule 15).
+
+          The left column is deliberately NOT sticky: the material card and its
+          body are `overflow-hidden`, which makes a scrollport that never
+          scrolls, and a sticky child inside one never sticks. */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+        {/* The ranking. One row per source, carrying everything that used to be
+            split between the chart and the QC table. */}
+        <div className="space-y-2">
+          {ranked.map(item => {
+            const isBest = item.vendor.id === bestVendor.vendor.id;
+            const isChosen = selection?.vendorId === item.vendor.id;
+            const width = Math.max(2, (item.engineScore / barCeiling) * 100);
+            return (
+              <div
+                key={item.vendor.id}
+                className={`rounded-xl border p-3 ${
+                  isBest ? 'bg-primary/5 border-primary/25' : 'bg-card border-border'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <EntityName name={item.name} lines={2} className="font-bold text-foreground text-xs" />
+                    {/* One badge when both are true of the same source. Two
+                        chips side by side saying «منتخب» and «پیشنهاد سیستم»
+                        read as two facts; they are one — the engine's pick is
+                        what was recorded. They stay separate whenever they
+                        disagree, which is the case worth noticing. */}
+                    {isBest && !isLevel && isChosen ? (
+                      <span className="text-2xs text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded-lg font-bold shrink-0">
+                        منتخب · مطابق پیشنهاد سیستم
+                      </span>
+                    ) : (
+                      <>
+                        {isBest && !isLevel && (
+                          <span className="text-2xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-lg font-bold shrink-0">
+                            پیشنهاد سیستم
+                          </span>
+                        )}
+                        {isChosen && (
+                          <span className="text-2xs text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded-lg font-bold shrink-0">
+                            منتخب
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="text-left shrink-0">
+                    <span className="font-mono font-black text-sm text-foreground" dir="ltr">
+                      {item.engineScore.toFixed(1)}
+                    </span>
+                    <span className="text-2xs text-muted-foreground font-normal"> (پایه {item.score})</span>
+                  </div>
+                </div>
+
+                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden mt-2">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${isBest ? 'bg-primary' : 'bg-slate-400 dark:bg-slate-500'}`}
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                  <span className="text-2xs px-2 py-0.5 rounded-lg border border-border bg-card text-muted-foreground font-medium">
+                    {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'}
+                  </span>
+                  <span
+                    className={`text-2xs px-2 py-0.5 rounded-lg border font-mono ${
+                      item.scoredDepartments === 4
+                        ? 'bg-card text-muted-foreground border-border'
+                        : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+                    }`}
+                    title={`امتیاز ${item.scoredDepartments} دپارتمان از ۴ ثبت شده است.`}
+                  >
+                    {item.scoredDepartments}/۴ دپارتمان
+                  </span>
+                  {riskChip(item)}
+                  {labChip(item)}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Sources with no score at all: counted and named, not ranked. */}
+          {unscored.length > 0 && (
+            <details className="group rounded-xl border border-dashed border-border bg-card/60">
+              <summary className="cursor-pointer select-none px-3 py-2.5 text-2xs font-bold text-muted-foreground hover:text-foreground flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform group-open:rotate-180" />
+                  {unscored.length} سورس بدون امتیاز — هنوز ارزیابی نشده‌اند
+                </span>
+                <span className="font-mono">۰/۴ دپارتمان</span>
+              </summary>
+              <ul className="px-3 pb-3 pt-0 space-y-1">
+                {unscored.map(item => (
+                  <li key={item.vendor.id} className="flex items-center justify-between gap-2 text-2xs text-muted-foreground border-t border-border/60 pt-1.5">
+                    <EntityName name={item.name} lines={1} className="text-foreground font-medium" />
+                    <span className="shrink-0">
+                      {item.vendor.grade ? `Grade ${item.vendor.grade}` : 'بدون گرید'} ·{' '}
+                      {item.hasRisk ? 'ریسک ثبت‌شده' : 'بدون ارزیابی ریسک'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
 
-        <AnimatePresence initial={false}>
-          {showEngineGuide && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="overflow-hidden"
-            >
-              <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-2xs text-muted-foreground leading-relaxed">
-                <p>
-                  <strong className="text-foreground">موتور آفلاین سیستم</strong> از یک مکانیسم امتیازدهی ترکیبی شفاف استفاده می‌کند:
-                  <span className="block mt-1.5 font-mono text-primary bg-primary/5 px-2 py-1 rounded-lg border border-primary/20 font-bold w-fit" dir="ltr">
-                    Engine Score = BaseScore × RiskMod × LabMod
-                  </span>
-                </p>
-                <p><strong className="text-foreground">۱. امتیاز پایه (Base Score):</strong> میانگین وزنی فرم‌های ارزیابی بخش‌های تخصصی، از ۱۰۰.</p>
-                <p><strong className="text-foreground">۲. ضریب ریسک (Risk Mod):</strong> از سطح ریسک ثبت‌شده در ارزیابی FMEA سورس گرفته می‌شود. در نبود ارزیابی، ضریب پیش‌فرض <span className="font-mono" dir="ltr">0.95x</span> اعمال می‌شود — یعنی سورس ارزیابی‌نشده جریمهٔ محتاطانه می‌گیرد و امتیازش با سورس کم‌ریسک برابر نیست.</p>
-                <p>
-                  <strong className="text-foreground">۳. ضریب نتایج آزمایشگاه (Lab Mod):</strong> تأثیر این بخش در بازهٔ
-                  {' '}<span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold" dir="ltr">0.90x ~ 1.10x</span>{' '}
-                  محاسبه می‌شود: ضریب پایه <span className="font-mono" dir="ltr">0.90x</span> است و تا سقف
-                  {' '}<span className="font-mono" dir="ltr">+0.20x</span> به نسبت درصد تست‌های تأییدشده به آن اضافه می‌شود؛ به ازای هر تست
-                  {' '}<span className="text-rose-600 dark:text-rose-400 font-bold">Reject</span> نیز
-                  {' '}<span className="font-mono text-rose-600 dark:text-rose-400" dir="ltr">-0.10x</span> جریمه کسر می‌گردد. در نبود سابقه، ضریب خنثی
-                  {' '}<span className="font-mono" dir="ltr">1.00x</span> لحاظ می‌شود.
-                </p>
-                <p className="text-amber-800 dark:text-amber-400">این عدد یک <strong>پیشنهاد</strong> است، نه تصمیم ثبت‌شده. انتخاب نهایی سورس باید توسط کارشناس و با ثبت دلیل انجام شود.</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
 
-      {/* The recorded decision — what was actually chosen, by whom and why. */}
-      {selection && selectedEntry ? (
-        <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-2xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-              سورس منتخب: {selectedEntry.name}
-              {selection.vendorId !== bestVendor.vendor.id && (
-                <span className="text-amber-700 dark:text-amber-400"> · متفاوت با پیشنهاد سیستم</span>
+        <div className="space-y-3">
+        {isLevel && (
+          <p className="text-2xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 leading-relaxed flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              اختلاف امتیاز نفر اول و دوم کمتر از {DECISIVE_MARGIN} است؛ موتور نمی‌تواند بینشان تفکیک
+              معناداری قائل شود. انتخاب نهایی باید بر پایهٔ قضاوت کارشناسی و ثبت دلیل انجام شود.
+            </span>
+          </p>
+        )}
+
+        {/* The recommendation and its arithmetic, in one card.
+
+            These were two: a chip in the header naming the winner and its
+            score, and a «چرا …» line naming the winner and its score again a
+            few centimetres below. Together with the badge on the row and the
+            decision box, one source was named four times in one panel. The
+            name is stated once here, the score once, and the multiplication
+            that produced it directly underneath — which is the whole reason
+            this column exists. */}
+        <div className="bg-primary/5 border border-primary/25 rounded-xl p-3">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-2xs text-muted-foreground font-bold">پیشنهاد سیستم</div>
+              <EntityName name={bestVendor.name} lines={2} className="text-xs font-bold text-primary" />
+            </div>
+            <div className="text-center shrink-0 border-r border-primary/20 pr-3">
+              <div className="font-mono font-black text-primary text-base leading-tight" dir="ltr">
+                {bestVendor.engineScore.toFixed(1)}
+              </div>
+              <div className="text-2xs text-muted-foreground font-bold">امتیاز موتور</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5 pt-2.5 border-t border-primary/15">
+            <span className="text-2xs text-muted-foreground font-mono" dir="ltr">
+              {bestVendor.score} × {bestVendor.riskMod.toFixed(2)} × {bestVendor.labMod.toFixed(2)} ={' '}
+              <strong className="text-foreground">{bestVendor.engineScore.toFixed(1)}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowEngineGuide(v => !v)}
+              className="text-2xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <span>راهنمای محاسبه</span>
+              <motion.span
+                animate={{ rotate: showEngineGuide ? 180 : 0 }}
+                transition={{ duration: 0.15 }}
+                className="inline-block"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </motion.span>
+            </button>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {showEngineGuide && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-2xs text-muted-foreground leading-relaxed">
+                  <p>
+                    <strong className="text-foreground">موتور آفلاین سیستم</strong> از یک مکانیسم امتیازدهی ترکیبی شفاف استفاده می‌کند:
+                    <span className="block mt-1.5 font-mono text-primary bg-primary/5 px-2 py-1 rounded-lg border border-primary/20 font-bold w-fit" dir="ltr">
+                      Engine Score = BaseScore × RiskMod × LabMod
+                    </span>
+                  </p>
+                  <p><strong className="text-foreground">۱. امتیاز پایه (Base Score):</strong> میانگین وزنی فرم‌های ارزیابی بخش‌های تخصصی، از ۱۰۰.</p>
+                  <p><strong className="text-foreground">۲. ضریب ریسک (Risk Mod):</strong> از سطح ریسک ثبت‌شده در ارزیابی FMEA سورس گرفته می‌شود. در نبود ارزیابی، ضریب پیش‌فرض <span className="font-mono" dir="ltr">0.95x</span> اعمال می‌شود — یعنی سورس ارزیابی‌نشده جریمهٔ محتاطانه می‌گیرد و امتیازش با سورس کم‌ریسک برابر نیست.</p>
+                  <p>
+                    <strong className="text-foreground">۳. ضریب نتایج آزمایشگاه (Lab Mod):</strong> تأثیر این بخش در بازهٔ
+                    {' '}<span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold" dir="ltr">0.90x ~ 1.10x</span>{' '}
+                    محاسبه می‌شود: ضریب پایه <span className="font-mono" dir="ltr">0.90x</span> است و تا سقف
+                    {' '}<span className="font-mono" dir="ltr">+0.20x</span> به نسبت درصد تست‌های تأییدشده به آن اضافه می‌شود؛ به ازای هر تست
+                    {' '}<span className="text-rose-600 dark:text-rose-400 font-bold">Reject</span> نیز
+                    {' '}<span className="font-mono text-rose-600 dark:text-rose-400" dir="ltr">-0.10x</span> جریمه کسر می‌گردد. در نبود سابقه، ضریب خنثی
+                    {' '}<span className="font-mono" dir="ltr">1.00x</span> لحاظ می‌شود.
+                  </p>
+                  <p className="text-amber-800 dark:text-amber-400">این عدد یک <strong>پیشنهاد</strong> است، نه تصمیم ثبت‌شده. انتخاب نهایی سورس باید توسط کارشناس و با ثبت دلیل انجام شود.</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* The recorded decision — what was actually chosen, by whom and why. */}
+        {selection && selectedEntry ? (
+          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-2xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                سورس منتخب: {selectedEntry.name}
+                {selection.vendorId !== bestVendor.vendor.id && (
+                  <span className="text-amber-700 dark:text-amber-400"> · متفاوت با پیشنهاد سیستم</span>
+                )}
+              </span>
+              {onSelectSource && (
+                <Button type="button" variant="link" size="sm"
+                  onClick={() => onSelectSource(selection.vendorId)}
+                  className="text-2xs text-emerald-800 dark:text-emerald-300 shrink-0 h-auto p-0">
+                  تغییر انتخاب
+                </Button>
               )}
+            </div>
+            <p className="text-2xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">دلیل:</strong> {selection.reason}
+            </p>
+            <p className="text-2xs text-muted-foreground flex flex-wrap gap-x-3">
+              <span>ثبت‌کننده: {selection.decidedBy}</span>
+              <span>
+                آخرین ارزیابی ثبت‌شده:{' '}
+                <span className="font-mono font-bold text-foreground">
+                  {formatGroupDate(groupUpdateDate) || <span className="font-sans font-normal text-muted-foreground">ثبت نشده</span>}
+                </span>
+              </span>
+            </p>
+          </div>
+        ) : (
+          /* `xl:flex-col` is not a typo for a smaller breakpoint. Above `xl`
+             this box sits in the 320px column, where a row layout gives the
+             sentence whatever the fixed-width button leaves it — about 50px,
+             one word per line. Below `xl` the panel is one column and the row
+             reads fine. So the stacking returns at the wide breakpoint, which
+             is where this particular box gets narrow. */
+          <div className="flex flex-col sm:flex-row sm:items-center xl:flex-col xl:items-stretch justify-between gap-2 bg-card border border-border rounded-xl p-3">
+            <span className="text-2xs text-muted-foreground">
+              هنوز سورسی برای این ماده به‌طور رسمی انتخاب نشده است · آخرین ارزیابی ثبت‌شده:{' '}
+              <span className="font-mono font-bold text-foreground">
+                {formatGroupDate(groupUpdateDate) || 'ثبت نشده'}
+              </span>
             </span>
             {onSelectSource && (
-              <Button type="button" variant="link" size="sm"
-                onClick={() => onSelectSource(selection.vendorId)}
-                className="text-2xs text-emerald-800 dark:text-emerald-300 shrink-0 h-auto p-0">
-                تغییر انتخاب
+              <Button type="button" onClick={() => onSelectSource(bestVendor.vendor.id)} className="shrink-0">
+                <CheckCircle />
+                ثبت انتخاب سورس برای این ماده
               </Button>
             )}
           </div>
-          <p className="text-2xs text-muted-foreground leading-relaxed">
-            <strong className="text-foreground">دلیل:</strong> {selection.reason}
-          </p>
-          <p className="text-2xs text-muted-foreground flex flex-wrap gap-x-3">
-            <span>ثبت‌کننده: {selection.decidedBy}</span>
-            <span>
-              آخرین ارزیابی ثبت‌شده:{' '}
-              <span className="font-mono font-bold text-foreground">
-                {formatGroupDate(groupUpdateDate) || <span className="font-sans font-normal text-muted-foreground">ثبت نشده</span>}
-              </span>
-            </span>
-          </p>
+        )}
         </div>
-      ) : (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-card border border-border rounded-xl p-3">
-          <span className="text-2xs text-muted-foreground">
-            هنوز سورسی برای این ماده به‌طور رسمی انتخاب نشده است · آخرین ارزیابی ثبت‌شده:{' '}
-            <span className="font-mono font-bold text-foreground">
-              {formatGroupDate(groupUpdateDate) || 'ثبت نشده'}
-            </span>
-          </span>
-          {onSelectSource && (
-            <Button type="button" onClick={() => onSelectSource(bestVendor.vendor.id)} className="shrink-0">
-              <CheckCircle />
-              ثبت انتخاب سورس برای این ماده
-            </Button>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 };
