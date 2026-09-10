@@ -30,6 +30,19 @@ export type ViewName =
   | 'home' | 'category' | 'archive' | 'supplier-audit'
   | 'audit-trail' | 'materials' | 'business-partners' | 'users' | 'tasks';
 
+/**
+ * How a view asks to go somewhere else.
+ *
+ * Components used to declare this as `onNavigate: any` or `(view: string)`,
+ * so `App` had to cast at every call site — `navigate(v as any)` — and a typo
+ * in a view name would have compiled. The stack's own `ViewName` is the type.
+ */
+export type NavigateFn = (
+  view: ViewName,
+  categoryId?: Category | null,
+  taskKey?: TaskKey | null,
+) => void;
+
 export interface ViewState {
   view: ViewName;
   categoryId: Category | null;

@@ -5,6 +5,8 @@ import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { StatTile } from '../../components/ui/stat-tile';
 import { categoryLabels } from '../../constants/categories';
+import type { NavigateFn } from '../../utils/navStack';
+import type { TaskKey } from '../../utils/navRoutes';
 import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
@@ -23,7 +25,7 @@ import temadLogo from '../../assets/logo.png';
 
 // extracted from App.tsx
 
-export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: any, onSelectVendor: any, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
+export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentUser, onDownloadBackup, materials, onAddMaterial, partners = [], onAddPartner, onOpenSourceForm }: { db: Vendor[], onNavigate: NavigateFn, onSelectVendor: (v: Vendor) => void, onAddVendor: (v: Vendor) => void, currentUser: User, onDownloadBackup?: () => void, materials: Material[], onAddMaterial: (m: Material) => void, partners?: BusinessPartner[], onAddPartner?: (p: BusinessPartner) => void, onOpenSourceForm: () => void }) {
   /**
    * The supplier population, excluding sample records.
    *
@@ -156,7 +158,7 @@ export function HomeView({ db, onNavigate, onSelectVendor, onAddVendor, currentU
    * column rather than deriving from the department scores — so a source with
    * real scores and an empty column sat on the dashboard for ever.
    */
-  const pendingActions = useMemo(() => ([
+  const pendingActions = useMemo((): { key: TaskKey; label: string; count: number; icon: React.ComponentType<{ className?: string }>; tone: string }[] => ([
     { key: 'eval', label: 'سورس‌های ارزیابی‌نشده', count: buildWorklist('eval', db, partners || []).length, icon: ClipboardList, tone: 'amber' },
     { key: 'risk', label: 'ریسک ثبت‌نشده', count: buildWorklist('risk', db, partners || []).length, icon: ShieldAlert, tone: 'orange' },
     { key: 'sop', label: 'ارزیابی معوق فروشندگان', count: buildWorklist('sop', db, partners || []).length, icon: Award, tone: 'blue' },

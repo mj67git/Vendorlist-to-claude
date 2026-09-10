@@ -19,7 +19,36 @@ export interface LocalAuditInput {
   reason?: string;
 }
 
-export function readLocalAudit(): any[] {
+/**
+ * One stored record, in the shape `appendLocalAudit` writes and the audit view
+ * reads — the same field names `/api/audit-logs` returns.
+ *
+ * `readLocalAudit` used to return `any[]`, so every caller invented its own
+ * `(row: any)` and no compiler ever checked that `severity` was among the three
+ * levels the filter tests for.
+ */
+export interface LocalAuditRecord {
+  id: string;
+  timestamp: string;
+  userName: string;
+  userId: string;
+  role: string;
+  module: string;
+  action: string;
+  entityType: string;
+  entityName: string;
+  severity: 'Info' | 'Warning' | 'Critical';
+  description: string;
+  beforeData: unknown;
+  afterData: unknown;
+  reasonForChange: string;
+  correlationId: string;
+  eventType: string;
+  ipAddress: string;
+  userAgent: string;
+}
+
+export function readLocalAudit(): LocalAuditRecord[] {
   try {
     const raw = localStorage.getItem(KEY);
     const arr = raw ? JSON.parse(raw) : [];

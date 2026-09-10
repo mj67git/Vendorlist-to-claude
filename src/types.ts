@@ -124,6 +124,16 @@ export interface Material {
   ircReceiveDate?: string;
   ircExpiryDate?: string;
   createdAt: string;
+  /**
+   * The row's last write, which the client claims back on the next save so a
+   * stale copy is refused with 409 (project rule 11a).
+   *
+   * The column has existed since migration `20260903100000` and the API has
+   * always returned it; the field was missing here, and the two call sites that
+   * need it reached past the type with `as any`. A cast is not a type — it hid
+   * a real gap between this interface and the record it describes.
+   */
+  updatedAt?: string;
 }
 
 export type BusinessPartnerType = 'Manufacturer' | 'Supplier';

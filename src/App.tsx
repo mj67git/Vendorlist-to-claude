@@ -56,6 +56,7 @@ import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { useToast } from './hooks/useToast';
+import { describeError } from './utils/errorMessage';
 import { SystemClock } from './components/SystemClock';
 import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
@@ -69,6 +70,50 @@ import { appendLocalAudit, readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
+
+/**
+ * One row of `GET /api/auth/my-activity`, as the user menu reads it.
+ *
+ * Only the three fields the menu prints; the endpoint returns a full audit row
+ * and the rest is deliberately not restated here, where it would go stale.
+ */
+interface MyActivityEntry {
+  id: string;
+  description?: string;
+  action?: string;
+}
+
+/**
+ * One entry of `GET /api/vendors/changes` — an id and a timestamp, never the
+ * record itself (project rule 11a).
+ */
+interface VendorChange {
+  id: string;
+  updatedAt?: string;
+}
+
+/**
+ * What is kept of the selected source when the stack is written to
+ * localStorage: enough to name the record in a breadcrumb, and no more. The
+ * full record is re-read from the register by id.
+ */
+interface VendorNavigationSnapshot {
+  id: string;
+  name?: string;
+  material?: string;
+  materialEn?: string;
+}
+
+/**
+ * The stack as it is stored, which is not the stack as it is used.
+ *
+ * The distinction was made with `as any` — the persisted entry carries four
+ * fields where `ViewState` declares a whole `Vendor`. Saying so in a type
+ * costs nothing and stops the cast from hiding a real change to either shape.
+ */
+type PersistedViewState = Omit<ViewState, 'selectedVendor'> & {
+  selectedVendor: VendorNavigationSnapshot | null;
+};
 
 /** The page container every view is laid out in. */
 const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
@@ -348,10 +393,15 @@ export default function App() {
       // Persist only a light identity snapshot of the selected vendor — the full
       // record is re-hydrated from `db` by id on read, so storing the whole
       // object (risk/analysis/activity arrays) would bloat localStorage.
-      const slim = viewHistory.map(s => ({
+      const slim: PersistedViewState[] = viewHistory.map(s => ({
         ...s,
         selectedVendor: s.selectedVendor
-          ? ({ id: s.selectedVendor.id, name: s.selectedVendor.name, material: s.selectedVendor.material, materialEn: s.selectedVendor.materialEn } as any)
+          ? {
+              id: s.selectedVendor.id,
+              name: s.selectedVendor.name,
+              material: s.selectedVendor.material,
+              materialEn: s.selectedVendor.materialEn,
+            }
           : null,
       }));
       localStorage.setItem('app_viewHistory', JSON.stringify(slim));
@@ -631,7 +681,14 @@ export default function App() {
 
   // Session facts for the user menu. The remaining time is recomputed each time
   // the menu opens rather than ticking, since it is a coarse label.
-  const [myActivity, setMyActivity] = useState<any[] | null>(null);
+  /**
+   * The last few things this account did, for the user menu.
+   *
+   * `null` means "not asked yet" and an empty array means "asked, nothing to
+   * show" — the menu prints a different line for each, so the two are not
+   * interchangeable.
+   */
+  const [myActivity, setMyActivity] = useState<MyActivityEntry[] | null>(null);
   const [sessionLeftLabel, setSessionLeftLabel] = useState<string | null>(null);
   const [sessionExpiringSoon, setSessionExpiringSoon] = useState(false);
   const myPermissionCount = effectivePermissions(currentUser).length;
@@ -648,7 +705,13 @@ export default function App() {
     let cancelled = false;
     authFetch('/api/auth/my-activity?limit=4')
       .then(res => (res.ok ? res.json() : null))
-      .then(j => { if (!cancelled) setMyActivity(Array.isArray(j?.data) ? j.data : []); })
+      .then((j: { data?: unknown }) => {
+        if (cancelled) return;
+        // The endpoint is trusted, but the shape is still checked here: the
+        // menu keys its list on `id` and would render nothing useful without.
+        const rows = Array.isArray(j?.data) ? (j.data as MyActivityEntry[]) : [];
+        setMyActivity(rows.filter(row => row && typeof row.id === 'string'));
+      })
       .catch(() => { if (!cancelled) setMyActivity([]); });
     return () => { cancelled = true; };
   }, [showUserMenu, currentUser]);
@@ -698,7 +761,7 @@ export default function App() {
   // Critical audit events (local mode reads the client store; harmless 0 otherwise).
   const criticalAuditCount = useMemo(() => {
     if (!isLocalMode()) return 0;
-    try { return readLocalAudit().filter((l: any) => l.severity === 'Critical').length; } catch { return 0; }
+    try { return readLocalAudit().filter(record => record.severity === 'Critical').length; } catch { return 0; }
   }, [db, businessPartners, materials]);
 
   /**
@@ -752,8 +815,8 @@ export default function App() {
         if (firstPoll) { ownWritesRef.current.clear(); return; }
 
         const mine = ownWritesRef.current;
-        const changed = (Array.isArray(data.changed) ? data.changed : [])
-          .filter((c: any) => c && typeof c.id === 'string' && !mine.has(c.id));
+        const changed = (Array.isArray(data.changed) ? (data.changed as VendorChange[]) : [])
+          .filter(c => c && typeof c.id === 'string' && !mine.has(c.id));
         ownWritesRef.current = new Set();
 
         // A deletion leaves no timestamp behind, so the count is what reveals
@@ -1013,7 +1076,7 @@ export default function App() {
         severity: rejected || restored ? 'Critical' : original ? 'Warning' : 'Info',
         description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : restored ? ' — خروج از لیست سیاه (علت رد برطرف شد)' : ''}`,
         before: original || null, after: normalized,
-        reason: (normalized as any).reasonForChange || 'به‌روزرسانی رکورد',
+        reason: normalized.reasonForChange || 'به‌روزرسانی رکورد',
       });
     }
 
@@ -1023,7 +1086,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalized)
-      }).catch((err: any) => {
+      }).catch((err: unknown) => {
         console.error('Failed to sync updated vendor to DB:', err);
         notify(
           err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.',
@@ -1182,8 +1245,8 @@ export default function App() {
         // screen when the form was opened, so its timestamp is exactly the
         // claim the server has to check. Absent (a record this session has
         // never read) means no claim, and the write behaves as it always did.
-        let expected: string | null = typeof (original as any)?.updatedAt === 'string'
-          ? (original as any).updatedAt
+        let expected: string | null = typeof original?.updatedAt === 'string'
+          ? original.updatedAt
           : null;
         for (const send of syncQueue) {
           const saved = await send(expected);
@@ -1201,7 +1264,7 @@ export default function App() {
           setDb(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
           updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
         console.error('Vendor sync failed:', err);
         notify(reason, 'error', 8000, {
@@ -1276,7 +1339,7 @@ export default function App() {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reasonForChange })
-    }).catch((err: any) => {
+    }).catch((err: unknown) => {
       console.error('Failed to sync vendor deletion to DB:', err);
       if (removed) setDb(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
       notify(
@@ -1339,7 +1402,7 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(normalized)
-    }).then(() => normalized).catch((err: any) => {
+    }).then(() => normalized).catch((err: unknown) => {
       console.error('Failed to sync new vendor to DB:', err);
       setDb(prev => prev.filter(v => v.id !== normalized.id));
       notify(
@@ -1355,12 +1418,12 @@ export default function App() {
   const handleAddMaterial = (newMaterial: Material) => {
     setMaterials(prev => [newMaterial, ...prev]);
     notify('ماده اولیه جدید با موفقیت اضافه شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: (newMaterial as any).nameFa || (newMaterial as any).name || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${(newMaterial as any).nameFa || (newMaterial as any).name || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: newMaterial.nameFa || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${newMaterial.nameFa || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
     authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
       .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
       .catch(err => {
         setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
-        notify(err.message || 'ثبت ماده در سرور ناموفق بود.', 'error', 5000);
+        notify(describeError(err, 'ثبت ماده در سرور ناموفق بود.'), 'error', 5000);
       });
   };
 
@@ -1368,13 +1431,13 @@ export default function App() {
     const oldMaterial = materials.find(m => m.id === updatedMaterial.id);
     setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? updatedMaterial : m)));
     notify('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: (updatedMaterial as any).nameFa || (updatedMaterial as any).name || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${(updatedMaterial as any).nameFa || (updatedMaterial as any).name || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
+    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: updatedMaterial.nameFa || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${updatedMaterial.nameFa || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
     // The copy this edit was based on. The server refuses with 409 when the row
     // has moved on since, so a form opened before somebody else's save cannot
     // quietly undo it.
     authFetch(`/api/materials/${updatedMaterial.id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: (oldMaterial as any)?.updatedAt ?? null }),
+      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: oldMaterial?.updatedAt ?? null }),
     })
       .then(async res => {
         const body = await res.json().catch(() => ({}));
@@ -1392,7 +1455,7 @@ export default function App() {
       })
       .catch(err => {
         if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
-        notify(err.message || 'ویرایش ماده در سرور ناموفق بود.', 'error', 5000);
+        notify(describeError(err, 'ویرایش ماده در سرور ناموفق بود.'), 'error', 5000);
       });
   };
 
@@ -1400,7 +1463,7 @@ export default function App() {
     const removed = materials.find(m => m.id === id);
     setMaterials(prev => prev.filter(m => m.id !== id));
     if (isLocalMode()) {
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: (removed as any)?.nameFa || (removed as any)?.name || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${(removed as any)?.nameFa || (removed as any)?.name || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
+      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: removed?.nameFa || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${removed?.nameFa || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
       notify('ماده اولیه با موفقیت حذف شد!');
       return;
     }
@@ -1411,14 +1474,14 @@ export default function App() {
         throw new Error(error.error || 'خطا در حذف');
       }
       notify('ماده اولیه با موفقیت حذف شد!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Put back the one row, rather than the whole list as it stood before the
       // request. Restoring a snapshot also un-does anything that arrived while
       // the request was in flight — another operator's edit, a background
       // refresh — and the user sees their own delete fail and someone else's
       // work disappear with it.
       if (removed) setMaterials(prev => (prev.some(m => m.id === id) ? prev : [removed, ...prev]));
-      notify(err.message || 'حذف ماده در سرور ناموفق بود.', 'error', 5000);
+      notify(describeError(err, 'حذف ماده در سرور ناموفق بود.'), 'error', 5000);
     }
   };
 
@@ -1439,8 +1502,11 @@ export default function App() {
    * says what happened.
    */
   const describePartnerFailure = async (res: Response, fallback: string) => {
-    const body = await res.json().catch(() => ({} as any));
-    if (body?.error) return body.error as string;
+    // A refusal does not always carry JSON — a proxy 413 is HTML, and a dropped
+    // connection is nothing at all — so the parse is allowed to fail and the
+    // status decides the wording instead.
+    const body: { error?: unknown } = await res.json().catch(() => ({}));
+    if (typeof body.error === 'string' && body.error) return body.error;
     if (res.status === 413) return 'حجم مدارک پیوست بیش از حد مجاز سرور است. فایل‌های کوچک‌تری بارگذاری کنید.';
     if (res.status === 403) return 'دسترسی لازم برای این تغییر را ندارید.';
     return fallback;
@@ -1464,7 +1530,7 @@ export default function App() {
       .catch(err => {
         // Take back this row only — see the note on the material delete.
         setBusinessPartners(prev => prev.filter(p => p.id !== newPartner.id));
-        notify(err.message || 'ثبت شریک تجاری در سرور ناموفق بود.', 'error');
+        notify(describeError(err, 'ثبت شریک تجاری در سرور ناموفق بود.'), 'error');
       });
   };
 
@@ -1481,7 +1547,7 @@ export default function App() {
       // Claiming the copy this form was opened on: the server answers 409 when
       // somebody else has saved in the meantime, rather than letting this write
       // replace the whole record — SOP evaluation included — with older values.
-      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: (oldPartner as any)?.updatedAt ?? null })
+      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: oldPartner?.updatedAt ?? null })
     })
       .then(async res => {
         if (!res.ok) {
@@ -1497,7 +1563,7 @@ export default function App() {
       })
       .catch(err => {
         if (oldPartner) setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? oldPartner : p)));
-        notify(err.message || 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.', 'error');
+        notify(describeError(err, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'), 'error');
       });
   };
 
@@ -1523,7 +1589,7 @@ export default function App() {
       })
       .catch(err => {
         setBusinessPartners(prev => (prev.some(p => p.id === id) ? prev : [partner, ...prev]));
-        notify(err.message || 'حذف شریک تجاری در سرور ناموفق بود.', 'error');
+        notify(describeError(err, 'حذف شریک تجاری در سرور ناموفق بود.'), 'error');
       });
   };
 
@@ -1710,7 +1776,7 @@ export default function App() {
           partners={businessPartners}
           currentUser={currentUser}
           onSelectVendor={handleSelectVendor}
-          onNavigate={v => navigate(v as any)}
+          onNavigate={navigate}
           onSwitchTask={k => navigate('tasks', null, k)}
         />
       );
@@ -1718,7 +1784,7 @@ export default function App() {
       keyName = 'supplier-audit';
       content = !can(currentUser, VIEW_PERMISSIONS['supplier-audit']) || viewAccess === 'denied' ? DENY_DIRECTORY
         : gated.error ? LOAD_FAILED
-        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={v => navigate(v as any)} />;
+        : viewAccess === 'checking' ? CHECKING_ACCESS : <SupplierAuditView db={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />;
     } else if (view === 'materials') {
       keyName = 'materials';
       content = !can(currentUser, VIEW_PERMISSIONS.materials) ? (
@@ -2409,7 +2475,7 @@ export default function App() {
                             <span className="text-2xs text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
                           ) : (
                             <ul className="space-y-1">
-                              {myActivity.map((a: any) => (
+                              {myActivity.map(a => (
                                 <li key={a.id} className="flex items-start gap-1.5 text-2xs leading-snug">
                                   <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
                                   <span className="text-muted-foreground truncate" title={a.description}>
@@ -2551,7 +2617,7 @@ export default function App() {
           materials={materials}
           partners={businessPartners}
           onSelectVendor={handleSelectVendor}
-          onNavigate={(v, cid) => navigate(v as any, cid as any)}
+          onNavigate={navigate}
           currentUser={currentUser}
         />
 

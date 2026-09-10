@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Award, Briefcase, Building, Building2, CheckCircle, ChevronLeft, Coins, Factory, FileSpreadsheet, Globe, Handshake, Loader2, Microscope, Pencil, Search, ShieldAlert, Warehouse, X } from 'lucide-react';
 import { BusinessPartner, Material, User, Vendor } from '../../types';
+import type { NavigateFn } from '../../utils/navStack';
 import { EntityName } from '../EntityName';
 import { GradeBadge } from '../GradeBadge';
 import { Pagination } from '../Pagination';
@@ -113,7 +114,7 @@ const ROLE_LABEL: Record<SupplierGroup['role'], string> = {
     partners?: BusinessPartner[];
     materials?: Material[];
     /** Jump to another module — used to open the linked partner record. */
-    onNavigate?: (view: string) => void;
+    onNavigate?: NavigateFn;
     /** True while the first load of the source list is still in flight. */
     isLoading?: boolean;
   }
