@@ -26,7 +26,8 @@ git archive HEAD | tar -x -C "$STAGE"
 
 # فایل‌های کاری توسعه در بستهٔ استقرار جایی ندارند.
 rm -rf "$STAGE/CLAUDE.md" "$STAGE/STATUS.md" "$STAGE/.claude" "$STAGE/tests" \
-       "$STAGE/.github" "$STAGE/metadata.json" "$STAGE/bun.lock"
+       "$STAGE/.github" "$STAGE/metadata.json" "$STAGE/bun.lock" \
+       "$STAGE/vitest.config.ts"
 
 # مسیر استقرار Vercel در نصب داخلی نقشی ندارد و فقط سردرگمی می‌سازد.
 rm -rf "$STAGE/api" "$STAGE/vercel.json"
