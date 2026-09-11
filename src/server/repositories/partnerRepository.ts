@@ -253,11 +253,24 @@ export async function getBusinessPartnersList(): Promise<any[]> {
  * predating the rule (they carry placeholders like "N/A") stay editable.
  */
 
+/**
+ * Seven sample partners, for a demonstration database only.
+ *
+ * This used to run on every empty database, which meant a brand-new production
+ * installation came up already holding BASF, Lonza and five other real company
+ * names that nobody at the site had entered — and, worse, that a
+ * `./deploy/reset-data.sh --all` put straight back on the next restart, so the
+ * reset looked like it had failed. A delivered system starts empty and is
+ * filled by the people who own the data.
+ *
+ * Set `VLSE_SEED_DEMO_DATA=true` to get them back for a demo or a test bed.
+ */
 export async function seedDefaultBusinessPartners() {
+  if (process.env.VLSE_SEED_DEMO_DATA !== "true") return;
   const prisma = requirePrisma();
   const count = await prisma.businessPartner.count();
   if (count > 0) return;
-  console.log("[BusinessPartners] Seeding default partners into PostgreSQL (first startup)...");
+  console.log("[BusinessPartners] Seeding demo partners (VLSE_SEED_DEMO_DATA=true)...");
   for (const p of INITIAL_BUSINESS_PARTNERS_DB) {
     await upsertBusinessPartner(prisma, p);
   }
