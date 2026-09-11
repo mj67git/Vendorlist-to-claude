@@ -41,6 +41,13 @@ const GRADE_ORDER: Record<string, number> = { A: 4, B: 3, C: 2, D: 1, rejected: 
 
 const RISK_LABEL: Record<string, string> = { High: 'بالا', Medium: 'متوسط', Low: 'پایین' };
 
+/** The export menu's rows and its group headings, written once. */
+const exportItemClass =
+  'w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary ' +
+  'font-medium transition-colors flex items-center gap-2';
+const exportHeadingClass =
+  'px-4 pt-1 pb-1.5 text-2xs font-bold text-muted-foreground tracking-wider select-none';
+
 export function ArchiveView({ vendors, currentUser, partners = [], materials = [], onSelectVendor, isLoading = false }: {
   vendors: Vendor[],
   currentUser: User,
@@ -375,100 +382,106 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
             file leaving the building. */}
         {canExport && (
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
-          <Button
-            type="button"
-            variant="success"
-            size="sm"
-            onClick={() => excel.run(
-              xl => xl.exportFullArchiveMultiSheetExcel(vendors, partners, materials, selections),
-              { label: 'آرشیو کامل (چند شیتی)', rows: vendors.length },
-            )}
-            disabled={excel.busy}
-            title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
-          >
-            <Download />
-            <span>خروجی اکسل چند شیتی (Multi-Sheet XLSX)</span>
-          </Button>
+          {/* One export control, not four.
+              The loudest button on this page used to be the multi-sheet
+              workbook — filled green, larger than everything around it — and
+              it is the rarest of the four exports. Nothing else on the archive
+              competes for the eye, so the page pointed at the thing almost
+              nobody needs, in a colour no other primary action in the
+              application uses.
 
-          {/* Print the list itself. "PDF" in this module used to mean one
-              evaluation form for one source; the register as a whole could only
-              leave as a spreadsheet, which is not a document anyone signs. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setPrintingList(true)}
-            title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
-          >
-            <ListChecks className="text-primary" />
-            <span>چاپ فهرست (PDF)</span>
-          </Button>
-
-          {/* The spreadsheet counterpart of the print button. Both other export
-              buttons ignore the filters on screen — deliberately, they are
-              "the whole archive" and "one category" — so someone who had
-              narrowed the list down had no way to export what they were
-              looking at. The sheet carries the same filter caption the printed
-              register carries, so an extract cannot be mistaken for the whole. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => excel.run(
-              xl => xl.exportCategoryToExcel(
-                filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
-              ),
-              { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
-            )}
-            disabled={excel.busy}
-            title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
-          >
-            <Download className="text-primary" />
-            <span>خروجی نمای فعلی ({filteredDb.length.toLocaleString('fa-IR')})</span>
-          </Button>
-
-          {/* Secondary menu: one category at a time.
-              It used to open on `group-hover` alone — unreachable from the
-              keyboard (Tab then Enter did nothing) and unusable on a tablet,
-              where there is no hover at all. It is a real menu now: a button
-              that toggles, Escape and an outside click to dismiss. */}
+              The menu below was already a real menu (Escape, outside click,
+              aria-expanded), so the other three moved into it rather than a
+              new one being built. Order is by how often the work actually
+              happens: the filtered view first, the whole register next, one
+              category last. */}
           <div className="relative" ref={exportMenuRef}>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setExportMenuOpen(o => !o)}
+              disabled={excel.busy}
               aria-haspopup="menu"
               aria-expanded={exportMenuOpen}
+              title="خروجی اکسل یا چاپ فهرست"
             >
-              <FileText className="text-primary" />
-              <span>خروجی تک‌دسته‌ای</span>
+              <Download className="text-primary" />
+              <span>خروجی</span>
               <ChevronDown className={`text-muted-foreground transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </Button>
 
-            <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-xl py-2 z-20 divide-y divide-border text-right">
-              <div className="px-3.5 py-2 text-2xs font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
-                انتخاب دسته‌بندی جهت خروجی تک‌شیت
-              </div>
+            <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-72 bg-card border border-border rounded-2xl shadow-xl py-1 z-20 divide-y divide-border text-right">
               <div className="py-1">
+                <div className={exportHeadingClass}>نمای فعلی</div>
                 <button
                   type="button"
-                  onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
-                  className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
+                  role="menuitem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    excel.run(
+                      xl => xl.exportCategoryToExcel(
+                        filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
+                      ),
+                      { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
+                    );
+                  }}
+                  className={exportItemClass}
                 >
-                  <span className="font-mono text-2xs text-muted-foreground">All</span>
-                  <span>گزارش تجمیعی کل آرشیو</span>
+                  <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">اکسل از همین فهرست ({filteredDb.length.toLocaleString('fa-IR')} ردیف)</span>
+                </button>
+              </div>
+
+              <div className="py-1">
+                <div className={exportHeadingClass}>کل آرشیو</div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    excel.run(
+                      xl => xl.exportFullArchiveMultiSheetExcel(vendors, partners, materials, selections),
+                      { label: 'آرشیو کامل (چند شیتی)', rows: vendors.length },
+                    );
+                  }}
+                  className={exportItemClass}
+                >
+                  <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">اکسل چند شیتی — همهٔ دسته‌ها</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setExportMenuOpen(false); setPrintingList(true); }}
+                  className={exportItemClass}
+                >
+                  <ListChecks className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">چاپ فهرست (PDF)</span>
+                </button>
+              </div>
+
+              <div className="py-1">
+                <div className={exportHeadingClass}>تفکیک دسته‌بندی</div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
+                  className={exportItemClass}
+                >
+                  <span className="font-mono text-2xs text-muted-foreground w-16 shrink-0">All</span>
+                  <span className="flex-1">گزارش تجمیعی کل آرشیو</span>
                 </button>
                 {Object.entries(categoryLabels).map(([key, labelData]) => (
                   <button
                     key={key}
                     type="button"
+                    role="menuitem"
                     onClick={() => { setExportMenuOpen(false); handleExportCategory(key, labelData.fa); }}
-                    className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
+                    className={exportItemClass}
                   >
-                    <span className="font-mono text-2xs text-muted-foreground">{key}</span>
-                    <span>گزارش {labelData.fa}</span>
+                    <span className="font-mono text-2xs text-muted-foreground w-16 shrink-0 truncate">{key}</span>
+                    <span className="flex-1">گزارش {labelData.fa}</span>
                   </button>
                 ))}
               </div>
