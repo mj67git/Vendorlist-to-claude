@@ -1,6 +1,7 @@
 import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 /**
  * One active colour for the whole navigation.
@@ -59,13 +60,22 @@ export function AppSidebarButton({
 }: AppSidebarButtonProps) {
   const tile = iconTint[variant] || iconTint.home;
   const hasAlert = typeof alert === 'number' && alert > 0;
+  /**
+   * The count survives the collapse.
+   *
+   * A collapsed rail used to drop every badge except the alert, so the one
+   * thing the narrow sidebar is for — telling you at a glance that six records
+   * are waiting — was exactly what it stopped telling you. An alert still wins
+   * the corner when there is one: two numbers on a 28px tile is not a glance.
+   */
+  const collapsedCount = !hasAlert && badge !== undefined && String(badge).length > 0 ? String(badge) : null;
 
-  return (
+  const button = (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
       className={cn(
         'w-full flex items-center rounded-xl text-xs font-semibold transition-all duration-200 text-right group relative cursor-pointer',
         collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2',
@@ -81,6 +91,18 @@ export function AppSidebarButton({
         <Icon className="w-4 h-4" aria-hidden="true" />
         {collapsed && hasAlert && (
           <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 bg-rose-600 text-white text-2xs font-bold rounded-full flex items-center justify-center">{alert}</span>
+        )}
+        {collapsed && collapsedCount && (
+          <span
+            className={cn(
+              'absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 text-2xs font-bold rounded-full flex items-center justify-center border',
+              active
+                ? 'bg-primary text-primary-foreground border-primary-foreground/40'
+                : 'bg-muted text-muted-foreground border-border'
+            )}
+          >
+            {collapsedCount}
+          </span>
         )}
       </div>
 
@@ -112,5 +134,27 @@ export function AppSidebarButton({
         </span>
       )}
     </button>
+  );
+
+  if (!collapsed) return button;
+
+  /**
+   * The collapsed rail says what each icon is, using the application's own
+   * tooltip rather than the browser's.
+   *
+   * `title` was doing this job, and doing it badly: the native tip waits about
+   * a second before appearing, renders in the operating system's style rather
+   * than the interface's, and is the one part of the rail a keyboard user
+   * could not reach. The Radix tooltip is mounted with a 200ms delay in
+   * main.tsx and opens on focus as well as hover.
+   */
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="left" sideOffset={8}>
+        <span className="font-semibold">{label}</span>
+        {hasAlert && <span className="mr-1.5 text-rose-300 dark:text-rose-400">({alert} نیازمند توجه)</span>}
+      </TooltipContent>
+    </Tooltip>
   );
 }
