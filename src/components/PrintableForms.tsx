@@ -12,8 +12,8 @@ import { criterionCell, departmentNote, earnedCell } from '../utils/printableSco
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { describeSampleStatus, isSampleRecord } from '../utils/sampleStatus';
-import { isVendorRejected } from '../utils/vendorState';
-import { toJalaliDisplay } from '../utils/dateDisplay';
+import { BLACKLIST_SCORE_FLOOR, describeRejection, isVendorRejected } from '../utils/vendorState';
+import { formatLogTimestamp, toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
 import { describeRankForRecord, describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
@@ -58,24 +58,74 @@ function printAndReport(label: string, rows?: number) {
  * shape of the «سورس منتخب» band directly below it, so the two read as one
  * family of statements about the record.
  *
- * One sentence, no reason and no date: the request was a label, not an
- * explanation, and the grounds are already on the record itself.
+ * The band states the fact; the grounds sit under it. Four roads lead to this
+ * status and on a filed document they are not the same statement — a supplier
+ * turned down by a named person is not one whose weighted score fell below the
+ * floor, and neither is a batch that failed on the bench. `describeRejection`
+ * decides which, for this form and for the source page alike.
  *
  * The heavy border and the bold type carry it on a black-and-white copy, where
  * the fill is the first thing to go.
  */
-function BlacklistBand() {
+function BlacklistBand({ vendor }: { vendor: Vendor }) {
+  const account = describeRejection(vendor);
+  const stamp = [account?.by, formatLogTimestamp(account?.at)].filter(Boolean).join(' · ');
+
   return (
-    <div className="flex items-stretch border-2 border-red-700 rounded-xl mb-6 overflow-hidden text-right bg-red-50">
-      <div className="px-4 py-3 bg-red-700 text-white flex items-center gap-2 shrink-0">
-        <AlertTriangle className="w-5 h-5" />
-        <span className="font-bold text-sm whitespace-nowrap">لیست سیاه</span>
+    <div className="border-2 border-red-700 rounded-xl mb-6 overflow-hidden text-right bg-red-50">
+      <div className="flex items-stretch">
+        <div className="px-4 py-3 bg-red-700 text-white flex items-center gap-2 shrink-0">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="font-bold text-sm whitespace-nowrap">لیست سیاه</span>
+        </div>
+        <div className="flex-1 p-3 flex items-center">
+          <span className="font-bold text-[13px] text-red-900">
+            این تأمین‌کننده در لیست سیاه قرار دارد.
+          </span>
+        </div>
       </div>
-      <div className="flex-1 p-3 flex items-center">
-        <span className="font-bold text-[13px] text-red-900">
-          این تأمین‌کننده در لیست سیاه قرار دارد.
-        </span>
-      </div>
+
+      {account && (
+        <div className="border-t-2 border-red-700 bg-white px-4 py-2.5 text-[11px] leading-relaxed text-slate-800">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-bold text-red-900">دلیل رد:</span>
+            <span className="font-bold">{account.title}</span>
+            {stamp && <span className="text-slate-500">— ثبت‌کننده: {stamp}</span>}
+          </div>
+
+          {/* The number is the reason on this path: nobody wrote a sentence,
+              and the floor is what the derivation applied. */}
+          {account.cause === 'score' && typeof account.score === 'number' && (
+            <p className="mt-1">
+              امتیاز وزنی این سورس <span className="font-mono font-bold">{account.score.toLocaleString('fa-IR')}</span> از ۱۰۰ است،
+              پایین‌تر از مرز <span className="font-mono font-bold">{BLACKLIST_SCORE_FLOOR.toLocaleString('fa-IR')}</span>.
+            </p>
+          )}
+
+          {account.reasons.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {account.reasons.map((reason, i) => (
+                <li key={i} className="flex gap-1.5">
+                  <span className="text-red-700 font-bold shrink-0">•</span>
+                  <span className="whitespace-pre-wrap">{reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* `unknown` needs no line of its own: its title already says there
+              is nothing recorded, and repeating it would be the form explaining
+              an absence twice. Said plainly rather than papered over — a row
+              carrying the verdict and nothing else is what the old automatic
+              rule left behind, and a filed document must not invent grounds. */}
+
+          {account.cause === 'lab' && account.reasons.length === 0 && (
+            <p className="mt-1 text-slate-600">
+              بر اساس نتیجهٔ مردود ثبت‌شده در بخش نتایج آزمایشگاهی همین فرم.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -321,7 +371,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
              {/* A sample reaches this state from a single Reject on the bench
                  (rule 11), which is exactly the result this form reports — so
                  the band belongs here as much as on the source form. */}
-             {isVendorRejected(vendor) && <BlacklistBand />}
+             {isVendorRejected(vendor) && <BlacklistBand vendor={vendor} />}
 
              {/* Meta Info */}
              <div className="flex flex-col border-2 border-slate-300 rounded-xl mb-6 overflow-hidden text-sm bg-slate-50/50 text-right">
@@ -677,7 +727,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
 
              {/* Above the selection band, because a disqualification outranks
                  every other statement the sheet makes about this supplier. */}
-             {isVendorRejected(vendor) && <BlacklistBand />}
+             {isVendorRejected(vendor) && <BlacklistBand vendor={vendor} />}
 
              {/* The recorded decision, printed only when there is one.
                  A form that said "chosen: no" on every other source would be

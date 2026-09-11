@@ -193,3 +193,101 @@ export function latestScoreEvaluationLog(v: AnyVendor): { action: string; date?:
   }
   return null;
 }
+
+/** The weighted total below which the derivation blacklists a scored source. */
+export const BLACKLIST_SCORE_FLOOR = 40;
+
+/** Which of the four roads brought this record to the blacklist. */
+export type RejectionCause = 'admin' | 'stated' | 'lab' | 'score' | 'sample-decision' | 'unknown';
+
+export interface RejectionAccount {
+  cause: RejectionCause;
+  /** The heading a reader sees: «رد صریح توسط کاربر», «نتیجهٔ آزمایشگاه» … */
+  title: string;
+  /** The recorded lines, exactly as they were recorded. Never invented. */
+  reasons: string[];
+  /** Who recorded it and when, where a log carries that. */
+  by?: string;
+  at?: string;
+  /** The weighted total, for the one cause that is a number rather than a sentence. */
+  score?: number;
+}
+
+const CAUSE_TITLES: Record<RejectionCause, string> = {
+  admin: 'رد صریح توسط کاربر',
+  stated: 'دلیل ثبت‌شده در پروندهٔ سورس',
+  lab: 'نتیجهٔ آزمایشگاه',
+  score: 'امتیاز کسب‌شده',
+  'sample-decision': 'تصمیم کیفی نمونه',
+  unknown: 'دلیلی در سامانه ثبت نشده است',
+};
+
+/**
+ * Why this record is on the blacklist.
+ *
+ * Four different roads lead here and on a document that is signed and filed
+ * they are not the same statement: a supplier turned down by a named person is
+ * not a supplier whose weighted score fell below the floor, and neither is a
+ * batch that failed on the bench. The printed form said only «لیست سیاه» and
+ * left the reader to guess which.
+ *
+ * The source page already worked this out, inline, and could not be read from
+ * anywhere else — which is exactly how the spreadsheet and the printed form
+ * came to disagree about the rank twice this week. This is that determination,
+ * once, for both of them.
+ *
+ * The order is the order of evidence: a decision somebody signed outranks a
+ * line the system derived. Where nothing at all was recorded the answer is
+ * `unknown` and says so — a blank is the truth for the legacy rows that carry
+ * `status: 'rejected'` and nothing else, and inventing a reason for a GxP
+ * record is worse than admitting there is none.
+ */
+export function describeRejection(v: AnyVendor): RejectionAccount | null {
+  if (!isVendorRejected(v)) return null;
+
+  const account = (cause: RejectionCause, extra: Partial<RejectionAccount> = {}): RejectionAccount => ({
+    cause,
+    title: CAUSE_TITLES[cause],
+    reasons: [],
+    ...extra,
+  });
+
+  // A sample is ruled on by the laboratory, and that verdict carries its own
+  // reason, name and date in the activity log.
+  if (isSampleVendor(v)) {
+    const log = sampleDecisionLog(v);
+    if (log) {
+      const text = log.action.replace(new RegExp(`^${SAMPLE_DECISION_PREFIX}:\\s*`), '').trim();
+      return account('sample-decision', {
+        reasons: text ? [text] : [],
+        by: log.user,
+        at: log.date,
+      });
+    }
+  }
+
+  const decision = adminRejectionReason(v);
+  if (decision) return account('admin', { reasons: [decision] });
+
+  // Anything else somebody typed: the vendor form writes here too.
+  const stated = manualReasons(v).filter(r => r.trim());
+  if (stated.length > 0) return account('stated', { reasons: stated });
+
+  // The laboratory records themselves, and the lines that mirror them.
+  if (hasQcReject(v)) {
+    const qcLines = (Array.isArray(v?.rejectionReasons) ? v.rejectionReasons : [])
+      .filter((r: unknown) => typeof r === 'string' && r.startsWith(QC_REASON_PREFIX));
+    return account('lab', { reasons: qcLines });
+  }
+
+  // Nothing written anywhere: the only thing that can have put a scored source
+  // here is the floor. `applyDerivedState` stamps the status from the same
+  // number the page prints, so the two cannot disagree.
+  const score = calculateOverallScore(v?.scores ?? null, true);
+  if (typeof score === 'number' && score < BLACKLIST_SCORE_FLOOR) {
+    const log = latestScoreEvaluationLog(v);
+    return account('score', { score, by: log?.user, at: log?.date });
+  }
+
+  return account('unknown');
+}

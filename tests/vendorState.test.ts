@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isInCategoryRegister, isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX, latestScoreEvaluationLog, SCORE_EVALUATION_PREFIX } from '../src/utils/vendorState';
+import { isInCategoryRegister, isVendorRejected, isInBlacklistCategory, applyDerivedState, hasQcReject, adminRejectionReason, ADMIN_REJECT_PREFIX, latestScoreEvaluationLog, SCORE_EVALUATION_PREFIX, describeRejection } from '../src/utils/vendorState';
 
 const sample = (over: any = {}) => ({
   id: 'S1', isSample: true, category: 'sample',
@@ -201,4 +201,60 @@ test('a sample filed under an ordinary category belongs to one register, not two
   const ordinary: any = { id: 'V2', category: 'foreign', isSample: false, status: 'new', grade: '' };
   assert.equal(isInCategoryRegister(ordinary, 'foreign'), true);
   assert.equal(isInCategoryRegister(ordinary, 'sample'), false);
+});
+
+test('the reason a record is blacklisted is named, and never invented', () => {
+  /*
+   * Four roads reach this state and a signed document must say which. The
+   * printed form said only «لیست سیاه»; the source page worked it out inline
+   * and nobody else could read that. This is the shared determination.
+   */
+
+  // Nothing is on the blacklist until it is.
+  assert.equal(describeRejection(source()), null);
+
+  // An explicit decision outranks everything else, including a low score.
+  const decided = source({
+    status: 'rejected',
+    rejectionReasons: [`${ADMIN_REJECT_PREFIX} مدیر سیستم: تخلف در مدارک`],
+    scores: { commercial: 10, qa: 10, planning: 10, finance: 10 },
+  });
+  const byAdmin = describeRejection(decided)!;
+  assert.equal(byAdmin.cause, 'admin');
+  assert.match(byAdmin.reasons[0], /تخلف در مدارک/);
+
+  // A laboratory Reject, with no sentence written anywhere.
+  const lab = describeRejection(source({ status: 'rejected', analysisRecords: [reject()] }))!;
+  assert.equal(lab.cause, 'lab');
+
+  // The floor: no text, a weighted total below 40, and the scoring log names
+  // who recorded it.
+  const low = describeRejection(source({
+    status: 'rejected',
+    scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
+    activityLogs: [{ action: `${SCORE_EVALUATION_PREFIX}: ثبت`, user: 'کارشناس کیفیت', date: '1405-06-06T09:56:00.000Z' }],
+  }))!;
+  assert.equal(low.cause, 'score');
+  assert.ok(low.score !== undefined && low.score < 40);
+  assert.equal(low.by, 'کارشناس کیفیت');
+
+  // A rejection nothing accounts for says so. Claiming the score put it there
+  // would be arithmetically false — the total is 70 — on the one panel whose
+  // job is to explain the decision.
+  const unexplained = describeRejection(source({
+    status: 'rejected',
+    scores: { commercial: 70, qa: 70, planning: 70, finance: 70 },
+  }))!;
+  assert.equal(unexplained.cause, 'unknown');
+  assert.deepEqual(unexplained.reasons, []);
+  assert.equal(unexplained.score, undefined);
+
+  // A sample carries the laboratory's recorded verdict, with its own reason.
+  const ruled = describeRejection(sample({
+    status: 'rejected',
+    activityLogs: [{ action: 'تصمیم کیفی نمونه: خارج از مشخصات', user: 'مدیر کیفیت', date: '1405-06-07T08:00:00.000Z' }],
+  }))!;
+  assert.equal(ruled.cause, 'sample-decision');
+  assert.equal(ruled.reasons[0], 'خارج از مشخصات');
+  assert.equal(ruled.by, 'مدیر کیفیت');
 });

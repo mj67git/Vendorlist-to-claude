@@ -61,3 +61,49 @@ describe('the blacklist band on the printed form', () => {
     expect(screen.queryByText('خرید خارجی')).toBeNull();
   });
 });
+
+describe('why it is on the blacklist', () => {
+  /*
+   * The band said *that* it is; four different roads lead there and on a filed
+   * document they are not the same statement. These hold each road to naming
+   * itself, and hold the one with no recorded grounds to admitting that rather
+   * than borrowing an explanation from another.
+   */
+
+  test('an explicit decision prints the sentence that was recorded', () => {
+    show(vendor({
+      status: 'rejected',
+      rejectionReasons: ['رد توسط مدیر سیستم: عدم تطابق مدارک GMP'],
+    }));
+    expect(screen.getByText('رد صریح توسط کاربر')).toBeTruthy();
+    expect(screen.getByText(/عدم تطابق مدارک GMP/)).toBeTruthy();
+  });
+
+  test('a laboratory rejection names the laboratory', () => {
+    show(vendor({
+      status: 'rejected',
+      analysisRecords: [{
+        id: 'a1', qcCode: 'QC-1', decision: 'Reject', date: '1404/01/01',
+        deviationReason: 'None', comments: '', recordedBy: 'آزمایشگاه',
+      }],
+    }));
+    expect(screen.getByText('نتیجهٔ آزمایشگاه')).toBeTruthy();
+  });
+
+  test('a score-driven rejection prints the number and the floor', () => {
+    show(vendor({
+      status: 'rejected',
+      scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
+    }));
+    expect(screen.getByText('امتیاز کسب‌شده')).toBeTruthy();
+    expect(screen.getByText(/از ۱۰۰ است/)).toBeTruthy();
+  });
+
+  test('a rejection with nothing recorded says exactly that', () => {
+    // A score of 70 is not why this is on the blacklist, and the form must not
+    // pretend otherwise.
+    show(vendor({ status: 'rejected', scores: { commercial: 70, qa: 70, planning: 70, finance: 70 } }));
+    expect(screen.getByText(/دلیلی در سامانه ثبت نشده است/)).toBeTruthy();
+    expect(screen.queryByText(/از مرز/)).toBeNull();
+  });
+});

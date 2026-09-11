@@ -19,7 +19,7 @@ import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
-import { ADMIN_REJECT_PREFIX, adminRejectionReason, SAMPLE_DECISION_PREFIX, sampleDecisionLog, latestScoreEvaluationLog } from '../../utils/vendorState';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason, describeRejection, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -971,14 +971,24 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                       text without isolation broke across lines as
                       «-conformities):». */}
                   {(() => {
+                    /*
+                     * Which road brought it here is decided by
+                     * `describeRejection`, shared with the printed form — the
+                     * determination used to live only in this block, so the PDF
+                     * could not say the same thing and said nothing instead.
+                     *
+                     * The list below still prints every recorded line: the
+                     * shared account names the *cause*, and the page keeps
+                     * showing all the evidence under it.
+                     */
+                    const account = describeRejection(vendor);
                     const stated = (vendor.rejectionReasons || []).filter(r => typeof r === 'string' && r.trim());
-                    const scoreLog = latestScoreEvaluationLog(vendor);
                     // Through the shared formatter, not raw: the stored value is
                     // a machine timestamp («1405-06-06T09:56:00.000Z») and it
                     // was being printed at the reader as one.
-                    const scoreStamp = formatLogTimestamp(scoreLog?.date);
-                    const stamp = scoreLog
-                      ? `${scoreLog.user ? `${scoreLog.user}` : 'کاربر سیستم'}${scoreStamp ? ` · ${scoreStamp}` : ''}`
+                    const scoreStamp = formatLogTimestamp(account?.at);
+                    const stamp = account?.by || scoreStamp
+                      ? `${account?.by || 'کاربر سیستم'}${scoreStamp ? ` · ${scoreStamp}` : ''}`
                       : null;
 
                     if (stated.length > 0) {
@@ -997,10 +1007,19 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                       );
                     }
 
-                    // Derived from the score, which is the only thing that put
-                    // it here. `overall` is the same weighted total the header
-                    // circle shows, so the banner and the number agree.
-                    const scored = overall !== null;
+                    /*
+                     * Derived from the score — but only when the score is what
+                     * put it here.
+                     *
+                     * This used to ask `overall !== null`, so a source rejected
+                     * some other way that still carried a perfectly good score
+                     * was told its «امتیاز وزنی ۷۰ … از مرز ۴۰ پایین‌تر» — a
+                     * sentence that is arithmetically false, on the panel whose
+                     * whole job is to explain the decision. The shared account
+                     * only reports `score` when nothing else accounts for it and
+                     * the total is genuinely under the floor.
+                     */
+                    const scored = account?.cause === 'score' && typeof account.score === 'number';
                     return (
                       <>
                         <p className="text-rose-700 dark:text-rose-300 text-sm mb-4 max-w-2xl font-semibold">
@@ -1011,16 +1030,22 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                         {scored && (
                           <div className="bg-card border border-rose-100 dark:border-rose-800 px-4 py-3 rounded-xl text-sm font-medium shadow-sm space-y-1.5">
                             <p className="text-rose-800 dark:text-rose-300 leading-relaxed">
-                              امتیاز وزنی این سورس <span className="font-mono font-black">{overall?.toLocaleString('fa-IR')}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
+                              امتیاز وزنی این سورس <span className="font-mono font-black">{account?.score?.toLocaleString('fa-IR')}</span> از ۱۰۰ است و از مرز <span className="font-mono font-black">۴۰</span> پایین‌تر؛ سورس با امتیاز کمتر از این مرز به لیست سیاه می‌رود.
                             </p>
                             {stamp && (
                               <p className="text-2xs text-muted-foreground">آخرین ثبت امتیاز: {stamp}</p>
                             )}
                           </div>
                         )}
-                        <p className="text-2xs text-rose-700 dark:text-rose-400 mt-3 leading-relaxed">
-                          این وضعیت ذخیره نشده، بلکه از امتیازها محاسبه می‌شود: با اصلاح امتیاز دپارتمان‌ها و رسیدن به ۴۰ یا بالاتر، خودبه‌خود برداشته می‌شود.
-                        </p>
+                        {/* Only where it is true. A rejection that nothing
+                            accounts for lives in the stored status, so telling
+                            that reader to raise the department scores promises a
+                            restore that will not happen. */}
+                        {scored && (
+                          <p className="text-2xs text-rose-700 dark:text-rose-400 mt-3 leading-relaxed">
+                            این وضعیت ذخیره نشده، بلکه از امتیازها محاسبه می‌شود: با اصلاح امتیاز دپارتمان‌ها و رسیدن به ۴۰ یا بالاتر، خودبه‌خود برداشته می‌شود.
+                          </p>
+                        )}
                       </>
                     );
                   })()}
