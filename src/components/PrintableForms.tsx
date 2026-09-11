@@ -12,9 +12,10 @@ import { criterionCell, departmentNote, earnedCell } from '../utils/printableSco
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { describeSampleStatus, isSampleRecord } from '../utils/sampleStatus';
-import { toJalaliDisplay } from '../utils/dateDisplay';
+import { BLACKLIST_SCORE_FLOOR, describeRejection, isVendorRejected } from '../utils/vendorState';
+import { formatLogTimestamp, toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
-import { describeVendorRank } from '../utils/vendorRank';
+import { describeRankForRecord, describeVendorRank } from '../utils/vendorRank';
 import { formatSelectionDate, type SourceSelectionRecord } from '../utils/sourceSelection';
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
@@ -40,6 +41,93 @@ import temadLogo from '../assets/logo.png';
 function printAndReport(label: string, rows?: number) {
   reportDataOut('data.printed', label, rows);
   setTimeout(() => window.print(), 100);
+}
+
+/**
+ * The band that says this supplier is disqualified.
+ *
+ * Nothing on the printed form said so. The rank block prints the grade the
+ * departments recorded, and a source keeps that grade after it is blacklisted —
+ * so a disqualified supplier could be filed on a signed document reading
+ * «Grade B», while the spreadsheet exported from the same screen said
+ * `Blacklist`.
+ *
+ * A band rather than a diagonal watermark, deliberately: on a controlled
+ * document a diagonal stamp reads as DRAFT or VOID, which would say the wrong
+ * thing — that the *document* is void rather than the supplier. It takes the
+ * shape of the «سورس منتخب» band directly below it, so the two read as one
+ * family of statements about the record.
+ *
+ * The band states the fact; the grounds sit under it. Four roads lead to this
+ * status and on a filed document they are not the same statement — a supplier
+ * turned down by a named person is not one whose weighted score fell below the
+ * floor, and neither is a batch that failed on the bench. `describeRejection`
+ * decides which, for this form and for the source page alike.
+ *
+ * The heavy border and the bold type carry it on a black-and-white copy, where
+ * the fill is the first thing to go.
+ */
+function BlacklistBand({ vendor }: { vendor: Vendor }) {
+  const account = describeRejection(vendor);
+  const stamp = [account?.by, formatLogTimestamp(account?.at)].filter(Boolean).join(' · ');
+
+  return (
+    <div className="border-2 border-red-700 rounded-xl mb-6 overflow-hidden text-right bg-red-50">
+      <div className="flex items-stretch">
+        <div className="px-4 py-3 bg-red-700 text-white flex items-center gap-2 shrink-0">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="font-bold text-sm whitespace-nowrap">لیست سیاه</span>
+        </div>
+        <div className="flex-1 p-3 flex items-center">
+          <span className="font-bold text-[13px] text-red-900">
+            این تأمین‌کننده در لیست سیاه قرار دارد.
+          </span>
+        </div>
+      </div>
+
+      {account && (
+        <div className="border-t-2 border-red-700 bg-white px-4 py-2.5 text-[11px] leading-relaxed text-slate-800">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-bold text-red-900">دلیل رد:</span>
+            <span className="font-bold">{account.title}</span>
+            {stamp && <span className="text-slate-500">— ثبت‌کننده: {stamp}</span>}
+          </div>
+
+          {/* The number is the reason on this path: nobody wrote a sentence,
+              and the floor is what the derivation applied. */}
+          {account.cause === 'score' && typeof account.score === 'number' && (
+            <p className="mt-1">
+              امتیاز وزنی این سورس <span className="font-mono font-bold">{account.score.toLocaleString('fa-IR')}</span> از ۱۰۰ است،
+              پایین‌تر از مرز <span className="font-mono font-bold">{BLACKLIST_SCORE_FLOOR.toLocaleString('fa-IR')}</span>.
+            </p>
+          )}
+
+          {account.reasons.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {account.reasons.map((reason, i) => (
+                <li key={i} className="flex gap-1.5">
+                  <span className="text-red-700 font-bold shrink-0">•</span>
+                  <span className="whitespace-pre-wrap">{reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* `unknown` needs no line of its own: its title already says there
+              is nothing recorded, and repeating it would be the form explaining
+              an absence twice. Said plainly rather than papered over — a row
+              carrying the verdict and nothing else is what the old automatic
+              rule left behind, and a filed document must not invent grounds. */}
+
+          {account.cause === 'lab' && account.reasons.length === 0 && (
+            <p className="mt-1 text-slate-600">
+              بر اساس نتیجهٔ مردود ثبت‌شده در بخش نتایج آزمایشگاهی همین فرم.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 
@@ -135,7 +223,10 @@ export function PrintableArchiveList({
                 // a total of zero means nobody has scored this source — both
                 // used to print as "new (۰)" and "— (۰)", which read on paper
                 // like a real, failing evaluation.
-                const gradeText = describeVendorRank(v).label;
+                // The same string the spreadsheet prints for this row: a
+                // blacklisted source says so here too, instead of showing the
+                // grade it earned before it was turned down.
+                const gradeText = describeRankForRecord(v);
                 // A sample is not scored by the departments and not risk
                 // assessed, so on paper it carries the laboratory's verdict and
                 // says plainly that the other two questions do not apply —
@@ -277,6 +368,11 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
                 </div>
              </div>
 
+             {/* A sample reaches this state from a single Reject on the bench
+                 (rule 11), which is exactly the result this form reports — so
+                 the band belongs here as much as on the source form. */}
+             {isVendorRejected(vendor) && <BlacklistBand vendor={vendor} />}
+
              {/* Meta Info */}
              <div className="flex flex-col border-2 border-slate-300 rounded-xl mb-6 overflow-hidden text-sm bg-slate-50/50 text-right">
                 {/* Row 1: دسته کالا | نام کالا (نام فارسی ماده اولیه) | محصول نهایی | نام تولید کننده و کشور */}
@@ -284,12 +380,17 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center border-l border-slate-300">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">دسته کالا:</span>
                       <span className="font-bold text-xs">
-                        {vendor.category === 'foreign' ? 'خرید خارجی' :
+                        {/* «لیست سیاه» is a state, not a column. Reading
+                            `category` alone printed a source that had been
+                            disqualified by decision — but was still filed under
+                            its original register — as an ordinary «خرید خارجی»
+                            (rule 11). */}
+                        {isVendorRejected(vendor) ? 'لیست سیاه' :
+                         vendor.category === 'foreign' ? 'خرید خارجی' :
                          vendor.category === 'domestic' ? 'خرید داخلی' :
                          vendor.category === 'veterinary' ? 'خرید دامی' :
                          vendor.category === 'packaging' ? 'اقلام بسته‌بندی' :
-                         vendor.category === 'sample' ? 'نمونه' :
-                         vendor.category === 'blacklist' ? 'لیست سیاه' : 'نامشخص'}
+                         vendor.category === 'sample' ? 'نمونه' : 'نامشخص'}
                       </span>
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center border-l border-slate-300">
@@ -624,6 +725,10 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                 </div>
              </div>
 
+             {/* Above the selection band, because a disqualification outranks
+                 every other statement the sheet makes about this supplier. */}
+             {isVendorRejected(vendor) && <BlacklistBand vendor={vendor} />}
+
              {/* The recorded decision, printed only when there is one.
                  A form that said "chosen: no" on every other source would be
                  noise on a document that is signed and filed; the absence of
@@ -661,12 +766,17 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center border-l border-slate-300">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">دسته کالا:</span>
                       <span className="font-bold text-xs">
-                        {vendor.category === 'foreign' ? 'خرید خارجی' :
+                        {/* «لیست سیاه» is a state, not a column. Reading
+                            `category` alone printed a source that had been
+                            disqualified by decision — but was still filed under
+                            its original register — as an ordinary «خرید خارجی»
+                            (rule 11). */}
+                        {isVendorRejected(vendor) ? 'لیست سیاه' :
+                         vendor.category === 'foreign' ? 'خرید خارجی' :
                          vendor.category === 'domestic' ? 'خرید داخلی' :
                          vendor.category === 'veterinary' ? 'خرید دامی' :
                          vendor.category === 'packaging' ? 'اقلام بسته‌بندی' :
-                         vendor.category === 'sample' ? 'نمونه' :
-                         vendor.category === 'blacklist' ? 'لیست سیاه' : 'نامشخص'}
+                         vendor.category === 'sample' ? 'نمونه' : 'نامشخص'}
                       </span>
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center border-l border-slate-300">
@@ -1108,7 +1218,21 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                     {/* Left Section: Supplier Rank */}
                     <div className="flex items-center gap-3">
                       <div className="text-xs text-slate-500 font-bold font-semibold">رتبه تأمین کننده:</div>
-                      {isEvaluated ? (
+                      {/* The state outranks the arithmetic. A blacklisted source
+                          keeps the grade its departments recorded, so printing
+                          the letter alone filed a disqualified supplier as
+                          «Grade B» — while the spreadsheet from the same screen
+                          said `Blacklist (69)`. Both say the same thing now, and
+                          the earned grade stays on the sheet because it is still
+                          evidence of the assessment that was made. */}
+                      {isVendorRejected(vendor) ? (
+                        <div className="px-3 h-12 rounded-lg flex flex-col items-center justify-center bg-red-700 text-white text-[11px] font-black text-center leading-tight shadow-md">
+                          <span>لیست سیاه</span>
+                          {ranked.grade && (
+                            <span className="font-bold text-[10px] opacity-90">گرید کسب‌شده: {ranked.grade}</span>
+                          )}
+                        </div>
+                      ) : isEvaluated ? (
                         <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white text-2xl font-black shadow-md ${getScoreColorClass(overall, true)}`}>
                            {rank.label}
                         </div>

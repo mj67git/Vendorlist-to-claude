@@ -11,11 +11,11 @@ import * as XLSXModule from 'xlsx-js-style';
 import type * as XLSX from 'xlsx-js-style';
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { Vendor, BusinessPartner, Material } from '../types';
-import { isVendorRejected, isInCategoryRegister } from './vendorState';
+import { isInCategoryRegister } from './vendorState';
 import { describeSampleStatus, isSampleRecord } from './sampleStatus';
 import { formatContactLine, resolveVendorPartner } from './vendorPartner';
 import { formatSelectionDate, selectionForVendor, type SourceSelectionRecord } from './sourceSelection';
-import { describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
+import { describeRankForRecord, describeVendorRank, UNEVALUATED_LABEL } from './vendorRank';
 import { calculateOverallScore } from './vendorUtils';
 import { canSupplySources, describeGrade } from './sopEvaluation';
 import { getMaterialRole } from '../constants/materialRoles';
@@ -221,13 +221,13 @@ export function buildCategoryWorksheet(
 
   // Map to Excel rows (with 1-based indexing)
   const dataRows = sortedVendors.map((v, index) => {
-    // One rank scale for a source, shared with the printed form (vendorRank.ts).
-    // A rejected source keeps saying so: blacklisting is a state the register
-    // must show, and it outranks whatever the arithmetic says.
+    // One rank scale for a source, and one rule for what a filed document says
+    // it is (vendorRank.ts). A rejected source keeps saying so: blacklisting is
+    // a state the register must show, and it outranks whatever the arithmetic
+    // says. This used to be written out here and nowhere else, which is exactly
+    // why the printed form disagreed with this sheet.
     const rank = describeVendorRank(v);
-    const scoreStr = isVendorRejected(v)
-      ? (rank.score !== null ? `Blacklist (${rank.score})` : 'Blacklist')
-      : rank.label;
+    const scoreStr = describeRankForRecord(v);
 
     const riskText = getRiskLevelFa(v.riskAssessment?.riskLevel);
 

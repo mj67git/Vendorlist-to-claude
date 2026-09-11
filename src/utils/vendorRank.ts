@@ -1,5 +1,6 @@
 import type { Vendor } from '../types';
 import { calculateOverallScore } from './vendorUtils';
+import { isVendorRejected } from './vendorState';
 
 /**
  * The one rank scale for a *source*.
@@ -99,4 +100,26 @@ export function describeVendorRank(vendor: Pick<Vendor, 'scores' | 'grade'> | nu
   }
 
   return unevaluated;
+}
+
+/**
+ * What a *filed document* says this source is.
+ *
+ * `describeVendorRank` answers "what did the departments score", which is not
+ * the same question. A source on the blacklist keeps whatever grade it earned
+ * before it was turned down, so the rank alone reads «Grade B» on a form that
+ * gets signed and archived — with nothing anywhere on the sheet saying the
+ * supplier is disqualified.
+ *
+ * The spreadsheet already knew this and printed `Blacklist (69)`; the printed
+ * form did not, so two exports of one record made two different claims. This is
+ * that rule, in one place, for both of them.
+ *
+ * The earned score stays in the string on purpose: the state is the headline,
+ * and the assessment behind it is still evidence.
+ */
+export function describeRankForRecord(vendor: Vendor | null | undefined): string {
+  const rank = describeVendorRank(vendor);
+  if (!isVendorRejected(vendor)) return rank.label;
+  return rank.score !== null ? `Blacklist (${rank.score})` : 'Blacklist';
 }
