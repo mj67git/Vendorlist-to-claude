@@ -71,10 +71,37 @@ test('only A, B and C are grades; anything else means no grade yet', () => {
   // showed a scored verdict for a source nobody had scored.
   for (const grade of ['new', null, undefined, 'unknown']) {
     const verdict = describeVendorGrade(grade as never, 'new' as never, null);
-    assert.equal(verdict.label, 'جدید', `grade «${grade}» must not read as a grade`);
+    assert.equal(verdict.label, 'ارزیابی‌نشده', `grade «${grade}» must not read as a grade`);
+    assert.equal(verdict.variant, 'stage', 'no grade yet is a process step, not a verdict');
   }
-  assert.equal(describeVendorGrade('A' as never, 'approved' as never, null).label, 'Grade A');
-  assert.equal(describeVendorGrade('C' as never, 'conditional' as never, null).label, 'Grade C');
+  assert.equal(describeVendorGrade('A' as never, 'approved' as never, null).label, 'گرید A');
+  assert.equal(describeVendorGrade('C' as never, 'conditional' as never, null).label, 'گرید C');
+});
+
+/**
+ * A grade is a judgement; «not evaluated» is the absence of one.
+ *
+ * They used to share colours: blue carried both «Grade B» and «جدید», amber
+ * both «Grade C» and «در حال ارزیابی». In the one column a quality reviewer
+ * scans to decide whether a source may be bought from, an unassessed record
+ * looked exactly like a passing one.
+ */
+test('a process step never borrows a grade colour', () => {
+  const stages = [
+    describeVendorGrade('new' as never, 'new' as never, null),
+    describeVendorGrade('new' as never, 'new' as never, {
+      commercial: 80, qa: 0, planning: 0, finance: 0,
+    } as never),
+  ];
+  for (const stage of stages) {
+    assert.equal(stage.variant, 'stage');
+    assert.equal(stage.dotColor, null, 'a step carries no colour of its own');
+  }
+  const grades = ['A', 'B', 'C'].map(g => describeVendorGrade(g as never, 'approved' as never, null));
+  for (const grade of grades) {
+    assert.ok(grade.dotColor, 'a grade is a judgement and keeps its colour');
+    assert.notEqual(grade.variant, 'stage');
+  }
 });
 
 test('a part-scored source says so, and a rejected one stays rejected', () => {
@@ -82,6 +109,7 @@ test('a part-scored source says so, and a rejected one stays rejected', () => {
     commercial: 80, qa: 0, planning: 0, finance: 0,
   } as never);
   assert.equal(partly.label, 'در حال ارزیابی');
+  assert.equal(partly.variant, 'stage');
 
   const rejected = describeVendorGrade('new' as never, 'rejected' as never, null);
   assert.equal(rejected.label, 'لیست سیاه');

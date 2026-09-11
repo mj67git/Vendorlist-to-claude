@@ -28,6 +28,12 @@ const badgeVariants = cva(
           "border-amber-500/30 bg-amber-50 text-amber-700 font-bold dark:bg-amber-950/50 dark:text-amber-300 shadow-xs",
         gradeReject:
           "border-rose-500/30 bg-rose-50 text-rose-700 font-bold dark:bg-rose-950/50 dark:text-rose-300 shadow-xs",
+        // A step in the process, not a verdict. Deliberately unfilled: a filled
+        // badge reads as a decision somebody made, and «not evaluated yet» is
+        // the absence of one. Keeping it neutral is what stops «جدید» from
+        // looking like the blue of Grade B.
+        stage:
+          "border-border bg-transparent text-muted-foreground font-semibold",
       },
     },
     defaultVariants: {

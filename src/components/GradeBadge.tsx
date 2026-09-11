@@ -10,12 +10,13 @@ interface GradeBadgeProps {
   className?: string;
 }
 
-export type GradeBadgeTone = 'gradeA' | 'gradeB' | 'gradeC' | 'gradeReject' | 'warning' | 'info';
+export type GradeBadgeTone = 'gradeA' | 'gradeB' | 'gradeC' | 'gradeReject' | 'stage';
 
 export interface VendorGradeVerdict {
   label: string;
   variant: GradeBadgeTone;
-  dotColor: string;
+  /** Null for a process step, which carries no colour of its own. */
+  dotColor: string | null;
 }
 
 /**
@@ -37,16 +38,16 @@ export function describeVendorGrade(
   if (status === 'rejected' || grade === 'rejected' || grade === 'black list') {
     return { label: 'لیست سیاه', variant: 'gradeReject', dotColor: 'bg-rose-500' };
   }
-  if (grade === 'A') return { label: 'Grade A', variant: 'gradeA', dotColor: 'bg-emerald-500' };
-  if (grade === 'B') return { label: 'Grade B', variant: 'gradeB', dotColor: 'bg-blue-500' };
-  if (grade === 'C') return { label: 'Grade C', variant: 'gradeC', dotColor: 'bg-amber-500' };
+  if (grade === 'A') return { label: 'گرید A', variant: 'gradeA', dotColor: 'bg-emerald-500' };
+  if (grade === 'B') return { label: 'گرید B', variant: 'gradeB', dotColor: 'bg-blue-500' };
+  if (grade === 'C') return { label: 'گرید C', variant: 'gradeC', dotColor: 'bg-amber-500' };
 
   // No grade. Part-way through the departmental scoring is worth saying, since
   // it is the difference between "nobody has started" and "three of four are in".
   if (hasSomeScores && !isFullyScored) {
-    return { label: 'در حال ارزیابی', variant: 'warning', dotColor: 'bg-amber-500' };
+    return { label: 'در حال ارزیابی', variant: 'stage', dotColor: null };
   }
-  return { label: 'جدید', variant: 'info', dotColor: 'bg-blue-500' };
+  return { label: 'ارزیابی‌نشده', variant: 'stage', dotColor: null };
 }
 
 export function GradeBadge({ grade, status, scores, className }: GradeBadgeProps) {
@@ -54,7 +55,7 @@ export function GradeBadge({ grade, status, scores, className }: GradeBadgeProps
 
   return (
     <Badge variant={variant} className={cn("gap-1.5 py-1 px-3 text-2xs font-bold tracking-normal shadow-xs", className)}>
-      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 animate-pulse", dotColor)} />
+      {dotColor && <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", dotColor)} />}
       <span>{label}</span>
     </Badge>
   );
