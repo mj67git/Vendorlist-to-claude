@@ -502,7 +502,29 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
 
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* On a phone the same five figures are a strip, not a grid.
+          Five tiles in two columns leave one alone in the last row, and the
+          block cost about 340px of an 844px screen — so the first row of the
+          register, which is what this page is for, started below the fold. The
+          desktop grid is unchanged; only the narrow case is rewritten. */}
+      <div className="sm:hidden -mt-2 mb-4 flex flex-wrap gap-x-4 gap-y-1.5 text-2xs">
+        {[
+          { label: 'کل', value: archiveStats.total, tone: 'text-foreground' },
+          { label: 'سورس', value: archiveStats.sources, tone: 'text-indigo-600 dark:text-indigo-300' },
+          { label: 'نمونه', value: archiveStats.samples, tone: 'text-primary' },
+          { label: 'منتخب', value: selectedCount, tone: 'text-amber-600 dark:text-amber-300' },
+          { label: 'لیست سیاه', value: archiveStats.blacklisted, tone: 'text-rose-600 dark:text-rose-300' },
+        ].map(s => (
+          <span key={s.label} className="flex items-baseline gap-1">
+            <span className={`font-mono font-bold text-xs ${s.tone}`}>
+              {isLoading ? '—' : s.value.toLocaleString('fa-IR')}
+            </span>
+            <span className="text-muted-foreground">{s.label}</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="hidden sm:grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           { label: 'کل رکوردها', hint: 'Total Records', value: archiveStats.total, icon: Archive,
             tone: 'bg-muted text-foreground border-border' },
