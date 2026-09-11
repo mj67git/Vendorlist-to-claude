@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ChevronDown, ClipboardList, Download, ExternalLink, FileText, ListChecks, Printer, Search, ShieldAlert, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
+import { Badge } from '../../components/ui/badge';
 import { GradeBadge } from '../../components/GradeBadge';
 import { cn } from '../../lib/utils';
 import { Pagination } from '../../components/Pagination';
@@ -748,7 +749,7 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
                           is already printed in the category cell, so this one
                           says plainly that the question does not apply. */}
                       {isSampleRecord(v) ? (
-                        <span className="text-2xs text-muted-foreground" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</span>
+                        <Badge variant="stage" className="text-2xs" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</Badge>
                       ) : (
                         <GradeBadge grade={describeVendorRank(v).grade} status={v.status} scores={v.scores} />
                       )}
@@ -757,20 +758,27 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
                       {/* "Not assessed" is a finding of its own — the risk
                           backlog on the dashboard counts exactly these — so it
                           is named rather than left blank. */}
+                      {/* One shape for the whole column. The three risk levels
+                          were already badges, but hand-rolled with their own
+                          radius and their own copy of the three tones, and
+                          «ارزیابی نشده» was bare text beside them — so the
+                          absence of an assessment read as data rather than as
+                          the finding it is. The levels use the semantic badge
+                          variants, and the missing one uses `stage`, the same
+                          neutral badge a source with no grade yet carries. */}
                       {isSampleRecord(v) ? (
                         <span className="text-2xs text-muted-foreground" title="برای نمونه ارزیابی ریسک انجام نمی‌شود">—</span>
                       ) : risk ? (
-                        <span className={`text-2xs font-bold px-2 py-0.5 rounded-md border ${
-                          risk === 'High'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900'
-                            : risk === 'Medium'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900'
-                        }`}>
+                        <Badge
+                          variant={risk === 'High' ? 'destructive' : risk === 'Medium' ? 'warning' : 'success'}
+                          className="text-2xs font-bold"
+                        >
                           {RISK_LABEL[risk] || risk}
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="text-2xs text-muted-foreground">ارزیابی نشده</span>
+                        <Badge variant="stage" className="text-2xs" title="ارزیابی ریسک برای این سورس ثبت نشده است">
+                          ارزیابی نشده
+                        </Badge>
                       )}
                     </td>
                     <td className="py-3 px-4 min-w-0 hidden sm:table-cell">
