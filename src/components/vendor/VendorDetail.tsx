@@ -3,6 +3,7 @@ import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLe
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '../../components/ui/button';
 import { EntityName } from '../../components/EntityName';
+import { GRADE_LABELS } from '../../utils/sopEvaluation';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
 import { ScoreCard } from '../../components/ScoringGuide';
@@ -439,14 +440,10 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
   return (
     <div className="space-y-6 fade-in relative pb-10 text-right">
       
-      {/* Back Button */}
-      <button 
-        onClick={onBack}
-        className="group flex items-center gap-2 mb-6 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit font-medium"
-      >
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        <span>بازگشت به لیست</span>
-      </button>
+      {/* No back button here on purpose. The header already carries two ways
+          up — the «برگشت» control and the full breadcrumb — and a third one
+          stacked beneath them was the same action offered three times inside
+          120 pixels. The breadcrumb is the one that also says where you are. */}
 
       {showConfirmDelete && (
         <div className="mb-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl p-6 text-center fade-in shadow-sm">
@@ -496,27 +493,73 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
               </span>
             </div>
             
-            <div className="text-right">
-              {/* The partner, labelled by the role it actually has. */}
-              <div className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight mb-1">
-                <span>{sourcePartner.roleLabel}: {sourcePartner.name}</span>
-                {sourcePartner.country && (
-                  <>
-                    <span className="mx-3 sm:mx-4 text-border font-normal">|</span>
-                    <span>کشور: {sourcePartner.country}</span>
-                  </>
-                )}
+            <div className="text-right min-w-0">
+              {/* A source is a company in a role — seller or maker — buying one
+                  material. The role leads as an eyebrow so the name itself can
+                  be the heading instead of sharing the line with its own label,
+                  and the material joins the subtitle: the card used to name
+                  neither the material nor the source's own record. */}
+              <div className="text-2xs font-bold text-muted-foreground mb-0.5">{sourcePartner.roleLabel}</div>
+              <EntityName
+                name={sourcePartner.name}
+                lines={2}
+                className="font-bold text-foreground text-lg sm:text-xl lg:text-2xl leading-tight"
+              />
+              <div className="text-xs sm:text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                {vendor.material && <span className="font-semibold text-foreground/80">{vendor.material}</span>}
+                {sourcePartner.country && <><span className="text-border">·</span><span>{sourcePartner.country}</span></>}
+                <span className="text-border">·</span>
+                <span className="font-mono text-2xs">{vendor.id}</span>
               </div>
 
-              {/* A source used to claim "bought straight from the maker" whenever
-                  its partner happened to be a manufacturer. Manufacturers and
-                  suppliers are independent records now, so that link says
-                  nothing about whether a middleman exists. */}
-              {sourcePartner.grade ? (
-                <div className="font-normal text-muted-foreground text-xs sm:text-sm leading-relaxed mt-1 max-w-[75ch]">
-                  <span>گرید ارزیابی فروشنده: {sourcePartner.grade}</span>
+              {/* Both verdicts, together and labelled.
+                  A source carries its own departmental grade, and when the
+                  partner is a seller it also carries the SOP grade of that
+                  seller — two different rubrics on two different scales. They
+                  used to sit at opposite ends of the card (the ring top-right,
+                  the badge bottom-left) with the seller's grade as grey body
+                  text, so nobody read them as the pair they are. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
+                <div className="flex items-center gap-1.5">
+                  {/* A sample is decided, not graded — it never gets a
+                      departmental score, so calling its verdict a «grade»
+                      would name a thing this record cannot have. */}
+                  <span className="text-2xs text-muted-foreground">
+                    {isSampleRecord(vendor) ? 'وضعیت نمونه' : 'گرید سورس'}
+                  </span>
+                  {isSampleRecord(vendor) ? (
+                    <Badge
+                      variant={describeSampleStatus(vendor).variant}
+                      className="gap-1.5 py-1 px-3 text-xs font-bold shadow-2xs"
+                    >
+                      <ClipboardCheck className="w-4 h-4 shrink-0" />
+                      {describeSampleStatus(vendor).title}
+                    </Badge>
+                  ) : (
+                    <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                  )}
                 </div>
-              ) : null}
+
+                {sourcePartner.role === 'supplier' && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-2xs text-muted-foreground">گرید فروشنده</span>
+                    {(() => {
+                      const key = (sourcePartner.grade || 'Not Evaluated') as keyof typeof GRADE_LABELS;
+                      const meta = GRADE_LABELS[key] || GRADE_LABELS['Not Evaluated'];
+                      const scored = key !== 'Not Evaluated';
+                      return (
+                        <span className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-2xs font-bold',
+                          meta.tone,
+                        )}>
+                          {scored && <span className="font-mono">{key}</span>}
+                          <span>{meta.fa}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           
@@ -547,27 +590,6 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
               )}
             </div>
 
-            {/* Label وضعیت / گرید */}
-            <div className="mt-1">
-              {isSampleRecord(vendor) ? (
-                /* From `describeSampleStatus`, like the eight other surfaces
-                   that show a sample's verdict — and for the reason that helper
-                   exists. This badge used to be a three-way ternary with no
-                   fourth branch, so a sample registered five seconds ago, with
-                   no laboratory record and nobody's decision behind it, was
-                   announced as «مردود» on its own page. A verdict nobody gave
-                   is the one thing this screen must never state. */
-                <Badge
-                  variant={describeSampleStatus(vendor).variant}
-                  className="gap-1.5 py-1 px-3 text-xs font-bold shadow-2xs"
-                >
-                  <ClipboardCheck className="w-4 h-4 shrink-0" />
-                  {describeSampleStatus(vendor).title}
-                </Badge>
-              ) : (
-                <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
-              )}
-            </div>
           </div>
         </div>
       </div>
