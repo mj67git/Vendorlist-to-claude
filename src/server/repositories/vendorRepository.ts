@@ -218,13 +218,42 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
       where: vendorId || window ? { id: { in: materialIds } } : {},
       select: { id: true, name: true, nameEn: true, cas: true, irc: true },
     });
-    const evaluations = await prisma.evaluation.findMany({ where: only });
+    // Newest first, explicitly. Without an order the database returns rows in
+    // whatever physical order it likes — which an UPDATE or a VACUUM can change
+    // — and the map below keeps the last one it sees, so a source with more
+    // than one evaluation answered differently from one request to the next.
+    const evaluations = await prisma.evaluation.findMany({
+      where: only,
+      orderBy: { createdAt: "desc" },
+    });
     const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });
     const riskRows = await prisma.riskAssessment.findMany({ where: only });
     const analysisRows = await prisma.analysisRecord.findMany({ where: only, orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
-    const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
+    // Which material each source currently supplies. Built here because the
+    // evaluation map below picks the row that matches it.
+    const linkByVendor = new Map<string, any>();
+    for (const vm of vendorMaterials) {
+      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
+    }
+
+    /**
+     * One evaluation per source, chosen rather than stumbled upon.
+     *
+     * The row for the material the source currently supplies is the right one;
+     * the newest is the fallback for a record whose link is missing. Building
+     * the map from `evaluations.map(...)` kept whichever row came last in an
+     * unordered result, which is how the same source reported two different
+     * scores.
+     */
+    const evaluationsMap = new Map<string, any>();
+    for (const ev of evaluations) {
+      const current = evaluationsMap.get(ev.vendorId);
+      const link = linkByVendor.get(ev.vendorId);
+      if (!current) { evaluationsMap.set(ev.vendorId, ev); continue; }
+      if (link && ev.materialId === link.materialId) evaluationsMap.set(ev.vendorId, ev);
+    }
 
     const logsByVendor = new Map<string, any[]>();
     activityLogRows.forEach(log => {
@@ -271,10 +300,6 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     // Indexed by vendor rather than scanned per vendor: the previous .find()
     // inside this loop made the list endpoint O(n²) — at 1,200 vendors that is
     // over a million comparisons for a single request.
-    const linkByVendor = new Map<string, any>();
-    for (const vm of vendorMaterials) {
-      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
-    }
 
     const result: any[] = [];
     for (const v of vendors) {
@@ -564,6 +589,17 @@ export async function saveVendorToDb(
 
     // Delete any old links for this vendor that point to a different material
     await prisma.vendorMaterial.deleteMany({
+      where: {
+        vendorId: id,
+        materialId: { not: materialId }
+      }
+    });
+
+    // …and the evaluation that was keyed to it. The link was being cleaned up
+    // and the evaluation was not, so changing a source's material left a row
+    // scoring it against a material it no longer supplies — which is what gave
+    // the read two candidates to choose between in the first place.
+    await prisma.evaluation.deleteMany({
       where: {
         vendorId: id,
         materialId: { not: materialId }

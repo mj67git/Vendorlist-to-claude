@@ -12,7 +12,7 @@ import {
   forbiddenSampleScoring, forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
 } from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
-import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
+import { ircViolation, sopPartnerViolation } from "../domain/sourceRules.js";
 import { settleSourceVerdict } from "../domain/sourceVerdict.js";
 import {
   CALCULATION_WEIGHTS,
@@ -390,7 +390,7 @@ export function vendorRoutes(): express.Router {
         return res.status(422).json({ error: ircError });
       }
 
-      const sopError = await sopSupplierViolation((v as any).supplierId, (existing as any)?.supplierId);
+      const sopError = await sopPartnerViolation(v as any, existing as any);
       if (sopError) {
         recordEvent(req, {
           event: "access.denied",
@@ -520,7 +520,7 @@ export function vendorRoutes(): express.Router {
         return res.status(422).json({ error: ircError });
       }
 
-      const sopError = await sopSupplierViolation((updatedVendor as any).supplierId, (current as any).supplierId);
+      const sopError = await sopPartnerViolation(updatedVendor as any, current as any);
       if (sopError) {
         recordEvent(req, {
           event: "access.denied",
