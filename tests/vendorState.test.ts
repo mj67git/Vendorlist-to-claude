@@ -258,3 +258,59 @@ test('the reason a record is blacklisted is named, and never invented', () => {
   assert.equal(ruled.reasons[0], 'خارج از مشخصات');
   assert.equal(ruled.by, 'مدیر کیفیت');
 });
+
+/**
+ * A source disqualified by its score can be qualified again by a better one.
+ *
+ * `applyDerivedState` writes `status: 'rejected'` when the weighted score falls
+ * below 40, and `isVendorRejected` reads that same column back as a verdict. So
+ * the second call sees the stamp the first one left, returns true before
+ * reaching the scoring branch, and re-stamps the record. The scores can never
+ * lift it out again.
+ *
+ * Two records with identical scores then sit in opposite states, decided
+ * entirely by their history. This is the one-way latch the project believed it
+ * had already removed for `grade` — it survived through `status`.
+ *
+ * Note what is NOT being claimed here: a rejection somebody *recorded* must
+ * still hold, and the tests above hold it to that. Only a rejection that the
+ * arithmetic produced may be undone by better arithmetic.
+ */
+test('a score-driven rejection is reversed by a better score', () => {
+  const rejected = applyDerivedState(source({
+    scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
+  }));
+  assert.equal(isVendorRejected(rejected), true, 'below the floor, the source is out');
+  assert.equal(rejected.status, 'rejected');
+
+  // The departments correct their entries. Same record, better numbers.
+  const rescored = applyDerivedState({
+    ...rejected,
+    scores: { commercial: 90, qa: 90, planning: 90, finance: 90 },
+  });
+
+  assert.equal(
+    isVendorRejected(rescored), false,
+    'a rejection the score produced must be undone when the score changes',
+  );
+  assert.equal(rescored.grade, 'A');
+  assert.equal(rescored.status, 'approved');
+});
+
+test('two sources with the same scores reach the same verdict', () => {
+  // The clearest statement of the defect: history must not decide this.
+  const viaRejection = applyDerivedState(applyDerivedState(source({
+    scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
+  })));
+  const rescored = applyDerivedState({
+    ...viaRejection,
+    scores: { commercial: 85, qa: 85, planning: 85, finance: 85 },
+  });
+  const fresh = applyDerivedState(source({
+    scores: { commercial: 85, qa: 85, planning: 85, finance: 85 },
+  }));
+
+  assert.equal(rescored.grade, fresh.grade);
+  assert.equal(rescored.status, fresh.status);
+  assert.equal(isVendorRejected(rescored), isVendorRejected(fresh));
+});
