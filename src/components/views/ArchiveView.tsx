@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ChevronDown, ClipboardList, Download, ExternalLink, FileText, ListChecks, Printer, Search, ShieldAlert, Star, X } from 'lucide-react';
 import { EntityName } from '../../components/EntityName';
+import { Badge } from '../../components/ui/badge';
 import { GradeBadge } from '../../components/GradeBadge';
 import { cn } from '../../lib/utils';
 import { Pagination } from '../../components/Pagination';
@@ -40,6 +41,13 @@ const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 const GRADE_ORDER: Record<string, number> = { A: 4, B: 3, C: 2, D: 1, rejected: 0, 'black list': 0 };
 
 const RISK_LABEL: Record<string, string> = { High: 'بالا', Medium: 'متوسط', Low: 'پایین' };
+
+/** The export menu's rows and its group headings, written once. */
+const exportItemClass =
+  'w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary ' +
+  'font-medium transition-colors flex items-center gap-2';
+const exportHeadingClass =
+  'px-4 pt-1 pb-1.5 text-2xs font-bold text-muted-foreground tracking-wider select-none';
 
 export function ArchiveView({ vendors, currentUser, partners = [], materials = [], onSelectVendor, isLoading = false }: {
   vendors: Vendor[],
@@ -375,100 +383,106 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
             file leaving the building. */}
         {canExport && (
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Primary Action: Multi-Sheet Comprehensive Workbook Export */}
-          <Button
-            type="button"
-            variant="success"
-            size="sm"
-            onClick={() => excel.run(
-              xl => xl.exportFullArchiveMultiSheetExcel(vendors, partners, materials, selections),
-              { label: 'آرشیو کامل (چند شیتی)', rows: vendors.length },
-            )}
-            disabled={excel.busy}
-            title="دانلود خروجی جامع چند شیتی شامل کل آرشیو و تفکیک کلیه ۶ دسته‌بندی"
-          >
-            <Download />
-            <span>خروجی اکسل چند شیتی (Multi-Sheet XLSX)</span>
-          </Button>
+          {/* One export control, not four.
+              The loudest button on this page used to be the multi-sheet
+              workbook — filled green, larger than everything around it — and
+              it is the rarest of the four exports. Nothing else on the archive
+              competes for the eye, so the page pointed at the thing almost
+              nobody needs, in a colour no other primary action in the
+              application uses.
 
-          {/* Print the list itself. "PDF" in this module used to mean one
-              evaluation form for one source; the register as a whole could only
-              leave as a spreadsheet, which is not a document anyone signs. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setPrintingList(true)}
-            title="چاپ همین فهرست (با فیلترهای اعمال‌شده) — قابل ذخیره به‌صورت PDF"
-          >
-            <ListChecks className="text-primary" />
-            <span>چاپ فهرست (PDF)</span>
-          </Button>
-
-          {/* The spreadsheet counterpart of the print button. Both other export
-              buttons ignore the filters on screen — deliberately, they are
-              "the whole archive" and "one category" — so someone who had
-              narrowed the list down had no way to export what they were
-              looking at. The sheet carries the same filter caption the printed
-              register carries, so an extract cannot be mistaken for the whole. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => excel.run(
-              xl => xl.exportCategoryToExcel(
-                filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
-              ),
-              { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
-            )}
-            disabled={excel.busy}
-            title="خروجی اکسل از همین فهرست، با فیلترهای اعمال‌شده"
-          >
-            <Download className="text-primary" />
-            <span>خروجی نمای فعلی ({filteredDb.length.toLocaleString('fa-IR')})</span>
-          </Button>
-
-          {/* Secondary menu: one category at a time.
-              It used to open on `group-hover` alone — unreachable from the
-              keyboard (Tab then Enter did nothing) and unusable on a tablet,
-              where there is no hover at all. It is a real menu now: a button
-              that toggles, Escape and an outside click to dismiss. */}
+              The menu below was already a real menu (Escape, outside click,
+              aria-expanded), so the other three moved into it rather than a
+              new one being built. Order is by how often the work actually
+              happens: the filtered view first, the whole register next, one
+              category last. */}
           <div className="relative" ref={exportMenuRef}>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setExportMenuOpen(o => !o)}
+              disabled={excel.busy}
               aria-haspopup="menu"
               aria-expanded={exportMenuOpen}
+              title="خروجی اکسل یا چاپ فهرست"
             >
-              <FileText className="text-primary" />
-              <span>خروجی تک‌دسته‌ای</span>
+              <Download className="text-primary" />
+              <span>خروجی</span>
               <ChevronDown className={`text-muted-foreground transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </Button>
 
-            <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-2xl shadow-xl py-2 z-20 divide-y divide-border text-right">
-              <div className="px-3.5 py-2 text-2xs font-bold text-muted-foreground bg-muted/50 rounded-t-2xl tracking-wider select-none">
-                انتخاب دسته‌بندی جهت خروجی تک‌شیت
-              </div>
+            <div role="menu" hidden={!exportMenuOpen} className="absolute left-0 mt-2 w-72 bg-card border border-border rounded-2xl shadow-xl py-1 z-20 divide-y divide-border text-right">
               <div className="py-1">
+                <div className={exportHeadingClass}>نمای فعلی</div>
                 <button
                   type="button"
-                  onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
-                  className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
+                  role="menuitem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    excel.run(
+                      xl => xl.exportCategoryToExcel(
+                        filteredDb, 'all', 'نمای_فیلترشده', partners, materials, selections, filterSummary,
+                      ),
+                      { label: 'آرشیو — نمای فیلترشده', rows: filteredDb.length },
+                    );
+                  }}
+                  className={exportItemClass}
                 >
-                  <span className="font-mono text-2xs text-muted-foreground">All</span>
-                  <span>گزارش تجمیعی کل آرشیو</span>
+                  <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">اکسل از همین فهرست ({filteredDb.length.toLocaleString('fa-IR')} ردیف)</span>
+                </button>
+              </div>
+
+              <div className="py-1">
+                <div className={exportHeadingClass}>کل آرشیو</div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    excel.run(
+                      xl => xl.exportFullArchiveMultiSheetExcel(vendors, partners, materials, selections),
+                      { label: 'آرشیو کامل (چند شیتی)', rows: vendors.length },
+                    );
+                  }}
+                  className={exportItemClass}
+                >
+                  <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">اکسل چند شیتی — همهٔ دسته‌ها</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setExportMenuOpen(false); setPrintingList(true); }}
+                  className={exportItemClass}
+                >
+                  <ListChecks className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="flex-1">چاپ فهرست (PDF)</span>
+                </button>
+              </div>
+
+              <div className="py-1">
+                <div className={exportHeadingClass}>تفکیک دسته‌بندی</div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setExportMenuOpen(false); handleExportCategory('all', 'کل_آرشیو'); }}
+                  className={exportItemClass}
+                >
+                  <span className="font-mono text-2xs text-muted-foreground w-16 shrink-0">All</span>
+                  <span className="flex-1">گزارش تجمیعی کل آرشیو</span>
                 </button>
                 {Object.entries(categoryLabels).map(([key, labelData]) => (
                   <button
                     key={key}
                     type="button"
+                    role="menuitem"
                     onClick={() => { setExportMenuOpen(false); handleExportCategory(key, labelData.fa); }}
-                    className="w-full text-right px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-primary font-medium transition-colors flex items-center justify-between"
+                    className={exportItemClass}
                   >
-                    <span className="font-mono text-2xs text-muted-foreground">{key}</span>
-                    <span>گزارش {labelData.fa}</span>
+                    <span className="font-mono text-2xs text-muted-foreground w-16 shrink-0 truncate">{key}</span>
+                    <span className="flex-1">گزارش {labelData.fa}</span>
                   </button>
                 ))}
               </div>
@@ -489,7 +503,29 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
 
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* On a phone the same five figures are a strip, not a grid.
+          Five tiles in two columns leave one alone in the last row, and the
+          block cost about 340px of an 844px screen — so the first row of the
+          register, which is what this page is for, started below the fold. The
+          desktop grid is unchanged; only the narrow case is rewritten. */}
+      <div className="sm:hidden -mt-2 mb-4 flex flex-wrap gap-x-4 gap-y-1.5 text-2xs">
+        {[
+          { label: 'کل', value: archiveStats.total, tone: 'text-foreground' },
+          { label: 'سورس', value: archiveStats.sources, tone: 'text-indigo-600 dark:text-indigo-300' },
+          { label: 'نمونه', value: archiveStats.samples, tone: 'text-primary' },
+          { label: 'منتخب', value: selectedCount, tone: 'text-amber-600 dark:text-amber-300' },
+          { label: 'لیست سیاه', value: archiveStats.blacklisted, tone: 'text-rose-600 dark:text-rose-300' },
+        ].map(s => (
+          <span key={s.label} className="flex items-baseline gap-1">
+            <span className={`font-mono font-bold text-xs ${s.tone}`}>
+              {isLoading ? '—' : s.value.toLocaleString('fa-IR')}
+            </span>
+            <span className="text-muted-foreground">{s.label}</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="hidden sm:grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           { label: 'کل رکوردها', hint: 'Total Records', value: archiveStats.total, icon: Archive,
             tone: 'bg-muted text-foreground border-border' },
@@ -713,7 +749,7 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
                           is already printed in the category cell, so this one
                           says plainly that the question does not apply. */}
                       {isSampleRecord(v) ? (
-                        <span className="text-2xs text-muted-foreground" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</span>
+                        <Badge variant="stage" className="text-2xs" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</Badge>
                       ) : (
                         <GradeBadge grade={describeVendorRank(v).grade} status={v.status} scores={v.scores} />
                       )}
@@ -722,20 +758,27 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
                       {/* "Not assessed" is a finding of its own — the risk
                           backlog on the dashboard counts exactly these — so it
                           is named rather than left blank. */}
+                      {/* One shape for the whole column. The three risk levels
+                          were already badges, but hand-rolled with their own
+                          radius and their own copy of the three tones, and
+                          «ارزیابی نشده» was bare text beside them — so the
+                          absence of an assessment read as data rather than as
+                          the finding it is. The levels use the semantic badge
+                          variants, and the missing one uses `stage`, the same
+                          neutral badge a source with no grade yet carries. */}
                       {isSampleRecord(v) ? (
                         <span className="text-2xs text-muted-foreground" title="برای نمونه ارزیابی ریسک انجام نمی‌شود">—</span>
                       ) : risk ? (
-                        <span className={`text-2xs font-bold px-2 py-0.5 rounded-md border ${
-                          risk === 'High'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900'
-                            : risk === 'Medium'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900'
-                        }`}>
+                        <Badge
+                          variant={risk === 'High' ? 'destructive' : risk === 'Medium' ? 'warning' : 'success'}
+                          className="text-2xs font-bold"
+                        >
                           {RISK_LABEL[risk] || risk}
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="text-2xs text-muted-foreground">ارزیابی نشده</span>
+                        <Badge variant="stage" className="text-2xs" title="ارزیابی ریسک برای این سورس ثبت نشده است">
+                          ارزیابی نشده
+                        </Badge>
                       )}
                     </td>
                     <td className="py-3 px-4 min-w-0 hidden sm:table-cell">

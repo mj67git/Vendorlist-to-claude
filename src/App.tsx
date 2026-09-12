@@ -36,6 +36,27 @@ const WorklistView = React.lazy(() => import('./components/views/WorklistView').
 const VendorDetail = React.lazy(() => import('./components/vendor/VendorDetail').then(m => ({ default: m.VendorDetail })));
 
 /** What a page looks like while its code is on the way. */
+/**
+ * A heading between groups of sidebar entries — and a rule when there is no
+ * room for words.
+ *
+ * Collapsed, these used to disappear outright, which left fourteen icons in one
+ * undifferentiated column: nothing said where the source registers ended and
+ * the repositories began. A hairline keeps the grouping the expanded rail
+ * teaches, and `aria-hidden` keeps it out of the screen reader, which already
+ * hears each destination named by its own label.
+ */
+function SidebarSection({ collapsed, children }: { collapsed: boolean; children: React.ReactNode }) {
+  return (
+    <>
+      <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${collapsed ? 'md:hidden' : ''}`}>
+        <span>{children}</span>
+      </div>
+      {collapsed && <div className="hidden md:block mx-2 my-2 border-t border-border" aria-hidden="true" />}
+    </>
+  );
+}
+
 function PageLoading() {
   return (
     <div className="w-full py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -1998,9 +2019,7 @@ export default function App() {
             />
 
             {can(currentUser, 'vendor.read') && (
-            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
-              <span>دسته‌بندی‌ها</span>
-            </div>
+            <SidebarSection collapsed={sidebarCollapsed}>دسته‌بندی‌ها</SidebarSection>
             )}
             {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][])
               // Two of the categories are their own read since the granular
@@ -2023,9 +2042,7 @@ export default function App() {
             })}
 
             {(can(currentUser, 'partner.read') || can(currentUser, 'material.read')) && (
-            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
-              <span>مدیریت پایگاه داده</span>
-            </div>
+            <SidebarSection collapsed={sidebarCollapsed}>مدیریت پایگاه داده</SidebarSection>
             )}
             {can(currentUser, 'partner.read') && (
               <SidebarButton collapsed={sidebarCollapsed}
@@ -2048,9 +2065,7 @@ export default function App() {
 
             {(can(currentUser, 'archive.read') || can(currentUser, 'audit.read')
               || can(currentUser, 'users.read') || can(currentUser, 'supplier-audit.read')) && (
-            <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${sidebarCollapsed ? 'md:hidden' : ''}`}>
-              <span>کیفیت و نظارت</span>
-            </div>
+            <SidebarSection collapsed={sidebarCollapsed}>کیفیت و نظارت</SidebarSection>
             )}
             {/* Each entry is gated by the permission its page and endpoints
                 actually check, not by `role === 'admin'`. A raw role test here
