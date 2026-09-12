@@ -63,9 +63,43 @@ function hasManualRejection(v: AnyVendor): boolean {
 }
 
 /**
+ * Is this source below the qualification floor on the numbers alone?
+ *
+ * Computed from the scores every time rather than read back from a column, and
+ * that is the whole point: a verdict the arithmetic produced has to be able to
+ * change when the arithmetic does. A partly scored source is not below the
+ * floor — it has no weighted score yet.
+ */
+export function scoreBelowFloor(v: AnyVendor): boolean {
+  if (!v || isSampleVendor(v)) return false;
+  const s = v.scores;
+  const fullyScored = s && s.commercial > 0 && s.qa > 0 && s.planning > 0 && s.finance > 0;
+  if (!fullyScored) return false;
+  return (calculateOverallScore(s, true) || 0) < BLACKLIST_SCORE_FLOOR;
+}
+
+/**
  * The one predicate every counter, filter and badge must use.
- * Deliberately does NOT consider `grade`: grade is derived from this, so reading
- * it back here is what created the one-way latch.
+ *
+ * Deliberately does NOT consider `grade` or `status`. Both are *outputs* of
+ * this function — `applyDerivedState` writes them from what it returns — so
+ * reading either one back is how a one-way latch forms. `grade` was taken out
+ * for that reason once; `status` survived the same fix and did the same thing.
+ *
+ * What it cost: a source that fell below the floor had `status: 'rejected'`
+ * written, and the next call read that stamp, returned true before reaching the
+ * scoring branch, and re-stamped the record. Better scores could never lift it
+ * out. Two sources with identical numbers sat in opposite states, decided
+ * entirely by which of them had once scored badly.
+ *
+ * The three grounds are now stated separately, and each is read from the thing
+ * that actually establishes it:
+ *
+ *   - `rejectedByDecision` — a person decided. Persists until a person
+ *     reverses it, which is what a decision means.
+ *   - a recorded rejection reason — the older way the same decision was
+ *     written, still honoured.
+ *   - the score — computed live, so it reverses itself when the score does.
  */
 export function isVendorRejected(v: AnyVendor): boolean {
   if (!v) return false;
@@ -84,8 +118,28 @@ export function isVendorRejected(v: AnyVendor): boolean {
     return hasManualRejection(v) || v.status === 'rejected';
   }
   // A source is never auto-rejected by a single lab failure — only by an
-  // explicit decision (the admin reject box, or the vendor form).
-  return v.category === 'blacklist' || hasManualRejection(v) || v.status === 'rejected';
+  // explicit decision (the admin reject box, or the vendor form) or by falling
+  // below the qualification floor on its own scores.
+  if (v.category === 'blacklist' || hasManualRejection(v)) return true;
+
+  /**
+   * A record that predates the decision column still answers for itself.
+   *
+   * Everything that comes through the API carries an explicit boolean — the
+   * repository writes one on every save and reads one on every load — so
+   * `undefined` here means an object older than the column: a browser cache
+   * written by the previous version, a fixture, an import. For those, the old
+   * reading of `status` is the only record of the verdict there is, and
+   * dropping it would silently re-qualify suppliers a person had disqualified.
+   *
+   * Same shape as `LEGACY_PERMISSIONS`: the retired spelling keeps being
+   * understood on the way in, and nothing is written in it again.
+   */
+  if (v.rejectedByDecision === undefined) {
+    return v.status === 'rejected' || scoreBelowFloor(v);
+  }
+
+  return v.rejectedByDecision === true || scoreBelowFloor(v);
 }
 
 /**
@@ -97,6 +151,15 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
 
   if (isVendorRejected(v)) {
     return { ...v, status: 'rejected', grade: 'rejected' };
+  }
+
+  // Reaching here means the record is not rejected, so any stamp left by a
+  // cause that has since gone — a score that has recovered, a decision that was
+  // reversed — is stale and has to come off. `status` is cleared as well as
+  // `grade` now: leaving it at 'rejected' was what fed the latch, and the
+  // scoring branch below writes the right one anyway for a fully scored source.
+  if (!isSampleVendor(v) && v.status === 'rejected') {
+    v = { ...v, status: 'new' } as T;
   }
 
   // Not rejected: clear any stale rejection stamp left by a cause that is gone.

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { requirePrisma } from "../db/prisma.js";
 import { generateSalt, hashPassword } from "../security/passwordService.js";
 
@@ -11,13 +12,40 @@ import { generateSalt, hashPassword } from "../security/passwordService.js";
  * Moved out of server.ts unchanged.
  */
 
-export const DEFAULT_USERS: Array<{ username: string; password: string; role: string; name: string }> = [
-  { username: "admin", password: "123456", role: "admin", name: "مدیر سیستم" },
-  { username: "commercial", password: "123", role: "commercial", name: "واحد بازرگانی" },
-  { username: "qa", password: "123", role: "qa", name: "واحد کیفیت" },
-  { username: "planning", password: "123", role: "planning", name: "واحد برنامه‌ریزی و انبار" },
-  { username: "finance", password: "123", role: "finance", name: "واحد مالی" },
+/**
+ * The one account a fresh installation needs, and nothing more.
+ *
+ * Four departmental accounts used to be provisioned beside the administrator,
+ * all of them with the password `123`, on any database whose `users` table was
+ * empty — which is every new production installation. The deployment guide
+ * announced the administrator's password and said nothing about the other
+ * four, so a site could go live with four working sign-ins nobody had been
+ * told existed.
+ *
+ * The remaining account's password is generated per installation and printed
+ * once to the server log rather than written here, so it is not a value anyone
+ * can look up in the source. The real accounts are created by the
+ * administrator, in the user-management screen, with the units the site
+ * actually has.
+ */
+export const DEFAULT_USERS: Array<{ username: string; role: string; name: string }> = [
+  { username: "admin", role: "admin", name: "مدیر سیستم" },
 ];
+
+/**
+ * A first password that is not a secret anyone else already knows.
+ *
+ * Readable rather than maximally dense on purpose: somebody has to copy it out
+ * of a server log once and type it in. It is single-use — the account is
+ * created with `mustChangePassword`, and the server now enforces that rather
+ * than merely asking (see `requireAuth`).
+ */
+function generateInitialPassword(): string {
+  // Ambiguous characters left out: no O/0, no I/l/1.
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = randomBytes(20);
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join("");
+}
 
 export const ALLOWED_USER_ROLES = ["admin", "lab", "commercial", "qa", "planning", "finance"] as const;
 export type UserRoleValue = (typeof ALLOWED_USER_ROLES)[number];
@@ -71,19 +99,35 @@ export async function seedDefaultUsers() {
   const prisma = requirePrisma();
   const count = await prisma.user.count();
   if (count > 0) return;
-  console.log("[UsersDB] Seeding default users into PostgreSQL (first startup)...");
+  console.log("[UsersDB] Seeding the administrator account into PostgreSQL (first startup)...");
   for (const u of DEFAULT_USERS) {
     const salt = generateSalt();
+    const password = process.env.VLSE_INITIAL_ADMIN_PASSWORD || generateInitialPassword();
     await prisma.user.create({
       data: {
         username: u.username.toLowerCase(),
         name: u.name,
         role: normalizeUserRole(u.role) as any,
-        passwordHash: hashPassword(u.password, salt),
+        passwordHash: hashPassword(password, salt),
         passwordSalt: salt,
         mustChangePassword: true,
       },
     });
+    // The only time this value is ever readable. It is not stored anywhere in
+    // plain form and cannot be recovered — if it is missed, the account is
+    // reset by deleting the row and restarting, not by looking it up.
+    console.log(
+      "\n" +
+      "  ┌────────────────────────────────────────────────────────────┐\n" +
+      "  │  VLSE — حساب مدیر سیستم ساخته شد                            │\n" +
+      "  ├────────────────────────────────────────────────────────────┤\n" +
+      `  │  نام کاربری: ${u.username.padEnd(46)}│\n` +
+      `  │  رمز اولیه:  ${password.padEnd(46)}│\n` +
+      "  │                                                            │\n" +
+      "  │  این رمز فقط همین یک‌بار چاپ می‌شود و در اولین ورود        │\n" +
+      "  │  تغییرش اجباری است. در ایمیل یا تیکت نفرستید.              │\n" +
+      "  └────────────────────────────────────────────────────────────┘\n",
+    );
   }
 }
 

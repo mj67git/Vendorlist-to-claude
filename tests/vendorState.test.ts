@@ -277,7 +277,12 @@ test('the reason a record is blacklisted is named, and never invented', () => {
  * arithmetic produced may be undone by better arithmetic.
  */
 test('a score-driven rejection is reversed by a better score', () => {
+  // `rejectedByDecision: false` is what every record that has been through the
+  // server carries — the repository writes an explicit boolean on save and
+  // reads one on load. Its absence means an object older than the column, and
+  // those keep the old reading of `status`; that path is covered above.
   const rejected = applyDerivedState(source({
+    rejectedByDecision: false,
     scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
   }));
   assert.equal(isVendorRejected(rejected), true, 'below the floor, the source is out');
@@ -300,6 +305,7 @@ test('a score-driven rejection is reversed by a better score', () => {
 test('two sources with the same scores reach the same verdict', () => {
   // The clearest statement of the defect: history must not decide this.
   const viaRejection = applyDerivedState(applyDerivedState(source({
+    rejectedByDecision: false,
     scores: { commercial: 20, qa: 20, planning: 20, finance: 20 },
   })));
   const rescored = applyDerivedState({
@@ -307,6 +313,7 @@ test('two sources with the same scores reach the same verdict', () => {
     scores: { commercial: 85, qa: 85, planning: 85, finance: 85 },
   });
   const fresh = applyDerivedState(source({
+    rejectedByDecision: false,
     scores: { commercial: 85, qa: 85, planning: 85, finance: 85 },
   }));
 

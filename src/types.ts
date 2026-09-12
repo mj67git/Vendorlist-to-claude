@@ -80,6 +80,15 @@ export interface Vendor {
   registrationDate?: string;
   isSample?: boolean;
   initialSampleStatus?: 'approved' | 'conditional' | 'rejected' | string;
+  /**
+   * A person decided this source is disqualified.
+   *
+   * Separate from `status` because `status` is *derived* — `applyDerivedState`
+   * writes it from the scores — and a column that is both an input and an
+   * output is how the one-way latch formed. A decision persists until a person
+   * reverses it; a score-driven rejection reverses itself when the score does.
+   */
+  rejectedByDecision?: boolean;
   activityLogs?: ActivityLog[];
   reasonForChange?: string;
   riskAssessment?: RiskAssessmentData | null;

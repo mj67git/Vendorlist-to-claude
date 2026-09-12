@@ -5,7 +5,7 @@ import type * as XLSX from 'xlsx-js-style';
 // Same CommonJS interop the export module needs (see excelExport.ts).
 const XL: typeof XLSX = (XLSXModule as any).default ?? (XLSXModule as any);
 import { buildCategoryWorksheet } from '../src/utils/excelExport';
-import { describeVendorRank, gradeForScore } from '../src/utils/vendorRank';
+import { describeRankForRecord, describeVendorRank, gradeForScore } from '../src/utils/vendorRank';
 import type { Vendor } from '../src/types';
 import { isInCategoryRegister } from '../src/utils/vendorState';
 
@@ -51,14 +51,21 @@ test('the grade and risk columns are the ones that get coloured', () => {
 });
 
 test('the spreadsheet grades a source on the same scale as the printed form', () => {
-  // 35 used to be "Blacklist" here and "Grade D" on the form printed from the
-  // same screen: the SOP rubric had been copied onto a source.
+  // The guard this test was written for: 35 is Grade D on the source scale
+  // (A 80-100, B 60-79, C 40-59, D 0-39), not on the supplier SOP rubric
+  // (90/75/60) that had once been copied onto a source.
   const v = vendor({ scores: { commercial: 35, qa: 35, planning: 35, finance: 35 } as any });
-  const { ws } = buildCategoryWorksheet([v], 'all');
-
   assert.equal(gradeForScore(35), 'D');
-  assert.equal(describeVendorRank(v).label, 'Grade D (35)');
-  assert.equal(cell(ws, FIRST_ROW, COL_SCORE).v, 'Grade D (35)');
+
+  // And what the spreadsheet prints for it. On the source scale every Grade D
+  // is below the qualification floor — D *is* 0-39 and the floor is 40 — so a
+  // record that earns one is disqualified, and the sheet says so rather than
+  // reporting a grade as though the source were still in the running. The
+  // number stays beside it: the grade it earned is the evidence for the
+  // verdict, not something the verdict replaces.
+  const { ws } = buildCategoryWorksheet([v], 'all');
+  assert.equal(describeRankForRecord(v), 'Blacklist (35)');
+  assert.equal(cell(ws, FIRST_ROW, COL_SCORE).v, 'Blacklist (35)');
 });
 
 test('an unevaluated source says so, in both the text and the numeric column', () => {
@@ -224,7 +231,7 @@ test('the sheet holds exactly the rows the category page shows', () => {
   const rows = [
     vendor({ id: 'ok-1' }),
     vendor({ id: 'ok-2' }),
-    vendor({ id: 'gone', status: 'rejected', grade: 'rejected' }),
+    vendor({ id: 'gone', status: 'rejected', grade: 'rejected', rejectedByDecision: true }),
     vendor({ id: 'other', category: 'domestic' }),
     vendor({ id: 'smp', isSample: true, category: 'sample' } as any),
   ];

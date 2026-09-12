@@ -13,8 +13,9 @@ import {
 } from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopSupplierViolation } from "../domain/sourceRules.js";
+import { settleSourceVerdict } from "../domain/sourceVerdict.js";
 import {
-  CALCULATION_WEIGHTS, GRADE_TIERS, calculateRoundedWeightedScore,
+  CALCULATION_WEIGHTS,
   calculateWeightedScore,
 } from "../domain/vendorEvaluation.js";
 import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
@@ -400,7 +401,10 @@ export function vendorRoutes(): express.Router {
         return res.status(422).json({ error: sopError });
       }
 
-      await saveVendorToDb(v);
+      // The qualification is the server's to settle, not the caller's (rule
+      // 11c). Runs after the guards above, so the verdict they judged is the
+      // one the caller actually sent.
+      await saveVendorToDb(settleSourceVerdict(v, { previous: existing, assertedStatus: req.body?.status }));
       const updated = await getVendorById(v.id);
 
       // Audit Trail integration
@@ -530,7 +534,10 @@ export function vendorRoutes(): express.Router {
         return res.status(422).json({ error: sopError });
       }
 
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      await saveVendorToDb(
+        settleSourceVerdict(updatedVendor, { previous: current, assertedStatus: req.body?.status }),
+        (current as any)?.updatedAt ?? null,
+      );
       const result = await getVendorById(id);
 
       // Audit Trail Integration
@@ -709,33 +716,23 @@ export function vendorRoutes(): express.Router {
         rejectionReasons: s.rejectionReasons ?? current.rejectionReasons
       };
 
-      // Calculate grade automatically based on newly patched scores
-      if (updatedVendor.scores) {
-        const scoreObj = updatedVendor.scores;
-        const rounded = calculateRoundedWeightedScore(scoreObj, CALCULATION_WEIGHTS);
-
-        let calcGrade = updatedVendor.grade;
-        let calcStatus = updatedVendor.status;
-
-        if (updatedVendor.isSample) {
-          if (updatedVendor.status === 'rejected' || updatedVendor.grade === 'rejected' || updatedVendor.grade === 'black list') {
-            updatedVendor.status = 'rejected';
-            updatedVendor.grade = 'rejected';
-          }
-        } else {
-          for (const tier of GRADE_TIERS) {
-            if (rounded >= tier.min) {
-              calcGrade = tier.grade === 'black list' ? 'rejected' : tier.grade;
-              calcStatus = tier.status;
-              break;
-            }
-          }
-          updatedVendor.grade = calcGrade;
-          updatedVendor.status = calcStatus;
-        }
-      }
-
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      /*
+       * The grade follows the scores, through the same rubric everything else
+       * uses.
+       *
+       * This route already recomputed the grade — it was the only one that did
+       * — but from its own copy of the tier table, which is a second place for
+       * the 80/60/40 boundaries to drift from `applyDerivedState`. And it wrote
+       * the result straight into `status`, which is what let a bad score latch
+       * a source into the blacklist permanently.
+       */
+      await saveVendorToDb(
+        // No `assertedStatus`: scores never decide. The route spreads the
+        // stored row, so a stale «rejected» would otherwise read as a fresh
+        // verdict and re-latch the record this change exists to free.
+        settleSourceVerdict(updatedVendor, { previous: current }),
+        (current as any)?.updatedAt ?? null,
+      );
       const result = await getVendorById(id);
 
       const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };

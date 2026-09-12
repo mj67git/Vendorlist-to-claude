@@ -34,8 +34,13 @@ async function seedCategories() {
   });
   await p.vendor.create({
     data: {
+      // A source is disqualified by a recorded decision now, not by the
+      // `status` column alone: `status` is written by the scoring rules, so
+      // using it as the verdict is what let a bad score latch a source into the
+      // blacklist permanently. A row inserted straight into the database has to
+      // say which of the two it means.
       id: 'V-BLACK', name: 'سورس مردود', nameEn: 'Rejected Co', country: 'China',
-      status: 'rejected', grade: 'rejected',
+      status: 'rejected', grade: 'rejected', rejectedByDecision: true,
     },
   });
   await p.vendorMaterial.create({

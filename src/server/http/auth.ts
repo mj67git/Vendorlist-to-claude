@@ -23,25 +23,76 @@ import { setCurrentSession } from "./requestContext.js";
  * Moved out of server.ts unchanged.
  */
 
-export function requireAuth(req: any, res: any, next: any) {
+/**
+ * The two routes an account with a pending password change may still reach.
+ *
+ * Refusing everything would lock such an account out of the very thing it is
+ * being asked to do. `/api/auth/me` is how the client re-checks the account it
+ * restored from storage, so the sign-in screen cannot even render without it.
+ */
+const PASSWORD_CHANGE_EXEMPT = new Set([
+  "/api/auth/change-password",
+  "/api/auth/me",
+  "/api/auth/logout",
+]);
+
+export async function requireAuth(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Access Denied: Security token is missing or not provided" });
   }
   const token = authHeader.split(" ")[1];
+  let decoded: any;
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    // Which sign-in this request belongs to, for the audit records it writes.
-    // Tokens issued before sessions were identified carry no `sid`, and those
-    // requests stay unattributed rather than being given an invented one.
-    setCurrentSession(decoded?.sid);
-    next();
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     // 401, not 403: the token is missing or no longer verifies, which is a
     // failure to authenticate. 403 is reserved for a known user who is not
     // allowed to do this, so the client can tell the two apart.
     return res.status(401).json({ error: "Access Denied: Session integrity verification failed" });
+  }
+
+  req.user = decoded;
+  // Which sign-in this request belongs to, for the audit records it writes.
+  // Tokens issued before sessions were identified carry no `sid`, and those
+  // requests stay unattributed rather than being given an invented one.
+  setCurrentSession(decoded?.sid);
+
+  /**
+   * The account itself, read once here and reused by every guard behind it.
+   *
+   * Two things were only ever checked by the permission guards, which meant a
+   * route carrying `requireAuth` alone — `/api/audit/events`, for instance —
+   * checked neither: whether the account still exists and is active, and
+   * whether it has been told to change its password.
+   *
+   * That second one mattered most. Sign-in answers `mustChangePassword: true`
+   * and hands over a fully valid token in the same breath, and nothing on the
+   * server looked at the flag again; the only thing standing in the way was an
+   * early return in `App.tsx`, which is a screen rather than a control. A
+   * fresh installation provisions accounts with known passwords, so anyone who
+   * could reach the sign-in page could take a token, skip the browser, and
+   * write.
+   *
+   * Loading the account here rather than in each guard keeps the cost where it
+   * already was: the permission guards reuse `req.account` instead of asking
+   * again, so a guarded route still makes exactly one primary-key lookup.
+   */
+  try {
+    const account = await getUserByUsername(decoded?.username || "");
+    if (!account || account.isActive === false) {
+      return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
+    }
+    if (account.mustChangePassword && !PASSWORD_CHANGE_EXEMPT.has(req.path)) {
+      return res.status(403).json({
+        error: "برای ادامه باید ابتدا کلمهٔ عبور خود را تغییر دهید.",
+      });
+    }
+    req.account = account;
+    next();
+  } catch (err: any) {
+    console.error("Account check failed:", err);
+    return res.status(500).json({ error: "بررسی حساب کاربری با خطا مواجه شد." });
   }
 }
 
@@ -149,7 +200,8 @@ export function requirePermission(permission: Permission) {
     // the point of being able to change them. This is one primary-key lookup on
     // write requests; reads do not go through here.
     try {
-      const account = await getUserByUsername(req.user?.username || "");
+      // `requireAuth` already loaded and validated this account.
+      const account = req.account || await getUserByUsername(req.user?.username || "");
       if (!account || account.isActive === false) {
         return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
       }
@@ -180,7 +232,7 @@ export function requirePermission(permission: Permission) {
 export function requireAnyPermission(...permissions: Permission[]) {
   return async function (req: any, res: any, next: any) {
     try {
-      const account = await getUserByUsername(req.user?.username || "");
+      const account = req.account || await getUserByUsername(req.user?.username || "");
       if (!account || account.isActive === false) {
         return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
       }
@@ -213,7 +265,7 @@ export function requireAnyPermission(...permissions: Permission[]) {
 export function requireRole(...roles: string[]) {
   return async function (req: any, res: any, next: any) {
     try {
-      const account = await getUserByUsername(req.user?.username || "");
+      const account = req.account || await getUserByUsername(req.user?.username || "");
       if (!account || account.isActive === false) {
         // 401, not 403: the identity itself is no longer valid, so the client
         // should end the session rather than keep a signed-in user around.

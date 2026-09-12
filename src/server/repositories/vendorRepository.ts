@@ -326,6 +326,7 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
         status: v.status,
         grade: v.grade,
         initialSampleStatus: (v as any).initialSampleStatus || "",
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         // The edit form validates against materialId, so it has to travel with
         // the vendor — without it every existing source failed validation with
         // "choose a material" even though one was linked.
@@ -477,6 +478,9 @@ export async function saveVendorToDb(
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        // Rule 11b: a field the record carries has to be written in both
+        // branches, or it is accepted, acknowledged and silently dropped.
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         irc: irc || null,
         /*
          * The licence dates.
@@ -509,6 +513,9 @@ export async function saveVendorToDb(
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        // Rule 11b: a field the record carries has to be written in both
+        // branches, or it is accepted, acknowledged and silently dropped.
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         irc: irc || null,
         /*
          * The licence dates.

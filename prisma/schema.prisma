@@ -224,6 +224,14 @@ model Vendor {
   status              String  @default("new") @map("status")
   grade               String? @map("grade")
   initialSampleStatus String? @map("initial_sample_status")
+  // A human decision to disqualify this source, kept apart from `status`.
+  //
+  // `status` is derived — the scoring rules write it — so using it as the
+  // record of a decision made it both an input and an output of the same
+  // function, and a source that fell below the score floor could never be
+  // qualified again: the stamp the rules left was read back as a verdict on the
+  // next pass. This column carries the decision; the score carries itself.
+  rejectedByDecision  Boolean @default(false) @map("rejected_by_decision")
   // The IRC licence belongs to the source, not to the material catalogue
   // entry. It used to be stored on `materials` *and* folded into the generated
   // material id, so registering a source with an IRC forked a duplicate
