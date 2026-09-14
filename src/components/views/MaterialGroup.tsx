@@ -63,6 +63,26 @@ export const MaterialGroup: React.FC<{
 
   const isOpen = localOpen;
 
+  /*
+   * A closed group draws nothing.
+   *
+   * The collapse is done in CSS — the panel animates from `grid-rows-[0fr]` to
+   * `1fr` — and the rows inside it were rendered whether or not anybody could
+   * see them. On a register of ten thousand sources a category page held about
+   * **49,000 DOM nodes**, nearly all of them invisible: fifty groups × fifty
+   * source rows, each with its partner lookup, its badges, and a 500-line
+   * comparison panel underneath computing an FMEA per source.
+   *
+   * Mounted on first open and kept mounted afterwards, so the group animates
+   * shut the way it always has and re-opens instantly. `aria-hidden` on the
+   * panel already kept the closed rows out of the screen reader, so nothing
+   * that was reachable before is unreachable now.
+   */
+  const [hasOpened, setHasOpened] = useState(localOpen);
+  useEffect(() => {
+    if (isOpen) setHasOpened(true);
+  }, [isOpen]);
+
   const toggleGroup = () => {
     const nextOpen = !isOpen;
     manualRef.current = true;
@@ -114,6 +134,7 @@ export const MaterialGroup: React.FC<{
         className={`grid transition-all duration-300 ease-in-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
       >
         <div className="overflow-hidden">
+          {hasOpened && (
           <div className="divide-y divide-border/60 bg-card">
             {group.vendors.map(vendor => {
               const { name: partnerName, roleLabel: partnerLabel } = resolveVendorPartner(vendor, partners);
@@ -353,8 +374,11 @@ export const MaterialGroup: React.FC<{
               );
             })}
           </div>
-          
-          <MaterialsComparisonSection vendors={group.vendors || []} categoryId={categoryId} selection={selection} onSelectSource={onSelectSource} />
+          )}
+
+          {hasOpened && (
+            <MaterialsComparisonSection vendors={group.vendors || []} categoryId={categoryId} selection={selection} onSelectSource={onSelectSource} />
+          )}
         </div>
       </div>
     </Card>
