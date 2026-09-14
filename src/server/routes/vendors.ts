@@ -1,26 +1,17 @@
 import express from "express";
 import { auditRowValues, diffFields, recordEvent } from "../../utils/auditEvents.js";
-import {
-  vendorAnalysisSchema, vendorContactSchema, vendorLogsSchema, vendorProfileSchema,
-  vendorRiskSchema, vendorSchema, vendorScoreSchema,
-} from "../../utils/validation.js";
-import {
-  can, forbiddenRawScoreChanges, forbiddenScoreChanges,
-  SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission,
-} from "../../utils/permissions.js";
-import {
-  forbiddenSampleScoring, forbiddenVerdictChange, readableVendors, readsEverySource, VERDICT_FIELDS,
-} from "../../utils/decisionGuards.js";
+import { vendorSchema } from "../../utils/validation.js";
+import { can, SOURCE_LIST_VIEWS, VIEW_PERMISSIONS, type Permission } from "../../utils/permissions.js";
+import { readableVendors, readsEverySource } from "../../utils/decisionGuards.js";
 import { requirePrisma } from "../db/prisma.js";
 import { ircViolation, sopPartnerViolation } from "../domain/sourceRules.js";
-import { settleSourceVerdict } from "../domain/sourceVerdict.js";
 import {
-  CALCULATION_WEIGHTS,
-  calculateWeightedScore,
-} from "../domain/vendorEvaluation.js";
+  applyAnalysisSection, applyContactSection, applyLogsSection, applyProfileSection,
+  applyRiskSection, applyScoresSection, isRefusal, riskChanges, riskFacts, verdictEvent,
+} from "../domain/vendorSections.js";
+import { settleSourceVerdict } from "../domain/sourceVerdict.js";
 import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
 import { sendHandlerError } from "../http/errors.js";
-import { getUserByUsername } from "../repositories/userRepository.js";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampInt } from "../http/query.js";
 import { STALE_COPY_MESSAGE, staleCopy } from "../http/recordLock.js";
 import {
@@ -45,123 +36,7 @@ import {
  */
 
 /**
- * Which event a source save actually is.
- *
- * `PATCH /profile` and `POST /vendors` replace the whole record, so a
- * disqualification and a change of phone number arrive through the same door —
- * the same reason the permission guard has to compare the payload with what is
- * stored (rule 14). Reading the verdict off the saved record keeps the trail
- * saying «رد صلاحیت» where a person would say it, instead of filing it as one
- * more edit. Returns null for an ordinary edit.
- */
-function verdictEvent(before: any, after: any): "source.disqualified" | "source.reinstated" | null {
-  const rejected = (v: any) => v?.status === "rejected" || v?.grade === "rejected" || v?.grade === "black list";
-  if (rejected(after) && !rejected(before)) return "source.disqualified";
-  if (!rejected(after) && rejected(before)) return "source.reinstated";
-  return null;
-}
-
-/** The FMEA parameters worth naming, under the names the risk history reads. */
-function riskChanges(before: any, after: any) {
-  const flatten = (r: any) => r && {
-    rpn: r.riskScore ?? r.rpn,
-    sri: r.sri,
-    riskLevel: r.riskLevel,
-    severity: r.materialCriticality ?? r.severity,
-    occurrence: r.probability ?? r.occurrence,
-    detectability: r.detectability ?? r.detection,
-  };
-  return diffFields(flatten(before), flatten(after), [
-    "rpn", "sri", "riskLevel", "severity", "occurrence", "detectability",
-  ]);
-}
-
-/**
- * The assessment as it now stands.
- *
- * Repeated alongside the changes because the risk history plots a point per
- * row, and a save that moved only the risk level would otherwise leave the
- * chart without an RPN to draw.
- */
-function riskFacts(risk: any) {
-  return {
-    riskLevel: risk?.riskLevel ?? null,
-    riskScore: risk?.riskScore ?? risk?.rpn ?? null,
-    sri: risk?.sri ?? null,
-    materialCriticality: risk?.materialCriticality ?? risk?.severity ?? null,
-    probability: risk?.probability ?? risk?.occurrence ?? null,
-    detectability: risk?.detectability ?? risk?.detection ?? null,
-  };
-}
-
-/**
- * Refuse a payload that decides something the caller may not decide.
- *
- * `vendor.edit` and `vendor.analysis` open endpoints that replace the whole
- * record, so the qualification verdict rides along inside an ordinary edit.
- * This compares it against what is stored, answers 403 when the caller is not
- * entitled to the change, and records the attempt — a blocked write is evidence
- * too, the same reasoning as the IRC and SOP refusals below.
- *
- * Returns true when the request has been answered and the handler must stop.
- */
-async function refuseUnauthorisedVerdict(
-  req: any, res: any, current: any, incoming: any,
-  options: { requireEditForTheRest?: boolean } = {},
-): Promise<boolean> {
-  // The stored user record, not the token: a seven-day JWT carries only the
-  // role, so a permission taken away today would otherwise keep working until
-  // it expired (rule 14).
-  const actor = await getUserByUsername(req.user?.username || "");
-  if (!actor || actor.isActive === false) {
-    res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
-    return true;
-  }
-  // The other half of the same question: this route also accepts ordinary
-  // edits, and the middleware could only ask whether the caller may do *one* of
-  // the two. Whoever holds the verdict but not `vendor.edit` may state the
-  // verdict and nothing else.
-  if (options.requireEditForTheRest && !can(actor as any, "vendor.edit")) {
-    // An empty field and an absent one are the same fact here: the form posts
-    // `''` where the record holds null, and treating that as an edit would
-    // refuse every verdict that arrives through the whole-record form.
-    const settled = (value: any) => JSON.stringify(value === '' || value === undefined ? null : value);
-    const otherChanges = Object.keys(incoming || {}).filter(key => {
-      if (VERDICT_FIELDS.includes(key as any) || key === 'reasonForChange' || key === 'reason') return false;
-      if (key === 'expectedUpdatedAt') return false;
-      return settled(incoming[key]) !== settled(current?.[key]);
-    });
-    if (otherChanges.length > 0) {
-      res.status(403).json({
-        error: `عدم دسترسی: ویرایش سورس نیازمند مجوز «ویرایش سورس» است (تلاش برای تغییر: ${otherChanges.join('، ')}).`,
-      });
-      return true;
-    }
-  }
-
-  const refusal = forbiddenVerdictChange(actor as any, current, incoming);
-  if (!refusal) return false;
-
-  const isSample = refusal.permission === 'sample.decide';
-  const what = isSample ? "تصمیم کیفی نمونه" : "رد صلاحیت یا بازگردانی سورس";
-  recordEvent(req, {
-    event: "access.denied",
-    entity: {
-      type: isSample ? "Sample" : "Source",
-      id: current.id,
-      name: current.material || current.name || "سورس",
-    },
-    facts: { attempted: what, permission: refusal.permission, fields: refusal.fields.join("، ") },
-  });
-
-  res.status(403).json({
-    error: `عدم دسترسی: ${what} نیازمند مجوز جداگانه است و این حساب آن را ندارد.`,
-  });
-  return true;
-}
-
-/**
- * The read-only views that are their own permission.
+ * Which views a source list can be opened as, and what each one requires.
  *
  * The archive and the supplier directory read the same rows as the category
  * pages, so there is no row filter that expresses them — what distinguishes
@@ -191,6 +66,14 @@ async function visibleChangesSince(actor: any, since: Date | null) {
       return !!at && !Number.isNaN(at.getTime()) && at > since;
     });
   return { changed, total: visible.length };
+}
+
+/**
+ * The reason a caller gave for the change, under either of the two names the
+ * clients have used for it.
+ */
+function reasonFor(req: any): string | null {
+  return req.body?.reasonForChange || req.body?.reason || null;
 }
 
 export function vendorRoutes(): express.Router {
@@ -494,83 +377,17 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorProfileSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const p = validationResult.data;
-      if (await refuseUnauthorisedVerdict(req, res, current, p, { requireEditForTheRest: true })) return;
-      const updatedVendor = {
-        ...current,
-        ...p
-      };
-
-      const ircError = ircViolation((p as any).irc, (current as any).irc);
-      if (ircError) {
-        // Recorded, like the SOP refusal below it. A blocked write is evidence
-        // too — it says someone tried to put an invalid licence number on a
-        // regulated record — and auditing one refusal but not the other made
-        // the trail inconsistent about what counts as an event.
-        recordEvent(req, {
-          event: "access.denied",
-          entity: { type: "Source", id, name: current.material || current.name || "سورس" },
-          facts: { attempted: "ثبت کد IRC نامعتبر" },
-          reason: ircError,
-        });
-        return res.status(422).json({ error: ircError });
-      }
-
-      const sopError = await sopPartnerViolation(updatedVendor as any, current as any);
-      if (sopError) {
-        recordEvent(req, {
-          event: "access.denied",
-          entity: { type: "Source", id, name: current.material || current.name || "سورس" },
-          facts: {
-            attempted: "اتصال فروشندهٔ فاقد گرید A به سورس",
-            supplierId: (updatedVendor as any).supplierId,
-          },
-          reason: sopError,
-        });
-        return res.status(422).json({ error: sopError });
-      }
+      const outcome = await applyProfileSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
 
       await saveVendorToDb(
-        settleSourceVerdict(updatedVendor, { previous: current, assertedStatus: req.body?.status }),
+        settleSourceVerdict(outcome.merged, { previous: current, assertedStatus: req.body?.status }),
         (current as any)?.updatedAt ?? null,
       );
       const result = await getVendorById(id);
-
-      // Audit Trail Integration
-      const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const entityType = isSource ? "Source" : "Supplier";
-      const entityName = isSource ? (result.material || result.name) : result.name;
-      const reasonForChange = req.body.reasonForChange || req.body.reason || null;
-
-      const beforeData: Record<string, any> = {};
-      const afterData: Record<string, any> = {};
-      let hasChanges = false;
-
-      Object.keys(p).forEach(key => {
-        const oldVal = current[key];
-        const newVal = result[key];
-        if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-          beforeData[key] = oldVal ?? null;
-          afterData[key] = newVal ?? null;
-          hasChanges = true;
-        }
-      });
-
-      if (hasChanges) {
-        // A qualification verdict travels inside an ordinary profile save, so
-        // which event this is depends on what moved — the same comparison the
-        // permission guard makes (rule 14).
-        await recordEvent(req, {
-          event: verdictEvent(current, result) || "source.updated",
-          entity: { type: entityType, id, name: entityName },
-          changes: diffFields(beforeData, afterData, Object.keys(afterData)),
-          reason: reasonForChange || null,
-        });
-      }
+      await outcome.audit(result);
 
       console.log(`[UnifiedDB] Saved fine-grained profile details for vendor: ${id}`);
       res.json({ success: true, part: "profile", vendor: result });
@@ -590,53 +407,14 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorContactSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const c = validationResult.data;
-      const updatedVendor = {
-        ...current,
-        contactInfo: c.contactInfo ?? current.contactInfo,
-        lastAudit: c.lastAudit ?? current.lastAudit,
-        ircExpiryDate: c.ircExpiryDate ?? current.ircExpiryDate
-      };
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      const outcome = await applyContactSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
+
+      await saveVendorToDb(outcome.merged, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
-
-      // Audit Trail Integration
-      const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const entityType = isSource ? "Source" : "Supplier";
-      const entityName = isSource ? (result.material || result.name) : result.name;
-
-      const beforeData: Record<string, any> = {};
-      const afterData: Record<string, any> = {};
-      let hasChanges = false;
-
-      if (current.contactInfo !== result.contactInfo) {
-        beforeData.contactInfo = current.contactInfo;
-        afterData.contactInfo = result.contactInfo;
-        hasChanges = true;
-      }
-      if (current.lastAudit !== result.lastAudit) {
-        beforeData.lastAudit = current.lastAudit;
-        afterData.lastAudit = result.lastAudit;
-        hasChanges = true;
-      }
-      if (current.ircExpiryDate !== result.ircExpiryDate) {
-        beforeData.ircExpiryDate = current.ircExpiryDate;
-        afterData.ircExpiryDate = result.ircExpiryDate;
-        hasChanges = true;
-      }
-
-      if (hasChanges) {
-        await recordEvent(req, {
-          event: "source.updated",
-          entity: { type: entityType, id, name: entityName },
-          changes: diffFields(beforeData, afterData, Object.keys(afterData)),
-          reason: req.body.reasonForChange || req.body.reason || null,
-        });
-      }
+      await outcome.audit(result);
 
       console.log(`[UnifiedDB] Saved fine-grained contact details for vendor: ${id}`);
       res.json({ success: true, part: "contact", vendor: result });
@@ -656,115 +434,23 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorScoreSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const s = validationResult.data;
-
-      // A simple allow/deny on this route is not enough. It replaces the whole
-      // scores object rather than patching one field, so a caller entitled to
-      // send it could carry another department's score along in the payload.
-      // Compare against what is stored and refuse anything they may not touch.
-      const scorer = await getUserByUsername(req.user?.username || "");
-      if (!scorer || scorer.isActive === false) {
-        return res.status(401).json({ error: "این حساب کاربری دیگر معتبر نیست." });
-      }
-      const offending = [
-        ...forbiddenScoreChanges(scorer, current.scores as any, s.scores as any),
-        ...forbiddenRawScoreChanges(scorer, current.rawScores as any, s.rawScores as any),
-      ];
-      if (offending.length > 0) {
-        const unique = [...new Set(offending)].join('، ');
-        return res.status(403).json({
-          error: `عدم دسترسی: شما تنها مجاز به ثبت امتیاز دپارتمان خود هستید (تلاش برای تغییر: ${unique}).`,
-        });
-      }
-
-      // A sample has no departmental score to give. Refused rather than
-      // dropped: a request that stores nothing must not answer 200, or the
-      // caller records a scoring that never happened.
-      const scoredSample = forbiddenSampleScoring(current, s);
-      if (scoredSample.length > 0) {
-        recordEvent(req, {
-          event: "access.denied",
-          entity: { type: "Vendor", id, name: current.name },
-          facts: {
-            attempted: "امتیازدهی دپارتمانی به نمونه",
-            fields: scoredSample.join("، "),
-          },
-        });
-        return res.status(422).json({
-          error: "نمونه با نظر آزمایشگاه تصمیم‌گیری می‌شود و امتیاز دپارتمانی نمی‌گیرد.",
-        });
-      }
-
-      // The stated grounds for a rejection travel with the scores, so the
-      // verdict has to be checked on this route as well as on the profile.
-      if (await refuseUnauthorisedVerdict(req, res, current, s)) return;
-
-      const prevScores = current.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
-      const prevSPS = Math.round(
-        calculateWeightedScore(prevScores, CALCULATION_WEIGHTS) * 10,
-      ) / 10;
-      const prevGrade = current.grade || 'unrated';
-
-      const updatedVendor = {
-        ...current,
-        scores: s.scores ?? current.scores,
-        rawScores: s.rawScores ?? current.rawScores,
-        rejectionReasons: s.rejectionReasons ?? current.rejectionReasons
-      };
+      const outcome = await applyScoresSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
 
       /*
        * The grade follows the scores, through the same rubric everything else
-       * uses.
-       *
-       * This route already recomputed the grade — it was the only one that did
-       * — but from its own copy of the tier table, which is a second place for
-       * the 80/60/40 boundaries to drift from `applyDerivedState`. And it wrote
-       * the result straight into `status`, which is what let a bad score latch
-       * a source into the blacklist permanently.
+       * uses — and no `assertedStatus`: scores never decide. The merge spreads
+       * the stored row, so a stale «rejected» would otherwise read as a fresh
+       * verdict and re-latch the record that rule 11 exists to free.
        */
       await saveVendorToDb(
-        // No `assertedStatus`: scores never decide. The route spreads the
-        // stored row, so a stale «rejected» would otherwise read as a fresh
-        // verdict and re-latch the record this change exists to free.
-        settleSourceVerdict(updatedVendor, { previous: current }),
+        settleSourceVerdict(outcome.merged, { previous: current }),
         (current as any)?.updatedAt ?? null,
       );
       const result = await getVendorById(id);
-
-      const newScores = result.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
-      const newSPS = Math.round(
-        calculateWeightedScore(newScores, CALCULATION_WEIGHTS) * 10,
-      ) / 10;
-
-      // Audit Trail Integration
-      const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const entityName = isSource ? (result.material || result.name) : result.name;
-
-
-      // 1. Audit SPS Score Update. The department scores travel as one field
-      // because they are saved as one object; `facts` repeats the resulting SPS
-      // and grade so the score history can plot a point from any recorded row.
-      const scoreChanges = diffFields(
-        { totalSPS: prevSPS, grade: prevGrade, scores: prevScores, status: current.status },
-        { totalSPS: newSPS, grade: result.grade, scores: newScores, status: result.status },
-        ["totalSPS", "grade", "scores", "status"],
-      );
-      await recordEvent(req, {
-        event: "source.scored",
-        entity: { type: "Score", id, name: entityName },
-        changes: scoreChanges,
-        facts: scoreChanges.length > 0 ? { totalSPS: newSPS, grade: result.grade, scores: newScores } : undefined,
-        reason: req.body.reasonForChange || req.body.reason || null,
-      });
-
-      // The rank is derived from the SPS that was just recorded, so a second
-      // row saying it moved adds a line to the trail without adding a fact to
-      // it. Dropped with the rewrite (rule 16: no event that reports a
-      // recalculation of what the previous row already states).
+      await outcome.audit(result);
 
       console.log(`[UnifiedDB] Saved fine-grained scores details & updated business calculations for vendor: ${id}`);
       res.json({ success: true, part: "scores", vendor: result });
@@ -792,49 +478,15 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorLogsSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const l = validationResult.data;
+      const outcome = await applyLogsSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
 
-      // Only `vendor.edit` may rewrite history. For everyone else the submitted
-      // list has to start with the stored one, entry for entry: new lines at the
-      // end are the record of what they did, while a changed or missing line is
-      // somebody editing the trail with a permission that was granted for a
-      // decision.
-      if (l.activityLogs && !can(req.account, "vendor.edit")) {
-        const before = (current.activityLogs || []) as any[];
-        const after = l.activityLogs as any[];
-        const appendOnly = after.length >= before.length
-          && before.every((entry, i) => JSON.stringify(entry) === JSON.stringify(after[i]));
-        if (!appendOnly) {
-          return res.status(403).json({
-            error: "عدم دسترسی: تغییر یا حذف سوابق فعالیت نیازمند مجوز «ویرایش سورس» است.",
-          });
-        }
-      }
-
-      const updatedVendor = {
-        ...current,
-        activityLogs: l.activityLogs ?? current.activityLogs
-      };
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      await saveVendorToDb(outcome.merged, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
+      await outcome.audit(result);
 
-      // This was the only write endpoint in the API that left no audit record,
-      // so editing or deleting an entry in a source's activity log was the one
-      // change in the system with no trace behind it.
-      const prevLogs = current.activityLogs || [];
-      const nextLogs = updatedVendor.activityLogs || [];
-      if (JSON.stringify(prevLogs) !== JSON.stringify(nextLogs)) {
-        await recordEvent(req, {
-          event: "source.updated",
-          entity: { type: "ActivityLog", id, name: current.name || id },
-          changes: [{ field: "activityLogCount", from: prevLogs.length, to: nextLogs.length }],
-          reason: (req.body?.reasonForChange as string) || null,
-        });
-      }
       res.json({ success: true, part: "logs", vendor: result });
     } catch (err: any) {
       sendHandlerError(res, err);
@@ -852,142 +504,14 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorAnalysisSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const a = validationResult.data;
-      const prevRecords: any[] = current.analysisRecords || [];
-      const newRecords: any[] = a.analysisRecords ?? prevRecords;
+      const outcome = await applyAnalysisSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
 
-      // Helper function to count laboratory decisions
-      const countDecisions = (recs: any[]) => {
-        let pass = 0;
-        let conditional = 0;
-        let reject = 0;
-        for (const r of recs) {
-          const d = (r.decision || '').toLowerCase();
-          if (d === 'reject' || d === 'mardi' || d === 'مردود') {
-            reject++;
-          } else if (d === 'approved conditional' || d === 'conditional' || d === 'مشروط') {
-            conditional++;
-          } else if (d === 'pass' || d === 'approved' || d === 'قبول') {
-            pass++;
-          }
-        }
-        return { pass, conditional, reject };
-      };
-
-      const newCounters = countDecisions(newRecords);
-
-      // Saving a laboratory record no longer moves a sample's status.
-      //
-      // This endpoint used to stamp a sample 'rejected' as soon as one Reject
-      // record arrived, and — worse — restore it to `initialSampleStatus ||
-      // "approved"` as soon as that record was deleted, so a sample could be
-      // approved by nobody twice over. A record is evidence; the verdict is a
-      // decision a person records with a reason (the sample decision box), and
-      // it reaches the server as an ordinary status change with its own audit
-      // entry. The counters below are still computed: they are what the general
-      // analysis audit entry reports.
-      const finalStatus = current.status;
-      const isSystemAutoReject = false;
-      const isSystemAutoRestore = false;
-
-      /** Samples are named by their material on the audit trail, sources by company. */
-      const isSampleRecord = !!(current.isSample || current.category === "sample");
-
-      const updatedVendor = {
-        ...current,
-        status: finalStatus,
-        analysisRecords: newRecords,
-        activityLogs: a.activityLogs ?? current.activityLogs
-      };
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      await saveVendorToDb(outcome.merged, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
-
-      const entityName = isSampleRecord ? (result.material || result.name) : result.name;
-      const reasonInput = req.body.reasonForChange || req.body.reason || null;
-
-      // 1. Audit Laboratory Result Events (Create, Update, Delete)
-      const prevIds = new Set(prevRecords.map((r: any) => r.id));
-      const newIds = new Set(newRecords.map((r: any) => r.id));
-
-      const addedRecs = newRecords.filter((r: any) => !prevIds.has(r.id));
-      const deletedRecs = prevRecords.filter((r: any) => !newIds.has(r.id));
-      const updatedRecs = newRecords.filter((r: any) => {
-        if (!prevIds.has(r.id)) return false;
-        const prev = prevRecords.find((p: any) => p.id === r.id);
-        return JSON.stringify(prev) !== JSON.stringify(r);
-      });
-
-      // Added Record(s) Audit
-      for (const rec of addedRecs) {
-        await recordEvent(req, {
-          event: "lab.result_added",
-          entity: { type: "Laboratory Result", id, name: entityName },
-          facts: { qcCode: rec.qcCode || null, decision: rec.decision, date: rec.date },
-          reason: reasonInput || null,
-        });
-      }
-
-      // Updated Record(s) Audit
-      for (const rec of updatedRecs) {
-        const prevRec = prevRecords.find((p: any) => p.id === rec.id) || {};
-        await recordEvent(req, {
-          event: "lab.result_updated",
-          entity: { type: "Laboratory Result", id, name: entityName },
-          changes: diffFields(prevRec, rec, ["decision", "qcCode", "date", "comments"]),
-          facts: { qcCode: rec.qcCode || null },
-          reason: reasonInput || null,
-        });
-      }
-
-      // Deleted Record(s) Audit — the QC code and the verdict that was removed,
-      // not a copy of the record (rule 16).
-      for (const rec of deletedRecs) {
-        await recordEvent(req, {
-          event: "lab.result_removed",
-          entity: { type: "Laboratory Result", id, name: entityName },
-          facts: { qcCode: rec.qcCode || null, decision: rec.decision },
-          reason: reasonInput || null,
-        });
-      }
-
-      // Fallback when the list changed without any record being added, edited
-      // or removed — a reordering, say. Reported as a count so the row still
-      // says something rather than repeating the list.
-      if (addedRecs.length === 0 && updatedRecs.length === 0 && deletedRecs.length === 0
-        && JSON.stringify(prevRecords) !== JSON.stringify(newRecords)) {
-        await recordEvent(req, {
-          event: "lab.result_updated",
-          entity: { type: "Laboratory Result", id, name: entityName },
-          changes: [{ field: "analysisRecordCount", from: prevRecords.length, to: newRecords.length }],
-          reason: reasonInput || null,
-        });
-      }
-
-      // 2. The effective status the lab result drove. Recorded as the same
-      // disqualification and reinstatement a person can make, because that is
-      // what it is — only the actor differs, and the actor is a column.
-      if (isSystemAutoReject) {
-        await recordEvent(req, {
-          event: "source.disqualified",
-          actor: { username: "system", name: "سیستم (خودکار)", role: "system" },
-          entity: { type: "Source", id, name: entityName },
-          changes: [{ field: "status", from: current.status, to: "rejected" }],
-          facts: { rejectCount: newCounters.reject },
-          reason: "ثبت نتیجهٔ مردود آزمایشگاه",
-        });
-      } else if (isSystemAutoRestore) {
-        await recordEvent(req, {
-          event: "source.reinstated",
-          actor: { username: "system", name: "سیستم (خودکار)", role: "system" },
-          entity: { type: "Source", id, name: entityName },
-          changes: [{ field: "status", from: "rejected", to: finalStatus }],
-          reason: "دیگر نتیجهٔ مردود فعالی وجود ندارد",
-        });
-      }
+      await outcome.audit(result);
 
       console.log(`[UnifiedDB] Saved fine-grained analysis record & Phase 5 Audit logged for vendor: ${id}`);
       res.json({ success: true, part: "analysis", vendor: result });
@@ -1007,42 +531,14 @@ export function vendorRoutes(): express.Router {
       if (staleCopy(req, current)) {
         return res.status(409).json({ error: STALE_COPY_MESSAGE });
       }
-      const validationResult = vendorRiskSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ error: "Validation failed", details: validationResult.error.issues });
-      }
-      const r = validationResult.data;
-      const updatedVendor = {
-        ...current,
-        riskAssessment: r.riskAssessment ?? current.riskAssessment
-      };
-      await saveVendorToDb(updatedVendor, (current as any)?.updatedAt ?? null);
+      const outcome = await applyRiskSection(
+        req, current, current, req.body, reasonFor(req),
+      );
+      if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
+
+      await saveVendorToDb(outcome.merged, (current as any)?.updatedAt ?? null);
       const result = await getVendorById(id);
-
-      // Audit Trail Integration
-      const isSource = !!(result.isSample || result.category === 'sample' || current.isSample || current.category === 'sample');
-      const entityName = isSource ? (result.material || result.name) : result.name;
-
-      const prevRisk = current.riskAssessment || null;
-      const newRisk = result.riskAssessment || {};
-
-      const reasonInput = req.body.reasonForChange || req.body.reason || "ویرایش پارامترهای FMEA / RPN / SRI";
-
-      // 1. User Change Audit
-      await recordEvent(req, {
-        event: "risk.assessed",
-        entity: { type: "Risk Assessment", id, name: entityName },
-        // The FMEA parameters only: `beforeObj` also carries the material and
-        // the supplier, which do not change here and are named in the columns.
-        changes: riskChanges(prevRisk, newRisk),
-        facts: riskFacts(newRisk),
-        reason: reasonInput || null,
-      });
-
-      // The RPN, the SRI and the risk level are computed from the severity,
-      // occurrence and detectability that the row above already records, so a
-      // second "recalculated" row restated the first one. Dropped with the
-      // rewrite.
+      await outcome.audit(result);
 
       console.log(`[UnifiedDB] Saved fine-grained risk assessment & FMEA audit for vendor: ${id}`);
       res.json({ success: true, part: "risk", vendor: result });
