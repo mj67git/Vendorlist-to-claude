@@ -1,6 +1,7 @@
 import type { Vendor } from '../types';
 import { calculateOverallScore } from './vendorUtils';
 import { isVendorRejected } from './vendorState';
+import type { SourceGrade } from './sourceVocabulary';
 
 /**
  * The one rank scale for a *source*.
@@ -15,7 +16,10 @@ import { isVendorRejected } from './vendorState';
  *
  * Everything that puts a source's rank in front of a person reads it from here.
  */
-export type SourceGrade = 'A' | 'B' | 'C' | 'D';
+// Defined in `sourceVocabulary.ts` with the other two words the source columns
+// are allowed to hold, and re-exported here because this file is where the
+// bands are documented and where most callers already import it from.
+export type { SourceGrade };
 
 /** What every surface says when nobody has evaluated the source yet. */
 export const UNEVALUATED_LABEL = 'ارزیابی نشده';

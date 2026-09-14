@@ -8,7 +8,7 @@ import { Input, inputBaseClass } from '../../components/ui/input';
 import { categoryLabels, categoryRank } from '../../constants/categories';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { useExcelExport } from '../../hooks/useExcelExport';
-import { adminRejectionReason, hasQcReject, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
+import { adminRejectionReason, hasQcReject, isExplicitlyRejected, isInCategoryRegister, isVendorRejected } from '../../utils/vendorState';
 import { describeVendorRank } from '../../utils/vendorRank';
 import { describeSampleStatus, isUntestedSample } from '../../utils/sampleStatus';
 import { checkLicenseExpiry, getDisplayCountry } from '../../utils/vendorUtils';
@@ -590,13 +590,17 @@ export function CategoryView({
                     {/* The blacklist had no chips at all, so the only question a
                         reader could ask of it was «which one is this», never
                         «why is it here». */}
-                    <Badge variant="gradeReject" onClick={() => toggle('manual')} className={chipCls('manual', categoryVendors.filter(v => !!adminRejectionReason(v)).length)}
-                      title="سورس‌هایی که با تصمیم صریح کاربر و با ذکر دلیل به لیست سیاه رفته‌اند">
-                      رد صریح کاربر: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => !!adminRejectionReason(v)).length}</span>
+                    {/* «A person decided» is `isExplicitlyRejected`, not the
+                        presence of a typed reason: a decision recorded without
+                        one used to be counted under «امتیاز پایین», which put a
+                        source nobody had scored in the low-score column. */}
+                    <Badge variant="gradeReject" onClick={() => toggle('manual')} className={chipCls('manual', categoryVendors.filter(isExplicitlyRejected).length)}
+                      title="سورس‌هایی که با تصمیم صریح کاربر به لیست سیاه رفته‌اند">
+                      رد صریح کاربر: <span className="font-bold font-mono mr-1">{categoryVendors.filter(isExplicitlyRejected).length}</span>
                     </Badge>
-                    <Badge variant="warning" onClick={() => toggle('derived')} className={chipCls('derived', categoryVendors.filter(v => !adminRejectionReason(v)).length)}
+                    <Badge variant="warning" onClick={() => toggle('derived')} className={chipCls('derived', categoryVendors.filter(v => !isExplicitlyRejected(v)).length)}
                       title="سورس‌هایی که بدون تصمیم جداگانه و صرفاً از روی امتیاز ارزیابی به لیست سیاه رفته‌اند">
-                      امتیاز پایین: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => !adminRejectionReason(v)).length}</span>
+                      امتیاز پایین: <span className="font-bold font-mono mr-1">{categoryVendors.filter(v => !isExplicitlyRejected(v)).length}</span>
                     </Badge>
                     {/* Only when there is one: a QC rejection is a fact about
                         the laboratory record, not a route into the blacklist for

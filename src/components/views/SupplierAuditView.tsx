@@ -1017,7 +1017,7 @@ interface SourceSelection {
                                {describeSampleStatus(v).label}
                              </Badge>
                            ) : (
-                             <GradeBadge grade={v.grade} status={v.status} scores={v.scores} />
+                             <GradeBadge vendor={v} />
                            )}
                          </td>
                          <td className="px-3 sm:px-4 py-2.5 text-center whitespace-nowrap">

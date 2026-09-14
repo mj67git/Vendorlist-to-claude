@@ -1,103 +1,30 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Building2, CheckCircle, Handshake, ShieldAlert, Loader2, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { INITIAL_VENDORS_DB } from './db_foreign_only';
-import { Category, Vendor, User, Material, BusinessPartner } from './types';
-// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
-import temadLogo from './assets/logo.png';
-import { categoryLabels } from './constants/categories';
+import { AlertTriangle, X, CheckCircle, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
+import { User, Vendor, Material, BusinessPartner } from './types';
+import type { ViewState } from './utils/navStack';
 
-/**
- * Pages that are not the page you land on.
- *
- * Each of these is a whole module — the audit trail with its filters and diff
- * view, the user administration screen, the partner repository — and a session
- * may well never open one. Loading them with the application meant every user
- * downloaded every module before seeing the dashboard.
- *
- * They are fetched when navigated to instead, behind the Suspense boundary in
- * `renderContent`. The views that ARE the landing surface — the dashboard, a
- * category list, a source's detail page and its form — stay in the main bundle
- * on purpose: splitting the common path only trades one wait for another.
- */
-const SupplierAuditView = React.lazy(() => import('./components/views/SupplierAuditView').then(m => ({ default: m.SupplierAuditView })));
-const ArchiveView = React.lazy(() => import('./components/views/ArchiveView').then(m => ({ default: m.ArchiveView })));
-const AuditTrailView = React.lazy(() => import('./components/AuditTrailView').then(m => ({ default: m.AuditTrailView })));
-const UsersView = React.lazy(() => import('./components/UsersView').then(m => ({ default: m.UsersView })));
-const MaterialRepositoryView = React.lazy(() => import('./components/MaterialRepositoryView').then(m => ({ default: m.MaterialRepositoryView })));
-const BusinessPartnerRepositoryView = React.lazy(() => import('./components/BusinessPartnerRepositoryView').then(m => ({ default: m.BusinessPartnerRepositoryView })));
-const WorklistView = React.lazy(() => import('./components/views/WorklistView').then(m => ({ default: m.WorklistView })));
-/*
- * The source page joins them, for the library it draws with rather than for
- * its own size: it is the other eager importer of `recharts`, which is the
- * largest thing in the bundle and was therefore downloaded by everyone who
- * opened the dashboard, whether or not they ever opened a source.
- */
-const VendorDetail = React.lazy(() => import('./components/vendor/VendorDetail').then(m => ({ default: m.VendorDetail })));
-
-/** What a page looks like while its code is on the way. */
-/**
- * A heading between groups of sidebar entries — and a rule when there is no
- * room for words.
- *
- * Collapsed, these used to disappear outright, which left fourteen icons in one
- * undifferentiated column: nothing said where the source registers ended and
- * the repositories began. A hairline keeps the grouping the expanded rail
- * teaches, and `aria-hidden` keeps it out of the screen reader, which already
- * hears each destination named by its own label.
- */
-function SidebarSection({ collapsed, children }: { collapsed: boolean; children: React.ReactNode }) {
-  return (
-    <>
-      <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${collapsed ? 'md:hidden' : ''}`}>
-        <span>{children}</span>
-      </div>
-      {collapsed && <div className="hidden md:block mx-2 my-2 border-t border-border" aria-hidden="true" />}
-    </>
-  );
-}
-
-function PageLoading() {
-  return (
-    <div className="w-full py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-      <div className="w-8 h-8 rounded-full border-2 border-border border-t-primary animate-spin" aria-hidden />
-      <p className="text-xs">در حال بارگذاری…</p>
-    </div>
-  );
-}
-import { CategoryView } from './components/views/CategoryView';
-import { HomeView } from './components/views/HomeView';
-import { VendorForm } from './components/vendor/VendorForm';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
-import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
-import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
-import { isVendorRejected, isInCategoryRegister } from './utils/vendorState';
+import { checkLicenseExpiry } from './utils/vendorUtils';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
-import { can, categoryPermission, effectivePermissions, VIEW_PERMISSIONS, type Permission } from './utils/permissions'
+import { effectivePermissions } from './utils/permissions'
 import { useGatedVendorList } from './hooks/useGatedVendorList';
-import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
-import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
+import { formatRemaining, sessionRemainingMs } from './utils/session';
 import { CommandPalette } from './components/CommandPalette';
-import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { useToast } from './hooks/useToast';
-import { CategoryDenied, PermissionDenied } from './components/AccessDenied';
-import { describeError } from './utils/errorMessage';
-import { SystemClock } from './components/SystemClock';
-import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
-import { fetchAllVendors } from './services/vendorPages';
-import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
+import { renderRoutes } from './components/app/AppRoutes';
+import { AppHeader } from './components/app/AppHeader';
+import { AppSidebar } from './components/app/AppSidebar';
+import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { useCachedCollection } from './hooks/useCachedCollection';
-import {
-  capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
-  pushView, refreshVendorEverywhere, type ViewState,
-} from './utils/navStack';
-import { appendLocalAudit, readLocalAudit } from './services/localAudit';
+import { useVendorRegister } from './hooks/useVendorRegister';
+import { useAppNavigation } from './hooks/useAppNavigation';
+import { createVendorWrites } from './state/vendorWrites';
+import { createDomainWrites } from './state/domainWrites';
+import { readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
-import { Badge } from './components/ui/badge';
-import { Avatar, AvatarFallback } from './components/ui/avatar';
 
 /**
  * One row of `GET /api/auth/my-activity`, as the user menu reads it.
@@ -105,43 +32,11 @@ import { Avatar, AvatarFallback } from './components/ui/avatar';
  * Only the three fields the menu prints; the endpoint returns a full audit row
  * and the rest is deliberately not restated here, where it would go stale.
  */
-interface MyActivityEntry {
+export interface MyActivityEntry {
   id: string;
   description?: string;
   action?: string;
 }
-
-/**
- * One entry of `GET /api/vendors/changes` — an id and a timestamp, never the
- * record itself (project rule 11a).
- */
-interface VendorChange {
-  id: string;
-  updatedAt?: string;
-}
-
-/**
- * What is kept of the selected source when the stack is written to
- * localStorage: enough to name the record in a breadcrumb, and no more. The
- * full record is re-read from the register by id.
- */
-interface VendorNavigationSnapshot {
-  id: string;
-  name?: string;
-  material?: string;
-  materialEn?: string;
-}
-
-/**
- * The stack as it is stored, which is not the stack as it is used.
- *
- * The distinction was made with `as any` — the persisted entry carries four
- * fields where `ViewState` declares a whole `Vendor`. Saying so in a type
- * costs nothing and stops the cast from hiding a real change to either shape.
- */
-type PersistedViewState = Omit<ViewState, 'selectedVendor'> & {
-  selectedVendor: VendorNavigationSnapshot | null;
-};
 
 /** The page container every view is laid out in. */
 const CONTENT_WIDTH = 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8';
@@ -159,24 +54,35 @@ export default function App() {
 
 
 
-  const [vendors, setVendors] = useState<Vendor[]>(() => {
-    const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-    try {
-      const saved = localStorage.getItem('app_db');
-      if (saved) {
-        let parsed = JSON.parse(saved);
-        parsed = parsed.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-        
-        if (parsed && parsed.length > 0) {
-          return parsed;
-        }
-      }
-      return CLEANED_VENDORS_DB;
-    } catch {
-      return CLEANED_VENDORS_DB;
-    }
-  });
+  /*
+   * Two refs shared by the register and the navigation model, so `App` owns
+   * them: the poll must not replace the data under a dirty form, and it
+   * refreshes the record the user is standing on — both facts belong to
+   * navigation, and navigation is handed the register it names records from.
+   */
+  const navGuardRef = useRef<(() => boolean) | null>(null);
+  const historyRef = useRef<ViewState[]>([]);
+  /**
+   * The navigation model defines this, and the register is created before it —
+   * the same shape as `resyncRef`, and for the same reason: the two halves need
+   * each other and one of them has to be reached through a ref.
+   */
+  const updateCurrentVendorInHistoryRef = useRef<((vendor: Vendor | null) => void) | null>(null);
 
+  /**
+   * The register, its cache and the background poll — `hooks/useVendorRegister.ts`.
+   */
+  const {
+    vendors, setVendors,
+    isSyncing, loadError, setLoadError,
+    remoteChangeCount, setRemoteChangeCount,
+    dataRevision, setDataRevision,
+    ownWritesRef, knownTotalRef, resyncRef,
+  } = useVendorRegister({
+    currentUser, navGuardRef, historyRef,
+    // The record the poll refreshed, written onto the stack entries showing it.
+    onVendorRefreshed: v => updateCurrentVendorInHistoryRef.current?.(v),
+  });
 
   useEffect(() => {
     if (currentUser) {
@@ -186,30 +92,6 @@ export default function App() {
       localStorage.removeItem('app_viewHistory');
     }
   }, [currentUser]);
-
-  // Offline cache only — PostgreSQL is the source of truth, so losing this is a
-  // degraded experience, never data loss. Two things matter here:
-  //
-  //  - The per-record history is dropped. Logs, analysis results and the
-  //    per-question raw scores are roughly two thirds of a vendor's JSON and
-  //    are never read from the cache (the detail page always refetches), so
-  //    caching them just consumed the browser's ~5MB budget for nothing. The
-  //    arrays are kept as empty arrays rather than removed, so a cached record
-  //    still has the shape every component expects.
-  //  - Writing is guarded. localStorage measures in UTF-16, so a list that is
-  //    3MB over the wire needs ~6MB of quota; past that setItem throws
-  //    QuotaExceededError, and an uncaught throw in an effect takes the whole
-  //    page down. On failure the stale cache is dropped and the app carries on
-  //    against the server.
-  useEffect(() => {
-    try {
-      const slim = vendors.map(v => ({ ...v, activityLogs: [], analysisRecords: [], rawScores: undefined }));
-      localStorage.setItem('app_db', JSON.stringify(slim));
-    } catch (err) {
-      console.warn('Vendor cache exceeded the browser storage quota; continuing without it.', err);
-      try { localStorage.removeItem('app_db'); } catch { /* nothing left to do */ }
-    }
-  }, [vendors]);
 
   // Re-check the restored account against the server once per load. currentUser
   // is rehydrated from localStorage, and every role gate in the UI reads it, so
@@ -241,82 +123,6 @@ export default function App() {
         // 401/403, so anything else here is a transport problem, not a verdict
         // on the account. Keep the cached session rather than locking them out.
       });
-  }, [currentUser]);
-
-  useEffect(() => {
-    // Both endpoints below are auth-gated, so this must wait for a signed-in
-    // user: on the login screen a 401 would make authFetch clear the session
-    // and reload, which reloads straight back into this effect.
-    if (!currentUser) return;
-
-    // A run that has been superseded — the account changed, or the component
-    // went away mid-load — stops writing to state instead of racing the run
-    // that replaced it.
-    let cancelled = false;
-
-    // First fetch server calculation weights config dynamically to achieve high regulatory resilience
-    authFetch('/api/config/evaluation')
-      .then(res => res.json())
-      .then(config => {
-        if (config && config.weights) {
-          setCalculationWeights(config.weights);
-          console.log("[DynamicRules] Loaded evaluation weights from backend config server:", config.weights);
-        }
-      })
-      .catch(err => console.error("Error fetching dynamic configuration weights:", err))
-      .finally(() => {
-        // Reading is a permission now. Without it the request would come back
-        // 403 and the catch below would blame the network ("اتصال برقرار نشد")
-        // for a deliberate policy decision — and the localStorage cache would
-        // keep showing the list the account just lost.
-        if (!can(currentUser, 'vendor.read')) {
-          setVendors([]);
-          setLoadError(null);
-          return;
-        }
-        setIsSyncing(true);
-        // Paged, and painted as the pages land. The whole set is still needed —
-        // every aggregate in the application is computed over it — but nothing
-        // is gained by holding the first 200 sources back until the last one
-        // has been serialized.
-        // Each run accumulates into its own array and publishes that array —
-        // it never appends to whatever is already on screen. Appending looked
-        // equivalent and was not: React runs this effect twice on mount in
-        // development, and two concurrent runs each appending their pages put
-        // every source in the list twice. Publishing a run's own accumulation
-        // is idempotent, so a second run can only ever redraw the same list.
-        const loaded: Vendor[] = [];
-        fetchAllVendors<Vendor>({
-          fetchPage: async (page, limit) => {
-            const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
-            if (!res.ok) throw new Error('API response failed');
-            return res.json();
-          },
-          onPage: (rows) => {
-            loaded.push(...rows.filter(isAllowedVendor).map(normalizeAndCleanVendor));
-            if (!cancelled) setVendors([...loaded]);
-          },
-        })
-          .then(() => { if (!cancelled) setLoadError(null); })
-          .catch(err => {
-            if (isLocalMode()) { setLoadError(null); return; }
-            console.error("Failed to load vendors from Cloud SQL. Falling back to local storage.", err);
-            // A break part-way through paging is worse than a failure at the
-            // start: what is on screen came from the server, so it looks
-            // trustworthy, but it is a prefix of the register and every total,
-            // count and chart computed from it is wrong. Say so explicitly
-            // rather than reusing the offline wording.
-            if (cancelled) return;
-            setLoadError(loaded.length > 0
-              ? `فهرست سورس‌ها ناقص بارگذاری شد (${loaded.length.toLocaleString('fa-IR')} مورد). آمار و نمودارها کامل نیستند — صفحه را دوباره بارگذاری کنید.`
-              : 'اتصال به سرور برقرار نشد؛ اطلاعات نمایش‌داده‌شده از نسخهٔ محلی است.');
-          })
-          .finally(() => {
-            if (!cancelled) setIsSyncing(false);
-          });
-      });
-
-    return () => { cancelled = true; };
   }, [currentUser]);
 
   const materialsCollection = useCachedCollection<Material>({
@@ -351,262 +157,30 @@ export default function App() {
   const { items: businessPartners, setItems: setBusinessPartners } = partnersCollection;
   const partnersLoading = partnersCollection.loading;
 
-  // A route carries only a vendor *id*; the full record is re-hydrated from `vendors`
-  // (see `selectedVendor` below), which may still be loading on a deep link.
-  const routeToViewState = (r: RouteState): ViewState => ({
-    view: r.view as ViewState['view'],
-    categoryId: (r.categoryId as Category | null) ?? null,
-    selectedVendor: r.vendorId ? ({ id: r.vendorId } as Vendor) : null,
-    expandedMaterial: r.expandedMaterial ?? null,
-    formMode: r.formMode ?? null,
-    taskKey: r.taskKey ?? null,
-  });
-
-  const viewStateToRoute = (s: ViewState): RouteState => ({
-    view: s.view,
-    categoryId: s.categoryId ?? null,
-    vendorId: s.selectedVendor?.id ?? null,
-    expandedMaterial: s.expandedMaterial ?? null,
-    formMode: s.formMode ?? null,
-    taskKey: s.taskKey ?? null,
-  });
-
-  const [viewHistory, setViewHistory] = useState<ViewState[]>(() => {
-    // The URL wins on load: it is what makes a link shareable and a refresh
-    // faithful. localStorage is only the fallback for a bare '/' entry.
-    try {
-      const raw = window.location.hash;
-      const hasRoute = !!raw && raw !== '#' && raw !== '#/';
-      if (hasRoute) {
-        const fromUrl = decodeRoute(raw);
-        // A malformed link starts at home rather than silently resurrecting
-        // whatever location this browser happened to visit last.
-        return fromUrl
-          ? buildStackFromRoute(fromUrl).map(routeToViewState)
-          : [{ view: 'home', categoryId: null, selectedVendor: null }];
-      }
-    } catch { /* fall through to the cached stack */ }
-    try {
-      const saved = localStorage.getItem('app_viewHistory');
-      return saved ? capHistory(JSON.parse(saved)) : [{ view: 'home', categoryId: null, selectedVendor: null }];
-    } catch {
-      return [{ view: 'home', categoryId: null, selectedVendor: null }];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      // Persist only a light identity snapshot of the selected vendor — the full
-      // record is re-hydrated from `vendors` by id on read, so storing the whole
-      // object (risk/analysis/activity arrays) would bloat localStorage.
-      const slim: PersistedViewState[] = viewHistory.map(s => ({
-        ...s,
-        selectedVendor: s.selectedVendor
-          ? {
-              id: s.selectedVendor.id,
-              name: s.selectedVendor.name,
-              material: s.selectedVendor.material,
-              materialEn: s.selectedVendor.materialEn,
-            }
-          : null,
-      }));
-      localStorage.setItem('app_viewHistory', JSON.stringify(slim));
-    } catch (err) {
-      console.error("Failed to save view history to localStorage:", err);
-    }
-  }, [viewHistory]);
-
-  const currentViewState = viewHistory[viewHistory.length - 1] || { view: 'home', categoryId: null, selectedVendor: null };
-  const view = currentViewState.view;
-  const categoryId = currentViewState.categoryId;
-  const formMode = currentViewState.formMode ?? null;
-  // A vendor reached through a shared link is only an id until `vendors` arrives, so
-  // distinguish "still loading" from "this link points at a source that no
-  // longer exists" instead of rendering a detail page full of blanks.
-  const pendingVendor = currentViewState.selectedVendor;
-  const resolvedVendor = pendingVendor ? vendors.find(v => v.id === pendingVendor.id) ?? null : null;
-  const isVendorStub = !!pendingVendor && !pendingVendor.name;
-  const selectedVendor = pendingVendor
-    ? (resolvedVendor ?? (isVendorStub ? null : pendingVendor))
-    : null;
-  const vendorLinkPending = !!pendingVendor && !resolvedVendor && isVendorStub;
-
-  // Once the dataset arrives, replace the id-only stub on the stack with the
-  // real record so the breadcrumb shows the source name instead of a placeholder.
-  useEffect(() => {
-    if (!isVendorStub || !resolvedVendor) return;
-    setViewHistory(prev => hydrateVendor(prev, resolvedVendor));
-  }, [isVendorStub, resolvedVendor]);
-
-  // Expanded material is scoped to the current view entry (persists across
-  // reloads via viewHistory, and is restored automatically on back-navigation).
-  const expandedMaterial = currentViewState.expandedMaterial ?? null;
-  const setExpandedMaterial = (mat: string | null) => {
-    setViewHistory(prev => {
-      if (!prev.length) return prev;
-      const nh = [...prev];
-      nh[nh.length - 1] = { ...nh[nh.length - 1], expandedMaterial: mat };
-      return nh;
-    });
-  };
-  // Reset the scroll position whenever the rendered view changes, so the user
-  // never lands mid-page on a freshly opened screen. (A material group that
-  // needs to be revealed scrolls itself into view shortly afterwards.)
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const viewKey = `${view}|${categoryId ?? ''}|${currentViewState.selectedVendor?.id ?? ''}|${formMode ?? ''}`;
-  useEffect(() => {
-    const reset = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-    reset();
-    // Run again after paint: a freshly mounted view can autofocus an input (or
-    // finish its enter transition) and nudge the container back down.
-    const raf = requestAnimationFrame(() => requestAnimationFrame(reset));
-    return () => cancelAnimationFrame(raf);
-  }, [viewKey]);
-
-  // --- Unsaved-changes guard -------------------------------------------------
-  // Detail screens register a predicate here; any navigation away is deferred
-  // behind a confirmation dialog while it returns true. This prevents silent
-  // loss of an open edit form (a real data-integrity risk under GxP).
-  const navGuardRef = useRef<(() => boolean) | null>(null);
   /**
-   * How many source saves are still waiting for the server.
+   * The navigation model — the stack, the URL, the browser history and the
+   * unsaved-changes guard — in `hooks/useAppNavigation.ts` (rule 10).
    *
-   * The unsaved-changes guard stays armed until the answer arrives, deliberately
-   * (rule 8a), so a user who presses save and then leaves gets a dialog that
-   * says their work will be lost — while the save is in fact in flight and about
-   * to succeed. The count lets that dialog tell the truth instead.
+   * Called here, above every early return, because that is where its hooks have
+   * to run: the sign-in and change-password screens return before the rest of
+   * this component, and a hook below them would change the order of hooks
+   * between renders.
    */
-  const [savesInFlight, setSavesInFlight] = useState(0);
-  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
-  // Read from callbacks that fire after a save, where the rendered closure
-  // would hold whatever `pendingNav` was when the form was drawn.
-  const pendingNavRef = useRef<(() => void) | null>(null);
-  pendingNavRef.current = pendingNav;
-  const registerNavGuard = React.useCallback((fn: (() => boolean) | null) => {
-    navGuardRef.current = fn;
-  }, []);
-
-  // The guard above covers navigation *inside* the app. Closing the tab or
-  // pressing F5 goes around it entirely, so the same signal is handed to the
-  // browser's own prompt — the last way an open form could be lost in silence.
-  // The wording of that prompt belongs to the browser and cannot be set; only
-  // whether it appears is ours.
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!navGuardRef.current?.()) return;
-      e.preventDefault();
-      // Legacy browsers key off the return value rather than preventDefault.
-      e.returnValue = '';
-      return '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, []);
-
-  // --- Hash routing / browser history ---------------------------------------
-  // The URL hash is the shareable source of truth for the current location, and
-  // each in-app push creates a real browser history entry — so Back, Forward
-  // and the browser's history menu all behave natively.
-  // NOTE: these hooks must stay above the early returns below so that hook
-  // order stays stable across the login / change-password screens.
-  const historyRef = useRef(viewHistory);
-  historyRef.current = viewHistory;
-  // Set while we are applying a URL change, so the sync effect below does not
-  // push a duplicate entry for a location the browser already navigated to.
-  const applyingUrlRef = useRef(false);
-  const lastHashRef = useRef<string | null>(null);
-  // How many browser history entries this session created. A deep link opened
-  // directly into a detail page has none, so Back must unwind the stack itself
-  // rather than sending the user off the site.
-  const pushedEntriesRef = useRef(0);
-  /*
-   * The next stack change replaces where we are rather than going deeper, so
-   * the URL must be written with `replaceState`.
-   *
-   * Two moves leave a page behind instead of stacking on it: a saved
-   * registration, where the record takes the form's place, and a saved edit,
-   * which pops the form. The app stack handled both correctly, but the URL
-   * effect below pushed a browser entry either way — so the browser's own
-   * history still held `#/category/<cat>/new`, and one Back from the record
-   * just saved landed the user on an empty «سورس جدید» form. That entry names
-   * a page the app had already finished with, so `popstate` could not find it
-   * on the stack and adopted it as a new location.
-   */
-  const replaceUrlRef = useRef(false);
-  const canPopBrowserRef = { get current() { return pushedEntriesRef.current > 0; } };
-
-  useEffect(() => {
-    const top = viewHistory[viewHistory.length - 1];
-    if (!top) return;
-    const hash = encodeRoute(viewStateToRoute(top));
-    if (hash === lastHashRef.current) return;
-
-    const isFirst = lastHashRef.current === null;
-    lastHashRef.current = hash;
-    if (applyingUrlRef.current) return;   // came *from* the URL; nothing to write
-
-    try {
-      // The very first render adopts the current URL rather than adding to the
-      // browser stack; later pushes are real entries so Back/Forward work.
-      if (isFirst || replaceUrlRef.current) {
-        window.history.replaceState(null, '', hash);
-      } else {
-        window.history.pushState(null, '', hash);
-        pushedEntriesRef.current += 1;
-      }
-    } catch { /* history is unavailable (e.g. sandboxed); URL sync is optional */ }
-    finally { replaceUrlRef.current = false; }
-  }, [viewHistory]);
-
-  useEffect(() => {
-    const onPopState = () => {
-      const target = decodeRoute(window.location.hash);
-      const stack = historyRef.current;
-      const currentHash = encodeRoute(viewStateToRoute(stack[stack.length - 1]));
-
-      // An unparseable URL (hand-edited link) must not blank the app.
-      if (!target) {
-        applyingUrlRef.current = true;
-        try { window.history.replaceState(null, '', currentHash); } finally { applyingUrlRef.current = false; }
-        return;
-      }
-
-      // Respect the unsaved-changes guard: undo the browser's move and ask.
-      if (navGuardRef.current?.()) {
-        try { window.history.pushState(null, '', currentHash); } catch { /* no-op */ }
-        setPendingNav(() => () => {
-          navGuardRef.current = null;
-          window.history.back();
-        });
-        return;
-      }
-
-      applyingUrlRef.current = true;
-      pushedEntriesRef.current = Math.max(0, pushedEntriesRef.current - 1);
-      lastHashRef.current = encodeRoute(target);
-      setViewHistory(prev => {
-        // Backwards move: the URL matches somewhere already on the stack.
-        const key = routeKey(target);
-        const idx = prev.map(s => routeKey(viewStateToRoute(s))).lastIndexOf(key);
-        if (idx >= 0) {
-          const next = prev.slice(0, idx + 1);
-          // Carry the material expansion from the URL so a shared category link
-          // (and Back into one) opens the same group.
-          if (target.expandedMaterial !== undefined) {
-            next[next.length - 1] = { ...next[next.length - 1], expandedMaterial: target.expandedMaterial };
-          }
-          return next;
-        }
-        // Forward, or a location we have never rendered: adopt it.
-        return capHistory(buildStackFromRoute(target).map(routeToViewState));
-      });
-      // Release on the next tick, once the sync effect above has run.
-      setTimeout(() => { applyingUrlRef.current = false; }, 0);
-    };
-
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
+  const {
+    viewHistory,
+    currentViewState, view, categoryId, formMode,
+    selectedVendor, vendorLinkPending,
+    expandedMaterial, setExpandedMaterial,
+    scrollContainerRef,
+    registerNavGuard, replaceUrlRef, pendingVendor,
+    savesInFlight, setSavesInFlight,
+    pendingNav, setPendingNav, pendingNavRef,
+    navigate, handleSelectVendor, goBack,
+    openSourceForm, closeSourceForm,
+    getViewStateLabel, breadcrumbTrail, goToCrumb,
+    updateCurrentVendorInHistory,
+  } = useAppNavigation({ vendors, closeSidebar: () => setSidebarOpen(false), navGuardRef, historyRef });
+  updateCurrentVendorInHistoryRef.current = updateCurrentVendorInHistory;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -635,34 +209,6 @@ export default function App() {
    */
   const { toast, notify, dismiss: dismissToast } = useToast();
 
-  /**
-   * How many changes other people made while a form on this screen was dirty.
-   * Zero means there is nothing to offer; the bar under the header shows the
-   * rest. See the background-sync effect below.
-   */
-  const [remoteChangeCount, setRemoteChangeCount] = useState(0);
-  /**
-   * Moves each time the register is replaced from the server.
-   *
-   * The archive and the directory keep their own copy, read through the route
-   * that guards them, so they would otherwise sit on a snapshot while the
-   * background poll refreshed everybody else's (rule 11a: the data is replaced
-   * silently and the page never jumps).
-   */
-  const [dataRevision, setDataRevision] = useState(0);
-  /** The server's clock at the last poll — the `since` of the next one. */
-  const syncCursorRef = useRef<string | null>(null);
-  /** How many sources the server had at the last poll, which is how a deletion is noticed. */
-  const knownTotalRef = useRef<number | null>(null);
-  /** Sources this session wrote since the last poll, so we are not told about our own work. */
-  const ownWritesRef = useRef<Set<string>>(new Set());
-  /** Set below, next to the function itself — the effect above runs before it is defined. */
-  const resyncRef = useRef<((focusVendorId?: string) => Promise<void>) | null>(null);
-  const [isSyncing, setIsSyncing] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // In local/demo mode the backend is intentionally absent — never show the
-  // "connection failed" banner (the mount fetch runs before demo login is set).
-  useEffect(() => { if (isLocalMode()) setLoadError(null); }, [currentUser]);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -770,92 +316,6 @@ export default function App() {
     try { return readLocalAudit().filter(record => record.severity === 'Critical').length; } catch { return 0; }
   }, [vendors, businessPartners, materials]);
 
-  /**
-   * Background sync — how a second operator sees the first one's work.
-   *
-   * The register is fetched once at sign-in and, before this, re-read only
-   * after a refused write, so two people working at the same time each saw the
-   * snapshot they arrived with until somebody pressed reload. Every half minute
-   * this asks the server the cheap question (`GET /api/vendors/changes`: ids,
-   * timestamps and a count) and acts on the answer.
-   *
-   * Two rules govern what it does with it, and they are the point of the
-   * design:
-   *
-   *   1. **An edit in progress is never thrown away.** When the unsaved-changes
-   *      guard says a form is dirty, nothing is refetched: a bar appears
-   *      offering the update, and the operator takes it when they are ready.
-   *      Refreshing under a half-typed evaluation would lose real work.
-   *   2. **The page never jumps.** A silent refetch replaces the data behind
-   *      the current view — including the record open on screen, refreshed in
-   *      place through the history stack — and navigates nowhere.
-   *
-   * Our own writes are filtered out by id: they come back as changes like any
-   * other, and without this the operator who just saved would be told their own
-   * record changed. The set is cleared each poll, so somebody else's later
-   * change to the same record is still seen.
-   *
-   * `since` is always the server's clock, never the browser's — two machines
-   * disagree, and a browser running fast would ask for a window that has not
-   * happened yet and miss every write inside it.
-   */
-  useEffect(() => {
-    if (!currentUser || isLocalMode() || !can(currentUser, 'vendor.read')) return;
-
-    let stopped = false;
-    const poll = async () => {
-      if (stopped || document.hidden) return;
-      try {
-        const since = syncCursorRef.current;
-        const res = await authFetch(`/api/vendors/changes${since ? `?since=${encodeURIComponent(since)}` : ''}`);
-        if (!res.ok || stopped) return;
-        const data = await res.json();
-        const firstPoll = syncCursorRef.current === null;
-        syncCursorRef.current = typeof data.serverTime === 'string' ? data.serverTime : syncCursorRef.current;
-
-        const previousTotal = knownTotalRef.current;
-        knownTotalRef.current = typeof data.total === 'number' ? data.total : previousTotal;
-
-        // The first poll only establishes the cursor. Without this, everything
-        // written before the session started would count as "new".
-        if (firstPoll) { ownWritesRef.current.clear(); return; }
-
-        const mine = ownWritesRef.current;
-        const changed = (Array.isArray(data.changed) ? (data.changed as VendorChange[]) : [])
-          .filter(c => c && typeof c.id === 'string' && !mine.has(c.id));
-        ownWritesRef.current = new Set();
-
-        // A deletion leaves no timestamp behind, so the count is what reveals
-        // it — and a creation by someone else moves both.
-        const countMoved = previousTotal !== null && typeof data.total === 'number' && data.total !== previousTotal;
-        if (changed.length === 0 && !countMoved) return;
-
-        if (navGuardRef.current?.()) {
-          setRemoteChangeCount(n => n + Math.max(changed.length, countMoved ? 1 : 0));
-          return;
-        }
-        const stack = historyRef.current;
-        await resyncRef.current?.(stack[stack.length - 1]?.selectedVendor?.id);
-      } catch {
-        // A poll that fails changes nothing on screen: the cursor is untouched,
-        // so the next one asks for the same window again.
-      }
-    };
-
-    const timer = window.setInterval(poll, 30000);
-    // A tab that was in the background missed every tick; ask once on return
-    // rather than waiting out another interval.
-    const onVisible = () => { if (!document.hidden) void poll(); };
-    document.addEventListener('visibilitychange', onVisible);
-    void poll();
-
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [currentUser]);
-
   if (!currentUser) {
     return <LoginView onLogin={setCurrentUser} />;
   }
@@ -878,1034 +338,61 @@ export default function App() {
     );
   }
 
-  const runGuarded = (action: () => void) => {
-    if (navGuardRef.current?.()) {
-      setPendingNav(() => action);
-      return;
-    }
-    action();
-  };
-
-  const navigate = (newView: ViewState['view'], newCat: Category | null = null, taskKey: TaskKey | null = null) => {
-    runGuarded(() => {
-      setViewHistory(prev => pushView(prev, newView, newCat, taskKey));
-      setSidebarOpen(false);
-    });
-  };
-
-  const handleSelectVendor = (vendor: Vendor | null) => {
-    if (vendor) {
-      runGuarded(() => {
-        setViewHistory(prev => pushVendor(prev, vendor));
-      });
-    } else {
-      goBack();
-    }
-  };
-
-  // Back and breadcrumb jumps delegate to the browser so that its own Back /
-  // Forward buttons stay in step with the in-app stack; `popstate` above is the
-  // single place that unwinds it. Only when there is no browser entry to pop
-  // (a deep link opened straight into a detail page) do we unwind directly.
-  const goBack = () => {
-    if (viewHistory.length <= 1) return;
-    runGuarded(() => {
-      if (canPopBrowserRef.current) window.history.back();
-      else setViewHistory(popView);
-    });
-  };
-
-  // The source form is a page of its own: pushing it onto the stack gives it a
-  // URL, a breadcrumb and a working Back button for free, and keeps its own
-  // "new partner" dialog from becoming a modal inside a modal.
-  const openSourceForm = (mode: 'create' | 'edit', cat?: Category | null) => {
-    runGuarded(() => {
-      setViewHistory(prev => pushForm(prev, mode, cat));
-      setSidebarOpen(false);
-    });
-  };
-
-  // Leaving the form page after a successful save must land somewhere definite,
-  // so it pops the form entry from the stack rather than asking the browser to
-  // go "back" — the entry behind it is not guaranteed to be the list.
-  const closeSourceForm = () => {
-    // The form page is finished, not somewhere to come back to.
-    replaceUrlRef.current = true;
-    setViewHistory(popForm);
-  };
-
-  /*
-   * `goToHistoryIndex` is gone with the stack-derived breadcrumb. The trail is
-   * a path now, not a visit log, so a crumb names a location rather than a
-   * depth — `goToCrumb` navigates to it and lets `navigate` decide whether that
-   * unwinds the stack or pushes onto it.
-   */
-
-  const getViewStateLabel = (state: ViewState) => {
-    if (state.formMode === 'create') return 'سورس جدید';
-    if (state.formMode === 'edit') return 'ویرایش سورس';
-    if (state.selectedVendor) {
-      return state.selectedVendor.name || 'جزییات سورس';
-    }
-    if (state.view === 'home') return 'صفحه اصلی';
-    if (state.view === 'archive') return 'آرشیو کامل';
-    if (state.view === 'supplier-audit') return 'بررسی یکپارچه تامین‌کننده';
-    if (state.view === 'materials') return 'مخزن مواد اولیه';
-    if (state.view === 'audit-trail') return 'ردیابی تغییرات';
-    if (state.view === 'business-partners') return 'مخزن شرکای تجاری';
-    if (state.view === 'users') return 'مدیریت کاربران';
-    if (state.view === 'tasks') return 'کارتابل اقدامات';
-    if (state.view === 'category' && state.categoryId) {
-      return categoryLabels[state.categoryId]?.fa || 'دسته‌بندی';
-    }
-    return '';
-  };
 
   /**
-   * The breadcrumb trail, derived from the address rather than from the visit
-   * history.
+   * Everything that writes a source, in `state/vendorWrites.ts`.
    *
-   * These are two different things and the header used to print one while
-   * calling it the other. `viewHistory` is the order pages were visited, so
-   * clicking through four modules produced «صفحه اصلی › خرید خارجی › مخزن مواد
-   * اولیه › مخزن شرکای تجاری» — a claim that the partner repository sits inside
-   * the foreign-purchase category. The modules are siblings; nothing is inside
-   * anything. Worse, the same page got two different trails depending on how it
-   * was reached: a fresh link to `#/materials` showed two crumbs, clicking there
-   * from another module showed three.
-   *
-   * `buildStackFromRoute` already models the real shape — home, then the
-   * module, then the record, then its edit page — and it is what a deep link
-   * and a forward navigation already build. Reading the trail from there makes
-   * the path a path, at most four levels deep, and identical however the reader
-   * arrived. The back button keeps its own meaning (the previous page visited)
-   * and its own label, which is history and stays history.
+   * It is handed the register and the poll's bookkeeping rather than owning
+   * them: `App` still holds the list on screen, and the background sync reads
+   * the same two refs to tell somebody else's change from this session's own.
    */
-  const breadcrumbTrail = ((): Array<{ key: string; label: string; route: RouteState }> => {
-    const here = viewStateToRoute(currentViewState);
-    return buildStackFromRoute(here).map(route => {
-      const asState = routeToViewState(route);
-      // The route carries only a source id; the name lives on the record. Use
-      // the one being shown when it matches, otherwise look it up, otherwise
-      // fall back to the generic label rather than printing an id.
-      const named = route.vendorId
-        ? (currentViewState.selectedVendor?.id === route.vendorId
-            ? currentViewState.selectedVendor
-            : vendors.find(v => v.id === route.vendorId) || null)
-        : null;
-      return {
-        key: routeKey(route),
-        label: getViewStateLabel(named ? { ...asState, selectedVendor: named } : asState),
-        route,
-      };
-    }).filter(crumb => !!crumb.label);
-    // Not a `useMemo`: this component early-returns for the login screen, so a
-    // hook here would be called conditionally (rule 10). The work is a walk over
-    // at most four route entries.
-  })();
+  const {
+    handleDownloadBackup,
+    handleUpdateVendor,
+    resyncVendorsFromServer,
+    handleDeleteVendor,
+    handleAddVendor,
+  } = createVendorWrites({
+    vendors, setVendors, currentUser, notify,
+    updateCurrentVendorInHistory,
+    selectVendor: handleSelectVendor,
+    setSavesInFlight, setRemoteChangeCount, setDataRevision,
+    ownWritesRef, knownTotalRef, resyncRef,
+  });
 
   /**
-   * Go to a crumb.
-   *
-   * `navigate` unwinds the stack when the destination is already on it and
-   * pushes when it is not, which is exactly right here: the trail is a path,
-   * and a path entry is somewhere the reader is entitled to be regardless of
-   * how the history happens to look.
+   * Material and partner writes, in `state/domainWrites.ts`.
    */
-  const goToCrumb = (route: RouteState) => {
-    if (route.vendorId) {
-      const record = currentViewState.selectedVendor?.id === route.vendorId
-        ? currentViewState.selectedVendor
-        : vendors.find(v => v.id === route.vendorId) || null;
-      if (record) handleSelectVendor(record);
-      return;
-    }
-    navigate(route.view as ViewState['view'], (route.categoryId as Category | null) ?? null, route.taskKey ?? null);
-  };
-
-
-  /**
-   * Refresh the saved copy of a source wherever the stack is showing it.
-   *
-   * The rule and the reason live in `refreshVendorEverywhere`; this is the
-   * state wiring around it.
-   */
-  const updateCurrentVendorInHistory = (vendor: Vendor | null) => {
-    if (!vendor) return;
-    setViewHistory(prev => refreshVendorEverywhere(prev, vendor));
-  };
-
-  const handleDownloadBackup = () => {
-    try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(vendors, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      
-      const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
-      downloadAnchor.setAttribute("download", `vendor-scores-backup-${dateStr}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      
-      notify('بانک اطلاعاتی لوکال با موفقیت دانلود شد!');
-    } catch (err) {
-      console.error("Failed to download backup JSON:", err);
-      notify('خطا در پشتیبان‌گیری از اطلاعات.', 'error', 3000);
-    }
-  };
-
-  const handleUpdateVendor = (updatedVendor: Vendor, msg?: string | null) => {
-    const normalized = normalizeAndCleanVendor(updatedVendor);
-    // Ours, so the next background poll does not announce this record back to
-    // the person who just saved it.
-    ownWritesRef.current.add(normalized.id);
-    const original = vendors.find(v => v.id === normalized.id);
-
-    setVendors(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
-    updateCurrentVendorInHistory(normalized);
-    if (msg !== null) {
-      notify(msg || 'تغییرات با موفقیت ذخیره شد!');
-    }
-
-    if (isLocalMode()) {
-      const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      const wasRejected = original ? isVendorRejected(original) : false;
-      const nowRejected = isVendorRejected(normalized);
-      const rejected = nowRejected && !wasRejected;
-      const restored = wasRejected && !nowRejected;
-      appendLocalAudit({
-        user: currentUser?.name, role: currentUser?.role,
-        module: isSource ? 'Source Management' : 'Supplier Management',
-        action: original ? 'Update' : 'Create',
-        entityType: isSource ? 'Source' : 'Supplier',
-        entityName: normalized.material || normalized.name || 'سورس',
-        severity: rejected || restored ? 'Critical' : original ? 'Warning' : 'Info',
-        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : restored ? ' — خروج از لیست سیاه (علت رد برطرف شد)' : ''}`,
-        before: original || null, after: normalized,
-        reason: normalized.reasonForChange || 'به‌روزرسانی رکورد',
-      });
-    }
-
-    if (!original) {
-      // Fallback to traditional monolithic POST if there is no previous record found to diff safely
-      authWrite('/api/vendors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalized)
-      }).catch((err: unknown) => {
-        console.error('Failed to sync updated vendor to DB:', err);
-        notify(
-          err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.',
-          'error', 8000,
-        );
-        resyncVendorsFromServer(normalized.id);
-      });
-      return;
-    }
-
-    // Determine fine-grained delta adjustments for API Splitting
-    const contactChanged = original.contactInfo !== normalized.contactInfo || original.lastAudit !== normalized.lastAudit || original.ircExpiryDate !== normalized.ircExpiryDate;
-    const scoresChanged = JSON.stringify(original.scores) !== JSON.stringify(normalized.scores) || 
-                          JSON.stringify(original.rawScores) !== JSON.stringify(normalized.rawScores) || 
-                          JSON.stringify(original.rejectionReasons) !== JSON.stringify(normalized.rejectionReasons);
-    const logsChanged = JSON.stringify(original.activityLogs) !== JSON.stringify(normalized.activityLogs);
-    const analysisChanged = JSON.stringify(original.analysisRecords) !== JSON.stringify(normalized.analysisRecords);
-    const riskChanged = JSON.stringify(original.riskAssessment) !== JSON.stringify(normalized.riskAssessment);
-    
-    const profileChanged = original.material !== normalized.material ||
-                           original.materialEn !== normalized.materialEn ||
-                           original.cas !== normalized.cas ||
-                           original.irc !== normalized.irc ||
-                           original.ircExpiryDate !== normalized.ircExpiryDate ||
-                           original.name !== normalized.name ||
-                           original.nameEn !== normalized.nameEn ||
-                           original.country !== normalized.country ||
-                           original.grade !== normalized.grade ||
-                           original.status !== normalized.status ||
-                           original.isSample !== normalized.isSample ||
-                           original.initialSampleStatus !== normalized.initialSampleStatus ||
-                           // The partner link was missing from both the change
-                           // check and the payload, so re-pointing a source at a
-                           // different company was never sent to the server: the
-                           // name changed and the link silently did not.
-                           (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
-                           (original.supplierId || null) !== (normalized.supplierId || null);
-
-    // Dispatch precision requests based on modified data blocks.
-    // These MUST run one after another: every endpoint does a full
-    // read-modify-write of the vendor, so two in flight at once means the
-    // slower one writes back its stale copy of the other's data — which is how
-    // a deleted lab result used to reappear after a reload.
-    /*
-     * Each entry is handed the `updatedAt` the caller is claiming to have
-     * edited, and the server refuses with 409 if the row has moved on since
-     * (`staleCopy` in the vendor routes). The value has to be threaded through
-     * the queue rather than fixed once: this save may send several PATCHes, and
-     * each one moves the row's timestamp, so the second would otherwise arrive
-     * claiming a copy its own predecessor had just replaced.
-     */
-    const syncQueue: Array<(expectedUpdatedAt: string | null) => Promise<any>> = [];
-
-    if (profileChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/profile`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          material: normalized.material,
-          materialEn: normalized.materialEn,
-          cas: normalized.cas,
-          irc: normalized.irc,
-          ircExpiryDate: normalized.ircExpiryDate,
-          name: normalized.name,
-          nameEn: normalized.nameEn,
-          country: normalized.country,
-          grade: normalized.grade,
-          status: normalized.status,
-          isSample: normalized.isSample,
-          initialSampleStatus: normalized.initialSampleStatus,
-          manufacturerId: normalized.manufacturerId ?? null,
-          supplierId: normalized.supplierId ?? null,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    }
-
-    if (contactChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/contact`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contactInfo: normalized.contactInfo,
-          lastAudit: normalized.lastAudit,
-          ircExpiryDate: normalized.ircExpiryDate,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    }
-
-    if (scoresChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/scores`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scores: normalized.scores,
-          rawScores: normalized.rawScores,
-          rejectionReasons: normalized.rejectionReasons,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    }
-
-    if (analysisChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/analysis`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          analysisRecords: normalized.analysisRecords,
-          activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    } else if (logsChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/logs`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    }
-
-    if (riskChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/risk`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          riskAssessment: normalized.riskAssessment,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
-    }
-
-    /*
-     * Drain the queue, and treat a refusal as a refusal.
-     *
-     * These run strictly one after another because every endpoint does a full
-     * read-modify-write of the vendor (project rule 12). If one of them is
-     * refused, the earlier ones in this queue have already been applied — so
-     * rolling the local copy back to `original` would replace one wrong state
-     * with another. The server is the only thing that knows what actually
-     * landed, so we ask it and take its answer.
-     */
-    void (async () => {
-      setSavesInFlight(n => n + 1);
-      try {
-        // What this save was based on. `original` is the copy that was on
-        // screen when the form was opened, so its timestamp is exactly the
-        // claim the server has to check. Absent (a record this session has
-        // never read) means no claim, and the write behaves as it always did.
-        let expected: string | null = typeof original?.updatedAt === 'string'
-          ? original.updatedAt
-          : null;
-        for (const send of syncQueue) {
-          const saved = await send(expected);
-          // Each PATCH answers with the row it wrote, so the next one in this
-          // queue claims that instead of the copy we started from.
-          const next = saved?.vendor?.updatedAt;
-          expected = typeof next === 'string' ? next : null;
-        }
-        // Carry the row's new timestamp into the copy on screen. Without this
-        // the next edit in this session would claim the timestamp from before
-        // this save and be refused as stale — a conflict with nobody on the
-        // other side of it.
-        if (expected) {
-          const stamp = expected;
-          setVendors(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
-          updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
-        }
-      } catch (err: unknown) {
-        const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
-        console.error('Vendor sync failed:', err);
-        notify(reason, 'error', 8000, {
-          label: 'بارگذاری دوبارهٔ رکورد',
-          run: () => resyncVendorsFromServer(normalized.id),
-        });
-        resyncVendorsFromServer(normalized.id);
-      } finally {
-        setSavesInFlight(n => Math.max(0, n - 1));
-      }
-    })();
-  };
-
-  /**
-   * Pull the sources back from the server and replace the local copy.
-   *
-   * Used after a write was refused: the optimistic update and its localStorage
-   * cache are both showing something the database did not accept, and the only
-   * honest way back is to re-read. There is no per-vendor GET, so this refetches
-   * the list — which only happens on a failure path.
-   */
-  const resyncVendorsFromServer = async (focusVendorId?: string) => {
-    if (isLocalMode()) return;
-    try {
-      const rows = await fetchAllVendors<Vendor>({
-        fetchPage: async (page, limit) => {
-          const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
-          if (!res.ok) throw new Error(`vendors page ${page} answered ${res.status}`);
-          return res.json();
-        },
-        // This path exists to correct a wrong local copy, so nothing is shown
-        // until the whole list is in hand: painting a prefix would replace one
-        // incorrect view with a differently incorrect one.
-        onPage: () => {},
-      });
-      const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-      setVendors(fresh);
-      setDataRevision(n => n + 1);
-      const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
-      if (focused) updateCurrentVendorInHistory(focused);
-    } catch (err) {
-      console.error('Could not re-read sources after a failed write:', err);
-    } finally {
-      // Whatever the outcome, the offer on screen is answered: either the list
-      // now matches the server, or the failure is logged and a later poll will
-      // ask again.
-      setRemoteChangeCount(0);
-    }
-  };
-
-  // The background-sync effect is declared above the sign-in early return, so
-  // it cannot see this function directly (hooks may not move below a return).
-  resyncRef.current = resyncVendorsFromServer;
-
-  const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
-    const removed = vendors.find(v => v.id === vendorId);
-    // Ours, so the next background poll does not announce this record back to
-    // the person who just saved it.
-    ownWritesRef.current.add(vendorId);
-    // Our own removal moves the register size too; re-baseline on the next poll.
-    knownTotalRef.current = null;
-    setVendors(prev => prev.filter(v => v.id !== vendorId));
-    handleSelectVendor(null);
-    notify('سورس با موفقیت حذف شد!');
-    if (isLocalMode()) {
-      const isSource = !!(removed?.isSample || removed?.category === 'sample');
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
-    }
-    // A refused delete has to put the record back: the row was already taken off
-    // the screen, so staying quiet would look exactly like a successful delete.
-    authWrite(`/api/vendors/${vendorId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reasonForChange })
-    }).catch((err: unknown) => {
-      console.error('Failed to sync vendor deletion to DB:', err);
-      if (removed) setVendors(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
-      notify(
-        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس حذف نشد.',
-        'error', 8000,
-      );
-    });
-  };
-
-  /**
-   * Register a new source.
-   *
-   * Saving deliberately does not move the user: this used to end by opening the
-   * new record's page, which suits someone registering one source in order to
-   * score it straight away, and works against someone transcribing a stack of
-   * them from an old file — every save landed them on a page they had to leave
-   * again. The record is offered on the toast instead, so reaching it is one
-   * click for whoever wants it and none for whoever does not.
-   */
-  /**
-   * Register a source, and report whether the database accepted it.
-   *
-   * The row is still inserted optimistically — the register redraws at once —
-   * but the promise settles on the server's answer, so a caller can wait before
-   * it navigates or clears a form. It resolves with the stored record, or with
-   * `null` once the refusal has been rolled back and shown; it never rejects,
-   * because callers that do not care about the outcome (the dashboard's quick
-   * add) would otherwise raise an unhandled rejection.
-   */
-  const handleAddVendor = (newVendor: Vendor): Promise<Vendor | null> => {
-    const normalized = normalizeAndCleanVendor(newVendor);
-    // Ours: skip it in the next poll, and drop the count baseline so our own
-    // new row is not read as somebody else's change to the register size.
-    ownWritesRef.current.add(normalized.id);
-    knownTotalRef.current = null;
-    setVendors(prev => [normalized, ...prev]);
-    // No action button on the toast any more: the form now takes the user to
-    // the new source's own page, so «مشاهده و امتیازدهی» would point at the
-    // page they are already standing on.
-    notify(`سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`, 'success', 3000);
-    if (isLocalMode()) {
-      const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      appendLocalAudit({
-        user: currentUser?.name, role: currentUser?.role,
-        module: isSource ? 'Source Management' : 'Supplier Management',
-        action: 'Create', entityType: isSource ? 'Source' : 'Supplier',
-        entityName: normalized.material || normalized.name || 'سورس', severity: 'Info',
-        description: `ثبت سورس جدید "${normalized.name || normalized.material}"`,
-        before: null, after: normalized, reason: 'ثبت سورس جدید',
-      });
-    }
-    /*
-     * A refused create used to leave the new source sitting in the list and in
-     * the localStorage cache while the database had never heard of it — the
-     * next person to open the register saw a source that did not exist. The
-     * optimistic row is withdrawn and the server's reason is shown instead.
-     */
-    setSavesInFlight(n => n + 1);
-    return authWrite('/api/vendors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(normalized)
-    }).then(() => normalized).catch((err: unknown) => {
-      console.error('Failed to sync new vendor to DB:', err);
-      setVendors(prev => prev.filter(v => v.id !== normalized.id));
-      notify(
-        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
-        'error', 8000,
-      );
-      return null;
-    }).finally(() => setSavesInFlight(n => Math.max(0, n - 1)));
-  };
-
-  // Material changes are persisted and audited server-side (module "مدیریت مواد"),
-  // so the client only does an optimistic update and syncs to the API.
-  const handleAddMaterial = (newMaterial: Material) => {
-    setMaterials(prev => [newMaterial, ...prev]);
-    notify('ماده اولیه جدید با موفقیت اضافه شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: newMaterial.nameFa || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${newMaterial.nameFa || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
-    authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
-      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
-      .catch(err => {
-        setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
-        notify(describeError(err, 'ثبت ماده در سرور ناموفق بود.'), 'error', 5000);
-      });
-  };
-
-  const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
-    const oldMaterial = materials.find(m => m.id === updatedMaterial.id);
-    setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? updatedMaterial : m)));
-    notify('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: updatedMaterial.nameFa || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${updatedMaterial.nameFa || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
-    // The copy this edit was based on. The server refuses with 409 when the row
-    // has moved on since, so a form opened before somebody else's save cannot
-    // quietly undo it.
-    authFetch(`/api/materials/${updatedMaterial.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: oldMaterial?.updatedAt ?? null }),
-    })
-      .then(async res => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          // Re-read on a conflict: what is on screen is not what is on file.
-          if (res.status === 409) void materialsCollection.reload();
-          throw new Error(body.error || 'خطا در ویرایش ماده');
-        }
-        // Carry the row's new timestamp, so the next edit in this session
-        // claims the copy the server actually holds.
-        const saved = body?.material;
-        if (saved?.updatedAt) {
-          setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? { ...m, updatedAt: saved.updatedAt } as Material : m)));
-        }
-      })
-      .catch(err => {
-        if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
-        notify(describeError(err, 'ویرایش ماده در سرور ناموفق بود.'), 'error', 5000);
-      });
-  };
-
-  const handleDeleteMaterial = async (id: string) => {
-    const removed = materials.find(m => m.id === id);
-    setMaterials(prev => prev.filter(m => m.id !== id));
-    if (isLocalMode()) {
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: removed?.nameFa || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${removed?.nameFa || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
-      notify('ماده اولیه با موفقیت حذف شد!');
-      return;
-    }
-    try {
-      const response = await authFetch(`/api/materials/${id}`, { method: 'DELETE' });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'خطا در حذف');
-      }
-      notify('ماده اولیه با موفقیت حذف شد!');
-    } catch (err: unknown) {
-      // Put back the one row, rather than the whole list as it stood before the
-      // request. Restoring a snapshot also un-does anything that arrived while
-      // the request was in flight — another operator's edit, a background
-      // refresh — and the user sees their own delete fail and someone else's
-      // work disappear with it.
-      if (removed) setMaterials(prev => (prev.some(m => m.id === id) ? prev : [removed, ...prev]));
-      notify(describeError(err, 'حذف ماده در سرور ناموفق بود.'), 'error', 5000);
-    }
-  };
-
-  // Business-partner changes are audited server-side (authoritative, in the
-  // Business Partner Repository module), so the client no longer posts its own
-  // audit records — that would double-log every change.
-
-  /**
-   * Why a rejected save must be surfaced, not logged.
-   *
-   * Both handlers used to end in `.catch(err => console.error(...))` and never
-   * looked at `res.ok`. A 403 (no permission), a 400 (validation) or a 413 (an
-   * evaluation whose attached documents exceed the body limit) therefore left
-   * the user with a green "saved successfully" toast, the change alive in
-   * memory, and nothing on the server — until the next reload silently took it
-   * away. For a supplier evaluation in a GxP system that is the worst possible
-   * failure mode, so a rejected write now rolls the optimistic update back and
-   * says what happened.
-   */
-  const describePartnerFailure = async (res: Response, fallback: string) => {
-    // A refusal does not always carry JSON — a proxy 413 is HTML, and a dropped
-    // connection is nothing at all — so the parse is allowed to fail and the
-    // status decides the wording instead.
-    const body: { error?: unknown } = await res.json().catch(() => ({}));
-    if (typeof body.error === 'string' && body.error) return body.error;
-    if (res.status === 413) return 'حجم مدارک پیوست بیش از حد مجاز سرور است. فایل‌های کوچک‌تری بارگذاری کنید.';
-    if (res.status === 403) return 'دسترسی لازم برای این تغییر را ندارید.';
-    return fallback;
-  };
-
-  const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
-    setBusinessPartners(prev => [newPartner, ...prev]);
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
-    if (isLocalMode()) {
-      notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-      return;
-    }
-    authFetch('/api/business-partners', {
-      method: 'POST',
-      body: JSON.stringify(newPartner)
-    })
-      .then(async res => {
-        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ثبت شریک تجاری در سرور ناموفق بود.'));
-        notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-      })
-      .catch(err => {
-        // Take back this row only — see the note on the material delete.
-        setBusinessPartners(prev => prev.filter(p => p.id !== newPartner.id));
-        notify(describeError(err, 'ثبت شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
-
-  const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
-    const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
-    setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? updatedPartner : p)));
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
-    if (isLocalMode()) {
-      notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-      return;
-    }
-    authFetch(`/api/business-partners/${updatedPartner.id}`, {
-      method: 'PUT',
-      // Claiming the copy this form was opened on: the server answers 409 when
-      // somebody else has saved in the meantime, rather than letting this write
-      // replace the whole record — SOP evaluation included — with older values.
-      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: oldPartner?.updatedAt ?? null })
-    })
-      .then(async res => {
-        if (!res.ok) {
-          if (res.status === 409) void partnersCollection.reload();
-          throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
-        }
-        const body = await res.json().catch(() => ({}));
-        const saved = body?.partner;
-        if (saved?.updatedAt) {
-          setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? { ...p, updatedAt: saved.updatedAt } : p)));
-        }
-        notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-      })
-      .catch(err => {
-        if (oldPartner) setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? oldPartner : p)));
-        notify(describeError(err, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
-
-  const handleDeleteBusinessPartner = (id: string) => {
-    const partner = businessPartners.find(p => p.id === id);
-    if (!partner) return;
-
-    // The server enforces referential integrity and audits both the blocked
-    // attempt and the successful delete; revert optimistically on rejection.
-    setBusinessPartners(prev => prev.filter(p => p.id !== id));
-    if (isLocalMode()) {
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Delete', entityType: 'BusinessPartner', entityName: partner.name, severity: 'Critical', description: `حذف شریک تجاری "${partner.name}"`, before: partner, after: null, reason: 'حذف شریک تجاری' });
-      notify('شریک تجاری با موفقیت حذف شد!');
-      return;
-    }
-    authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
-      .then(async res => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || 'حذف شریک تجاری در سرور ناموفق بود.');
-        }
-        notify('شریک تجاری با موفقیت حذف شد!');
-      })
-      .catch(err => {
-        setBusinessPartners(prev => (prev.some(p => p.id === id) ? prev : [partner, ...prev]));
-        notify(describeError(err, 'حذف شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
+  const {
+    handleAddMaterial,
+    handleEditMaterial,
+    handleDeleteMaterial,
+    handleAddBusinessPartner,
+    handleEditBusinessPartner,
+    handleDeleteBusinessPartner,
+  } = createDomainWrites({
+    materials, setMaterials, businessPartners, setBusinessPartners, currentUser, notify,
+    reloadMaterials: materialsCollection.reload,
+    reloadPartners: partnersCollection.reload,
+  });
 
   // Views Content
-  const renderContent = () => {
-    let content;
-    let keyName = '';
-
-    // Every page built from the source list shows the same refusal, so it is
-    // written once here rather than repeated at each branch.
-    const DENY_SOURCES = <PermissionDenied reason="sources" onHome={() => navigate('home')} />;
-    // Held back until the server answers. Drawing the page first and replacing
-    // it with a refusal a moment later would show it to somebody who may not
-    // open it — briefly, but the data would have been on screen.
-    const CHECKING_ACCESS = (
-      <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
-        <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-        <p className="text-xs font-semibold">در حال بررسی سطح دسترسی…</p>
-      </div>
-    );
-    // A read that failed for a reason that is not a refusal. Saying "no access"
-    // here would blame the administrator for a network fault; saying nothing
-    // would draw an empty archive that looks like an empty register.
-    const LOAD_FAILED = (
-      <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm">
-        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
-          <AlertTriangle className="w-6 h-6" />
-        </div>
-        <h2 className="text-base font-black text-foreground">اطلاعات این نما خوانده نشد</h2>
-        <p className="text-xs text-muted-foreground leading-relaxed font-medium">{gated.error}</p>
-        <Button onClick={() => setDataRevision(n => n + 1)} className="text-xs font-bold">تلاش دوباره</Button>
-      </div>
-    );
-    const DENY_ARCHIVE = <PermissionDenied reason="archive" onHome={() => navigate('home')} />;
-    const DENY_DIRECTORY = <PermissionDenied reason="supplier-audit" onHome={() => navigate('home')} />;
-
-    if (formMode) {
-      // The source form as a full page: it is the longest form in the app and
-      // opens dialogs of its own, so it gets the content area rather than an
-      // overlay.
-      const editing = formMode === 'edit' ? selectedVendor ?? undefined : undefined;
-      keyName = `source-form-${formMode}-${editing?.id ?? categoryId ?? 'new'}`;
-      // The form is a route, so hiding the button that opens it is not enough:
-      // `#/category/foreign/new` is a link someone can be sent or can keep in
-      // their history. Refusing here means an account without the permission
-      // meets the refusal before filling the form in, rather than after — the
-      // server has always refused the save itself (rule 14).
-      const formPermission: Permission = formMode === 'edit' ? 'vendor.edit' : 'vendor.create';
-      if (!can(currentUser, formPermission)) {
-        keyName = `source-form-denied-${formMode}`;
-        content = <PermissionDenied reason={formMode === 'edit' ? 'source-edit' : 'source-create'} onHome={() => navigate('home')} />;
-      } else {
-      content = (
-        <VendorForm
-          vendors={vendors}
-          materials={materials}
-          onAddMaterial={handleAddMaterial}
-          categoryId={(editing?.category as Category) || (categoryId as Category) || 'domestic'}
-          existingVendor={editing}
-          onClose={goBack}
-          /* Where the two footer buttons part company.
-             They share one save; only what happens afterwards differs. A
-             registration lands on the new source's own page, because that is
-             where the work continues — department scores, risk assessment, the
-             rest of the evaluation. «ذخیره و ثبت بعدی» never gets here: the
-             form keeps itself and empties in place. An edit returns where it
-             came from, which for a form opened off a record is that record.
-             (This is why rule 8a now reads "a registration lands on its record":
-             the batch button is what keeps bulk entry painless.) */
-          onSaved={(saved) => {
-            // This runs after the server answers, which can be after the user
-            // has moved on. Registration goes to the new record because the
-            // work continues there (rule 8a) — but only if the form is still
-            // the page they are on. Jumping somebody who has already opened the
-            // home page is the same interruption this callback exists to avoid
-            // on every other save.
-            const stack = historyRef.current;
-            const stillOnForm = !!stack[stack.length - 1]?.formMode;
-            if (!stillOnForm) return;
-            // They pressed something while the save was in flight and the guard
-            // stopped them with a dialog. The save has now landed, so the thing
-            // they asked for is what happens — not a jump to the new record,
-            // which would answer a question they did not ask.
-            const waiting = pendingNavRef.current;
-            if (waiting) {
-              navGuardRef.current = null;
-              setPendingNav(null);
-              waiting();
-              return;
-            }
-            if (saved && !editing) {
-              // The record takes the form's place in the stack, so it takes its
-              // place in the browser's history too — Back from here belongs to
-              // whatever the user was doing before they opened the form.
-              replaceUrlRef.current = true;
-              handleSelectVendor(saved);
-            } else {
-              closeSourceForm();
-            }
-          }}
-          onSave={(v, msg) => (editing ? handleUpdateVendor(v, msg) : handleAddVendor(v))}
-          currentUser={currentUser}
-          partners={businessPartners}
-          onAddPartner={handleAddBusinessPartner}
-          registerNavGuard={registerNavGuard}
-        />
-      );
-      }
-    } else if (vendorLinkPending) {
-      // Deep link into a source: wait for the dataset, then report honestly if
-      // the id is not in it.
-      const stillLoading = isSyncing || vendors.length === 0;
-      keyName = `vendor-pending-${pendingVendor!.id}`;
-      content = stillLoading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
-          <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-          <p className="text-xs font-semibold">در حال بازیابی اطلاعات سورس…</p>
-        </div>
-      ) : (
-        <div className="p-8 max-w-xl mx-auto my-12 bg-card border border-border rounded-2xl text-center space-y-4 shadow-sm">
-          <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <h2 className="text-base font-black text-foreground">سورس مورد نظر یافت نشد</h2>
-          <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-            لینکی که باز کرده‌اید به سورسی با شناسهٔ <span className="font-mono text-foreground">{pendingVendor!.id}</span> اشاره می‌کند که دیگر در سامانه وجود ندارد (احتمالاً حذف شده است).
-          </p>
-          <Button onClick={() => navigate('home')} className="text-xs font-bold">
-            بازگشت به صفحه اصلی
-          </Button>
-        </div>
-      );
-    } else if (selectedVendor) {
-      keyName = `vendor-${selectedVendor.id}`;
-      content = <VendorDetail vendors={vendors} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
-    } else {
-      /*
-       * One entry per page, instead of a chain of ten `else if` branches.
-       *
-       * The chain was 200 lines and every branch repeated the same three
-       * decisions in its own words: which key the transition animates on,
-       * which permission opens the page, and what to draw when it does not.
-       * Written as a table those decisions line up and can be read down a
-       * column — and a page added without a permission is now visibly a page
-       * added without a permission.
-       *
-       * The permission is `VIEW_PERMISSIONS`, the same table the sidebar, the
-       * command palette and the server read (rule 14). Nothing here is a
-       * second opinion about who may see what.
-       */
-      const DASHBOARD = (
-        <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />
-      );
-
-      /**
-       * The two views the server answers for.
-       *
-       * Both read their rows from `GET /api/vendors?view=…`, so the client
-       * check is the UX half of a real answer: `denied` is the server's, and
-       * `checking` holds the page back until it arrives rather than drawing it
-       * and snatching it away (rule 14).
-       */
-      const serverGated = (denial: React.ReactNode, page: React.ReactNode) =>
-        viewAccess === 'denied' ? denial
-        : gated.error ? LOAD_FAILED
-        : viewAccess === 'checking' ? CHECKING_ACCESS
-        : page;
-
-      const taskKey = (currentViewState.taskKey || 'eval') as TaskKey;
-
-      const routes: Record<Exclude<ViewState['view'], 'category'>, { key: string; permission: Permission | null; denied: React.ReactNode; render: () => React.ReactNode }> = {
-        home: {
-          key: 'home',
-          permission: null,
-          denied: null,
-          render: () => DASHBOARD,
-        },
-        archive: {
-          key: 'archive',
-          permission: VIEW_PERMISSIONS.archive,
-          denied: DENY_ARCHIVE,
-          render: () => serverGated(DENY_ARCHIVE, (
-            <ArchiveView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} currentUser={currentUser} partners={businessPartners} materials={materials} onSelectVendor={handleSelectVendor} />
-          )),
-        },
-        'supplier-audit': {
-          key: 'supplier-audit',
-          permission: VIEW_PERMISSIONS['supplier-audit'],
-          denied: DENY_DIRECTORY,
-          render: () => serverGated(DENY_DIRECTORY, (
-            <SupplierAuditView vendors={gated.rows} isLoading={gated.loading && gated.rows.length === 0} onSelectVendor={handleSelectVendor} currentUser={currentUser} partners={businessPartners} materials={materials} onNavigate={navigate} />
-          )),
-        },
-        tasks: {
-          // The backlog is built from the source register, so it is gated on
-          // reading sources rather than on a page permission of its own.
-          key: `tasks-${taskKey}`,
-          permission: 'vendor.read',
-          denied: DENY_SOURCES,
-          render: () => (
-            <WorklistView
-              taskKey={taskKey}
-              vendors={vendors}
-              partners={businessPartners}
-              currentUser={currentUser}
-              onSelectVendor={handleSelectVendor}
-              onNavigate={navigate}
-              onSwitchTask={k => navigate('tasks', null, k)}
-            />
-          ),
-        },
-        materials: {
-          key: 'materials',
-          permission: VIEW_PERMISSIONS.materials,
-          denied: <PermissionDenied reason="materials" onHome={() => navigate('home')} />,
-          render: () => (
-            <MaterialRepositoryView
-              materials={materials}
-              onAddMaterial={handleAddMaterial}
-              onEditMaterial={handleEditMaterial}
-              onDeleteMaterial={handleDeleteMaterial}
-              currentUser={currentUser}
-              vendors={vendors}
-              isLoading={isSyncing && materials.length === 0}
-            />
-          ),
-        },
-        'business-partners': {
-          key: 'business-partners',
-          permission: VIEW_PERMISSIONS['business-partners'],
-          denied: <PermissionDenied reason="business-partners" onHome={() => navigate('home')} />,
-          render: () => (
-            <BusinessPartnerRepositoryView
-              partners={businessPartners}
-              onAddPartner={handleAddBusinessPartner}
-              onEditPartner={handleEditBusinessPartner}
-              onDeletePartner={handleDeleteBusinessPartner}
-              currentUser={currentUser}
-              vendors={vendors}
-              // Not `&& length === 0`: with no cache the list falls back to the
-              // bundled INITIAL_BUSINESS_PARTNERS_DB seed, so it is never empty
-              // and the skeleton could never appear — the seed was being shown
-              // as if it were the server's data while the real fetch was still
-              // in flight.
-              isLoading={partnersLoading}
-            />
-          ),
-        },
-        'audit-trail': {
-          key: 'audit-trail',
-          permission: VIEW_PERMISSIONS['audit-trail'],
-          denied: <PermissionDenied reason="audit-trail" onHome={() => navigate('home')} />,
-          render: () => <AuditTrailView currentUser={currentUser} />,
-        },
-        users: {
-          // Opening the module is `users.read`: the list is what the page is,
-          // and `GET /api/users` asks for exactly that. What an account can
-          // then do inside it is decided button by button, by the permissions
-          // the other user endpoints enforce.
-          key: 'users',
-          permission: VIEW_PERMISSIONS.users,
-          denied: <PermissionDenied reason="users" onHome={() => navigate('home')} />,
-          render: () => <UsersView currentUser={currentUser} />,
-        },
-      };
-
-      if (view === 'category' && categoryId) {
-        keyName = `category-${categoryId}`;
-        content = !can(currentUser, categoryPermission(categoryId)) ? (
-          categoryId === 'sample' || categoryId === 'blacklist'
-            ? <CategoryDenied categoryId={categoryId} onHome={() => navigate('home')} />
-            : DENY_SOURCES
-        ) : <CategoryView vendors={vendors} isLoading={isSyncing && vendors.length === 0} categoryId={categoryId} onSelectVendor={handleSelectVendor} currentUser={currentUser} expandedMaterial={expandedMaterial} onToggleMaterial={setExpandedMaterial} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} />;
-      } else {
-        const route = routes[view as Exclude<ViewState['view'], 'category'>];
-        if (!route) {
-          // An address that decoded to no page at all. The dashboard is the
-          // one page every signed-in account can open.
-          keyName = 'home-fallback';
-          content = DASHBOARD;
-        } else if (route.permission && !can(currentUser, route.permission)) {
-          keyName = `${route.key}-denied`;
-          content = route.denied;
-        } else {
-          keyName = route.key;
-          content = route.render();
-        }
-      }
-    }
-
-    return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={keyName}
-          initial={{ opacity: 0, y: 10, filter: 'blur(2px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: -10, filter: 'blur(2px)' }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="w-full h-full"
-        >
-          {/* The split-out pages arrive here. The fallback is deliberately
-              quiet and roughly page-shaped: on a fast internal network it is
-              one frame, and a spinner that flashes for one frame reads as a
-              glitch rather than as progress. */}
-          <React.Suspense fallback={<PageLoading />}>
-            {content}
-          </React.Suspense>
-        </motion.div>
-      </AnimatePresence>
-    );
+  /**
+   * The router lives in `components/app/AppRoutes.tsx`; this is the state it
+   * needs, gathered in one place.
+   */
+  const routeContext = {
+    view, categoryId, formMode, currentViewState,
+    selectedVendor, pendingVendor, vendorLinkPending,
+    expandedMaterial, setExpandedMaterial,
+    currentUser, vendors, materials, businessPartners,
+    isSyncing, partnersLoading, gated, viewAccess, setDataRevision,
+    navigate, handleSelectVendor, goBack, openSourceForm, closeSourceForm,
+    registerNavGuard, navGuardRef, historyRef, pendingNavRef, setPendingNav, replaceUrlRef,
+    handleAddVendor, handleUpdateVendor, handleDeleteVendor,
+    handleAddMaterial, handleEditMaterial, handleDeleteMaterial,
+    handleAddBusinessPartner, handleEditBusinessPartner, handleDeleteBusinessPartner,
+    handleDownloadBackup,
   };
 
   return (
@@ -1934,605 +421,56 @@ export default function App() {
         )}
 
         {/* LEFT PANEL: Fixed Sidebar */}
-        <aside className={`
-          fixed top-0 bottom-0 right-0 z-30 w-[272px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[272px]'} bg-card/95 backdrop-blur-md border-l border-border/80
-          transform transition-all duration-300 ease-in-out md:translate-x-0 slide-in print:hidden
-          ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
-          flex flex-col shadow-xs
-        `}>
-          {/* BRAND BLOCK — the Persian name is the name of the system; the
-              English one is a subtitle. It used to be the other way round: a
-              three-line English headline at 14px above a 10px Persian line in
-              a mono face, in an application whose entire interface is Persian. */}
-          {/* The mark sits above the name, both centred, rather than in a row
-              beside it: the two controls that used to share this row pushed the
-              brand off-centre and squeezed the name into a 15px line that read
-              as small print at the top of the screen. Those controls are pinned
-              to the corner now, so the brand owns the full width. */}
-          <div className={`relative py-4 border-b border-border/80 ${sidebarCollapsed ? 'md:px-2 px-5' : 'px-5'}`}>
-            <div className="flex flex-col items-center gap-2 text-center">
-              {/* Dark navy mark on a dark card is all but invisible, so it gets
-                  a light plate in dark mode — same fix as the login screen. */}
-              <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
-                <img
-                  src={temadLogo}
-                  alt="تماد"
-                  className={`w-auto object-contain ${sidebarCollapsed ? 'h-10 md:h-9' : 'h-12'}`}
-                />
-              </span>
-              <div className={`flex-col items-center min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-base leading-snug tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-xs mt-0.5 tracking-widest" dir="ltr">VLSE</span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="md:hidden text-muted-foreground absolute left-3 top-3"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X />
-            </Button>
-            {/* Desktop collapse toggle */}
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className={`hidden md:inline-flex text-muted-foreground absolute left-3 top-3 ${sidebarCollapsed ? 'md:hidden' : ''}`}
-              onClick={() => setSidebarCollapsed(true)}
-              title="جمع کردن نوار کناری"
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-
-          {/* Collapsed: search + expand controls */}
-          {sidebarCollapsed && (
-            <div className="hidden md:flex flex-col items-center gap-1.5 py-2 border-b border-border/80">
-              <Button variant="outline" size="icon-sm" onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="text-muted-foreground hover:text-primary">
-                <Search />
-              </Button>
-              <Button variant="outline" size="icon-sm" onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="text-muted-foreground">
-                <ChevronLeft />
-              </Button>
-            </div>
-          )}
-
-          {/* Expanded: quick search launcher */}
-          {!sidebarCollapsed && (
-            <div className="px-3 pt-3">
-              <button
-                onClick={() => setShowCommandPalette(true)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-muted/40 hover:bg-accent text-muted-foreground transition-colors text-xs"
-              >
-                <span className="flex items-center gap-2"><Search className="w-3.5 h-3.5" /> جستجوی سریع...</span>
-                <kbd className="font-mono text-2xs bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
-              </button>
-            </div>
-          )}
-
-          <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Home} label="صفحه اصلی" 
-              variant="home"
-              active={view === 'home' && !selectedVendor} 
-              onClick={() => navigate('home')} 
-            />
-
-            {can(currentUser, 'vendor.read') && (
-            <SidebarSection collapsed={sidebarCollapsed}>دسته‌بندی‌ها</SidebarSection>
-            )}
-            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][])
-              // Two of the categories are their own read since the granular
-              // split, and the server serves fewer rows without them — an entry
-              // that leads to a page the account is not sent data for is worse
-              // than no entry.
-              .filter(([id]) => can(currentUser, categoryPermission(id)))
-              .map(([id, meta]) => {
-              const count = vendors.filter(v => isInCategoryRegister(v, id)).length;
-              return (
-                <SidebarButton collapsed={sidebarCollapsed}
-                  key={id}
-                  variant={id}
-                  badge={count}
-                  icon={meta.icon} label={meta.fa}
-                  active={view === 'category' && categoryId === id} 
-                  onClick={() => navigate('category', id)} 
-                />
-              );
-            })}
-
-            {(can(currentUser, 'partner.read') || can(currentUser, 'material.read')) && (
-            <SidebarSection collapsed={sidebarCollapsed}>مدیریت پایگاه داده</SidebarSection>
-            )}
-            {can(currentUser, 'partner.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Building2} label="مخزن شرکای تجاری"
-                badge={businessPartners?.length || 0}
-                variant="business-partners"
-                active={view === 'business-partners'}
-                onClick={() => navigate('business-partners')}
-              />
-            )}
-            {can(currentUser, 'material.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Database} label="مخزن مواد اولیه"
-                badge={materials?.length || 0}
-                variant="materials"
-                active={view === 'materials'}
-                onClick={() => navigate('materials')}
-              />
-            )}
-
-            {(can(currentUser, 'archive.read') || can(currentUser, 'audit.read')
-              || can(currentUser, 'users.read') || can(currentUser, 'supplier-audit.read')) && (
-            <SidebarSection collapsed={sidebarCollapsed}>کیفیت و نظارت</SidebarSection>
-            )}
-            {/* Each entry is gated by the permission its page and endpoints
-                actually check, not by `role === 'admin'`. A raw role test here
-                diverged from the pages themselves: someone holding the
-                `users.manage` exception was allowed by the page but never saw
-                the link, and the archive was hidden from everyone but admins even
-                though nothing restricted it (rule 14: one policy table, both
-                sides). */}
-            {can(currentUser, VIEW_PERMISSIONS.archive) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Archive} label="آرشیو کامل داده‌ها"
-                badge={vendors.length}
-                variant="archive"
-                active={view === 'archive'}
-                onClick={() => navigate('archive')}
-              />
-            )}
-            {can(currentUser, 'audit.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={History} label="ردیابی تغییرات"
-                alert={criticalAuditCount}
-                variant="audit-trail"
-                active={view === 'audit-trail'}
-                onClick={() => navigate('audit-trail')}
-              />
-            )}
-            {can(currentUser, VIEW_PERMISSIONS.users) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={UserCog} label="مدیریت کاربران"
-                variant="audit-trail"
-                active={view === 'users'}
-                onClick={() => navigate('users')}
-              />
-            )}
-            {can(currentUser, VIEW_PERMISSIONS['supplier-audit']) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
-                variant="supplier-audit"
-                active={view === 'supplier-audit'}
-                onClick={() => navigate('supplier-audit')}
-              />
-            )}
-          </nav>
-
-        </aside>
+        <AppSidebar
+          currentUser={currentUser}
+          vendors={vendors}
+          materials={materials}
+          businessPartners={businessPartners}
+          view={view}
+          categoryId={categoryId}
+          selectedVendor={selectedVendor}
+          navigate={navigate}
+          criticalAuditCount={criticalAuditCount}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          setShowCommandPalette={setShowCommandPalette}
+        />
 
         {/* RIGHT PANEL: Main Content Area */}
         <main className={`flex-1 ${sidebarCollapsed ? 'md:pr-[76px]' : 'md:pr-[272px]'} flex flex-col h-screen overflow-hidden transition-all duration-300 print:h-auto print:overflow-visible print:pr-0 print:block`}>
-          
-          {/* Sticky Topbar */}
-          <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
-            {/* `min-w-0` on the group and a capped title: without it the row
-                cannot shrink below its content, and on a deep page at ~900px
-                the breadcrumbs pushed the header into horizontal overflow. */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden text-muted-foreground shrink-0"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu />
-              </Button>
-
-              {/* Where the reader is.
-
-                  On the home page the whole right half of the bar was empty:
-                  the back button and the breadcrumbs only exist once the stack
-                  is deeper than one, so every control sat in the left corner
-                  and roughly 460px on the right — the first place a Persian
-                  reader looks — said nothing. The current page's name fills it
-                  on every screen, and the breadcrumbs continue the sentence
-                  when there is a path to show. */}
-              {/* Navigation History & Back Handler */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                {/* The page's name, and only where nothing else says it.
-
-                    Once the breadcrumbs appear (from `md`, with a path to show)
-                    the last crumb already names this page, and printing both
-                    made the two compete for the same strip — measured at 900px,
-                    the title truncated to «خرید …» while the first crumb was
-                    clipped to a single letter. So the heading yields to the
-                    trail exactly where the trail is shown — from `xl` — and
-                    stands alone everywhere else, including the whole tablet
-                    band where the trail does not fit. */}
-                {/* `EntityName`, not a bare `truncate`: this heading carries a
-                    source's name on a detail page, and a name cut without a
-                    tooltip is exactly what rule 15 forbids — measured at 768px
-                    and 390px, where it does run out of room. */}
-                <h1 className={`min-w-0 ${breadcrumbTrail.length > 1 ? 'xl:hidden' : ''}`}>
-                  <EntityName
-                    name={getViewStateLabel(currentViewState) || 'سامانهٔ ارزیابی تأمین‌کنندگان'}
-                    lines={1}
-                    className="text-sm font-black text-foreground max-w-[180px] sm:max-w-[240px] lg:max-w-[320px]"
-                  />
-                </h1>
-                {viewHistory.length > 1 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={goBack}
-                    className="h-8 gap-1.5 text-xs font-bold text-foreground bg-background hover:bg-accent border-border shrink-0"
-                    title={`برگشت به ${getViewStateLabel(viewHistory[viewHistory.length - 2]) || 'مرحله قبل'}`}
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span>برگشت</span>
-                  </Button>
-                )}
-
-                {/* Breadcrumb trail — the path to this page, and a way back up
-                    to any level of it. Built from the address (see
-                    `breadcrumbTrail`), so it is the same trail however the
-                    reader arrived and never claims that one module sits inside
-                    another.
-
-                    Shown from `xl`, and the page's own name takes its place
-                    below that. Measured, not guessed: with the sidebar and the
-                    action cluster taking their share, the strip left for the
-                    trail is about 185px at 1024 and 441px at 1280, while a
-                    three-crumb path («صفحه اصلی › خرید خارجی › نام سورس») needs
-                    roughly 250px. Rendering it at `md` — where it was until now
-                    — meant the row overflowed and the crumb that got cut was
-                    the last one, the page you are on, with no ellipsis and no
-                    tooltip. A heading that fits beats a path that does not. */}
-                {breadcrumbTrail.length > 1 && (
-                  <nav aria-label="مسیر ناوبری" className="hidden xl:flex items-center gap-1 min-w-0 text-xs">
-                    {(() => {
-                      /* Collapse the middle, never the ends.
-                         The trail is at most four levels now, but a long source
-                         name can still outgrow the row — and the crumb that used
-                         to lose was the last one, the page you are actually on,
-                         cut without an ellipsis or a tooltip. The first crumb
-                         and the last two always render; anything between them
-                         becomes one «…» that names what it hides. */
-                      // Four is the deepest real path (home › module › record
-                      // › its edit page), so the whole trail normally shows;
-                      // the collapse is what keeps a longer one honest rather
-                      // than letting it cut the current page off the end.
-                      const MAX_VISIBLE = 4;
-                      const collapse = breadcrumbTrail.length > MAX_VISIBLE;
-                      const hidden = collapse ? breadcrumbTrail.slice(1, -2) : [];
-                      const shown = collapse
-                        ? [breadcrumbTrail[0], null, ...breadcrumbTrail.slice(-2)]
-                        : breadcrumbTrail;
-
-                      return shown.map((crumb, idx) => (
-                        <React.Fragment key={crumb ? crumb.key : 'collapsed'}>
-                          {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
-                          {crumb === null ? (
-                            <span
-                              className="font-semibold text-muted-foreground shrink-0 px-0.5 cursor-help"
-                              title={`سطوح میانی: ${hidden.map(h => h!.label).join(' › ')}`}
-                            >
-                              …
-                            </span>
-                          ) : idx === shown.length - 1 ? (
-                            /* The page itself: it truncates with a tooltip
-                               rather than being cut silently (rule 15). */
-                            <EntityName
-                              name={crumb.label}
-                              lines={1}
-                              aria-current="page"
-                              className="font-bold text-foreground max-w-[120px] lg:max-w-[220px]"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => goToCrumb(crumb.route)}
-                              // `shrink-0`, because these are short fixed labels
-                              // («صفحه اصلی», «خرید خارجی») and the flex row was
-                              // squeezing them below their own width — at 13.5px
-                              // even those two clipped, and a breadcrumb whose
-                              // own labels are cut tells the reader nothing
-                              // about where they are. The squeeze belongs on the
-                              // last crumb, which carries a tooltip when it
-                              // truncates (rule 15).
-                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[160px] shrink-0 transition-colors cursor-pointer"
-                              title={`رفتن به ${crumb.label}`}
-                            >
-                              {crumb.label}
-                            </button>
-                          )}
-                        </React.Fragment>
-                      ));
-                    })()}
-                  </nav>
-                )}
-              </div>
-
-            </div>
-            
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* Dark / light theme toggle */}
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={toggleTheme}
-                className="text-muted-foreground"
-                title={isDark ? 'روشن کردن حالت روز' : 'فعال‌کردن حالت شب'}
-                aria-label="تغییر حالت روز/شب"
-              >
-                {isDark ? <Sun /> : <Moon />}
-              </Button>
-
-              {/* Notification Center for License Expiry */}
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setShowNotificationPanel(!showNotificationPanel)}
-                  aria-haspopup="dialog"
-                  aria-expanded={showNotificationPanel}
-                  aria-label={expiringVendors.length > 0
-                    ? `مرکز اعلان‌ها، ${expiringVendors.length} هشدار انقضای مجوز`
-                    : 'مرکز اعلان‌های سیستم'}
-                  className={`relative ${
-                    expiringVendors.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 hover:text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
-                      : 'text-muted-foreground'
-                  }`}
-                  title={expiringVendors.length > 0 ? `${expiringVendors.length} مورد هشدار انقضای مجوز` : 'مرکز اعلان‌های سیستم'}
-                >
-                  <Bell className="w-4 h-4" />
-                  {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-2xs font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
-                      {expiringVendors.length}
-                    </span>
-                  )}
-                </Button>
-
-                {/* Dropdown Popover */}
-                {showNotificationPanel && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setShowNotificationPanel(false)} 
-                    />
-                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans">
-                      <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                          <span className="font-bold text-xs text-foreground">مرکز اعلان‌های انقضای مجوز (IRC / IVC)</span>
-                        </div>
-                        <Badge variant="warning" className="text-2xs font-mono font-bold">
-                          {expiringVendors.length} مورد
-                        </Badge>
-                      </div>
-
-                      <div className="max-h-80 overflow-y-auto divide-y divide-border p-1">
-                        {expiringVendors.length === 0 ? (
-                          <div className="p-6 text-center text-muted-foreground text-xs">
-                            <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-                            <div className="font-bold text-foreground">همه مجوزها معتبر هستند</div>
-                            <div className="text-2xs mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
-                          </div>
-                        ) : (
-                          expiringVendors.map(({ vendor, check }) => (
-                            <div
-                              key={vendor.id}
-                              onClick={() => {
-                                handleSelectVendor(vendor);
-                                setShowNotificationPanel(false);
-                              }}
-                              className="p-3 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 cursor-pointer transition-colors rounded-xl space-y-1.5 group"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="font-bold text-xs text-foreground group-hover:text-amber-800 dark:group-hover:text-amber-300 truncate">
-                                  {vendor.material || vendor.name}
-                                </div>
-                                {check.status === 'expired' ? (
-                                  <Badge variant="destructive" className="text-2xs px-1.5 py-0">
-                                    منقضی
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="warning" className="text-2xs px-1.5 py-0">
-                                    {check.daysLeft} روز مانده
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="text-2xs text-muted-foreground truncate">
-                                تامین‌کننده: {vendor.name} {vendor.irc ? `(IRC: ${vendor.irc})` : ''}
-                              </div>
-                              <div className="text-2xs text-muted-foreground flex items-center justify-between pt-1">
-                                <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                                <span className="text-primary font-bold text-2xs group-hover:underline">مشاهده سورس ←</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Backing up the database is an administrator's occasional
-                  errand, and it used to sit in the bar with the same weight as
-                  the notification bell and the account box — controls that are
-                  there on every screen for everyone. It moved into the account
-                  menu, beside the other things done once in a while.
-
-                  Note its gate is a deliberate house rule, not a security
-                  boundary: the file is built in the browser from `vendors`, which
-                  `GET /api/vendors` already serves to every signed-in user. A
-                  server permission cannot be added for it without inventing one
-                  no endpoint enforces — the mistake `archive.read` was deleted
-                  for. */}
-
-              {/* Live clock, in the top-left beside the account box.
-
-                  Two facts, not three. It used to print the Jalali date, the
-                  time and the Gregorian date side by side and stood 276px wide
-                  — the largest single item in a row where nothing shrinks,
-                  which is why it had to be hidden below `lg` to stop the whole
-                  cluster being pushed off the left edge. The Gregorian date is
-                  for foreign correspondence, which is a "look it up" fact, so
-                  it moved into the chip's tooltip and the chip came back at
-                  `md`. */}
-              <SystemClock />
-
-              {/* This used to be a permanently green, permanently pulsing
-                  "سیستم فعال" chip. A status that cannot change is not status,
-                  it is decoration. The one thing here that genuinely varies is
-                  whether the session is talking to the database at all, so the
-                  chip now appears only when it is not. */}
-              {isLocalMode() && (
-                <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
-                  <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  <span className="text-2xs font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
-                </div>
-              )}
-
-              {/* User menu (moved from the sidebar) */}
-              {currentUser && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowUserMenu(v => !v)}
-                    aria-haspopup="menu"
-                    aria-expanded={showUserMenu}
-                    aria-label={`منوی حساب کاربری ${currentUser.name || currentUser.username}`}
-                    className="flex items-center gap-2 pr-1 pl-2 py-1 rounded-xl border border-border bg-background hover:bg-accent transition-colors cursor-pointer"
-                    title={currentUser.name || currentUser.username}
-                  >
-                    <Avatar className="h-7 w-7 border border-border">
-                      <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
-                    </Avatar>
-                    <span className="hidden sm:flex flex-col text-right leading-tight max-w-[120px]">
-                      <span className="text-2xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                      <span className="text-2xs text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
-                    </span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showUserMenu && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right">
-                        <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
-                          <Avatar className="h-9 w-9 border border-border">
-                            <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                            <span className="text-2xs font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
-                          </div>
-                        </div>
-                        {/* Session facts: when they were last here, how long this
-                            session has left, and what they can do. */}
-                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-2xs text-muted-foreground">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <History className="w-3 h-3" />
-                              ورود قبلی
-                            </span>
-                            <span className="font-semibold text-foreground">
-                              {formatDateTime(currentUser.previousLoginAt) || 'اولین ورود'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <Calendar className="w-3 h-3" />
-                              اعتبار نشست
-                            </span>
-                            <span className={`font-semibold ${sessionExpiringSoon ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
-                              {sessionLeftLabel || '—'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <Shield className="w-3 h-3" />
-                              سطح دسترسی
-                            </span>
-                            <span className="font-semibold text-foreground">
-                              {myPermissionCount} مورد{myPermissionsCustom ? ' (سفارشی)' : ''}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* My recent activity, straight from the audit trail. */}
-                        <div className="px-3.5 py-2.5 border-b border-border">
-                          <span className="text-2xs font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
-                          {myActivity === null ? (
-                            <span className="text-2xs text-muted-foreground italic">در حال بارگذاری...</span>
-                          ) : myActivity.length === 0 ? (
-                            <span className="text-2xs text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
-                          ) : (
-                            <ul className="space-y-1">
-                              {myActivity.map(a => (
-                                <li key={a.id} className="flex items-start gap-1.5 text-2xs leading-snug">
-                                  <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
-                                  <span className="text-muted-foreground truncate" title={a.description}>
-                                    {a.description || a.action}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-
-                        {/* The theme switch is not repeated here.
-
-                            It had a permanent icon button in the bar and a row
-                            in this menu: one setting, two controls, and the two
-                            never agreed about which state they were showing.
-                            The bar keeps it, because it is used several times a
-                            day; the menu keeps the things that are not. */}
-                        <div className="p-1.5">
-                          {can(currentUser, 'users.manage') && (
-                            <button
-                              onClick={() => { setShowUserMenu(false); handleDownloadBackup(); }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                              title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
-                            >
-                              <Download className="w-4 h-4 text-primary" />
-                              پشتیبان‌گیری کامل
-                            </button>
-                          )}
-                          {can(currentUser, 'users.manage') && (
-                            <button
-                              onClick={() => { setShowUserMenu(false); navigate('users'); }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                            >
-                              <UserCog className="w-4 h-4 text-primary" />
-                              مدیریت کاربران
-                            </button>
-                          )}
-                          <button
-                            onClick={() => { setShowUserMenu(false); setShowChangePasswordModal(true); }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                          >
-                            <Shield className="w-4 h-4 text-primary" />
-                            تغییر کلمه عبور
-                          </button>
-                          <button
-                            onClick={() => { setShowUserMenu(false); handleLogout(); }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-right"
-                          >
-                            <X className="w-4 h-4" />
-                            خروج از حساب
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </header>
+          <AppHeader
+            currentUser={currentUser}
+            vendors={vendors}
+            expiringVendors={expiringVendors}
+            criticalAuditCount={criticalAuditCount}
+            breadcrumbTrail={breadcrumbTrail}
+            goToCrumb={goToCrumb}
+            getViewStateLabel={getViewStateLabel}
+            selectVendor={handleSelectVendor}
+            currentViewState={currentViewState}
+            viewHistory={viewHistory}
+            goBack={goBack}
+            navigate={navigate}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            isDark={isDark}
+            toggleTheme={toggleTheme}
+            showNotificationPanel={showNotificationPanel}
+            setShowNotificationPanel={setShowNotificationPanel}
+            showUserMenu={showUserMenu}
+            setShowUserMenu={setShowUserMenu}
+            setShowChangePasswordModal={setShowChangePasswordModal}
+            myActivity={myActivity}
+            sessionLeftLabel={sessionLeftLabel}
+            sessionExpiringSoon={sessionExpiringSoon}
+            myPermissionCount={myPermissionCount}
+            myPermissionsCustom={myPermissionsCustom}
+            roleInitials={roleInitials}
+            roleTitle={roleTitle}
+            handleLogout={handleLogout}
+            handleDownloadBackup={handleDownloadBackup}
+          />
 
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full print:overflow-visible">
             {/* One width for the whole app.
@@ -2543,7 +481,7 @@ export default function App() {
                 columns. A shared constant also means a new view is right by
                 default instead of waiting for someone to remember the list. */}
             <div className={CONTENT_WIDTH}>
-              {renderContent()}
+              {renderRoutes(routeContext)}
             </div>
           </div>
 

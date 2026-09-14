@@ -216,7 +216,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           the raw English status ('new', 'approved') when a
                           source had no grade yet. GradeBadge is the shared one
                           and always speaks Persian. */}
-                      <GradeBadge grade={v.grade as any} status={v.status as any} scores={v.scores} />
+                      <GradeBadge vendor={v} />
                     </td>
                   </tr>
                 ))}

@@ -28,7 +28,9 @@ test('centralized evaluation configuration preserves legacy values and ordering'
     { min: 80, grade: 'A', status: 'approved' },
     { min: 60, grade: 'B', status: 'approved' },
     { min: 40, grade: 'C', status: 'conditional' },
-    { min: 0, grade: 'black list', status: 'rejected' },
+    // 'D', the failing band of the source scale — not a fourth spelling of
+    // «blacklisted», which is not a grade at all.
+    { min: 0, grade: 'D', status: 'rejected' },
   ]);
 });
 

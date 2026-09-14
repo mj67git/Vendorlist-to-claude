@@ -751,7 +751,7 @@ export function ArchiveView({ vendors, currentUser, partners = [], materials = [
                       {isSampleRecord(v) ? (
                         <Badge variant="stage" className="text-2xs" title="نمونه امتیازدهی دپارتمانی ندارد">بدون گرید</Badge>
                       ) : (
-                        <GradeBadge grade={describeVendorRank(v).grade} status={v.status} scores={v.scores} />
+                        <GradeBadge vendor={v} grade={describeVendorRank(v).grade} />
                       )}
                     </td>
                     <td className="py-3 px-4 text-center hidden md:table-cell">

@@ -1,9 +1,10 @@
 import { lockRecordWrite, serializeWrites } from "../http/recordLock.js";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { resolvePartnerLink, stripPartnerMarker } from "../domain/partnerLink.js";
 import { parseDateSafely } from "../db/coerce.js";
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
+import { normalizeSourceGrade } from "../../utils/sourceVocabulary.js";
 import {
   CALCULATION_WEIGHTS,
   calculateRoundedWeightedScore,
@@ -56,7 +57,11 @@ export function toDbRiskLevel(l: any): any {
 // and activity logs into their normalized tables. Each collection is fully
 // replaced from the passed data so the read-modify-write endpoints stay
 // consistent. A field left undefined is not touched (partial saves).
-export async function persistVendorRelations(prisma: PrismaClient, id: string, v: any): Promise<void> {
+// `TransactionClient`, not `PrismaClient`: `saveVendorToDb` calls this from
+// inside `$transaction`, and the delete-then-recreate below is exactly the part
+// that must not be able to half-finish. A full client is still accepted — it is
+// the wider type — so the other callers are unaffected.
+export async function persistVendorRelations(prisma: Prisma.TransactionClient, id: string, v: any): Promise<void> {
   const { riskAssessment, analysisRecords, activityLogs } = v;
 
   if (riskAssessment !== undefined) {
@@ -119,7 +124,7 @@ export async function persistVendorRelations(prisma: PrismaClient, id: string, v
 /**
  * Build the vendor objects the API serves.
  *
- * Pass `vendorId` to build just one. Without it every query below runs
+ * Pass `vendorId` to build just one — or an array of ids to build those. Without it every query below runs
  * unfiltered, which is correct for the list endpoint and ruinous for the
  * sixteen handlers that only ever wanted a single record: fetching one vendor
  * used to mean loading every vendor, every evaluation, every activity log and
@@ -186,11 +191,27 @@ export async function getVendorChangesSince(
   };
 }
 
-export async function getVendorsList(vendorId?: string, window?: VendorPage): Promise<any[]> {
+export async function getVendorsList(
+  vendorId?: string | string[],
+  window?: VendorPage,
+): Promise<any[]> {
   const prisma = requirePrisma();
   {
+    /*
+     * One source, a named handful, or the register.
+     *
+     * The handful is what the background poll asks for. It used to have no way
+     * to ask: `GET /api/vendors/changes` answered with the ids that moved, and
+     * the client then re-read *everything* — nine megabytes on a register of
+     * ten thousand sources, every thirty seconds for as long as a second
+     * operator kept saving. The ids were already in hand; only the endpoint to
+     * spend them on was missing.
+     */
+    const idFilter = Array.isArray(vendorId)
+      ? { id: { in: vendorId } }
+      : vendorId ? { id: vendorId } : {};
     const vendors = await prisma.vendor.findMany({
-      where: vendorId ? { id: vendorId } : {},
+      where: idFilter,
       orderBy: [{ name: "asc" }, { id: "asc" }],
       ...(window ? { skip: window.skip, take: window.take } : {}),
     });
@@ -200,11 +221,13 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     // once; a page reads only its own rows. `in` over a page of ids is what the
     // primary-key index is for — over the whole table it would be worse than no
     // filter at all, hence the three-way choice rather than always listing ids.
-    const only: any = vendorId
-      ? { vendorId }
-      : window
-        ? { vendorId: { in: vendors.map(v => v.id) } }
-        : {};
+    const only: any = Array.isArray(vendorId)
+      ? { vendorId: { in: vendorId } }
+      : vendorId
+        ? { vendorId }
+        : window
+          ? { vendorId: { in: vendors.map(v => v.id) } }
+          : {};
     const vendorMaterials = await prisma.vendorMaterial.findMany({ where: only });
     // Materials are reached through the links above, so when building a single
     // vendor — or one page — only the ones actually referenced need loading.
@@ -218,13 +241,42 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
       where: vendorId || window ? { id: { in: materialIds } } : {},
       select: { id: true, name: true, nameEn: true, cas: true, irc: true },
     });
-    const evaluations = await prisma.evaluation.findMany({ where: only });
+    // Newest first, explicitly. Without an order the database returns rows in
+    // whatever physical order it likes — which an UPDATE or a VACUUM can change
+    // — and the map below keeps the last one it sees, so a source with more
+    // than one evaluation answered differently from one request to the next.
+    const evaluations = await prisma.evaluation.findMany({
+      where: only,
+      orderBy: { createdAt: "desc" },
+    });
     const activityLogRows = await prisma.activityLog.findMany({ where: only, orderBy: { createdAt: "asc" } });
     const riskRows = await prisma.riskAssessment.findMany({ where: only });
     const analysisRows = await prisma.analysisRecord.findMany({ where: only, orderBy: { createdAt: "asc" } });
 
     const materialsMap = new Map<string, any>(materials.map(m => [m.id, m]));
-    const evaluationsMap = new Map<string, any>(evaluations.map(ev => [ev.vendorId, ev]));
+    // Which material each source currently supplies. Built here because the
+    // evaluation map below picks the row that matches it.
+    const linkByVendor = new Map<string, any>();
+    for (const vm of vendorMaterials) {
+      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
+    }
+
+    /**
+     * One evaluation per source, chosen rather than stumbled upon.
+     *
+     * The row for the material the source currently supplies is the right one;
+     * the newest is the fallback for a record whose link is missing. Building
+     * the map from `evaluations.map(...)` kept whichever row came last in an
+     * unordered result, which is how the same source reported two different
+     * scores.
+     */
+    const evaluationsMap = new Map<string, any>();
+    for (const ev of evaluations) {
+      const current = evaluationsMap.get(ev.vendorId);
+      const link = linkByVendor.get(ev.vendorId);
+      if (!current) { evaluationsMap.set(ev.vendorId, ev); continue; }
+      if (link && ev.materialId === link.materialId) evaluationsMap.set(ev.vendorId, ev);
+    }
 
     const logsByVendor = new Map<string, any[]>();
     activityLogRows.forEach(log => {
@@ -271,10 +323,6 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     // Indexed by vendor rather than scanned per vendor: the previous .find()
     // inside this loop made the list endpoint O(n²) — at 1,200 vendors that is
     // over a million comparisons for a single request.
-    const linkByVendor = new Map<string, any>();
-    for (const vm of vendorMaterials) {
-      if (!linkByVendor.has(vm.vendorId)) linkByVendor.set(vm.vendorId, vm);
-    }
 
     const result: any[] = [];
     for (const v of vendors) {
@@ -326,6 +374,7 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
         status: v.status,
         grade: v.grade,
         initialSampleStatus: (v as any).initialSampleStatus || "",
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         // The edit form validates against materialId, so it has to travel with
         // the vendor — without it every existing source failed validation with
         // "choose a material" even though one was linked.
@@ -408,7 +457,25 @@ export async function saveVendorToDb(
   expectedUpdatedAt?: Date | null,
 ): Promise<boolean> {
   const prisma = requirePrisma();
-  {
+  /*
+   * One save, one transaction.
+   *
+   * A source lives across six tables and this function wrote to them one
+   * statement at a time, so anything that failed part-way — a constraint, a
+   * dropped connection, a timeout — left the aggregate in a state no one had
+   * ever asked for. The worst of it is below: the risk assessment, the
+   * laboratory results and the activity log are each *deleted and recreated*
+   * (`persistVendorRelations`), so a failure between those two halves does not
+   * merely lose the edit, it loses the records that were already there. The
+   * `expectedUpdatedAt` claim is inside the transaction too, so the check and
+   * the writes it guards cannot be separated by another writer.
+   *
+   * The timeout is stated rather than inherited: this is up to fifteen
+   * statements, and Prisma's default five seconds is a limit a source with a
+   * long analysis history can genuinely reach — at which point the rollback
+   * would look like data loss to the person saving.
+   */
+  return prisma.$transaction(async (tx) => {
     const {
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
       material, materialEn, cas, irc, ircExpiryDate, lastAudit, isSample, category,
@@ -455,14 +522,14 @@ export async function saveVendorToDb(
       // updateMany takes a non-unique filter, so the timestamp can be part of
       // the WHERE. A count of zero means the row moved under us — or vanished —
       // and either way this write must not land.
-      const claimed = await prisma.vendor.updateMany({
+      const claimed = await tx.vendor.updateMany({
         where: { id, updatedAt: expectedUpdatedAt },
         data: { updatedAt: new Date() },
       });
       if (claimed.count === 0) throw new VendorConflictError();
     }
 
-    await prisma.vendor.upsert({
+    await tx.vendor.upsert({
       where: { id },
       update: {
         name: name || "Unknown",
@@ -477,6 +544,9 @@ export async function saveVendorToDb(
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        // Rule 11b: a field the record carries has to be written in both
+        // branches, or it is accepted, acknowledged and silently dropped.
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         irc: irc || null,
         /*
          * The licence dates.
@@ -509,6 +579,9 @@ export async function saveVendorToDb(
         status: status || "new",
         grade: grade || null,
         initialSampleStatus: v.initialSampleStatus || null,
+        // Rule 11b: a field the record carries has to be written in both
+        // branches, or it is accepted, acknowledged and silently dropped.
+        rejectedByDecision: (v as any).rejectedByDecision === true,
         irc: irc || null,
         /*
          * The licence dates.
@@ -540,11 +613,11 @@ export async function saveVendorToDb(
      * that carry no materialId, and the IRC is no longer part of it.
      */
     const materialId = v.materialId || generateMaterialId(cas, undefined, material, materialEn);
-    const existingMaterial = await prisma.material.findUnique({ where: { id: materialId } });
+    const existingMaterial = await tx.material.findUnique({ where: { id: materialId } });
     if (!existingMaterial) {
       // Only ever create the catalogue entry from a vendor payload; never
       // overwrite one, or saving a source would rewrite the master record.
-      await prisma.material.create({
+      await tx.material.create({
         data: {
           id: materialId,
           name: material || "نامشخص",
@@ -556,7 +629,18 @@ export async function saveVendorToDb(
     }
 
     // Delete any old links for this vendor that point to a different material
-    await prisma.vendorMaterial.deleteMany({
+    await tx.vendorMaterial.deleteMany({
+      where: {
+        vendorId: id,
+        materialId: { not: materialId }
+      }
+    });
+
+    // …and the evaluation that was keyed to it. The link was being cleaned up
+    // and the evaluation was not, so changing a source's material left a row
+    // scoring it against a material it no longer supplies — which is what gave
+    // the read two candidates to choose between in the first place.
+    await tx.evaluation.deleteMany({
       where: {
         vendorId: id,
         materialId: { not: materialId }
@@ -572,7 +656,7 @@ export async function saveVendorToDb(
      * hidden only because the material id used to be derived from the payload,
      * which made the deleteMany above drop the existing link first.
      */
-    await prisma.vendorMaterial.upsert({
+    await tx.vendorMaterial.upsert({
       where: { vendorId_materialId: { vendorId: id, materialId } },
       update: {
         isSample: isSample ?? false,
@@ -588,7 +672,7 @@ export async function saveVendorToDb(
     });
 
     const evalId = `eval_${id}_${materialId}`;
-    await prisma.evaluation.upsert({
+    await tx.evaluation.upsert({
       where: { id: evalId },
       update: {
         period: "۱۴۰۵-Q1",
@@ -597,7 +681,11 @@ export async function saveVendorToDb(
         planningScore: scoreObj.planning || 0,
         financeScore: scoreObj.finance || 0,
         totalScore: roundedTotal,
-        grade: grade || "C",
+        // The grade as one of the four bands, or nothing. `grade || "C"` stored
+        // a Grade C for every source nobody had scored — write-only, since the
+        // read path takes the grade from the vendor row, but a stored claim all
+        // the same (rule 11c: never persist a derived value you were handed).
+        grade: normalizeSourceGrade(grade),
         scores: scoreText,
         rawScores: rawScoreText,
         rejectionReasons: rejectText,
@@ -612,17 +700,21 @@ export async function saveVendorToDb(
         planningScore: scoreObj.planning || 0,
         financeScore: scoreObj.finance || 0,
         totalScore: roundedTotal,
-        grade: grade || "C",
+        // The grade as one of the four bands, or nothing. `grade || "C"` stored
+        // a Grade C for every source nobody had scored — write-only, since the
+        // read path takes the grade from the vendor row, but a stored claim all
+        // the same (rule 11c: never persist a derived value you were handed).
+        grade: normalizeSourceGrade(grade),
         scores: scoreText,
         rawScores: rawScoreText,
         rejectionReasons: rejectText,
       },
     });
 
-    await persistVendorRelations(prisma, id, v);
+    await persistVendorRelations(tx, id, v);
 
     return true;
-  }
+  }, { timeout: 15_000 });
 }
 
 export async function deleteVendorFromDb(id: string): Promise<boolean> {
@@ -630,9 +722,14 @@ export async function deleteVendorFromDb(id: string): Promise<boolean> {
   try {
     // Evaluations, vendor-material links, risk assessments, analysis records
     // and activity logs cascade on the vendor delete via their foreign keys.
-    await prisma.evaluation.deleteMany({ where: { vendorId: id } });
-    await prisma.vendorMaterial.deleteMany({ where: { vendorId: id } });
-    await prisma.vendor.delete({ where: { id } });
+    // The three statements are one transaction for the same reason the save is:
+    // a failure on the last of them used to leave a source stripped of its
+    // evaluation and its material link but still present in every register.
+    await prisma.$transaction(async (tx) => {
+      await tx.evaluation.deleteMany({ where: { vendorId: id } });
+      await tx.vendorMaterial.deleteMany({ where: { vendorId: id } });
+      await tx.vendor.delete({ where: { id } });
+    });
     return true;
   } catch (err: any) {
     // Prisma throws P2025 when the target row does not exist.

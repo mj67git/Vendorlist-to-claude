@@ -31,6 +31,25 @@ export function ircViolation(irc: unknown, previousIrc?: unknown): string | null
  * saved before this rule existed stays editable rather than becoming
  * unsaveable.
  */
+/**
+ * Check both partner links, not just the seller's.
+ *
+ * `canSupplySources` refuses a blacklisted partner whatever its type — the
+ * status is tested before the SOP grade, and a manufacturer carries no grade —
+ * but it was only ever reached through `supplierId`. A manufacturer somebody
+ * had deliberately blacklisted could still be attached to a new source, which
+ * is the one thing that decision is supposed to prevent.
+ */
+export async function sopPartnerViolation(
+  incoming: { supplierId?: string | null; manufacturerId?: string | null },
+  previous?: { supplierId?: string | null; manufacturerId?: string | null } | null,
+): Promise<string | null> {
+  return (
+    await sopSupplierViolation(incoming.supplierId, previous?.supplierId)
+    || await sopSupplierViolation(incoming.manufacturerId, previous?.manufacturerId)
+  );
+}
+
 export async function sopSupplierViolation(
   supplierId: string | null | undefined,
   previousSupplierId?: string | null,

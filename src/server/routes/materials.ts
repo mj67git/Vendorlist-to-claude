@@ -221,7 +221,18 @@ export function materialRoutes(): express.Router {
       if (!fileName || typeof fileDataUrl !== "string" || !fileDataUrl.startsWith("data:")) {
         return res.status(400).json({ error: "فایل ارسالی نامعتبر است." });
       }
-      if (typeof fileSize === "number" && fileSize > MAX_SPECIFICATION_BYTES) {
+      /*
+       * Measured from what arrived, not from what the caller said about it.
+       *
+       * The check read `fileSize` straight out of the request body, so a
+       * caller sending a small number beside a large payload walked past a
+       * limit the server believed it was enforcing. The data URL is the file,
+       * so its base64 length is the only honest measure of it; `fileSize` is
+       * kept for display but no longer decides anything.
+       */
+      const encoded = fileDataUrl.slice(fileDataUrl.indexOf(",") + 1);
+      const actualBytes = Math.floor(encoded.length * 3 / 4);
+      if (actualBytes > MAX_SPECIFICATION_BYTES) {
         return res.status(413).json({ error: "حجم فایل بیش از حد مجاز (۷ مگابایت) است." });
       }
 

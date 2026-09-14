@@ -10,7 +10,7 @@ import { can } from '../../utils/permissions';
 import { authFetch, isLocalMode } from '../../services/authFetch';
 import { readLocalAudit } from '../../services/localAudit';
 import { BusinessPartner, Category, Material, User, Vendor } from '../../types';
-import { adminRejectionReason, isInCategoryRegister, isSampleVendor, isVendorRejected } from '../../utils/vendorState';
+import { isExplicitlyRejected, isInCategoryRegister, isSampleVendor, isVendorRejected } from '../../utils/vendorState';
 import { describeVendorRank, SOURCE_GRADE_RANGE_FA } from '../../utils/vendorRank';
 import { describeSampleStatus } from '../../utils/sampleStatus';
 import { countMaterialsWithSources, indexSourcesByMaterial } from '../../utils/materialSources';
@@ -516,8 +516,10 @@ export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, cur
             if (isBlacklistCard) {
               // A verdict, not a mix of qualities: what is worth knowing is how
               // a source got here — a person's decision, or its own score.
+              // `isExplicitlyRejected`, not the reason text — see the chips on
+              // the blacklist page, which had the same mislabelling.
               let explicit = 0;
-              for (const v of catVendors) if (adminRejectionReason(v)) explicit++;
+              for (const v of catVendors) if (isExplicitlyRejected(v)) explicit++;
               rows = [
                 { key: 'explicit', label: 'رد صریح', value: explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-500' },
                 { key: 'low', label: 'امتیاز پایین', value: catVendors.length - explicit, tone: 'text-rose-600 dark:text-rose-400', bar: 'bg-rose-400' },

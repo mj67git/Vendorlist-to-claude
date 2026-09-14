@@ -13,6 +13,7 @@
 // result deleted, an admin restore) therefore clears everywhere at once.
 
 import { calculateOverallScore } from './vendorUtils';
+import { normalizeSourceGrade } from './sourceVocabulary';
 
 type AnyVendor = any;
 
@@ -63,9 +64,43 @@ function hasManualRejection(v: AnyVendor): boolean {
 }
 
 /**
+ * Is this source below the qualification floor on the numbers alone?
+ *
+ * Computed from the scores every time rather than read back from a column, and
+ * that is the whole point: a verdict the arithmetic produced has to be able to
+ * change when the arithmetic does. A partly scored source is not below the
+ * floor — it has no weighted score yet.
+ */
+export function scoreBelowFloor(v: AnyVendor): boolean {
+  if (!v || isSampleVendor(v)) return false;
+  const s = v.scores;
+  const fullyScored = s && s.commercial > 0 && s.qa > 0 && s.planning > 0 && s.finance > 0;
+  if (!fullyScored) return false;
+  return (calculateOverallScore(s, true) || 0) < BLACKLIST_SCORE_FLOOR;
+}
+
+/**
  * The one predicate every counter, filter and badge must use.
- * Deliberately does NOT consider `grade`: grade is derived from this, so reading
- * it back here is what created the one-way latch.
+ *
+ * Deliberately does NOT consider `grade` or `status`. Both are *outputs* of
+ * this function — `applyDerivedState` writes them from what it returns — so
+ * reading either one back is how a one-way latch forms. `grade` was taken out
+ * for that reason once; `status` survived the same fix and did the same thing.
+ *
+ * What it cost: a source that fell below the floor had `status: 'rejected'`
+ * written, and the next call read that stamp, returned true before reaching the
+ * scoring branch, and re-stamped the record. Better scores could never lift it
+ * out. Two sources with identical numbers sat in opposite states, decided
+ * entirely by which of them had once scored badly.
+ *
+ * The three grounds are now stated separately, and each is read from the thing
+ * that actually establishes it:
+ *
+ *   - `rejectedByDecision` — a person decided. Persists until a person
+ *     reverses it, which is what a decision means.
+ *   - a recorded rejection reason — the older way the same decision was
+ *     written, still honoured.
+ *   - the score — computed live, so it reverses itself when the score does.
  */
 export function isVendorRejected(v: AnyVendor): boolean {
   if (!v) return false;
@@ -84,8 +119,49 @@ export function isVendorRejected(v: AnyVendor): boolean {
     return hasManualRejection(v) || v.status === 'rejected';
   }
   // A source is never auto-rejected by a single lab failure — only by an
-  // explicit decision (the admin reject box, or the vendor form).
-  return v.category === 'blacklist' || hasManualRejection(v) || v.status === 'rejected';
+  // explicit decision (the admin reject box, or the vendor form) or by falling
+  // below the qualification floor on its own scores.
+  if (v.category === 'blacklist' || hasManualRejection(v)) return true;
+
+  /**
+   * A record that predates the decision column still answers for itself.
+   *
+   * Everything that comes through the API carries an explicit boolean — the
+   * repository writes one on every save and reads one on every load — so
+   * `undefined` here means an object older than the column: a browser cache
+   * written by the previous version, a fixture, an import. For those, the old
+   * reading of `status` is the only record of the verdict there is, and
+   * dropping it would silently re-qualify suppliers a person had disqualified.
+   *
+   * Same shape as `LEGACY_PERMISSIONS`: the retired spelling keeps being
+   * understood on the way in, and nothing is written in it again.
+   */
+  if (v.rejectedByDecision === undefined) {
+    return v.status === 'rejected' || scoreBelowFloor(v);
+  }
+
+  return v.rejectedByDecision === true || scoreBelowFloor(v);
+}
+
+/**
+ * Was this source turned down by a person, rather than by its own score?
+ *
+ * The two grounds are not the same thing and the blacklist page counts them
+ * separately, but it was reading «a person decided» off the presence of a typed
+ * reason — so a decision recorded without one (the checkbox on the admin form,
+ * an older row, anything the decision column carries) was counted as a low
+ * score, next to a «امتیاز پایین: ۱» chip for a source nobody had ever scored.
+ *
+ * The column is the record of the decision; the reason line is one way of
+ * writing it down, not the decision itself.
+ */
+export function isExplicitlyRejected(v: AnyVendor): boolean {
+  if (!v) return false;
+  if (v.rejectedByDecision === true) return true;
+  if (adminRejectionReason(v)) return true;
+  // Older objects, before the column: the reasons list is all there is, and a
+  // reason that is not a projection of a QC record was typed by somebody.
+  return v.rejectedByDecision === undefined && hasManualRejection(v);
 }
 
 /**
@@ -96,7 +172,28 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
   if (!v) return v;
 
   if (isVendorRejected(v)) {
-    return { ...v, status: 'rejected', grade: 'rejected' };
+    /*
+     * The verdict goes in `status`. The grade says what was scored.
+     *
+     * This used to write `grade: 'rejected'` as well, which is a category
+     * error with consequences: «rejected» is not a band of a weighted score,
+     * and storing it there destroyed the one thing the column knew — a source
+     * turned down by a decision at Grade B came back from the blacklist with
+     * no grade at all, because its B had been overwritten by the verdict that
+     * disqualified it. Whoever reads the grade of a blacklisted source now
+     * gets the grade it earned; whoever asks whether it is blacklisted asks
+     * `isVendorRejected`, which is the only thing entitled to answer (rule 11).
+     */
+    return { ...v, status: 'rejected', grade: gradeFromScores(v) };
+  }
+
+  // Reaching here means the record is not rejected, so any stamp left by a
+  // cause that has since gone — a score that has recovered, a decision that was
+  // reversed — is stale and has to come off. `status` is cleared as well as
+  // `grade` now: leaving it at 'rejected' was what fed the latch, and the
+  // scoring branch below writes the right one anyway for a fully scored source.
+  if (!isSampleVendor(v) && v.status === 'rejected') {
+    v = { ...v, status: 'new' } as T;
   }
 
   // Not rejected: clear any stale rejection stamp left by a cause that is gone.
@@ -106,8 +203,11 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
   // status already says something else, and there is no status to restore. The
   // helper that used to guess one back from `initialSampleStatus` is gone with
   // the dropdown that wrote that field.
-  const next: AnyVendor = { ...v };
-  if (next.grade === 'rejected') next.grade = 'new';
+  // Whatever spelling the column happens to hold, it is read as one of the four
+  // bands or as «no grade» — and «no grade» is `null`, not the string 'new'
+  // that used to be written here and then sorted, filtered and printed as if
+  // somebody had assessed the source.
+  const next: AnyVendor = { ...v, grade: normalizeSourceGrade(v.grade) };
 
   if (isSampleVendor(next)) return next as T;
 
@@ -120,8 +220,30 @@ export function applyDerivedState<T extends Record<string, any>>(v: T): T {
   if (rounded >= 80) { next.grade = 'A'; next.status = 'approved'; }
   else if (rounded >= 60) { next.grade = 'B'; next.status = 'approved'; }
   else if (rounded >= 40) { next.grade = 'C'; next.status = 'conditional'; }
-  else { next.grade = 'rejected'; next.status = 'rejected'; }
+  // Below the floor the grade is D — the band the score actually falls in, on
+  // the source scale `vendorRank.ts` owns — and the disqualification is said
+  // once, in `status`.
+  else { next.grade = 'D'; next.status = 'rejected'; }
   return next as T;
+}
+
+/**
+ * The band this source's own scores put it in, or whatever grade it already
+ * carries when nobody has scored it.
+ *
+ * Used for a rejected source, where the grade must not be overwritten by the
+ * verdict: a source disqualified by decision keeps the grade it earned, and one
+ * disqualified by its score is a D because that is what the score says.
+ */
+function gradeFromScores(v: AnyVendor): string | null {
+  const s = v?.scores;
+  const fullyScored = s && s.commercial > 0 && s.qa > 0 && s.planning > 0 && s.finance > 0;
+  if (!fullyScored) return normalizeSourceGrade(v?.grade);
+  const rounded = calculateOverallScore(s, true) || 0;
+  if (rounded >= 80) return 'A';
+  if (rounded >= 60) return 'B';
+  if (rounded >= 40) return 'C';
+  return 'D';
 }
 
 /** Blacklist membership for the category view (samples live in their own list). */
