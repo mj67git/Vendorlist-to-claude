@@ -1,5 +1,5 @@
 import { lockRecordWrite, serializeWrites } from "../http/recordLock.js";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { resolvePartnerLink, stripPartnerMarker } from "../domain/partnerLink.js";
 import { parseDateSafely } from "../db/coerce.js";
 import { requirePrisma } from "../db/prisma.js";
@@ -56,7 +56,11 @@ export function toDbRiskLevel(l: any): any {
 // and activity logs into their normalized tables. Each collection is fully
 // replaced from the passed data so the read-modify-write endpoints stay
 // consistent. A field left undefined is not touched (partial saves).
-export async function persistVendorRelations(prisma: PrismaClient, id: string, v: any): Promise<void> {
+// `TransactionClient`, not `PrismaClient`: `saveVendorToDb` calls this from
+// inside `$transaction`, and the delete-then-recreate below is exactly the part
+// that must not be able to half-finish. A full client is still accepted — it is
+// the wider type — so the other callers are unaffected.
+export async function persistVendorRelations(prisma: Prisma.TransactionClient, id: string, v: any): Promise<void> {
   const { riskAssessment, analysisRecords, activityLogs } = v;
 
   if (riskAssessment !== undefined) {
@@ -434,7 +438,25 @@ export async function saveVendorToDb(
   expectedUpdatedAt?: Date | null,
 ): Promise<boolean> {
   const prisma = requirePrisma();
-  {
+  /*
+   * One save, one transaction.
+   *
+   * A source lives across six tables and this function wrote to them one
+   * statement at a time, so anything that failed part-way — a constraint, a
+   * dropped connection, a timeout — left the aggregate in a state no one had
+   * ever asked for. The worst of it is below: the risk assessment, the
+   * laboratory results and the activity log are each *deleted and recreated*
+   * (`persistVendorRelations`), so a failure between those two halves does not
+   * merely lose the edit, it loses the records that were already there. The
+   * `expectedUpdatedAt` claim is inside the transaction too, so the check and
+   * the writes it guards cannot be separated by another writer.
+   *
+   * The timeout is stated rather than inherited: this is up to fifteen
+   * statements, and Prisma's default five seconds is a limit a source with a
+   * long analysis history can genuinely reach — at which point the rollback
+   * would look like data loss to the person saving.
+   */
+  return prisma.$transaction(async (tx) => {
     const {
       id, name, nameEn, country, contactInfo, registrationDate, status, grade,
       material, materialEn, cas, irc, ircExpiryDate, lastAudit, isSample, category,
@@ -481,14 +503,14 @@ export async function saveVendorToDb(
       // updateMany takes a non-unique filter, so the timestamp can be part of
       // the WHERE. A count of zero means the row moved under us — or vanished —
       // and either way this write must not land.
-      const claimed = await prisma.vendor.updateMany({
+      const claimed = await tx.vendor.updateMany({
         where: { id, updatedAt: expectedUpdatedAt },
         data: { updatedAt: new Date() },
       });
       if (claimed.count === 0) throw new VendorConflictError();
     }
 
-    await prisma.vendor.upsert({
+    await tx.vendor.upsert({
       where: { id },
       update: {
         name: name || "Unknown",
@@ -572,11 +594,11 @@ export async function saveVendorToDb(
      * that carry no materialId, and the IRC is no longer part of it.
      */
     const materialId = v.materialId || generateMaterialId(cas, undefined, material, materialEn);
-    const existingMaterial = await prisma.material.findUnique({ where: { id: materialId } });
+    const existingMaterial = await tx.material.findUnique({ where: { id: materialId } });
     if (!existingMaterial) {
       // Only ever create the catalogue entry from a vendor payload; never
       // overwrite one, or saving a source would rewrite the master record.
-      await prisma.material.create({
+      await tx.material.create({
         data: {
           id: materialId,
           name: material || "نامشخص",
@@ -588,7 +610,7 @@ export async function saveVendorToDb(
     }
 
     // Delete any old links for this vendor that point to a different material
-    await prisma.vendorMaterial.deleteMany({
+    await tx.vendorMaterial.deleteMany({
       where: {
         vendorId: id,
         materialId: { not: materialId }
@@ -599,7 +621,7 @@ export async function saveVendorToDb(
     // and the evaluation was not, so changing a source's material left a row
     // scoring it against a material it no longer supplies — which is what gave
     // the read two candidates to choose between in the first place.
-    await prisma.evaluation.deleteMany({
+    await tx.evaluation.deleteMany({
       where: {
         vendorId: id,
         materialId: { not: materialId }
@@ -615,7 +637,7 @@ export async function saveVendorToDb(
      * hidden only because the material id used to be derived from the payload,
      * which made the deleteMany above drop the existing link first.
      */
-    await prisma.vendorMaterial.upsert({
+    await tx.vendorMaterial.upsert({
       where: { vendorId_materialId: { vendorId: id, materialId } },
       update: {
         isSample: isSample ?? false,
@@ -631,7 +653,7 @@ export async function saveVendorToDb(
     });
 
     const evalId = `eval_${id}_${materialId}`;
-    await prisma.evaluation.upsert({
+    await tx.evaluation.upsert({
       where: { id: evalId },
       update: {
         period: "۱۴۰۵-Q1",
@@ -662,10 +684,10 @@ export async function saveVendorToDb(
       },
     });
 
-    await persistVendorRelations(prisma, id, v);
+    await persistVendorRelations(tx, id, v);
 
     return true;
-  }
+  }, { timeout: 15_000 });
 }
 
 export async function deleteVendorFromDb(id: string): Promise<boolean> {
@@ -673,9 +695,14 @@ export async function deleteVendorFromDb(id: string): Promise<boolean> {
   try {
     // Evaluations, vendor-material links, risk assessments, analysis records
     // and activity logs cascade on the vendor delete via their foreign keys.
-    await prisma.evaluation.deleteMany({ where: { vendorId: id } });
-    await prisma.vendorMaterial.deleteMany({ where: { vendorId: id } });
-    await prisma.vendor.delete({ where: { id } });
+    // The three statements are one transaction for the same reason the save is:
+    // a failure on the last of them used to leave a source stripped of its
+    // evaluation and its material link but still present in every register.
+    await prisma.$transaction(async (tx) => {
+      await tx.evaluation.deleteMany({ where: { vendorId: id } });
+      await tx.vendorMaterial.deleteMany({ where: { vendorId: id } });
+      await tx.vendor.delete({ where: { id } });
+    });
     return true;
   } catch (err: any) {
     // Prisma throws P2025 when the target row does not exist.
