@@ -72,7 +72,7 @@ import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
-import { isVendorRejected, isInCategoryRegister } from './utils/vendorState';
+import { isInCategoryRegister } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { can, categoryPermission, effectivePermissions, VIEW_PERMISSIONS, type Permission } from './utils/permissions'
 import { useGatedVendorList } from './hooks/useGatedVendorList';
@@ -84,17 +84,18 @@ import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { useToast } from './hooks/useToast';
 import { CategoryDenied, PermissionDenied } from './components/AccessDenied';
-import { describeError } from './utils/errorMessage';
 import { SystemClock } from './components/SystemClock';
-import { ApiWriteError, authFetch, authWrite, clearAuthenticationSession, isLocalMode } from './services/authFetch';
+import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
 import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
 import { useCachedCollection } from './hooks/useCachedCollection';
+import { createVendorWrites } from './state/vendorWrites';
+import { createDomainWrites } from './state/domainWrites';
 import {
   capHistory, hydrateVendor, popForm, popView, pushForm, pushVendor,
   pushView, refreshVendorEverywhere, type ViewState,
 } from './utils/navStack';
-import { appendLocalAudit, readLocalAudit } from './services/localAudit';
+import { readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Avatar, AvatarFallback } from './components/ui/avatar';
@@ -1035,540 +1036,42 @@ export default function App() {
     setViewHistory(prev => refreshVendorEverywhere(prev, vendor));
   };
 
-  const handleDownloadBackup = () => {
-    try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(vendors, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      
-      const dateStr = new Date().toLocaleDateString('fa-IR').replace(/\//g, '-');
-      downloadAnchor.setAttribute("download", `vendor-scores-backup-${dateStr}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      
-      notify('بانک اطلاعاتی لوکال با موفقیت دانلود شد!');
-    } catch (err) {
-      console.error("Failed to download backup JSON:", err);
-      notify('خطا در پشتیبان‌گیری از اطلاعات.', 'error', 3000);
-    }
-  };
-
-  const handleUpdateVendor = (updatedVendor: Vendor, msg?: string | null) => {
-    const normalized = normalizeAndCleanVendor(updatedVendor);
-    // Ours, so the next background poll does not announce this record back to
-    // the person who just saved it.
-    ownWritesRef.current.add(normalized.id);
-    const original = vendors.find(v => v.id === normalized.id);
-
-    setVendors(prev => prev.map(v => (v.id === normalized.id ? normalized : v)));
-    updateCurrentVendorInHistory(normalized);
-    if (msg !== null) {
-      notify(msg || 'تغییرات با موفقیت ذخیره شد!');
-    }
-
-    if (isLocalMode()) {
-      const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      const wasRejected = original ? isVendorRejected(original) : false;
-      const nowRejected = isVendorRejected(normalized);
-      const rejected = nowRejected && !wasRejected;
-      const restored = wasRejected && !nowRejected;
-      appendLocalAudit({
-        user: currentUser?.name, role: currentUser?.role,
-        module: isSource ? 'Source Management' : 'Supplier Management',
-        action: original ? 'Update' : 'Create',
-        entityType: isSource ? 'Source' : 'Supplier',
-        entityName: normalized.material || normalized.name || 'سورس',
-        severity: rejected || restored ? 'Critical' : original ? 'Warning' : 'Info',
-        description: `${original ? 'ویرایش' : 'ثبت'} "${normalized.name || normalized.material}"${rejected ? ' — انتقال به لیست سیاه' : restored ? ' — خروج از لیست سیاه (علت رد برطرف شد)' : ''}`,
-        before: original || null, after: normalized,
-        reason: normalized.reasonForChange || 'به‌روزرسانی رکورد',
-      });
-    }
-
-    if (!original) {
-      // Fallback to traditional monolithic POST if there is no previous record found to diff safely
-      authWrite('/api/vendors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalized)
-      }).catch((err: unknown) => {
-        console.error('Failed to sync updated vendor to DB:', err);
-        notify(
-          err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.',
-          'error', 8000,
-        );
-        resyncVendorsFromServer(normalized.id);
-      });
-      return;
-    }
-
-    // Determine fine-grained delta adjustments for API Splitting
-    const contactChanged = original.contactInfo !== normalized.contactInfo || original.lastAudit !== normalized.lastAudit || original.ircExpiryDate !== normalized.ircExpiryDate;
-    const scoresChanged = JSON.stringify(original.scores) !== JSON.stringify(normalized.scores) || 
-                          JSON.stringify(original.rawScores) !== JSON.stringify(normalized.rawScores) || 
-                          JSON.stringify(original.rejectionReasons) !== JSON.stringify(normalized.rejectionReasons);
-    const logsChanged = JSON.stringify(original.activityLogs) !== JSON.stringify(normalized.activityLogs);
-    const analysisChanged = JSON.stringify(original.analysisRecords) !== JSON.stringify(normalized.analysisRecords);
-    const riskChanged = JSON.stringify(original.riskAssessment) !== JSON.stringify(normalized.riskAssessment);
-    
-    const profileChanged = original.material !== normalized.material ||
-                           original.materialEn !== normalized.materialEn ||
-                           original.cas !== normalized.cas ||
-                           original.irc !== normalized.irc ||
-                           original.ircExpiryDate !== normalized.ircExpiryDate ||
-                           original.name !== normalized.name ||
-                           original.nameEn !== normalized.nameEn ||
-                           original.country !== normalized.country ||
-                           original.grade !== normalized.grade ||
-                           original.status !== normalized.status ||
-                           original.isSample !== normalized.isSample ||
-                           original.initialSampleStatus !== normalized.initialSampleStatus ||
-                           // The partner link was missing from both the change
-                           // check and the payload, so re-pointing a source at a
-                           // different company was never sent to the server: the
-                           // name changed and the link silently did not.
-                           (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
-                           (original.supplierId || null) !== (normalized.supplierId || null);
-
-    /*
-     * One request carrying only the parts that changed.
-     *
-     * This used to be a queue of up to five PATCHes sent strictly one after
-     * another, because every one of them is a read-modify-write of the whole
-     * source (rule 12) and two in flight at once meant the slower one wrote
-     * back its stale copy — which is how a deleted laboratory result used to
-     * reappear after a reload. Sending them in order solved that and left
-     * something worse in place: a refusal or a dropped connection on the third
-     * request left the first two stored, in a combination nobody asked for and
-     * the client could not undo.
-     *
-     * `PUT /api/vendors/:id` checks every part first and writes them in one
-     * transaction, so the save either happens or it does not. The parts are
-     * still computed separately — an untouched part is left out of the payload
-     * and is not written — and the server still records one audit row per part
-     * that actually changed.
-     */
-    const sections: Record<string, unknown> = {};
-
-    if (profileChanged) {
-      sections.profile = {
-        material: normalized.material,
-        materialEn: normalized.materialEn,
-        cas: normalized.cas,
-        irc: normalized.irc,
-        ircExpiryDate: normalized.ircExpiryDate,
-        name: normalized.name,
-        nameEn: normalized.nameEn,
-        country: normalized.country,
-        grade: normalized.grade,
-        status: normalized.status,
-        isSample: normalized.isSample,
-        initialSampleStatus: normalized.initialSampleStatus,
-        manufacturerId: normalized.manufacturerId ?? null,
-        supplierId: normalized.supplierId ?? null,
-      };
-    }
-
-    if (contactChanged) {
-      sections.contact = {
-        contactInfo: normalized.contactInfo,
-        lastAudit: normalized.lastAudit,
-        ircExpiryDate: normalized.ircExpiryDate,
-      };
-    }
-
-    if (scoresChanged) {
-      sections.scores = {
-        scores: normalized.scores,
-        rawScores: normalized.rawScores,
-        rejectionReasons: normalized.rejectionReasons,
-      };
-    }
-
-    // The analysis part carries the activity log with it, the way the old
-    // `/analysis` endpoint did; the log is only sent on its own when nothing
-    // about the laboratory results changed.
-    if (analysisChanged) {
-      sections.analysis = {
-        analysisRecords: normalized.analysisRecords,
-        activityLogs: normalized.activityLogs,
-      };
-    } else if (logsChanged) {
-      sections.logs = { activityLogs: normalized.activityLogs };
-    }
-
-    if (riskChanged) {
-      sections.risk = { riskAssessment: normalized.riskAssessment };
-    }
-
-    if (Object.keys(sections).length === 0) return;
-
-    /*
-     * Send it, and treat a refusal as a refusal.
-     *
-     * The save is one transaction now, so a refusal means nothing was written
-     * and the record on the server is still `original`. The resync below is
-     * kept anyway: the local copy has already been updated optimistically, and
-     * re-reading is the only thing that is true whether the write was refused,
-     * lost on the wire, or answered after somebody else had changed the row.
-     */
-    void (async () => {
-      setSavesInFlight(n => n + 1);
-      try {
-        // What this save was based on. `original` is the copy that was on
-        // screen when the form was opened, so its timestamp is exactly the
-        // claim the server has to check. Absent (a record this session has
-        // never read) means no claim, and the write behaves as it always did.
-        const expectedUpdatedAt: string | null = typeof original?.updatedAt === 'string'
-          ? original.updatedAt
-          : null;
-        const saved = await authWrite(`/api/vendors/${normalized.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sections,
-            reasonForChange: normalized.reasonForChange,
-            expectedUpdatedAt,
-          }),
-        });
-        // Carry the row's new timestamp into the copy on screen. Without this
-        // the next edit in this session would claim the timestamp from before
-        // this save and be refused as stale — a conflict with nobody on the
-        // other side of it (rule 11a).
-        const stamp = saved?.vendor?.updatedAt;
-        if (typeof stamp === 'string') {
-          setVendors(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
-          updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
-        }
-      } catch (err: unknown) {
-        const reason = err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ تغییر ثبت نشد.';
-        console.error('Vendor sync failed:', err);
-        notify(reason, 'error', 8000, {
-          label: 'بارگذاری دوبارهٔ رکورد',
-          run: () => resyncVendorsFromServer(normalized.id),
-        });
-        resyncVendorsFromServer(normalized.id);
-      } finally {
-        setSavesInFlight(n => Math.max(0, n - 1));
-      }
-    })();
-  };
+  /**
+   * Everything that writes a source, in `state/vendorWrites.ts`.
+   *
+   * It is handed the register and the poll's bookkeeping rather than owning
+   * them: `App` still holds the list on screen, and the background sync reads
+   * the same two refs to tell somebody else's change from this session's own.
+   */
+  const {
+    handleDownloadBackup,
+    handleUpdateVendor,
+    resyncVendorsFromServer,
+    handleDeleteVendor,
+    handleAddVendor,
+  } = createVendorWrites({
+    vendors, setVendors, currentUser, notify,
+    updateCurrentVendorInHistory,
+    selectVendor: handleSelectVendor,
+    setSavesInFlight, setRemoteChangeCount, setDataRevision,
+    ownWritesRef, knownTotalRef, resyncRef,
+  });
 
   /**
-   * Pull the sources back from the server and replace the local copy.
-   *
-   * Used after a write was refused: the optimistic update and its localStorage
-   * cache are both showing something the database did not accept, and the only
-   * honest way back is to re-read. There is no per-vendor GET, so this refetches
-   * the list — which only happens on a failure path.
+   * Material and partner writes, in `state/domainWrites.ts`.
    */
-  const resyncVendorsFromServer = async (focusVendorId?: string) => {
-    if (isLocalMode()) return;
-    try {
-      const rows = await fetchAllVendors<Vendor>({
-        fetchPage: async (page, limit) => {
-          const res = await authFetch(`/api/vendors?page=${page}&limit=${limit}`);
-          if (!res.ok) throw new Error(`vendors page ${page} answered ${res.status}`);
-          return res.json();
-        },
-        // This path exists to correct a wrong local copy, so nothing is shown
-        // until the whole list is in hand: painting a prefix would replace one
-        // incorrect view with a differently incorrect one.
-        onPage: () => {},
-      });
-      const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor);
-      setVendors(fresh);
-      setDataRevision(n => n + 1);
-      const focused = focusVendorId ? fresh.find((v: Vendor) => v.id === focusVendorId) : null;
-      if (focused) updateCurrentVendorInHistory(focused);
-    } catch (err) {
-      console.error('Could not re-read sources after a failed write:', err);
-    } finally {
-      // Whatever the outcome, the offer on screen is answered: either the list
-      // now matches the server, or the failure is logged and a later poll will
-      // ask again.
-      setRemoteChangeCount(0);
-    }
-  };
-
-  // The background-sync effect is declared above the sign-in early return, so
-  // it cannot see this function directly (hooks may not move below a return).
-  resyncRef.current = resyncVendorsFromServer;
-
-  const handleDeleteVendor = (vendorId: string, reasonForChange?: string) => {
-    const removed = vendors.find(v => v.id === vendorId);
-    // Ours, so the next background poll does not announce this record back to
-    // the person who just saved it.
-    ownWritesRef.current.add(vendorId);
-    // Our own removal moves the register size too; re-baseline on the next poll.
-    knownTotalRef.current = null;
-    setVendors(prev => prev.filter(v => v.id !== vendorId));
-    handleSelectVendor(null);
-    notify('سورس با موفقیت حذف شد!');
-    if (isLocalMode()) {
-      const isSource = !!(removed?.isSample || removed?.category === 'sample');
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: isSource ? 'Source Management' : 'Supplier Management', action: 'Delete', entityType: isSource ? 'Source' : 'Supplier', entityName: removed?.material || removed?.name || 'سورس', severity: 'Critical', description: `حذف "${removed?.name || removed?.material || vendorId}"`, before: removed || null, after: null, reason: reasonForChange || 'حذف رکورد' });
-    }
-    // A refused delete has to put the record back: the row was already taken off
-    // the screen, so staying quiet would look exactly like a successful delete.
-    authWrite(`/api/vendors/${vendorId}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reasonForChange })
-    }).catch((err: unknown) => {
-      console.error('Failed to sync vendor deletion to DB:', err);
-      if (removed) setVendors(prev => (prev.some(v => v.id === vendorId) ? prev : [removed, ...prev]));
-      notify(
-        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس حذف نشد.',
-        'error', 8000,
-      );
-    });
-  };
-
-  /**
-   * Register a new source.
-   *
-   * Saving deliberately does not move the user: this used to end by opening the
-   * new record's page, which suits someone registering one source in order to
-   * score it straight away, and works against someone transcribing a stack of
-   * them from an old file — every save landed them on a page they had to leave
-   * again. The record is offered on the toast instead, so reaching it is one
-   * click for whoever wants it and none for whoever does not.
-   */
-  /**
-   * Register a source, and report whether the database accepted it.
-   *
-   * The row is still inserted optimistically — the register redraws at once —
-   * but the promise settles on the server's answer, so a caller can wait before
-   * it navigates or clears a form. It resolves with the stored record, or with
-   * `null` once the refusal has been rolled back and shown; it never rejects,
-   * because callers that do not care about the outcome (the dashboard's quick
-   * add) would otherwise raise an unhandled rejection.
-   */
-  const handleAddVendor = (newVendor: Vendor): Promise<Vendor | null> => {
-    const normalized = normalizeAndCleanVendor(newVendor);
-    // Ours: skip it in the next poll, and drop the count baseline so our own
-    // new row is not read as somebody else's change to the register size.
-    ownWritesRef.current.add(normalized.id);
-    knownTotalRef.current = null;
-    setVendors(prev => [normalized, ...prev]);
-    // No action button on the toast any more: the form now takes the user to
-    // the new source's own page, so «مشاهده و امتیازدهی» would point at the
-    // page they are already standing on.
-    notify(`سورس «${normalized.name || normalized.material || 'جدید'}» ثبت شد.`, 'success', 3000);
-    if (isLocalMode()) {
-      const isSource = !!(normalized.isSample || normalized.category === 'sample');
-      appendLocalAudit({
-        user: currentUser?.name, role: currentUser?.role,
-        module: isSource ? 'Source Management' : 'Supplier Management',
-        action: 'Create', entityType: isSource ? 'Source' : 'Supplier',
-        entityName: normalized.material || normalized.name || 'سورس', severity: 'Info',
-        description: `ثبت سورس جدید "${normalized.name || normalized.material}"`,
-        before: null, after: normalized, reason: 'ثبت سورس جدید',
-      });
-    }
-    /*
-     * A refused create used to leave the new source sitting in the list and in
-     * the localStorage cache while the database had never heard of it — the
-     * next person to open the register saw a source that did not exist. The
-     * optimistic row is withdrawn and the server's reason is shown instead.
-     */
-    setSavesInFlight(n => n + 1);
-    return authWrite('/api/vendors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(normalized)
-    }).then(() => normalized).catch((err: unknown) => {
-      console.error('Failed to sync new vendor to DB:', err);
-      setVendors(prev => prev.filter(v => v.id !== normalized.id));
-      notify(
-        err instanceof ApiWriteError ? err.message : 'ارتباط با سرور برقرار نشد؛ سورس ثبت نشد.',
-        'error', 8000,
-      );
-      return null;
-    }).finally(() => setSavesInFlight(n => Math.max(0, n - 1)));
-  };
-
-  // Material changes are persisted and audited server-side (module "مدیریت مواد"),
-  // so the client only does an optimistic update and syncs to the API.
-  const handleAddMaterial = (newMaterial: Material) => {
-    setMaterials(prev => [newMaterial, ...prev]);
-    notify('ماده اولیه جدید با موفقیت اضافه شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Create', entityType: 'Material', entityName: newMaterial.nameFa || 'ماده', severity: 'Info', description: `ثبت مادهٔ اولیهٔ جدید "${newMaterial.nameFa || ''}"`, before: null, after: newMaterial, reason: 'ثبت ماده جدید' });
-    authFetch('/api/materials', { method: 'POST', body: JSON.stringify(newMaterial) })
-      .then(async res => { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت ماده'); })
-      .catch(err => {
-        setMaterials(prev => prev.filter(m => m.id !== newMaterial.id));
-        notify(describeError(err, 'ثبت ماده در سرور ناموفق بود.'), 'error', 5000);
-      });
-  };
-
-  const handleEditMaterial = (updatedMaterial: Material, customAction?: string) => {
-    const oldMaterial = materials.find(m => m.id === updatedMaterial.id);
-    setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? updatedMaterial : m)));
-    notify('اطلاعات ماده اولیه با موفقیت به‌روزرسانی شد!');
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Update', entityType: 'Material', entityName: updatedMaterial.nameFa || 'ماده', severity: 'Warning', description: customAction || `ویرایش مادهٔ اولیه "${updatedMaterial.nameFa || ''}"`, before: oldMaterial || null, after: updatedMaterial, reason: 'ویرایش ماده' });
-    // The copy this edit was based on. The server refuses with 409 when the row
-    // has moved on since, so a form opened before somebody else's save cannot
-    // quietly undo it.
-    authFetch(`/api/materials/${updatedMaterial.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ ...updatedMaterial, expectedUpdatedAt: oldMaterial?.updatedAt ?? null }),
-    })
-      .then(async res => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          // Re-read on a conflict: what is on screen is not what is on file.
-          if (res.status === 409) void materialsCollection.reload();
-          throw new Error(body.error || 'خطا در ویرایش ماده');
-        }
-        // Carry the row's new timestamp, so the next edit in this session
-        // claims the copy the server actually holds.
-        const saved = body?.material;
-        if (saved?.updatedAt) {
-          setMaterials(prev => prev.map(m => (m.id === updatedMaterial.id ? { ...m, updatedAt: saved.updatedAt } as Material : m)));
-        }
-      })
-      .catch(err => {
-        if (oldMaterial) setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? oldMaterial : m));
-        notify(describeError(err, 'ویرایش ماده در سرور ناموفق بود.'), 'error', 5000);
-      });
-  };
-
-  const handleDeleteMaterial = async (id: string) => {
-    const removed = materials.find(m => m.id === id);
-    setMaterials(prev => prev.filter(m => m.id !== id));
-    if (isLocalMode()) {
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'مدیریت مواد', action: 'Delete', entityType: 'Material', entityName: removed?.nameFa || 'ماده', severity: 'Critical', description: `حذف مادهٔ اولیه "${removed?.nameFa || ''}"`, before: removed || null, after: null, reason: 'حذف ماده' });
-      notify('ماده اولیه با موفقیت حذف شد!');
-      return;
-    }
-    try {
-      const response = await authFetch(`/api/materials/${id}`, { method: 'DELETE' });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'خطا در حذف');
-      }
-      notify('ماده اولیه با موفقیت حذف شد!');
-    } catch (err: unknown) {
-      // Put back the one row, rather than the whole list as it stood before the
-      // request. Restoring a snapshot also un-does anything that arrived while
-      // the request was in flight — another operator's edit, a background
-      // refresh — and the user sees their own delete fail and someone else's
-      // work disappear with it.
-      if (removed) setMaterials(prev => (prev.some(m => m.id === id) ? prev : [removed, ...prev]));
-      notify(describeError(err, 'حذف ماده در سرور ناموفق بود.'), 'error', 5000);
-    }
-  };
-
-  // Business-partner changes are audited server-side (authoritative, in the
-  // Business Partner Repository module), so the client no longer posts its own
-  // audit records — that would double-log every change.
-
-  /**
-   * Why a rejected save must be surfaced, not logged.
-   *
-   * Both handlers used to end in `.catch(err => console.error(...))` and never
-   * looked at `res.ok`. A 403 (no permission), a 400 (validation) or a 413 (an
-   * evaluation whose attached documents exceed the body limit) therefore left
-   * the user with a green "saved successfully" toast, the change alive in
-   * memory, and nothing on the server — until the next reload silently took it
-   * away. For a supplier evaluation in a GxP system that is the worst possible
-   * failure mode, so a rejected write now rolls the optimistic update back and
-   * says what happened.
-   */
-  const describePartnerFailure = async (res: Response, fallback: string) => {
-    // A refusal does not always carry JSON — a proxy 413 is HTML, and a dropped
-    // connection is nothing at all — so the parse is allowed to fail and the
-    // status decides the wording instead.
-    const body: { error?: unknown } = await res.json().catch(() => ({}));
-    if (typeof body.error === 'string' && body.error) return body.error;
-    if (res.status === 413) return 'حجم مدارک پیوست بیش از حد مجاز سرور است. فایل‌های کوچک‌تری بارگذاری کنید.';
-    if (res.status === 403) return 'دسترسی لازم برای این تغییر را ندارید.';
-    return fallback;
-  };
-
-  const handleAddBusinessPartner = (newPartner: BusinessPartner) => {
-    setBusinessPartners(prev => [newPartner, ...prev]);
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Create', entityType: 'BusinessPartner', entityName: newPartner.name, severity: 'Info', description: `ثبت شریک تجاری جدید "${newPartner.name}" (${newPartner.type})`, before: null, after: newPartner, reason: 'ثبت شریک تجاری' });
-    if (isLocalMode()) {
-      notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-      return;
-    }
-    authFetch('/api/business-partners', {
-      method: 'POST',
-      body: JSON.stringify(newPartner)
-    })
-      .then(async res => {
-        if (!res.ok) throw new Error(await describePartnerFailure(res, 'ثبت شریک تجاری در سرور ناموفق بود.'));
-        notify(`شریک تجاری "${newPartner.name}" با موفقیت اضافه شد!`);
-      })
-      .catch(err => {
-        // Take back this row only — see the note on the material delete.
-        setBusinessPartners(prev => prev.filter(p => p.id !== newPartner.id));
-        notify(describeError(err, 'ثبت شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
-
-  const handleEditBusinessPartner = (updatedPartner: BusinessPartner) => {
-    const oldPartner = businessPartners.find(p => p.id === updatedPartner.id);
-    setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? updatedPartner : p)));
-    if (isLocalMode()) appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Update', entityType: 'BusinessPartner', entityName: updatedPartner.name, severity: 'Warning', description: `ویرایش شریک تجاری "${updatedPartner.name}"`, before: oldPartner || null, after: updatedPartner, reason: 'ویرایش شریک تجاری' });
-    if (isLocalMode()) {
-      notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-      return;
-    }
-    authFetch(`/api/business-partners/${updatedPartner.id}`, {
-      method: 'PUT',
-      // Claiming the copy this form was opened on: the server answers 409 when
-      // somebody else has saved in the meantime, rather than letting this write
-      // replace the whole record — SOP evaluation included — with older values.
-      body: JSON.stringify({ ...updatedPartner, expectedUpdatedAt: oldPartner?.updatedAt ?? null })
-    })
-      .then(async res => {
-        if (!res.ok) {
-          if (res.status === 409) void partnersCollection.reload();
-          throw new Error(await describePartnerFailure(res, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'));
-        }
-        const body = await res.json().catch(() => ({}));
-        const saved = body?.partner;
-        if (saved?.updatedAt) {
-          setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? { ...p, updatedAt: saved.updatedAt } : p)));
-        }
-        notify(`اطلاعات شریک تجاری "${updatedPartner.name}" با موفقیت به‌روزرسانی شد!`);
-      })
-      .catch(err => {
-        if (oldPartner) setBusinessPartners(prev => prev.map(p => (p.id === updatedPartner.id ? oldPartner : p)));
-        notify(describeError(err, 'ذخیرهٔ تغییرات شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
-
-  const handleDeleteBusinessPartner = (id: string) => {
-    const partner = businessPartners.find(p => p.id === id);
-    if (!partner) return;
-
-    // The server enforces referential integrity and audits both the blocked
-    // attempt and the successful delete; revert optimistically on rejection.
-    setBusinessPartners(prev => prev.filter(p => p.id !== id));
-    if (isLocalMode()) {
-      appendLocalAudit({ user: currentUser?.name, role: currentUser?.role, module: 'Business Partner Repository', action: 'Delete', entityType: 'BusinessPartner', entityName: partner.name, severity: 'Critical', description: `حذف شریک تجاری "${partner.name}"`, before: partner, after: null, reason: 'حذف شریک تجاری' });
-      notify('شریک تجاری با موفقیت حذف شد!');
-      return;
-    }
-    authFetch(`/api/business-partners/${id}`, { method: 'DELETE' })
-      .then(async res => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || 'حذف شریک تجاری در سرور ناموفق بود.');
-        }
-        notify('شریک تجاری با موفقیت حذف شد!');
-      })
-      .catch(err => {
-        setBusinessPartners(prev => (prev.some(p => p.id === id) ? prev : [partner, ...prev]));
-        notify(describeError(err, 'حذف شریک تجاری در سرور ناموفق بود.'), 'error');
-      });
-  };
+  const {
+    handleAddMaterial,
+    handleEditMaterial,
+    handleDeleteMaterial,
+    handleAddBusinessPartner,
+    handleEditBusinessPartner,
+    handleDeleteBusinessPartner,
+  } = createDomainWrites({
+    materials, setMaterials, businessPartners, setBusinessPartners, currentUser, notify,
+    reloadMaterials: materialsCollection.reload,
+    reloadPartners: partnersCollection.reload,
+  });
 
   // Views Content
   const renderContent = () => {
