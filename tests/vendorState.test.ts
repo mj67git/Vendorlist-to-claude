@@ -89,7 +89,8 @@ test('a source is NOT auto-blacklisted by a failing lab result', () => {
 test('an admin rejection of a source, and its restore, both take effect', () => {
   let v: any = applyDerivedState(source({ status: 'rejected', rejectionReasons: ['رد توسط ادمین — دلیل'] }));
   assert.equal(isVendorRejected(v), true);
-  assert.equal(v.grade, 'rejected');
+  assert.equal(v.status, 'rejected');
+  assert.notEqual(v.grade, 'rejected', 'a verdict is not a grade — it is said once, in status');
 
   v = applyDerivedState({ ...v, status: 'approved', rejectionReasons: null });
   assert.equal(isVendorRejected(v), false);

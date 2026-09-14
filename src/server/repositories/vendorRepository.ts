@@ -4,6 +4,7 @@ import { resolvePartnerLink, stripPartnerMarker } from "../domain/partnerLink.js
 import { parseDateSafely } from "../db/coerce.js";
 import { requirePrisma } from "../db/prisma.js";
 import { generateMaterialId } from "../domain/materialId.js";
+import { normalizeSourceGrade } from "../../utils/sourceVocabulary.js";
 import {
   CALCULATION_WEIGHTS,
   calculateRoundedWeightedScore,
@@ -662,7 +663,11 @@ export async function saveVendorToDb(
         planningScore: scoreObj.planning || 0,
         financeScore: scoreObj.finance || 0,
         totalScore: roundedTotal,
-        grade: grade || "C",
+        // The grade as one of the four bands, or nothing. `grade || "C"` stored
+        // a Grade C for every source nobody had scored — write-only, since the
+        // read path takes the grade from the vendor row, but a stored claim all
+        // the same (rule 11c: never persist a derived value you were handed).
+        grade: normalizeSourceGrade(grade),
         scores: scoreText,
         rawScores: rawScoreText,
         rejectionReasons: rejectText,
@@ -677,7 +682,11 @@ export async function saveVendorToDb(
         planningScore: scoreObj.planning || 0,
         financeScore: scoreObj.finance || 0,
         totalScore: roundedTotal,
-        grade: grade || "C",
+        // The grade as one of the four bands, or nothing. `grade || "C"` stored
+        // a Grade C for every source nobody had scored — write-only, since the
+        // read path takes the grade from the vendor row, but a stored claim all
+        // the same (rule 11c: never persist a derived value you were handed).
+        grade: normalizeSourceGrade(grade),
         scores: scoreText,
         rawScores: rawScoreText,
         rejectionReasons: rejectText,

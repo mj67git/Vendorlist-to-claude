@@ -307,7 +307,9 @@ model Evaluation {
   planningScore    Float    @default(0) @map("planning_score")
   financeScore     Float    @default(0) @map("finance_score")
   totalScore       Float    @default(0) @map("total_score")
-  grade            String   @map("grade")
+  // Nullable because «no grade» is the absence of one. It was NOT NULL, so an
+  // unscored source was stored as a C — a stored assertion nobody had made.
+  grade            String?  @map("grade")
   scores           String?  @map("scores") @db.Text
   rawScores        String?  @map("raw_scores") @db.Text
   rejectionReasons String?  @map("rejection_reasons") @db.Text

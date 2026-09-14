@@ -1,6 +1,20 @@
+import type { SourceGrade, SourceQualification } from './utils/sourceVocabulary';
+
 export type Category = 'foreign' | 'domestic' | 'veterinary' | 'packaging' | 'sample' | 'blacklist';
-export type Status = 'approved' | 'conditional' | 'rejected' | 'new';
-export type Grade = 'A' | 'B' | 'C' | 'black list' | 'rejected' | null | string;
+
+/**
+ * Where a source stands, and what its departments scored.
+ *
+ * Both are defined once, in `utils/sourceVocabulary.ts`, because the words were
+ * being invented separately in four files. `Grade` still admits the retired
+ * spellings — a row written by an older version can still be holding one, and
+ * `normalizeSourceGrade` is what turns it back into a band on the way in — but
+ * it is no longer `| string`, which admitted everything and therefore said
+ * nothing.
+ */
+export type Status = SourceQualification;
+export type LegacyGrade = 'rejected' | 'black list' | 'new';
+export type Grade = SourceGrade | LegacyGrade | null;
 
 export type Role = 'admin' | 'lab' | 'commercial' | 'qa' | 'planning' | 'finance';
 export interface User {

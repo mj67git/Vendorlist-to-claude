@@ -65,17 +65,29 @@ test('a record counts as a sample by either the flag or the category', () => {
   assert.equal(isSampleRecord({ isSample: false, category: 'foreign' }), false);
 });
 
+/**
+ * The badge takes the record, not three loose fields.
+ *
+ * `describeVendorGrade` used to be handed `(grade, status, scores)` and decide
+ * the verdict from a hand-written comparison — the pair rule 11 forbids. It now
+ * asks `isVendorRejected`, so these cases pass the record they describe. The
+ * records below carry no decision column, which is how an object older than
+ * that column reads: the retired `status === 'rejected'` still answers for it.
+ */
+const record = (grade: unknown, status: unknown, scores: unknown = null) =>
+  ({ isSample: false, category: 'foreign', grade, status, scores }) as never;
+
 test('only A, B and C are grades; anything else means no grade yet', () => {
   // `applyDerivedState` writes the literal 'new' into `grade` when it clears a
   // stale rejected one. The badge read every non-A, non-B value as Grade C and
   // showed a scored verdict for a source nobody had scored.
   for (const grade of ['new', null, undefined, 'unknown']) {
-    const verdict = describeVendorGrade(grade as never, 'new' as never, null);
+    const verdict = describeVendorGrade(record(grade, 'new'));
     assert.equal(verdict.label, 'ارزیابی‌نشده', `grade «${grade}» must not read as a grade`);
     assert.equal(verdict.variant, 'stage', 'no grade yet is a process step, not a verdict');
   }
-  assert.equal(describeVendorGrade('A' as never, 'approved' as never, null).label, 'گرید A');
-  assert.equal(describeVendorGrade('C' as never, 'conditional' as never, null).label, 'گرید C');
+  assert.equal(describeVendorGrade(record('A', 'approved')).label, 'گرید A');
+  assert.equal(describeVendorGrade(record('C', 'conditional')).label, 'گرید C');
 });
 
 /**
@@ -88,16 +100,14 @@ test('only A, B and C are grades; anything else means no grade yet', () => {
  */
 test('a process step never borrows a grade colour', () => {
   const stages = [
-    describeVendorGrade('new' as never, 'new' as never, null),
-    describeVendorGrade('new' as never, 'new' as never, {
-      commercial: 80, qa: 0, planning: 0, finance: 0,
-    } as never),
+    describeVendorGrade(record('new', 'new')),
+    describeVendorGrade(record('new', 'new', { commercial: 80, qa: 0, planning: 0, finance: 0 })),
   ];
   for (const stage of stages) {
     assert.equal(stage.variant, 'stage');
     assert.equal(stage.dotColor, null, 'a step carries no colour of its own');
   }
-  const grades = ['A', 'B', 'C'].map(g => describeVendorGrade(g as never, 'approved' as never, null));
+  const grades = ['A', 'B', 'C'].map(g => describeVendorGrade(record(g, 'approved')));
   for (const grade of grades) {
     assert.ok(grade.dotColor, 'a grade is a judgement and keeps its colour');
     assert.notEqual(grade.variant, 'stage');
@@ -105,13 +115,11 @@ test('a process step never borrows a grade colour', () => {
 });
 
 test('a part-scored source says so, and a rejected one stays rejected', () => {
-  const partly = describeVendorGrade('new' as never, 'new' as never, {
-    commercial: 80, qa: 0, planning: 0, finance: 0,
-  } as never);
+  const partly = describeVendorGrade(record('new', 'new', { commercial: 80, qa: 0, planning: 0, finance: 0 }));
   assert.equal(partly.label, 'در حال ارزیابی');
   assert.equal(partly.variant, 'stage');
 
-  const rejected = describeVendorGrade('new' as never, 'rejected' as never, null);
+  const rejected = describeVendorGrade(record('new', 'rejected'));
   assert.equal(rejected.label, 'لیست سیاه');
   assert.equal(rejected.variant, 'gradeReject');
 });

@@ -11,10 +11,13 @@ const scored = (over: any = {}) => ({
 });
 
 test('a rejected source still reports the rank it earned', () => {
-  // The reject stamps `grade: 'rejected'`, so the stored column can no longer
-  // answer «رتبه نهایی» — the scores can.
+  // The verdict is in `status`; the grade keeps saying what the departments
+  // scored. Both the column and the scores now answer «رتبه نهایی» the same
+  // way — before, the reject overwrote the grade with the word «rejected» and
+  // only the scores could still answer.
   const v = applyDerivedState(scored({ rejectionReasons: ['رد توسط مدیر کیفیت — تصمیم دستی'] }));
-  assert.equal(v.grade, 'rejected');
+  assert.equal(v.status, 'rejected');
+  assert.equal(v.grade, 'B', 'the earned grade survives the disqualification');
   const rank = describeVendorRank(v);
   assert.equal(rank.evaluated, true);
   assert.equal(rank.grade, 'B');
@@ -22,9 +25,11 @@ test('a rejected source still reports the rank it earned', () => {
 
 test('a rejected source that was never scored reports no rank rather than a made-up one', () => {
   const v = applyDerivedState(scored({
+    grade: null,
     scores: { commercial: 0, qa: 0, planning: 0, finance: 0 },
     rejectionReasons: ['رد توسط مدیر کیفیت — تصمیم دستی'],
   }));
+  assert.equal(v.grade, null, 'nothing to report is spelled null, not «new»');
   assert.equal(describeVendorRank(v).evaluated, false);
 });
 

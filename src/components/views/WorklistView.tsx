@@ -345,7 +345,7 @@ export function WorklistView({
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     {item.vendor?.grade && taskKey === 'eval' && (
-                      <GradeBadge grade={item.vendor.grade as any} status={item.vendor.status as any} />
+                      <GradeBadge vendor={item.vendor} />
                     )}
                     {item.note && (
                       <span className={`text-2xs font-bold px-2 py-1 rounded-lg border ${TONE_CLASSES[item.tone || 'neutral']}`}>

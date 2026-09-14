@@ -36,7 +36,11 @@ export const GRADE_TIERS: GradeTier[] = [
   { min: 80, grade: 'A', status: 'approved' },
   { min: 60, grade: 'B', status: 'approved' },
   { min: 40, grade: 'C', status: 'conditional' },
-  { min: 0, grade: 'black list', status: 'rejected' },
+  // `'D'`, not `'black list'`: the tiers describe bands of a weighted score,
+  // and «blacklisted» is not one of them. This table is served to the client by
+  // `/api/config`, so the fourth spelling of the verdict was being published as
+  // though it were a grade (see `utils/sourceVocabulary.ts`).
+  { min: 0, grade: 'D', status: 'rejected' },
 ];
 
 /**

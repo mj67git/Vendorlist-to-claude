@@ -222,7 +222,7 @@ export const MaterialGroup: React.FC<{
                         ) : isVendorRejected(vendor) ? (
                           <RankBadge vendor={vendor} />
                         ) : (
-                          <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                          <GradeBadge vendor={vendor} />
                         )}
                         {!isSampleRecord(vendor) && (() => {
                           const shown = currentUser?.role === 'admin'
@@ -341,7 +341,7 @@ export const MaterialGroup: React.FC<{
                             <div className="text-2xs text-muted-foreground mb-0.5">رتبه نهایی</div>
                             {isVendorRejected(vendor)
                               ? <RankBadge vendor={vendor} />
-                              : <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />}
+                              : <GradeBadge vendor={vendor} />}
                           </>
                         )}
                     </div>

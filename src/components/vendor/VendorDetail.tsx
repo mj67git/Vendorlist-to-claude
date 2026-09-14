@@ -536,7 +536,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                       {describeSampleStatus(vendor).title}
                     </Badge>
                   ) : (
-                    <GradeBadge grade={vendor.grade} status={vendor.status} scores={vendor.scores} />
+                    <GradeBadge vendor={vendor} />
                   )}
                 </div>
 
