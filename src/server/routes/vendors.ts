@@ -8,6 +8,7 @@ import { ircViolation, sopPartnerViolation } from "../domain/sourceRules.js";
 import {
   applyAnalysisSection, applyContactSection, applyLogsSection, applyProfileSection,
   applyRiskSection, applyScoresSection, isRefusal, riskChanges, riskFacts, verdictEvent,
+  type SectionOutcome,
 } from "../domain/vendorSections.js";
 import { settleSourceVerdict } from "../domain/sourceVerdict.js";
 import { requireAnyPermission, requireAuth, requirePermission } from "../http/auth.js";
@@ -22,9 +23,13 @@ import {
 /**
  * The source records: the register this system exists to keep.
  *
- * Six PATCH endpoints instead of one PUT, because a source is edited by
- * different departments in different places and a whole-object write would let
- * one of them silently overwrite another's column.
+ * A source is edited part by part — profile, contact, scores, laboratory
+ * results, activity log, risk — because different departments own different
+ * parts and a whole-object write would let one of them silently overwrite
+ * another's column. Each part has its own `PATCH`, and `PUT /api/vendors/:id`
+ * writes any combination of them in a single transaction for the case the
+ * client actually has: one person pressing save on a form that spans several.
+ * The rules themselves live once, in `domain/vendorSections.ts`.
  *
  * Every one of them is a read-modify-write, which is why they all carry
  * `serializeVendorWrites` — and why `saveVendorToDb` is handed the `updatedAt`
@@ -391,6 +396,111 @@ export function vendorRoutes(): express.Router {
 
       console.log(`[UnifiedDB] Saved fine-grained profile details for vendor: ${id}`);
       res.json({ success: true, part: "profile", vendor: result });
+    } catch (err: any) {
+      sendHandlerError(res, err);
+    }
+  });
+
+  /**
+   * One save of a whole source, in one transaction.
+   *
+   * The six `PATCH` routes below stay exactly as they are and keep working —
+   * this is what the client uses instead of calling several of them in a row.
+   *
+   * What the queue could not do:
+   *  - **All or nothing.** A save that changed the profile, the scores and the
+   *    risk assessment was three requests. A refusal or a dropped connection on
+   *    the second left the first one stored and the third never sent, in a
+   *    combination nobody asked for, and the client could not roll it back: by
+   *    then only the server knew what had landed. Here the parts are checked
+   *    first and written once — the first refusal abandons the save entirely.
+   *  - **One version claim.** Each `PATCH` moved `updatedAt`, so the client had
+   *    to thread the new timestamp from every response into the next request or
+   *    be refused with a 409 that had nobody on the other side of it. One
+   *    request makes one claim (rule 11a).
+   *  - **One trail entry per thing that happened.** The audit rows are still
+   *    written per part, because that is what they describe — but from a single
+   *    re-read of the saved record, so they agree with each other.
+   *
+   * Absent means untouched: a part the payload does not carry is not written,
+   * the same contract `persistVendorRelations` already has. The middleware only
+   * keeps out callers entitled to none of the parts; which parts a caller may
+   * actually write is decided per part, against what is stored (rule 14).
+   */
+  router.put("/api/vendors/:id", requireAuth,
+    requireAnyPermission(
+      "vendor.edit", "vendor.decide", "sample.decide", "vendor.analysis", "vendor.risk",
+      "score.commercial", "score.qa", "score.planning", "score.finance",
+    ),
+    serializeVendorWrites, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const current = await getVendorById(id);
+      if (!current) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+      if (staleCopy(req, current)) {
+        return res.status(409).json({ error: STALE_COPY_MESSAGE });
+      }
+
+      const sections = req.body?.sections;
+      if (!sections || typeof sections !== "object" || Array.isArray(sections)) {
+        return res.status(400).json({ error: "Validation failed", details: "sections مورد انتظار است." });
+      }
+      const reason = reasonFor(req);
+
+      /*
+       * Order matters, and it is the order the queue used to send in.
+       *
+       * The profile decides the verdict and the scores feed it; the analysis
+       * part merges onto whatever status the profile settled on rather than the
+       * stored one. Reordering these would change what is saved, so the list is
+       * fixed here rather than taken from the payload's key order.
+       */
+      const parts: Array<[string, (base: any, payload: any) => Promise<SectionOutcome>]> = [
+        ["profile", (base, payload) => applyProfileSection(req, current, base, payload, reason)],
+        ["contact", (base, payload) => applyContactSection(req, current, base, payload, reason)],
+        ["scores", (base, payload) => applyScoresSection(req, current, base, payload, reason)],
+        ["analysis", (base, payload) => applyAnalysisSection(req, current, base, payload, reason)],
+        ["logs", (base, payload) => applyLogsSection(req, current, base, payload, reason)],
+        ["risk", (base, payload) => applyRiskSection(req, current, base, payload, reason)],
+      ];
+
+      let merged: any = current;
+      const applied: string[] = [];
+      const audits: Array<(result: any) => Promise<void>> = [];
+
+      for (const [name, apply] of parts) {
+        const payload = sections[name];
+        if (payload === undefined || payload === null) continue;
+        const outcome = await apply(merged, payload);
+        // Nothing has been written yet, so a refusal here costs the caller the
+        // whole save — which is the point of it.
+        if (isRefusal(outcome)) return res.status(outcome.status).json(outcome.body);
+        merged = outcome.merged;
+        audits.push(outcome.audit);
+        applied.push(name);
+      }
+
+      if (applied.length === 0) {
+        return res.status(400).json({ error: "Validation failed", details: "هیچ بخشی برای ذخیره ارسال نشده است." });
+      }
+
+      // After the guards, never before: a status the server itself computed
+      // must not be charged to the caller (rule 11).
+      await saveVendorToDb(
+        settleSourceVerdict(merged, {
+          previous: current,
+          // Only a profile save states a verdict. When the payload carries no
+          // profile the stored decision stands, exactly as on `PATCH /scores`.
+          assertedStatus: sections.profile ? sections.profile.status : undefined,
+        }),
+        (current as any)?.updatedAt ?? null,
+      );
+      const result = await getVendorById(id);
+      for (const audit of audits) await audit(result);
+
+      res.json({ success: true, parts: applied, vendor: result });
     } catch (err: any) {
       sendHandlerError(res, err);
     }
