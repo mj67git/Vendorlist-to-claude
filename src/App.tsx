@@ -1,10 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Home, Archive, AlertTriangle, ChevronLeft, ChevronRight, Search, Menu, X, Shield, Building2, CheckCircle, Handshake, ShieldAlert, Loader2, Download, ChevronDown, Database, History, Bell, Calendar, Sun, Moon, UserCog, RefreshCw } from 'lucide-react';
+import { AlertTriangle, X, CheckCircle, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { INITIAL_VENDORS_DB } from './db_foreign_only';
 import { Category, Vendor, User, Material, BusinessPartner } from './types';
-// @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
-import temadLogo from './assets/logo.png';
 import { categoryLabels } from './constants/categories';
 
 /**
@@ -36,27 +34,6 @@ const WorklistView = React.lazy(() => import('./components/views/WorklistView').
 const VendorDetail = React.lazy(() => import('./components/vendor/VendorDetail').then(m => ({ default: m.VendorDetail })));
 
 /** What a page looks like while its code is on the way. */
-/**
- * A heading between groups of sidebar entries — and a rule when there is no
- * room for words.
- *
- * Collapsed, these used to disappear outright, which left fourteen icons in one
- * undifferentiated column: nothing said where the source registers ended and
- * the repositories began. A hairline keeps the grouping the expanded rail
- * teaches, and `aria-hidden` keeps it out of the screen reader, which already
- * hears each destination named by its own label.
- */
-function SidebarSection({ collapsed, children }: { collapsed: boolean; children: React.ReactNode }) {
-  return (
-    <>
-      <div className={`pt-3 pb-1 px-3 text-2xs font-bold text-muted-foreground/80 flex items-center ${collapsed ? 'md:hidden' : ''}`}>
-        <span>{children}</span>
-      </div>
-      {collapsed && <div className="hidden md:block mx-2 my-2 border-t border-border" aria-hidden="true" />}
-    </>
-  );
-}
-
 function PageLoading() {
   return (
     <div className="w-full py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -72,19 +49,17 @@ import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { setCalculationWeights, checkLicenseExpiry } from './utils/vendorUtils';
 import { encodeRoute, decodeRoute, routeKey, buildStackFromRoute, type RouteState, type TaskKey } from './utils/navRoutes';
-import { isInCategoryRegister } from './utils/vendorState';
 import { reconcileSupplierEvaluation } from './utils/sopEvaluation';
 import { can, categoryPermission, effectivePermissions, VIEW_PERMISSIONS, type Permission } from './utils/permissions'
 import { useGatedVendorList } from './hooks/useGatedVendorList';
-import { formatDateTime, formatRemaining, sessionRemainingMs } from './utils/session';
-import { AppSidebarButton as SidebarButton } from './components/AppSidebarButton';
+import { formatRemaining, sessionRemainingMs } from './utils/session';
 import { CommandPalette } from './components/CommandPalette';
-import { EntityName } from './components/EntityName';
 import { FormModal } from './components/FormModal';
 import { useTheme } from './hooks/useTheme';
 import { useToast } from './hooks/useToast';
 import { CategoryDenied, PermissionDenied } from './components/AccessDenied';
-import { SystemClock } from './components/SystemClock';
+import { AppHeader } from './components/app/AppHeader';
+import { AppSidebar } from './components/app/AppSidebar';
 import { authFetch, clearAuthenticationSession, isLocalMode } from './services/authFetch';
 import { fetchAllVendors } from './services/vendorPages';
 import { isAllowedVendor, normalizeAndCleanVendor } from './utils/vendorNormalize';
@@ -97,8 +72,6 @@ import {
 } from './utils/navStack';
 import { readLocalAudit } from './services/localAudit';
 import { Button } from './components/ui/button';
-import { Badge } from './components/ui/badge';
-import { Avatar, AvatarFallback } from './components/ui/avatar';
 
 /**
  * One row of `GET /api/auth/my-activity`, as the user menu reads it.
@@ -106,7 +79,7 @@ import { Avatar, AvatarFallback } from './components/ui/avatar';
  * Only the three fields the menu prints; the endpoint returns a full audit row
  * and the rest is deliberately not restated here, where it would go stale.
  */
-interface MyActivityEntry {
+export interface MyActivityEntry {
   id: string;
   description?: string;
   action?: string;
@@ -1408,605 +1381,56 @@ export default function App() {
         )}
 
         {/* LEFT PANEL: Fixed Sidebar */}
-        <aside className={`
-          fixed top-0 bottom-0 right-0 z-30 w-[272px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[272px]'} bg-card/95 backdrop-blur-md border-l border-border/80
-          transform transition-all duration-300 ease-in-out md:translate-x-0 slide-in print:hidden
-          ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
-          flex flex-col shadow-xs
-        `}>
-          {/* BRAND BLOCK — the Persian name is the name of the system; the
-              English one is a subtitle. It used to be the other way round: a
-              three-line English headline at 14px above a 10px Persian line in
-              a mono face, in an application whose entire interface is Persian. */}
-          {/* The mark sits above the name, both centred, rather than in a row
-              beside it: the two controls that used to share this row pushed the
-              brand off-centre and squeezed the name into a 15px line that read
-              as small print at the top of the screen. Those controls are pinned
-              to the corner now, so the brand owns the full width. */}
-          <div className={`relative py-4 border-b border-border/80 ${sidebarCollapsed ? 'md:px-2 px-5' : 'px-5'}`}>
-            <div className="flex flex-col items-center gap-2 text-center">
-              {/* Dark navy mark on a dark card is all but invisible, so it gets
-                  a light plate in dark mode — same fix as the login screen. */}
-              <span className="flex items-center justify-center shrink-0 dark:bg-white dark:rounded-lg dark:p-1">
-                <img
-                  src={temadLogo}
-                  alt="تماد"
-                  className={`w-auto object-contain ${sidebarCollapsed ? 'h-10 md:h-9' : 'h-12'}`}
-                />
-              </span>
-              <div className={`flex-col items-center min-w-0 ${sidebarCollapsed ? 'flex md:hidden' : 'flex'}`}>
-                <span className="font-extrabold text-foreground text-base leading-snug tracking-tight">سامانهٔ ارزیابی تامین‌کنندگان</span>
-                <span className="text-muted-foreground text-xs mt-0.5 tracking-widest" dir="ltr">VLSE</span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="md:hidden text-muted-foreground absolute left-3 top-3"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X />
-            </Button>
-            {/* Desktop collapse toggle */}
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className={`hidden md:inline-flex text-muted-foreground absolute left-3 top-3 ${sidebarCollapsed ? 'md:hidden' : ''}`}
-              onClick={() => setSidebarCollapsed(true)}
-              title="جمع کردن نوار کناری"
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-
-          {/* Collapsed: search + expand controls */}
-          {sidebarCollapsed && (
-            <div className="hidden md:flex flex-col items-center gap-1.5 py-2 border-b border-border/80">
-              <Button variant="outline" size="icon-sm" onClick={() => setShowCommandPalette(true)} title="جستجو (⌘K)" className="text-muted-foreground hover:text-primary">
-                <Search />
-              </Button>
-              <Button variant="outline" size="icon-sm" onClick={() => setSidebarCollapsed(false)} title="باز کردن نوار کناری" className="text-muted-foreground">
-                <ChevronLeft />
-              </Button>
-            </div>
-          )}
-
-          {/* Expanded: quick search launcher */}
-          {!sidebarCollapsed && (
-            <div className="px-3 pt-3">
-              <button
-                onClick={() => setShowCommandPalette(true)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-muted/40 hover:bg-accent text-muted-foreground transition-colors text-xs"
-              >
-                <span className="flex items-center gap-2"><Search className="w-3.5 h-3.5" /> جستجوی سریع...</span>
-                <kbd className="font-mono text-2xs bg-background border border-border rounded px-1.5 py-0.5">⌘K</kbd>
-              </button>
-            </div>
-          )}
-
-          <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-            <SidebarButton collapsed={sidebarCollapsed}
-              icon={Home} label="صفحه اصلی" 
-              variant="home"
-              active={view === 'home' && !selectedVendor} 
-              onClick={() => navigate('home')} 
-            />
-
-            {can(currentUser, 'vendor.read') && (
-            <SidebarSection collapsed={sidebarCollapsed}>دسته‌بندی‌ها</SidebarSection>
-            )}
-            {can(currentUser, 'vendor.read') && (Object.entries(categoryLabels) as [Category, any][])
-              // Two of the categories are their own read since the granular
-              // split, and the server serves fewer rows without them — an entry
-              // that leads to a page the account is not sent data for is worse
-              // than no entry.
-              .filter(([id]) => can(currentUser, categoryPermission(id)))
-              .map(([id, meta]) => {
-              const count = vendors.filter(v => isInCategoryRegister(v, id)).length;
-              return (
-                <SidebarButton collapsed={sidebarCollapsed}
-                  key={id}
-                  variant={id}
-                  badge={count}
-                  icon={meta.icon} label={meta.fa}
-                  active={view === 'category' && categoryId === id} 
-                  onClick={() => navigate('category', id)} 
-                />
-              );
-            })}
-
-            {(can(currentUser, 'partner.read') || can(currentUser, 'material.read')) && (
-            <SidebarSection collapsed={sidebarCollapsed}>مدیریت پایگاه داده</SidebarSection>
-            )}
-            {can(currentUser, 'partner.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Building2} label="مخزن شرکای تجاری"
-                badge={businessPartners?.length || 0}
-                variant="business-partners"
-                active={view === 'business-partners'}
-                onClick={() => navigate('business-partners')}
-              />
-            )}
-            {can(currentUser, 'material.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Database} label="مخزن مواد اولیه"
-                badge={materials?.length || 0}
-                variant="materials"
-                active={view === 'materials'}
-                onClick={() => navigate('materials')}
-              />
-            )}
-
-            {(can(currentUser, 'archive.read') || can(currentUser, 'audit.read')
-              || can(currentUser, 'users.read') || can(currentUser, 'supplier-audit.read')) && (
-            <SidebarSection collapsed={sidebarCollapsed}>کیفیت و نظارت</SidebarSection>
-            )}
-            {/* Each entry is gated by the permission its page and endpoints
-                actually check, not by `role === 'admin'`. A raw role test here
-                diverged from the pages themselves: someone holding the
-                `users.manage` exception was allowed by the page but never saw
-                the link, and the archive was hidden from everyone but admins even
-                though nothing restricted it (rule 14: one policy table, both
-                sides). */}
-            {can(currentUser, VIEW_PERMISSIONS.archive) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Archive} label="آرشیو کامل داده‌ها"
-                badge={vendors.length}
-                variant="archive"
-                active={view === 'archive'}
-                onClick={() => navigate('archive')}
-              />
-            )}
-            {can(currentUser, 'audit.read') && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={History} label="ردیابی تغییرات"
-                alert={criticalAuditCount}
-                variant="audit-trail"
-                active={view === 'audit-trail'}
-                onClick={() => navigate('audit-trail')}
-              />
-            )}
-            {can(currentUser, VIEW_PERMISSIONS.users) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={UserCog} label="مدیریت کاربران"
-                variant="audit-trail"
-                active={view === 'users'}
-                onClick={() => navigate('users')}
-              />
-            )}
-            {can(currentUser, VIEW_PERMISSIONS['supplier-audit']) && (
-              <SidebarButton collapsed={sidebarCollapsed}
-                icon={Handshake} label="بررسی یکپارچه تامین‌کننده"
-                variant="supplier-audit"
-                active={view === 'supplier-audit'}
-                onClick={() => navigate('supplier-audit')}
-              />
-            )}
-          </nav>
-
-        </aside>
+        <AppSidebar
+          currentUser={currentUser}
+          vendors={vendors}
+          materials={materials}
+          businessPartners={businessPartners}
+          view={view}
+          categoryId={categoryId}
+          selectedVendor={selectedVendor}
+          navigate={navigate}
+          criticalAuditCount={criticalAuditCount}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          setShowCommandPalette={setShowCommandPalette}
+        />
 
         {/* RIGHT PANEL: Main Content Area */}
         <main className={`flex-1 ${sidebarCollapsed ? 'md:pr-[76px]' : 'md:pr-[272px]'} flex flex-col h-screen overflow-hidden transition-all duration-300 print:h-auto print:overflow-visible print:pr-0 print:block`}>
-          
-          {/* Sticky Topbar */}
-          <header className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/80 px-5 py-3 flex items-center justify-between shrink-0 print:hidden shadow-xs">
-            {/* `min-w-0` on the group and a capped title: without it the row
-                cannot shrink below its content, and on a deep page at ~900px
-                the breadcrumbs pushed the header into horizontal overflow. */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden text-muted-foreground shrink-0"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu />
-              </Button>
-
-              {/* Where the reader is.
-
-                  On the home page the whole right half of the bar was empty:
-                  the back button and the breadcrumbs only exist once the stack
-                  is deeper than one, so every control sat in the left corner
-                  and roughly 460px on the right — the first place a Persian
-                  reader looks — said nothing. The current page's name fills it
-                  on every screen, and the breadcrumbs continue the sentence
-                  when there is a path to show. */}
-              {/* Navigation History & Back Handler */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                {/* The page's name, and only where nothing else says it.
-
-                    Once the breadcrumbs appear (from `md`, with a path to show)
-                    the last crumb already names this page, and printing both
-                    made the two compete for the same strip — measured at 900px,
-                    the title truncated to «خرید …» while the first crumb was
-                    clipped to a single letter. So the heading yields to the
-                    trail exactly where the trail is shown — from `xl` — and
-                    stands alone everywhere else, including the whole tablet
-                    band where the trail does not fit. */}
-                {/* `EntityName`, not a bare `truncate`: this heading carries a
-                    source's name on a detail page, and a name cut without a
-                    tooltip is exactly what rule 15 forbids — measured at 768px
-                    and 390px, where it does run out of room. */}
-                <h1 className={`min-w-0 ${breadcrumbTrail.length > 1 ? 'xl:hidden' : ''}`}>
-                  <EntityName
-                    name={getViewStateLabel(currentViewState) || 'سامانهٔ ارزیابی تأمین‌کنندگان'}
-                    lines={1}
-                    className="text-sm font-black text-foreground max-w-[180px] sm:max-w-[240px] lg:max-w-[320px]"
-                  />
-                </h1>
-                {viewHistory.length > 1 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={goBack}
-                    className="h-8 gap-1.5 text-xs font-bold text-foreground bg-background hover:bg-accent border-border shrink-0"
-                    title={`برگشت به ${getViewStateLabel(viewHistory[viewHistory.length - 2]) || 'مرحله قبل'}`}
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span>برگشت</span>
-                  </Button>
-                )}
-
-                {/* Breadcrumb trail — the path to this page, and a way back up
-                    to any level of it. Built from the address (see
-                    `breadcrumbTrail`), so it is the same trail however the
-                    reader arrived and never claims that one module sits inside
-                    another.
-
-                    Shown from `xl`, and the page's own name takes its place
-                    below that. Measured, not guessed: with the sidebar and the
-                    action cluster taking their share, the strip left for the
-                    trail is about 185px at 1024 and 441px at 1280, while a
-                    three-crumb path («صفحه اصلی › خرید خارجی › نام سورس») needs
-                    roughly 250px. Rendering it at `md` — where it was until now
-                    — meant the row overflowed and the crumb that got cut was
-                    the last one, the page you are on, with no ellipsis and no
-                    tooltip. A heading that fits beats a path that does not. */}
-                {breadcrumbTrail.length > 1 && (
-                  <nav aria-label="مسیر ناوبری" className="hidden xl:flex items-center gap-1 min-w-0 text-xs">
-                    {(() => {
-                      /* Collapse the middle, never the ends.
-                         The trail is at most four levels now, but a long source
-                         name can still outgrow the row — and the crumb that used
-                         to lose was the last one, the page you are actually on,
-                         cut without an ellipsis or a tooltip. The first crumb
-                         and the last two always render; anything between them
-                         becomes one «…» that names what it hides. */
-                      // Four is the deepest real path (home › module › record
-                      // › its edit page), so the whole trail normally shows;
-                      // the collapse is what keeps a longer one honest rather
-                      // than letting it cut the current page off the end.
-                      const MAX_VISIBLE = 4;
-                      const collapse = breadcrumbTrail.length > MAX_VISIBLE;
-                      const hidden = collapse ? breadcrumbTrail.slice(1, -2) : [];
-                      const shown = collapse
-                        ? [breadcrumbTrail[0], null, ...breadcrumbTrail.slice(-2)]
-                        : breadcrumbTrail;
-
-                      return shown.map((crumb, idx) => (
-                        <React.Fragment key={crumb ? crumb.key : 'collapsed'}>
-                          {idx > 0 && <ChevronLeft className="w-3 h-3 text-muted-foreground/50 shrink-0" />}
-                          {crumb === null ? (
-                            <span
-                              className="font-semibold text-muted-foreground shrink-0 px-0.5 cursor-help"
-                              title={`سطوح میانی: ${hidden.map(h => h!.label).join(' › ')}`}
-                            >
-                              …
-                            </span>
-                          ) : idx === shown.length - 1 ? (
-                            /* The page itself: it truncates with a tooltip
-                               rather than being cut silently (rule 15). */
-                            <EntityName
-                              name={crumb.label}
-                              lines={1}
-                              aria-current="page"
-                              className="font-bold text-foreground max-w-[120px] lg:max-w-[220px]"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => goToCrumb(crumb.route)}
-                              // `shrink-0`, because these are short fixed labels
-                              // («صفحه اصلی», «خرید خارجی») and the flex row was
-                              // squeezing them below their own width — at 13.5px
-                              // even those two clipped, and a breadcrumb whose
-                              // own labels are cut tells the reader nothing
-                              // about where they are. The squeeze belongs on the
-                              // last crumb, which carries a tooltip when it
-                              // truncates (rule 15).
-                              className="font-semibold text-muted-foreground hover:text-primary hover:underline truncate max-w-[160px] shrink-0 transition-colors cursor-pointer"
-                              title={`رفتن به ${crumb.label}`}
-                            >
-                              {crumb.label}
-                            </button>
-                          )}
-                        </React.Fragment>
-                      ));
-                    })()}
-                  </nav>
-                )}
-              </div>
-
-            </div>
-            
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* Dark / light theme toggle */}
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={toggleTheme}
-                className="text-muted-foreground"
-                title={isDark ? 'روشن کردن حالت روز' : 'فعال‌کردن حالت شب'}
-                aria-label="تغییر حالت روز/شب"
-              >
-                {isDark ? <Sun /> : <Moon />}
-              </Button>
-
-              {/* Notification Center for License Expiry */}
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setShowNotificationPanel(!showNotificationPanel)}
-                  aria-haspopup="dialog"
-                  aria-expanded={showNotificationPanel}
-                  aria-label={expiringVendors.length > 0
-                    ? `مرکز اعلان‌ها، ${expiringVendors.length} هشدار انقضای مجوز`
-                    : 'مرکز اعلان‌های سیستم'}
-                  className={`relative ${
-                    expiringVendors.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 text-amber-800 hover:text-amber-800 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-300 shadow-xs'
-                      : 'text-muted-foreground'
-                  }`}
-                  title={expiringVendors.length > 0 ? `${expiringVendors.length} مورد هشدار انقضای مجوز` : 'مرکز اعلان‌های سیستم'}
-                >
-                  <Bell className="w-4 h-4" />
-                  {expiringVendors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 px-1 min-w-[18px] h-[18px] bg-rose-600 text-white text-2xs font-bold font-mono rounded-full flex items-center justify-center shadow-xs">
-                      {expiringVendors.length}
-                    </span>
-                  )}
-                </Button>
-
-                {/* Dropdown Popover */}
-                {showNotificationPanel && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setShowNotificationPanel(false)} 
-                    />
-                    <div className="absolute left-0 right-auto mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm sm:max-w-md bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right font-sans">
-                      <div className="p-3.5 bg-muted/60 border-b border-border flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                          <span className="font-bold text-xs text-foreground">مرکز اعلان‌های انقضای مجوز (IRC / IVC)</span>
-                        </div>
-                        <Badge variant="warning" className="text-2xs font-mono font-bold">
-                          {expiringVendors.length} مورد
-                        </Badge>
-                      </div>
-
-                      <div className="max-h-80 overflow-y-auto divide-y divide-border p-1">
-                        {expiringVendors.length === 0 ? (
-                          <div className="p-6 text-center text-muted-foreground text-xs">
-                            <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-                            <div className="font-bold text-foreground">همه مجوزها معتبر هستند</div>
-                            <div className="text-2xs mt-1 text-muted-foreground">هیچ مجوزی در آستانه انقضا (کمتر از ۲ ماه) قرار ندارد.</div>
-                          </div>
-                        ) : (
-                          expiringVendors.map(({ vendor, check }) => (
-                            <div
-                              key={vendor.id}
-                              onClick={() => {
-                                handleSelectVendor(vendor);
-                                setShowNotificationPanel(false);
-                              }}
-                              className="p-3 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 cursor-pointer transition-colors rounded-xl space-y-1.5 group"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="font-bold text-xs text-foreground group-hover:text-amber-800 dark:group-hover:text-amber-300 truncate">
-                                  {vendor.material || vendor.name}
-                                </div>
-                                {check.status === 'expired' ? (
-                                  <Badge variant="destructive" className="text-2xs px-1.5 py-0">
-                                    منقضی
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="warning" className="text-2xs px-1.5 py-0">
-                                    {check.daysLeft} روز مانده
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="text-2xs text-muted-foreground truncate">
-                                تامین‌کننده: {vendor.name} {vendor.irc ? `(IRC: ${vendor.irc})` : ''}
-                              </div>
-                              <div className="text-2xs text-muted-foreground flex items-center justify-between pt-1">
-                                <span>تاریخ انقضا: <strong className="font-mono text-foreground">{vendor.ircExpiryDate}</strong></span>
-                                <span className="text-primary font-bold text-2xs group-hover:underline">مشاهده سورس ←</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Backing up the database is an administrator's occasional
-                  errand, and it used to sit in the bar with the same weight as
-                  the notification bell and the account box — controls that are
-                  there on every screen for everyone. It moved into the account
-                  menu, beside the other things done once in a while.
-
-                  Note its gate is a deliberate house rule, not a security
-                  boundary: the file is built in the browser from `vendors`, which
-                  `GET /api/vendors` already serves to every signed-in user. A
-                  server permission cannot be added for it without inventing one
-                  no endpoint enforces — the mistake `archive.read` was deleted
-                  for. */}
-
-              {/* Live clock, in the top-left beside the account box.
-
-                  Two facts, not three. It used to print the Jalali date, the
-                  time and the Gregorian date side by side and stood 276px wide
-                  — the largest single item in a row where nothing shrinks,
-                  which is why it had to be hidden below `lg` to stop the whole
-                  cluster being pushed off the left edge. The Gregorian date is
-                  for foreign correspondence, which is a "look it up" fact, so
-                  it moved into the chip's tooltip and the chip came back at
-                  `md`. */}
-              <SystemClock />
-
-              {/* This used to be a permanently green, permanently pulsing
-                  "سیستم فعال" chip. A status that cannot change is not status,
-                  it is decoration. The one thing here that genuinely varies is
-                  whether the session is talking to the database at all, so the
-                  chip now appears only when it is not. */}
-              {isLocalMode() && (
-                <div className="hidden lg:flex bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full items-center gap-1.5" title="داده‌ها فقط در همین مرورگر ذخیره می‌شوند">
-                  <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  <span className="text-2xs font-bold text-amber-700 dark:text-amber-300">حالت لوکال (بدون پایگاه‌داده)</span>
-                </div>
-              )}
-
-              {/* User menu (moved from the sidebar) */}
-              {currentUser && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowUserMenu(v => !v)}
-                    aria-haspopup="menu"
-                    aria-expanded={showUserMenu}
-                    aria-label={`منوی حساب کاربری ${currentUser.name || currentUser.username}`}
-                    className="flex items-center gap-2 pr-1 pl-2 py-1 rounded-xl border border-border bg-background hover:bg-accent transition-colors cursor-pointer"
-                    title={currentUser.name || currentUser.username}
-                  >
-                    <Avatar className="h-7 w-7 border border-border">
-                      <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
-                    </Avatar>
-                    <span className="hidden sm:flex flex-col text-right leading-tight max-w-[120px]">
-                      <span className="text-2xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                      <span className="text-2xs text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
-                    </span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showUserMenu && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                      <div className="absolute left-0 right-auto mt-2 w-72 bg-popover border border-border rounded-2xl shadow-xl z-50 overflow-hidden fade-in text-right">
-                        <div className="p-3.5 bg-muted/50 border-b border-border flex items-center gap-2.5">
-                          <Avatar className="h-9 w-9 border border-border">
-                            <AvatarFallback className="text-2xs font-extrabold bg-primary/10 text-primary">{roleInitials(currentUser.role)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-xs font-bold text-foreground truncate">{currentUser.name || currentUser.username}</span>
-                            <span className="text-2xs font-semibold text-muted-foreground truncate">{roleTitle(currentUser.role)}</span>
-                          </div>
-                        </div>
-                        {/* Session facts: when they were last here, how long this
-                            session has left, and what they can do. */}
-                        <div className="px-3.5 py-2.5 border-b border-border space-y-1.5 text-2xs text-muted-foreground">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <History className="w-3 h-3" />
-                              ورود قبلی
-                            </span>
-                            <span className="font-semibold text-foreground">
-                              {formatDateTime(currentUser.previousLoginAt) || 'اولین ورود'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <Calendar className="w-3 h-3" />
-                              اعتبار نشست
-                            </span>
-                            <span className={`font-semibold ${sessionExpiringSoon ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
-                              {sessionLeftLabel || '—'}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5">
-                              <Shield className="w-3 h-3" />
-                              سطح دسترسی
-                            </span>
-                            <span className="font-semibold text-foreground">
-                              {myPermissionCount} مورد{myPermissionsCustom ? ' (سفارشی)' : ''}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* My recent activity, straight from the audit trail. */}
-                        <div className="px-3.5 py-2.5 border-b border-border">
-                          <span className="text-2xs font-bold text-muted-foreground block mb-1.5">فعالیت اخیر من</span>
-                          {myActivity === null ? (
-                            <span className="text-2xs text-muted-foreground italic">در حال بارگذاری...</span>
-                          ) : myActivity.length === 0 ? (
-                            <span className="text-2xs text-muted-foreground italic">فعالیتی ثبت نشده است.</span>
-                          ) : (
-                            <ul className="space-y-1">
-                              {myActivity.map(a => (
-                                <li key={a.id} className="flex items-start gap-1.5 text-2xs leading-snug">
-                                  <span className="w-1 h-1 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
-                                  <span className="text-muted-foreground truncate" title={a.description}>
-                                    {a.description || a.action}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-
-                        {/* The theme switch is not repeated here.
-
-                            It had a permanent icon button in the bar and a row
-                            in this menu: one setting, two controls, and the two
-                            never agreed about which state they were showing.
-                            The bar keeps it, because it is used several times a
-                            day; the menu keeps the things that are not. */}
-                        <div className="p-1.5">
-                          {can(currentUser, 'users.manage') && (
-                            <button
-                              onClick={() => { setShowUserMenu(false); handleDownloadBackup(); }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                              title="دانلود پشتیبان کامل پایگاه‌داده (JSON)"
-                            >
-                              <Download className="w-4 h-4 text-primary" />
-                              پشتیبان‌گیری کامل
-                            </button>
-                          )}
-                          {can(currentUser, 'users.manage') && (
-                            <button
-                              onClick={() => { setShowUserMenu(false); navigate('users'); }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                            >
-                              <UserCog className="w-4 h-4 text-primary" />
-                              مدیریت کاربران
-                            </button>
-                          )}
-                          <button
-                            onClick={() => { setShowUserMenu(false); setShowChangePasswordModal(true); }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-accent transition-colors text-right"
-                          >
-                            <Shield className="w-4 h-4 text-primary" />
-                            تغییر کلمه عبور
-                          </button>
-                          <button
-                            onClick={() => { setShowUserMenu(false); handleLogout(); }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-right"
-                          >
-                            <X className="w-4 h-4" />
-                            خروج از حساب
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </header>
+          <AppHeader
+            currentUser={currentUser}
+            vendors={vendors}
+            expiringVendors={expiringVendors}
+            criticalAuditCount={criticalAuditCount}
+            breadcrumbTrail={breadcrumbTrail}
+            goToCrumb={goToCrumb}
+            getViewStateLabel={getViewStateLabel}
+            selectVendor={handleSelectVendor}
+            currentViewState={currentViewState}
+            viewHistory={viewHistory}
+            goBack={goBack}
+            navigate={navigate}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            isDark={isDark}
+            toggleTheme={toggleTheme}
+            showNotificationPanel={showNotificationPanel}
+            setShowNotificationPanel={setShowNotificationPanel}
+            showUserMenu={showUserMenu}
+            setShowUserMenu={setShowUserMenu}
+            setShowChangePasswordModal={setShowChangePasswordModal}
+            myActivity={myActivity}
+            sessionLeftLabel={sessionLeftLabel}
+            sessionExpiringSoon={sessionExpiringSoon}
+            myPermissionCount={myPermissionCount}
+            myPermissionsCustom={myPermissionsCustom}
+            roleInitials={roleInitials}
+            roleTitle={roleTitle}
+            handleLogout={handleLogout}
+            handleDownloadBackup={handleDownloadBackup}
+          />
 
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full print:overflow-visible">
             {/* One width for the whole app.
