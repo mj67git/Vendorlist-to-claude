@@ -154,3 +154,47 @@ test('the size ceiling is measured, not taken on trust', SKIP, async () => {
   const stored = await db().material.findUnique({ where: { id: FIXTURE.materialId } });
   assert.equal(stored?.specificationFileData, null, 'and nothing oversized may be stored');
 });
+
+/**
+ * A source that earns its way out of the blacklist goes home.
+ *
+ * The whole journey, not just the flag: the register it appears in, the grade
+ * it carries, and the banner the detail page draws. Fixing the latch made the
+ * verdict reversible; this holds the rest of the system to following it.
+ */
+test('rescoring a blacklisted source returns it to its own register', SKIP, async () => {
+  const token = await login('admin');
+  const p = db();
+
+  await api(`/api/vendors/${FIXTURE.vendorId}/scores`, {
+    method: 'PATCH',
+    token,
+    body: { scores: { commercial: 20, qa: 20, planning: 20, finance: 20 } },
+  });
+
+  let stored = await p.vendor.findUnique({ where: { id: FIXTURE.vendorId } });
+  assert.equal(stored?.status, 'rejected', 'below the floor it is out');
+  assert.equal(stored?.rejectedByDecision, false, 'and by the score, not by a decision');
+
+  // The category column must not be rewritten on the way in: the blacklist is
+  // a view over the registers, not a register a record is moved into. If the
+  // column changed, coming back would need a second correction nobody makes.
+  const link = await p.vendorMaterial.findFirst({ where: { vendorId: FIXTURE.vendorId } });
+  assert.equal(link?.category, 'foreign', 'the source stays filed where it was registered');
+
+  await api(`/api/vendors/${FIXTURE.vendorId}/scores`, {
+    method: 'PATCH',
+    token,
+    body: { scores: { commercial: 92, qa: 92, planning: 92, finance: 92 } },
+  });
+
+  stored = await p.vendor.findUnique({ where: { id: FIXTURE.vendorId } });
+  assert.equal(stored?.grade, 'A', 'the new score decides the grade');
+  assert.equal(stored?.status, 'approved', 'and the status follows it');
+  assert.notEqual(stored?.status, 'rejected', 'nothing may be left saying it is rejected');
+
+  // The evaluation row beneath it agrees, so the spreadsheet and the printed
+  // form do not keep reporting the old verdict.
+  const evaluation = await p.evaluation.findFirst({ where: { vendorId: FIXTURE.vendorId } });
+  assert.equal(evaluation?.grade, 'A');
+});

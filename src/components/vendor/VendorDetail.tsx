@@ -20,7 +20,7 @@ import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { resolveMaterialNames } from '../../utils/materialNames';
 import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
-import { ADMIN_REJECT_PREFIX, adminRejectionReason, describeRejection, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
+import { ADMIN_REJECT_PREFIX, adminRejectionReason, describeRejection, isVendorRejected, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
 import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
@@ -866,7 +866,13 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
         </div>
       )}
 
-      {vendor.status === 'rejected' && (
+      {/* `isVendorRejected`, not `status === 'rejected'` — rule 11: one predicate,
+          every reader. The two agree today only because `applyDerivedState`
+          normalises `status` on load, so this panel was relying on a
+          normalisation having run rather than on the question it means to ask.
+          A source disqualified while filed under the blacklist category is the
+          case that would have caught it out. */}
+      {isVendorRejected(vendor) && (
         <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-6 md:p-8 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="bg-rose-100 dark:bg-rose-900/40 p-3 rounded-xl border border-rose-200 dark:border-rose-800 shrink-0 text-rose-600 dark:text-rose-400">
