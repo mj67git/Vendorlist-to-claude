@@ -1131,118 +1131,87 @@ export default function App() {
                            (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
                            (original.supplierId || null) !== (normalized.supplierId || null);
 
-    // Dispatch precision requests based on modified data blocks.
-    // These MUST run one after another: every endpoint does a full
-    // read-modify-write of the vendor, so two in flight at once means the
-    // slower one writes back its stale copy of the other's data — which is how
-    // a deleted lab result used to reappear after a reload.
     /*
-     * Each entry is handed the `updatedAt` the caller is claiming to have
-     * edited, and the server refuses with 409 if the row has moved on since
-     * (`staleCopy` in the vendor routes). The value has to be threaded through
-     * the queue rather than fixed once: this save may send several PATCHes, and
-     * each one moves the row's timestamp, so the second would otherwise arrive
-     * claiming a copy its own predecessor had just replaced.
+     * One request carrying only the parts that changed.
+     *
+     * This used to be a queue of up to five PATCHes sent strictly one after
+     * another, because every one of them is a read-modify-write of the whole
+     * source (rule 12) and two in flight at once meant the slower one wrote
+     * back its stale copy — which is how a deleted laboratory result used to
+     * reappear after a reload. Sending them in order solved that and left
+     * something worse in place: a refusal or a dropped connection on the third
+     * request left the first two stored, in a combination nobody asked for and
+     * the client could not undo.
+     *
+     * `PUT /api/vendors/:id` checks every part first and writes them in one
+     * transaction, so the save either happens or it does not. The parts are
+     * still computed separately — an untouched part is left out of the payload
+     * and is not written — and the server still records one audit row per part
+     * that actually changed.
      */
-    const syncQueue: Array<(expectedUpdatedAt: string | null) => Promise<any>> = [];
+    const sections: Record<string, unknown> = {};
 
     if (profileChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/profile`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          material: normalized.material,
-          materialEn: normalized.materialEn,
-          cas: normalized.cas,
-          irc: normalized.irc,
-          ircExpiryDate: normalized.ircExpiryDate,
-          name: normalized.name,
-          nameEn: normalized.nameEn,
-          country: normalized.country,
-          grade: normalized.grade,
-          status: normalized.status,
-          isSample: normalized.isSample,
-          initialSampleStatus: normalized.initialSampleStatus,
-          manufacturerId: normalized.manufacturerId ?? null,
-          supplierId: normalized.supplierId ?? null,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.profile = {
+        material: normalized.material,
+        materialEn: normalized.materialEn,
+        cas: normalized.cas,
+        irc: normalized.irc,
+        ircExpiryDate: normalized.ircExpiryDate,
+        name: normalized.name,
+        nameEn: normalized.nameEn,
+        country: normalized.country,
+        grade: normalized.grade,
+        status: normalized.status,
+        isSample: normalized.isSample,
+        initialSampleStatus: normalized.initialSampleStatus,
+        manufacturerId: normalized.manufacturerId ?? null,
+        supplierId: normalized.supplierId ?? null,
+      };
     }
 
     if (contactChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/contact`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contactInfo: normalized.contactInfo,
-          lastAudit: normalized.lastAudit,
-          ircExpiryDate: normalized.ircExpiryDate,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.contact = {
+        contactInfo: normalized.contactInfo,
+        lastAudit: normalized.lastAudit,
+        ircExpiryDate: normalized.ircExpiryDate,
+      };
     }
 
     if (scoresChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/scores`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scores: normalized.scores,
-          rawScores: normalized.rawScores,
-          rejectionReasons: normalized.rejectionReasons,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.scores = {
+        scores: normalized.scores,
+        rawScores: normalized.rawScores,
+        rejectionReasons: normalized.rejectionReasons,
+      };
     }
 
+    // The analysis part carries the activity log with it, the way the old
+    // `/analysis` endpoint did; the log is only sent on its own when nothing
+    // about the laboratory results changed.
     if (analysisChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/analysis`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          analysisRecords: normalized.analysisRecords,
-          activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.analysis = {
+        analysisRecords: normalized.analysisRecords,
+        activityLogs: normalized.activityLogs,
+      };
     } else if (logsChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/logs`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          activityLogs: normalized.activityLogs,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.logs = { activityLogs: normalized.activityLogs };
     }
 
     if (riskChanged) {
-      syncQueue.push((expectedUpdatedAt) => authWrite(`/api/vendors/${normalized.id}/risk`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          riskAssessment: normalized.riskAssessment,
-          reasonForChange: normalized.reasonForChange,
-          expectedUpdatedAt
-        })
-      }));
+      sections.risk = { riskAssessment: normalized.riskAssessment };
     }
 
+    if (Object.keys(sections).length === 0) return;
+
     /*
-     * Drain the queue, and treat a refusal as a refusal.
+     * Send it, and treat a refusal as a refusal.
      *
-     * These run strictly one after another because every endpoint does a full
-     * read-modify-write of the vendor (project rule 12). If one of them is
-     * refused, the earlier ones in this queue have already been applied — so
-     * rolling the local copy back to `original` would replace one wrong state
-     * with another. The server is the only thing that knows what actually
-     * landed, so we ask it and take its answer.
+     * The save is one transaction now, so a refusal means nothing was written
+     * and the record on the server is still `original`. The resync below is
+     * kept anyway: the local copy has already been updated optimistically, and
+     * re-reading is the only thing that is true whether the write was refused,
+     * lost on the wire, or answered after somebody else had changed the row.
      */
     void (async () => {
       setSavesInFlight(n => n + 1);
@@ -1251,22 +1220,24 @@ export default function App() {
         // screen when the form was opened, so its timestamp is exactly the
         // claim the server has to check. Absent (a record this session has
         // never read) means no claim, and the write behaves as it always did.
-        let expected: string | null = typeof original?.updatedAt === 'string'
+        const expectedUpdatedAt: string | null = typeof original?.updatedAt === 'string'
           ? original.updatedAt
           : null;
-        for (const send of syncQueue) {
-          const saved = await send(expected);
-          // Each PATCH answers with the row it wrote, so the next one in this
-          // queue claims that instead of the copy we started from.
-          const next = saved?.vendor?.updatedAt;
-          expected = typeof next === 'string' ? next : null;
-        }
+        const saved = await authWrite(`/api/vendors/${normalized.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sections,
+            reasonForChange: normalized.reasonForChange,
+            expectedUpdatedAt,
+          }),
+        });
         // Carry the row's new timestamp into the copy on screen. Without this
         // the next edit in this session would claim the timestamp from before
         // this save and be refused as stale — a conflict with nobody on the
-        // other side of it.
-        if (expected) {
-          const stamp = expected;
+        // other side of it (rule 11a).
+        const stamp = saved?.vendor?.updatedAt;
+        if (typeof stamp === 'string') {
           setVendors(prev => prev.map(v => (v.id === normalized.id ? { ...v, updatedAt: stamp } as Vendor : v)));
           updateCurrentVendorInHistory({ ...normalized, updatedAt: stamp } as Vendor);
         }
