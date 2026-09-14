@@ -126,3 +126,43 @@ test('a view nobody defined is a bad request, not a silent full list', SKIP, asy
   const res = await api('/api/vendors?view=whatever', { token: await login('admin') });
   assert.equal(res.status, 400);
 });
+
+/**
+ * Reading back only what moved.
+ *
+ * The background poll knows which ids changed and used to spend them on a
+ * complete re-read of the register — about nine megabytes on ten thousand
+ * sources, every thirty seconds while somebody else kept saving. Naming ids is
+ * a shortcut past the paging, so the first thing to prove is that it is not a
+ * shortcut past the row filter as well.
+ */
+test('a named handful comes back, and only the named ones', SKIP, async () => {
+  await seedCategories();
+  const token = await login('admin');
+  const res = await api(`/api/vendors?ids=${FIXTURE.vendorId},V-SAMPLE`, { token });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.map((v: any) => v.id).sort(), [FIXTURE.vendorId, 'V-SAMPLE'].sort());
+  // The whole record, relations included — this replaces a full re-read.
+  assert.ok(Object.prototype.hasOwnProperty.call(res.body[0], 'activityLogs'));
+});
+
+test('naming an id grants nothing that listing would not', SKIP, async () => {
+  await seedCategories();
+  const token = await restrictedToken(['vendor.read', 'score.planning']);
+  const res = await api(`/api/vendors?ids=${FIXTURE.vendorId},V-SAMPLE,V-BLACK`, { token });
+  assert.equal(res.status, 200);
+  // Same account, same filter as the list: the sample and the blacklisted row
+  // are refused by `readableVendors` whether they are asked for by name or not.
+  assert.deepEqual(res.body.map((v: any) => v.id), [FIXTURE.vendorId]);
+});
+
+test('an unknown id is simply absent, and an empty list is an empty answer', SKIP, async () => {
+  const token = await login('admin');
+  const missing = await api('/api/vendors?ids=V-NOPE', { token });
+  assert.equal(missing.status, 200);
+  assert.deepEqual(missing.body, []);
+
+  const empty = await api('/api/vendors?ids=', { token });
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.body, []);
+});

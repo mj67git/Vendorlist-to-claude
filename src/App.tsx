@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AlertTriangle, X, CheckCircle, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
-import { User, Material, BusinessPartner } from './types';
+import { User, Vendor, Material, BusinessPartner } from './types';
 import type { ViewState } from './utils/navStack';
 
 import { LoginView } from './components/LoginView';
@@ -62,6 +62,12 @@ export default function App() {
    */
   const navGuardRef = useRef<(() => boolean) | null>(null);
   const historyRef = useRef<ViewState[]>([]);
+  /**
+   * The navigation model defines this, and the register is created before it —
+   * the same shape as `resyncRef`, and for the same reason: the two halves need
+   * each other and one of them has to be reached through a ref.
+   */
+  const updateCurrentVendorInHistoryRef = useRef<((vendor: Vendor | null) => void) | null>(null);
 
   /**
    * The register, its cache and the background poll — `hooks/useVendorRegister.ts`.
@@ -72,7 +78,11 @@ export default function App() {
     remoteChangeCount, setRemoteChangeCount,
     dataRevision, setDataRevision,
     ownWritesRef, knownTotalRef, resyncRef,
-  } = useVendorRegister({ currentUser, navGuardRef, historyRef });
+  } = useVendorRegister({
+    currentUser, navGuardRef, historyRef,
+    // The record the poll refreshed, written onto the stack entries showing it.
+    onVendorRefreshed: v => updateCurrentVendorInHistoryRef.current?.(v),
+  });
 
   useEffect(() => {
     if (currentUser) {
@@ -170,6 +180,7 @@ export default function App() {
     getViewStateLabel, breadcrumbTrail, goToCrumb,
     updateCurrentVendorInHistory,
   } = useAppNavigation({ vendors, closeSidebar: () => setSidebarOpen(false), navGuardRef, historyRef });
+  updateCurrentVendorInHistoryRef.current = updateCurrentVendorInHistory;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);

@@ -119,6 +119,29 @@ export function vendorRoutes(): express.Router {
       // permission has to be a filter here, or the whole register arrives and
       // only the page declines to draw it.
       const everything = readsEverySource(req.account);
+
+      /*
+       * A named handful, for the background poll.
+       *
+       * `GET /api/vendors/changes` answers with the ids that moved and nothing
+       * else, and the client's only way to spend them was to re-read the whole
+       * register — nine megabytes on ten thousand sources, every thirty seconds
+       * while a second operator kept saving. The rows are still filtered by
+       * `readableVendors`, so asking for an id by name grants nothing that
+       * listing would not.
+       *
+       * Capped, because this is a shortcut and not a second way to page: a
+       * caller that needs more than a page of records needs the paged list.
+       */
+      const idsParam = typeof req.query.ids === "string" ? req.query.ids : null;
+      if (idsParam !== null) {
+        const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean).slice(0, MAX_PAGE_SIZE);
+        if (ids.length === 0) {
+          return res.json([]);
+        }
+        const rows = await getVendorsList(ids);
+        return res.json(everything ? rows : readableVendors(req.account, rows));
+      }
       const paged = req.query.page !== undefined || req.query.limit !== undefined;
       if (!paged) {
         const rows = await getVendorsList();

@@ -124,7 +124,7 @@ export async function persistVendorRelations(prisma: Prisma.TransactionClient, i
 /**
  * Build the vendor objects the API serves.
  *
- * Pass `vendorId` to build just one. Without it every query below runs
+ * Pass `vendorId` to build just one — or an array of ids to build those. Without it every query below runs
  * unfiltered, which is correct for the list endpoint and ruinous for the
  * sixteen handlers that only ever wanted a single record: fetching one vendor
  * used to mean loading every vendor, every evaluation, every activity log and
@@ -191,11 +191,27 @@ export async function getVendorChangesSince(
   };
 }
 
-export async function getVendorsList(vendorId?: string, window?: VendorPage): Promise<any[]> {
+export async function getVendorsList(
+  vendorId?: string | string[],
+  window?: VendorPage,
+): Promise<any[]> {
   const prisma = requirePrisma();
   {
+    /*
+     * One source, a named handful, or the register.
+     *
+     * The handful is what the background poll asks for. It used to have no way
+     * to ask: `GET /api/vendors/changes` answered with the ids that moved, and
+     * the client then re-read *everything* — nine megabytes on a register of
+     * ten thousand sources, every thirty seconds for as long as a second
+     * operator kept saving. The ids were already in hand; only the endpoint to
+     * spend them on was missing.
+     */
+    const idFilter = Array.isArray(vendorId)
+      ? { id: { in: vendorId } }
+      : vendorId ? { id: vendorId } : {};
     const vendors = await prisma.vendor.findMany({
-      where: vendorId ? { id: vendorId } : {},
+      where: idFilter,
       orderBy: [{ name: "asc" }, { id: "asc" }],
       ...(window ? { skip: window.skip, take: window.take } : {}),
     });
@@ -205,11 +221,13 @@ export async function getVendorsList(vendorId?: string, window?: VendorPage): Pr
     // once; a page reads only its own rows. `in` over a page of ids is what the
     // primary-key index is for — over the whole table it would be worse than no
     // filter at all, hence the three-way choice rather than always listing ids.
-    const only: any = vendorId
-      ? { vendorId }
-      : window
-        ? { vendorId: { in: vendors.map(v => v.id) } }
-        : {};
+    const only: any = Array.isArray(vendorId)
+      ? { vendorId: { in: vendorId } }
+      : vendorId
+        ? { vendorId }
+        : window
+          ? { vendorId: { in: vendors.map(v => v.id) } }
+          : {};
     const vendorMaterials = await prisma.vendorMaterial.findMany({ where: only });
     // Materials are reached through the links above, so when building a single
     // vendor — or one page — only the ones actually referenced need loading.

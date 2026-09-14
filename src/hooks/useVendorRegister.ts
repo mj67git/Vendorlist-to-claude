@@ -32,6 +32,12 @@ interface VendorChange {
  */
 export interface VendorRegisterDeps {
   currentUser: User | null;
+  /**
+   * Called with a record the poll refreshed while the user was standing on it,
+   * so the page they are reading shows the new copy (the same thing the full
+   * re-read does through `resyncRef`).
+   */
+  onVendorRefreshed?: (vendor: Vendor) => void;
   /** True while an open form has unsaved changes: the poll then offers rather
    *  than replaces. */
   navGuardRef: React.MutableRefObject<(() => boolean) | null>;
@@ -39,7 +45,7 @@ export interface VendorRegisterDeps {
   historyRef: React.MutableRefObject<ViewState[]>;
 }
 
-export function useVendorRegister({ currentUser, navGuardRef, historyRef }: VendorRegisterDeps) {
+export function useVendorRegister({ currentUser, navGuardRef, historyRef, onVendorRefreshed }: VendorRegisterDeps) {
   const [vendors, setVendors] = useState<Vendor[]>(() => {
     const CLEANED_VENDORS_DB = INITIAL_VENDORS_DB.filter(isAllowedVendor).map(normalizeAndCleanVendor);
     try {
@@ -192,6 +198,51 @@ export function useVendorRegister({ currentUser, navGuardRef, historyRef }: Vend
   
   
   /**
+   * Fetch the named records and write them over the copies on screen.
+   *
+   * Returns false when the answer cannot be trusted to be complete — the
+   * request failed, or the server returned fewer rows than were asked for,
+   * which is what a row this account may no longer read looks like. The caller
+   * then falls back to re-reading the list, where that filtering is applied to
+   * everything at once.
+   */
+  const patchChangedVendors = async (ids: string[], focusId?: string): Promise<boolean> => {
+    if (ids.length === 0) return true;
+    try {
+      const res = await authFetch(`/api/vendors?ids=${encodeURIComponent(ids.join(','))}`);
+      if (!res.ok) return false;
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length !== ids.length) return false;
+      const fresh = rows.filter(isAllowedVendor).map(normalizeAndCleanVendor) as Vendor[];
+      if (fresh.length === 0) return false;
+      const byId = new Map(fresh.map(v => [v.id, v]));
+      setVendors(prev => {
+        const merged = prev.map(v => byId.get(v.id) ?? v);
+        // Somebody else's *new* source arrives as a changed id this session has
+        // never seen; it belongs at the top, the way a locally created one does.
+        const added = fresh.filter(v => !prev.some(p => p.id === v.id));
+        return added.length > 0 ? [...added, ...merged] : merged;
+      });
+      setDataRevision(n => n + 1);
+      const focused = focusId ? byId.get(focusId) : null;
+      if (focused) onVendorRefreshed?.(focused);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /*
+   * Reached through a ref, like `resyncRef` beside it: the poll's effect must
+   * not be torn down and rebuilt on every render, which is what naming a
+   * freshly created function in its dependency list would do — and rebuilding
+   * it restarts the thirty-second interval, so a busy screen would poll far
+   * more often than intended, or never.
+   */
+  const patchRef = useRef(patchChangedVendors);
+  patchRef.current = patchChangedVendors;
+
+  /**
    * Background sync — how a second operator sees the first one's work.
    *
    * The register is fetched once at sign-in and, before this, re-read only
@@ -256,7 +307,26 @@ export function useVendorRegister({ currentUser, navGuardRef, historyRef }: Vend
           return;
         }
         const stack = historyRef.current;
-        await resyncRef.current?.(stack[stack.length - 1]?.selectedVendor?.id);
+        const focusId = stack[stack.length - 1]?.selectedVendor?.id;
+
+        /*
+         * Read back only what moved.
+         *
+         * The poll already knows which ids changed — that is the whole content
+         * of `/api/vendors/changes` — and it used to spend them on a complete
+         * re-read of the register: about nine megabytes on ten thousand
+         * sources, every thirty seconds for as long as somebody else kept
+         * saving. The rows are patched in by id instead.
+         *
+         * A moved *count* is the exception and still re-reads everything: a
+         * deleted row leaves no timestamp behind, so there is no id to ask
+         * for, and nothing short of the list reveals which one went.
+         */
+        if (!countMoved && changed.length > 0) {
+          const patched = await patchRef.current(changed.map(c => c.id), focusId);
+          if (patched) return;
+        }
+        await resyncRef.current?.(focusId);
       } catch {
         // A poll that fails changes nothing on screen: the cursor is untouched,
         // so the next one asks for the same window again.
