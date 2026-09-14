@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import React from 'react';
+import React, { useRef } from 'react';
 import { atRoute } from './helpers/session';
 import { useAppNavigation } from '../../src/hooks/useAppNavigation';
 
@@ -20,7 +20,13 @@ type Nav = ReturnType<typeof useAppNavigation>;
 function mountNav() {
   const seen: { current: Nav | null } = { current: null };
   function Probe() {
-    seen.current = useAppNavigation({ vendors: [], closeSidebar: () => {} });
+    // The two refs are owned by `App` in the real tree, because the register
+    // hook reads them as well (see `useVendorRegister`).
+    const navGuardRef = useRef<(() => boolean) | null>(null);
+    const historyRef = useRef<never[]>([]);
+    seen.current = useAppNavigation({
+      vendors: [], closeSidebar: () => {}, navGuardRef, historyRef: historyRef as never,
+    });
     return null;
   }
   render(<Probe />);

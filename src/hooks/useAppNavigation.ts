@@ -45,9 +45,21 @@ export interface AppNavigationDeps {
   vendors: Vendor[];
   /** Navigating closes the mobile sidebar; the rail itself belongs to the shell. */
   closeSidebar: () => void;
+  /**
+   * The two refs the background poll also reads — «is a form dirty» and «where
+   * is the user standing».
+   *
+   * They are created by the caller rather than here because the register hook
+   * needs them too, and the register is what this hook is given (`vendors`).
+   * One of the two has to own them, and neither can: `App` does.
+   */
+  navGuardRef: React.MutableRefObject<(() => boolean) | null>;
+  historyRef: React.MutableRefObject<ViewState[]>;
 }
 
-export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
+export function useAppNavigation({
+  vendors, closeSidebar, navGuardRef, historyRef,
+}: AppNavigationDeps) {
   // A route carries only a vendor *id*; the full record is re-hydrated from `vendors`
   // (see `selectedVendor` below), which may still be loading on a deep link.
   const routeToViewState = (r: RouteState): ViewState => ({
@@ -164,7 +176,6 @@ export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
   // Detail screens register a predicate here; any navigation away is deferred
   // behind a confirmation dialog while it returns true. This prevents silent
   // loss of an open edit form (a real data-integrity risk under GxP).
-  const navGuardRef = useRef<(() => boolean) | null>(null);
   /**
    * How many source saves are still waiting for the server.
    *
@@ -181,7 +192,9 @@ export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
   pendingNavRef.current = pendingNav;
   const registerNavGuard = React.useCallback((fn: (() => boolean) | null) => {
     navGuardRef.current = fn;
-  }, []);
+    // The ref is owned by the caller now and never changes identity, so naming
+    // it here is free and keeps the dependency list truthful.
+  }, [navGuardRef]);
   
   // The guard above covers navigation *inside* the app. Closing the tab or
   // pressing F5 goes around it entirely, so the same signal is handed to the
@@ -198,7 +211,7 @@ export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, []);
+  }, [navGuardRef]);
   
   // --- Hash routing / browser history ---------------------------------------
   // The URL hash is the shareable source of truth for the current location, and
@@ -206,7 +219,6 @@ export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
   // and the browser's history menu all behave natively.
   // NOTE: these hooks must stay above the early returns below so that hook
   // order stays stable across the login / change-password screens.
-  const historyRef = useRef(viewHistory);
   historyRef.current = viewHistory;
   // Set while we are applying a URL change, so the sync effect below does not
   // push a duplicate entry for a location the browser already navigated to.
@@ -303,7 +315,7 @@ export function useAppNavigation({ vendors, closeSidebar }: AppNavigationDeps) {
   
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, []);
+  }, [historyRef, navGuardRef]);
   const runGuarded = (action: () => void) => {
     if (navGuardRef.current?.()) {
       setPendingNav(() => action);
