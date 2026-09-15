@@ -52,6 +52,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The gate has to run on the runtime we ship.
+      #
+      # Nothing here pinned Node, so `bunx tsx --test` spawned whatever Node the
+      # runner happened to carry — and GitHub moved that to 24 when it deprecated
+      # 20. `package.json` declares `engines: node >=20 <21` and the image is
+      # built `FROM node:20-alpine`, so the suite was being judged on a runtime
+      # the project says it does not support. It showed: on one commit the same
+      # tests passed under `pull_request` and died under `push` with
+      # `tests/api.derivedVerdict.test.ts` taking a SIGSEGV — a process crash,
+      # not a failed assertion, which is what Prisma 5 does on an unsupported
+      # Node. A gate that is green "most of the time" is not a gate.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       # The repository locks twice on purpose: `bun.lock` is what a developer
       # installs from and what CI resolves here, and `package-lock.json` is what
       # the production image installs from with `npm ci`. Both are committed and
