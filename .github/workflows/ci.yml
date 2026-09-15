@@ -52,6 +52,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The gate runs on the runtime we ship, and the version is stated once.
+      #
+      # Nothing here pinned Node, so `bunx tsx --test` spawned whatever Node the
+      # runner happened to carry — and GitHub moved that to 24 when it deprecated
+      # 20. A gate that is green "most of the time" is not a gate, and this one
+      # proved it: on one commit the same tests passed under `pull_request` and
+      # died under `push` with `tests/api.derivedVerdict.test.ts` taking a
+      # SIGSEGV — a process crash, not a failed assertion, which is what Prisma 5
+      # does on a Node it does not support.
+      #
+      # 22, not 20, and the whole project moved with it: `undici@8` (through
+      # `jsdom@30`) requires `node >=22.19`, so the render tests cannot start on
+      # 20 at all, and Node 20 left support in April 2026. Keep this in step with
+      # `engines` in package.json and the `FROM node:22-alpine` lines in the
+      # Dockerfile — the three have to name the same runtime or this gate is
+      # measuring something nobody runs.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       # The repository locks twice on purpose: `bun.lock` is what a developer
       # installs from and what CI resolves here, and `package-lock.json` is what
       # the production image installs from with `npm ci`. Both are committed and
@@ -107,3 +127,26 @@ jobs:
         run: >
           bunx esbuild server.ts --bundle --platform=node --format=cjs
           --packages=external --outfile=/tmp/server.cjs
+
+  # The image the IT department actually installs.
+  #
+  # `deploy/install.sh` ends in `docker compose build`, and nothing ever built
+  # that image before a customer did. It went unnoticed while the base image sat
+  # still; it stopped being ignorable the moment the runtime moved from
+  # `node:20-alpine` to 22, because a base image that fails to build fails on the
+  # customer's server, during an installation, with no way back.
+  #
+  # Build only — nothing is pushed anywhere. `npm ci` inside the image also keeps
+  # `package-lock.json` honest: the lockfile the production install reads is not
+  # the one the rest of this workflow uses (that is `bun.lock`), so this is the
+  # only place a mismatch between the two would surface.
+  image:
+    name: deployment image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the deployment image
+        run: docker build -t vlse:ci .
