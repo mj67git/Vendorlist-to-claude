@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, X, CheckCircle, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
+import { ENTER, EXIT } from './constants/motion';
 import { User, Vendor, Material, BusinessPartner } from './types';
 import type { ViewState } from './utils/navStack';
 
@@ -412,13 +414,23 @@ export default function App() {
 
       <div className="min-h-screen bg-background text-foreground flex overflow-hidden print:overflow-visible print:bg-white print:text-black print:block">
         
-        {/* Mobile Sidebar Overlay */}
-        {sidebarOpen && (
-          <div 
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 md:hidden fade-in-fast" 
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
+        {/* Mobile Sidebar Overlay.
+            Conditionally rendering this meant it appeared and vanished in a
+            single frame while the drawer behind it took 300ms to slide, so on
+            close the page brightened instantly and the sidebar was still
+            visibly on its way out. The scrim now leaves with the drawer. */}
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.div
+              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: ENTER }}
+              exit={{ opacity: 0, transition: { duration: 0.3, ease: EXIT.ease } }}
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+        </AnimatePresence>
 
         {/* LEFT PANEL: Fixed Sidebar */}
         <AppSidebar
@@ -439,7 +451,7 @@ export default function App() {
         />
 
         {/* RIGHT PANEL: Main Content Area */}
-        <main className={`flex-1 ${sidebarCollapsed ? 'md:pr-[76px]' : 'md:pr-[272px]'} flex flex-col h-screen overflow-hidden transition-all duration-300 print:h-auto print:overflow-visible print:pr-0 print:block`}>
+        <main className={`flex-1 ${sidebarCollapsed ? 'md:pr-[76px]' : 'md:pr-[272px]'} flex flex-col h-screen overflow-hidden transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] print:h-auto print:overflow-visible print:pr-0 print:block`}>
           <AppHeader
             currentUser={currentUser}
             vendors={vendors}
@@ -603,11 +615,23 @@ export default function App() {
           </div>
         )}
 
-        {/* Global Toast (theme-aware; error vs. success styling) */}
+        {/* Global Toast (theme-aware; error vs. success styling).
+
+            It used to be `{toast && <div className="… fade-in">}` — rendered
+            conditionally, so it faded in and then ceased to exist, with no
+            exit at all. It is anchored to the bottom edge, so that is the edge
+            it arrives from and the edge it leaves by: a thing that disappears
+            somewhere other than where it came from reads as two unrelated
+            events rather than one object coming and going. */}
+        <AnimatePresence>
         {toast && (() => {
           const isError = toast.kind === 'error';
           return (
-            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
+            <motion.div
+              initial={{ opacity: 0, y: 16, x: '-50%' }}
+              animate={{ opacity: 1, y: 0, x: '-50%', transition: ENTER }}
+              exit={{ opacity: 0, y: 12, x: '-50%', transition: EXIT }}
+              className={`fixed bottom-6 left-1/2 z-50 flex items-center gap-2 bg-[var(--card)] text-[var(--card-foreground)] border px-4 py-2.5 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.14)] ${isError ? 'border-[var(--danger-main)]/45' : 'border-[var(--border)]'}`}>
               {isError
                 ? <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--danger-main)]" />
                 : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
@@ -626,9 +650,10 @@ export default function App() {
                   {toast.action.label}
                 </Button>
               )}
-            </div>
+            </motion.div>
           );
         })()}
+        </AnimatePresence>
 
         {/* Change Password Modal */}
         {showChangePasswordModal && (

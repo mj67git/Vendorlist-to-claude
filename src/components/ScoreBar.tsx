@@ -87,7 +87,7 @@ export function ScoreBar({ label, value, max = 100 }: ScoreBarProps) {
       </div>
       <div className="w-full h-px bg-border rounded-full">
         <div 
-          className={`h-[2px] rounded-full mt-[-0.5px] transition-all duration-700 ${getScoreColorClass(percentage, true)}`} 
+          className={`h-[2px] rounded-full mt-[-0.5px] transition-[width] duration-700 ease-out ${getScoreColorClass(percentage, true)}`} 
           style={{ width: `${percentage}%` }}
         />
       </div>

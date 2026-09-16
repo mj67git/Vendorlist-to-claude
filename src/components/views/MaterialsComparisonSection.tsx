@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { DURATION, ENTER, EXIT } from '../../constants/motion';
 import { Category, Vendor } from '../../types';
 import { EntityName } from '../EntityName';
 import { Button } from '../ui/button';
@@ -302,7 +303,7 @@ export const MaterialsComparisonSection: React.FC<{
 
                 <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden mt-2">
                   <div
-                    className={`h-full rounded-full transition-all duration-700 ${isBest ? 'bg-primary' : 'bg-slate-400 dark:bg-slate-500'}`}
+                    className={`h-full rounded-full transition-[width] duration-700 ease-out ${isBest ? 'bg-primary' : 'bg-slate-400 dark:bg-slate-500'}`}
                     style={{ width: `${width}%` }}
                   />
                 </div>
@@ -396,12 +397,12 @@ export const MaterialsComparisonSection: React.FC<{
             <button
               type="button"
               onClick={() => setShowEngineGuide(v => !v)}
-              className="text-2xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer shrink-0"
+              className="text-2xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition-decor flex items-center gap-1 cursor-pointer shrink-0"
             >
               <span>راهنمای محاسبه</span>
               <motion.span
                 animate={{ rotate: showEngineGuide ? 180 : 0 }}
-                transition={{ duration: 0.15 }}
+                transition={{ duration: DURATION.FAST }}
                 className="inline-block"
               >
                 <ChevronDown className="w-3 h-3" />
@@ -409,14 +410,21 @@ export const MaterialsComparisonSection: React.FC<{
             </button>
           </div>
 
+          {/* `height: 0 → auto` is a layout animation: the browser reflows this
+              subtree, and everything below it on the page, on every frame.
+              `grid-template-rows: 0fr → 1fr` reaches the same "measure the
+              content and animate to it" result on a property that does not
+              force that reflow, and unlike a `scaleY` it does not squash the
+              text while it opens. The inner wrapper is required — a grid row
+              can only animate against a child that is allowed to be smaller
+              than its content, which is what `min-h-0` gives it. */}
           <AnimatePresence initial={false}>
             {showEngineGuide && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="overflow-hidden"
+                initial={{ gridTemplateRows: '0fr', opacity: 0 }}
+                animate={{ gridTemplateRows: '1fr', opacity: 1, transition: ENTER }}
+                exit={{ gridTemplateRows: '0fr', opacity: 0, transition: EXIT }}
+                className="grid [&>*]:min-h-0 [&>*]:overflow-hidden"
               >
                 <div className="mt-3 bg-muted border border-border rounded-lg p-3 space-y-2 text-2xs text-muted-foreground leading-relaxed">
                   <p>

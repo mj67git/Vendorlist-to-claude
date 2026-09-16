@@ -1054,7 +1054,7 @@ interface SourceSelection {
                  { id: 'planning', name: 'برنامه‌ریزی و انبار', avg: stats.deptAverages.planning, icon: Warehouse, color: 'bg-violet-600' },
                  { id: 'finance', name: 'مالی', avg: stats.deptAverages.finance, icon: Coins, color: 'bg-amber-600' }
                ].filter(dept => canScoreDepartment(currentUser, dept.id)).map((dept) => (
-                 <div key={dept.id} className="bg-muted border border-border rounded-xl p-4 flex flex-col justify-between hover:shadow-md hover:border-border transition-all">
+                 <div key={dept.id} className="bg-muted border border-border rounded-xl p-4 flex flex-col justify-between hover:shadow-md hover:border-border transition-decor">
                    <div>
                      <div className="flex items-center justify-between text-foreground font-bold text-sm mb-4">
                        <div className="flex items-center gap-2">
@@ -1067,7 +1067,7 @@ interface SourceSelection {
 
                    <div>
                      <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                       <div className={`${getScoreColorClass(dept.avg, true)} h-full rounded-full transition-all`} style={{ width: `${dept.avg}%` }} />
+                       <div className={`${getScoreColorClass(dept.avg, true)} h-full rounded-full transition-[width] duration-700 ease-out`} style={{ width: `${dept.avg}%` }} />
                      </div>
                    </div>
                  </div>

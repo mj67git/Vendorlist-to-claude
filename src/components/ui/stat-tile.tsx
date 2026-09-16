@@ -49,7 +49,7 @@ export const StatTile: React.FC<StatTileProps> = ({
         {loading ? (
           <div className="h-6 w-10 bg-muted rounded animate-pulse mt-1" />
         ) : (
-          <div className={`text-xl font-black font-mono leading-tight mt-0.5 ${valueClassName || 'text-foreground'}`}>
+          <div className={`text-xl font-black font-mono leading-tight mt-0.5 ${typeof value === 'number' ? 'numeral-display' : ''} ${valueClassName || 'text-foreground'}`}>
             {typeof value === 'number' ? value.toLocaleString('fa-IR') : value}
           </div>
         )}
@@ -60,7 +60,7 @@ export const StatTile: React.FC<StatTileProps> = ({
     </>
   );
 
-  const shell = 'p-3 sm:p-4 rounded-xl border shadow-xs flex items-center gap-3 text-right transition-all';
+  const shell = 'p-3 sm:p-4 rounded-xl border shadow-xs flex items-center gap-3 text-right transition-decor';
 
   if (!onClick) {
     return <div className={`${shell} bg-card border-border hover:shadow-sm`}>{body}</div>;

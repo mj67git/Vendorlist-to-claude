@@ -1045,7 +1045,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 shrink-0">
             <button
               onClick={() => { setQuickSeverityFilter(null); setCurrentPage(1); }}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border shrink-0 cursor-pointer ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-decor border shrink-0 cursor-pointer ${
                 quickSeverityFilter === null 
                   ? 'bg-foreground border-foreground text-background shadow-xs' 
                   : 'bg-card border-border text-muted-foreground hover:bg-accent'
@@ -1055,7 +1055,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             </button>
             <button
               onClick={() => { setQuickSeverityFilter('Critical'); setCurrentPage(1); }}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-decor border flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 quickSeverityFilter === 'Critical'
                   ? 'bg-rose-600 border-rose-700 text-white shadow-xs'
                   : 'bg-rose-50/50 border-rose-200/60 text-rose-700 hover:bg-rose-50 dark:bg-rose-950/40 dark:border-rose-900 dark:text-rose-200 dark:hover:bg-rose-950/60'
@@ -1066,7 +1066,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             </button>
             <button
               onClick={() => { setQuickSeverityFilter('Warning'); setCurrentPage(1); }}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-decor border flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 quickSeverityFilter === 'Warning'
                   ? 'bg-amber-500 border-amber-600 text-white shadow-xs'
                   : 'bg-amber-50/50 border-amber-200/60 text-amber-700 hover:bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900 dark:text-amber-200 dark:hover:bg-amber-950/60'
@@ -1078,7 +1078,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
             <button
               onClick={() => setShowAdvancedFilters(v => !v)}
               title="فیلترهای پیشرفته"
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-decor border flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 showAdvancedFilters || advancedFilterCount > 0
                   ? 'bg-primary border-primary text-primary-foreground shadow-xs'
                   : 'bg-card border-border text-muted-foreground hover:bg-accent'
@@ -1422,7 +1422,7 @@ export const AuditTrailView: React.FC<{ currentUser?: User | null }> = ({ curren
                     <tr 
                       key={log.id}
                       onClick={() => handleOpenDrawer(log)}
-                      className="hover:bg-accent/60 transition-all duration-150 cursor-pointer group"
+                      className="hover:bg-accent/60 transition-decor duration-150 cursor-pointer group"
                     >
                       {/* Date and time used to sit shoulder to shoulder in one
                           run of digits, which read as a single number. They are

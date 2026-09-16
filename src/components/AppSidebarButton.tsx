@@ -77,14 +77,14 @@ export function AppSidebarButton({
       aria-current={active ? 'page' : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        'w-full flex items-center rounded-xl text-xs font-semibold transition-all duration-200 text-right group relative cursor-pointer',
+        'w-full flex items-center rounded-xl text-xs font-semibold transition-decor duration-200 text-right group relative cursor-pointer',
         collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2',
         active ? ACTIVE_PILL : cn('bg-transparent', IDLE_PILL)
       )}
     >
       <div
         className={cn(
-          'w-7 h-7 rounded-lg shrink-0 flex items-center justify-center transition-all duration-200 relative',
+          'w-7 h-7 rounded-lg shrink-0 flex items-center justify-center transition-decor duration-200 relative',
           active ? ACTIVE_TILE : tile
         )}
       >

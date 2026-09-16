@@ -317,7 +317,14 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
           initial={{ opacity: 0, scale: 0.95, y: coords.placement === 'bottom' ? -4 : 4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: coords.placement === 'bottom' ? -4 : 4 }}
-          transition={{ type: 'spring', bounce: 0.3, duration: 0.4 }}
+          /* No bounce. Overshoot is the shape of momentum, and momentum comes
+             from the user — a card they flicked, a sheet they threw. This
+             panel appears because a button was clicked, so a spring that
+             springs past its mark and comes back is describing a force that
+             was never applied. The `origin-top`/`origin-bottom` below is the
+             part that carries meaning: the calendar grows out of the field
+             that opened it rather than out of its own centre. */
+          transition={{ type: 'spring', bounce: 0, duration: 0.25 }}
           style={{ top: coords.top, left: coords.left, width: PANEL_WIDTH }}
           className={`fixed z-[120] bg-popover text-popover-foreground border border-border shadow-[0_8px_32px_rgba(15,23,42,0.18)] rounded-2xl p-4 ${
             coords.placement === 'bottom' ? 'origin-top' : 'origin-bottom'
@@ -414,7 +421,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
                     aria-current={isToday ? 'date' : undefined}
                     onClick={() => handleDayClick(day)}
                     className={`
-                      h-9 w-full flex items-center justify-center rounded-lg font-mono text-xs font-bold transition-all relative
+                      h-9 w-full flex items-center justify-center rounded-lg font-mono text-xs font-bold transition-decor relative
                       focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
                       ${isSelected
                         ? 'bg-primary text-primary-foreground shadow-md'
@@ -460,7 +467,7 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
         ref={triggerRef}
         className={`flex items-center justify-between w-full bg-card border border-border rounded-xl px-3 py-2 cursor-pointer
           focus:outline-none focus-visible:ring-2 focus-visible:ring-ring
-          ${disabled ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:border-border-hover'} transition-all`}
+          ${disabled ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:border-border-hover'} transition-decor`}
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}

@@ -306,7 +306,7 @@ export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, cur
                 type="button"
                 disabled={!clickable}
                 onClick={() => { if (clickable) onNavigate('tasks', null, a.key); }}
-                className={`text-right rounded-xl border p-3.5 transition-all ${
+                className={`text-right rounded-xl border p-3.5 transition-decor ${
                   clickable ? `${toneClasses[a.tone]} hover:shadow-sm cursor-pointer` : 'bg-muted/40 border-border text-muted-foreground cursor-default'
                 }`}
               >
@@ -580,10 +580,10 @@ export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, cur
               <Card 
                 key={id}
                 onClick={() => onNavigate('category', id)}
-                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-all duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${total === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
+                className={`group p-5 space-y-4 bg-card border-border hover:border-primary/50 transition-decor duration-300 cursor-pointer ${style.hoverBg} ${style.hoverShadow} ${total === 0 ? 'opacity-65 hover:opacity-100' : ''}`}
               >
                 <div className="flex items-start justify-between">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-all duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border font-mono font-black transition-decor duration-300 ${style.iconBg} ${style.iconBorder} ${style.iconText} group-hover:scale-105`}>
                     <meta.icon className="w-6 h-6" />
                   </div>
                   <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -596,7 +596,7 @@ export function HomeView({ vendors, onNavigate, onSelectVendor, onAddVendor, cur
 
                 <div className="border-t border-border/70 pt-3 space-y-2">
                   <div className="flex items-end justify-between gap-2">
-                    <div className={`font-mono text-3xl font-black leading-none transition-all duration-300 group-hover:scale-105 origin-left ${total === 0 ? 'text-muted-foreground' : style.statText}`}>
+                    <div className={`font-mono text-3xl font-black leading-none numeral-display transition-transform duration-300 ease-out group-hover:scale-105 origin-left ${total === 0 ? 'text-muted-foreground' : style.statText}`}>
                       {total.toLocaleString('fa-IR')}
                     </div>
                     {/* Stacked lines rather than columns: the labels are long

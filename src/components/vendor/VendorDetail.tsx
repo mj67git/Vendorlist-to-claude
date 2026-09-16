@@ -480,7 +480,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                 the same thing. */}
             <div className="shrink-0 flex flex-col items-center gap-1.5">
               <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center bg-muted ${scoreConfig.border}`}>
-                <span className="font-mono text-2xl font-black">
+                <span className="font-mono text-2xl font-black numeral-display">
                   {displayedScore !== null ? displayedScore : '-'}
                 </span>
               </div>
@@ -1110,7 +1110,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
               return (
                 <React.Fragment key={s.id}>
                   <button type="button" onClick={() => setEvalStage(s.id)} className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group" title={s.title}>
-                    <span className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${
+                    <span className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-decor ${
                       current ? 'border-primary text-primary bg-primary/5 ring-4 ring-primary/10' :
                       done ? 'border-primary bg-primary text-white' :
                       'border-border text-muted-foreground bg-card group-hover:border-border'
@@ -1121,7 +1121,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                   </button>
                   {i < evalStages.length - 1 && (
                     <div className="flex-1 h-[2px] mx-2 sm:mx-3 -mt-4 rounded-full bg-muted overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-300 ${i < evalStageIdx ? 'bg-primary w-full' : 'w-0'}`} />
+                      <div className={`h-full rounded-full transition-[width] duration-300 ease-out ${i < evalStageIdx ? 'bg-primary w-full' : 'w-0'}`} />
                     </div>
                   )}
                 </React.Fragment>
@@ -1915,7 +1915,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                     const isDeletingThis = confirmDeleteAnalysisId === record.id;
 
                     return (
-                      <tr key={record.id || index} className={`${isEditingThis ? 'bg-indigo-50/30 dark:bg-indigo-950/30' : 'hover:bg-accent/50'} transition-all`}>
+                      <tr key={record.id || index} className={`${isEditingThis ? 'bg-indigo-50/30 dark:bg-indigo-950/30' : 'hover:bg-accent/50'} transition-decor`}>
                         <td className="py-3 px-3 text-center font-mono text-muted-foreground font-semibold">{rowNumber}</td>
                         <td className="py-3 px-3">
                           {isEditingThis ? (

@@ -95,7 +95,7 @@ export const MaterialGroup: React.FC<{
   };
 
   return (
-    <Card id={elementId} className={`overflow-hidden shadow-xs hover:shadow-sm transition-all duration-500 scroll-mt-52 sm:scroll-mt-48 ${highlight ? 'border-primary ring-2 ring-primary/40 shadow-md' : 'border-border/80'}`}>
+    <Card id={elementId} className={`overflow-hidden shadow-xs hover:shadow-sm transition-decor duration-500 scroll-mt-52 sm:scroll-mt-48 ${highlight ? 'border-primary ring-2 ring-primary/40 shadow-md' : 'border-border/80'}`}>
       <div 
         role="button"
         tabIndex={0}
@@ -131,7 +131,7 @@ export const MaterialGroup: React.FC<{
       <div
         id={`${elementId}-content`}
         aria-hidden={!isOpen}
-        className={`grid transition-all duration-300 ease-in-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
       >
         <div className="overflow-hidden">
           {hasOpened && (
@@ -368,7 +368,7 @@ export const MaterialGroup: React.FC<{
                     </div>
                     </div>
 
-                    <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transform group-hover:-translate-x-0.5 transition-all shrink-0" />
+                    <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transform group-hover:-translate-x-0.5 transition-decor shrink-0" />
                   </div>
                 </div>
               );

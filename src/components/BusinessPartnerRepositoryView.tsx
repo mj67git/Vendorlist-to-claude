@@ -1261,7 +1261,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           setActiveModalTab('general');
                           setFormError(null);
                         }}
-                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-decor cursor-pointer ${
                           formData.type === 'Manufacturer'
                             ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200 border-indigo-500 shadow-sm ring-1 ring-indigo-500'
                             : 'bg-muted border-border text-muted-foreground hover:bg-muted'
@@ -1277,7 +1277,7 @@ export const BusinessPartnerRepositoryView: React.FC<Props> = ({
                           setFormData(prev => ({ ...prev, type: 'Supplier' }));
                           setFormError(null);
                         }}
-                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-decor cursor-pointer ${
                           formData.type === 'Supplier'
                             ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200 border-emerald-500 shadow-sm ring-1 ring-emerald-500'
                             : 'bg-muted border-border text-muted-foreground hover:bg-muted'

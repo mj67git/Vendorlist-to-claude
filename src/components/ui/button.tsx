@@ -3,8 +3,21 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "../../lib/utils"
 
+/**
+ * Two transitions, not one.
+ *
+ * A press has to be felt the instant the pointer goes down; hover colour does
+ * not. Both used to share `transition-all duration-200`, so `active:scale` —
+ * the only immediate feedback a button gives — took a fifth of a second to
+ * arrive and the button read as slow to answer even when the click itself was
+ * handled at once. The scale now lands in 75ms while colour and shadow keep
+ * the calmer 200ms, and `transition-all` is replaced by the four properties
+ * that actually change: `transition-all` also animates width, height and
+ * padding, so a button that changes size (a label swapping to a spinner)
+ * animated its own layout as a side effect nobody asked for.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98] active:duration-75",
   {
     variants: {
       variant: {

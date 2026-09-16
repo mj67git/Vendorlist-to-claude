@@ -167,7 +167,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
               setSearchTerm('');
             }
           }}
-          className={`flex items-center justify-between w-full bg-card border rounded-xl px-3.5 py-2.5 cursor-pointer transition-all text-right text-sm ${
+          className={`flex items-center justify-between w-full bg-card border rounded-xl px-3.5 py-2.5 cursor-pointer transition-decor text-right text-sm ${
             disabled
               ? 'bg-muted border-border text-muted-foreground cursor-not-allowed opacity-60'
               : isOpen
@@ -328,7 +328,7 @@ export const PartnerSelector: React.FC<PartnerSelectorProps> = ({
                         triggerChange(p.id, p);
                         setIsOpen(false);
                       }}
-                      className={`p-2.5 rounded-xl transition-all flex items-center justify-between ${
+                      className={`p-2.5 rounded-xl transition-decor flex items-center justify-between ${
                         !allowed
                           ? 'opacity-55 cursor-not-allowed'
                           : isSelected

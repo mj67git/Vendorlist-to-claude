@@ -52,9 +52,24 @@ export function AppSidebar({
   setShowCommandPalette,
 }: AppSidebarProps) {
   return (
+    /* The drawer used to open on `ease-in-out`, which spends its first frames
+       barely moving — precisely the frames the user is watching after tapping
+       the menu. `ease-out-quint` (the `--ease-out-quint` token, spelled out
+       here because Tailwind's arbitrary-value syntax cannot take a bare `var()`
+       in an `ease-` utility) leaves immediately and settles softly, which is
+       the shape of a real thing being pushed.
+
+       `transition-all` became the two properties that actually change: the
+       transform for the mobile drawer and the width for the desktop collapse.
+       Everything else it was animating — colour, shadow, border — changed only
+       with the theme, where a 300ms crossfade of the whole sidebar was never
+       the intent. The width is still a layout animation and still reflows the
+       content beside it each frame; making that a transform would mean the
+       main column no longer shares the layout, which is a bigger change than a
+       motion pass should make. */
     <aside className={`
       fixed top-0 bottom-0 right-0 z-30 w-[272px] ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[272px]'} bg-card/95 backdrop-blur-md border-l border-border/80
-      transform transition-all duration-300 ease-in-out md:translate-x-0 slide-in print:hidden
+      transform transition-[transform,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:translate-x-0 fade-in print:hidden
       ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}
       flex flex-col shadow-xs
     `}>
