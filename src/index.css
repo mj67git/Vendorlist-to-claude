@@ -121,6 +121,27 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
+
+  /**
+   * Motion curves.
+   *
+   * The same reasoning as the text scale above: the value moves here, not at
+   * the call site. These names are deliberately not `--ease-out`, which would
+   * shadow Tailwind's own built-in and silently retime every existing
+   * `ease-out` in the application.
+   *
+   * `OUT` and `IN` are mirror images of each other — a panel that leaves on
+   * `ease-in-quint` retraces the path it arrived on with `ease-out-quint`,
+   * which is what makes a reversible transition read as one movement rather
+   * than two unrelated ones.
+   *
+   * `src/constants/motion.ts` carries the same numbers for Motion, which
+   * animates with inline styles and cannot see a utility class. The two halves
+   * have to be changed together.
+   */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-quint: cubic-bezier(0.64, 0, 0.78, 0);
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /**
@@ -291,41 +312,93 @@ body {
  * MOTION SYSTEM 
  * subtle, fast, professional animations
  */
+/**
+ * Four classes, all of them used.
+ *
+ * There were nine. `page-enter`, `page-transition`, `dialog-enter` and
+ * `slide-in-drawer` had zero call sites between them — page navigation is a
+ * keyed `motion.div` in `AppRoutes`, dialogs are `FormModal`, and the sidebar
+ * slides with a `translate-x` transition — yet CLAUDE.md named them as the
+ * house standard, so the documented motion system and the shipped one had
+ * drifted apart. A fifth, `.slide-in`, was a 220ms copy of `.fade-in` that did
+ * not slide at all, on one element.
+ *
+ * `fade-in-fast` and `toast-enter` went the same way in this pass: the sidebar
+ * scrim and the toast both needed an exit as well as an entrance, and a CSS
+ * animation cannot give them one — a conditionally rendered element simply
+ * stops existing. Both are `AnimatePresence` now, which is also why a class
+ * that merely fades something in is nearly always the wrong tool: it can only
+ * describe half of the appearance.
+ *
+ * Add one back only when something actually renders it, and keep rule 9 of
+ * CLAUDE.md in step with what is here.
+ */
 @layer utilities {
-  .page-enter {
-    animation: fadeSlide 250ms ease forwards;
-  }
+  /* For content that arrives and then stays — a panel that has just been
+     granted, a list that has finished loading. Nothing here ever leaves. */
   .fade-in {
-    animation: fadeIn 200ms ease forwards;
+    animation: fadeIn 200ms var(--ease-out-quint) forwards;
   }
-  .fade-in-fast {
-    animation: fadeIn 120ms ease forwards;
-  }
-  .slide-in-drawer {
-    animation: slideInRtl 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-  .slide-in {
-    animation: fadeIn 220ms ease forwards;
-  }
-  .dialog-enter {
-    animation: fadeScale 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  }
-  .toast-enter {
-    animation: fadeSlideUp 250ms ease forwards;
-  }
+  /* Success ticks. The one place overshoot is earned: it punctuates a
+     completed action rather than introducing a surface. */
   .bounce-in {
     animation: fadeScale 220ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   }
-  /* Unified page transition (applied to a keyed wrapper on every navigation) */
-  .page-transition {
-    animation: fadeSlide 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+
+  /**
+   * What `transition-all` was meant to say, at the thirty-odd places that were
+   * using it to mean "fade the hover state".
+   *
+   * `all` includes width, height, padding and margin, so any element that also
+   * changed size — a button whose label becomes a spinner, a row that gains a
+   * badge — animated its own layout as an unintended side effect, and every
+   * one of those frames costs a reflow. This names the properties a hover,
+   * focus or selected state actually changes and leaves the geometry alone.
+   *
+   * Somewhere that genuinely animates size says so explicitly instead:
+   * `transition-[width]` on a progress bar, `transition-[grid-template-rows]`
+   * on a disclosure. Those are deliberate and readable; `all` was neither.
+   */
+  .transition-decor {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-timing-function: var(--ease-out-quint);
+    transition-duration: 200ms;
+  }
+
+  /**
+   * Large numbers — and ONLY large numbers.
+   *
+   * Two things a display figure wants that body text does not. Tabular
+   * figures, so a count that ticks from ۹ to ۱۰ does not shift the digits
+   * beside it and a column of scores lines up on its own decimal. And a little
+   * negative tracking, because letterforms read as further apart the larger
+   * they are set, which is the one piece of Apple's type guidance that holds
+   * at 22px and above.
+   *
+   * NOT on Persian text, at any size. Persian is a connected script: the
+   * letters of a word are drawn joined, and `letter-spacing` prises those
+   * joins apart — the shaper keeps the initial/medial/final forms, so the
+   * strokes still reach for each other across a gap that should not be there,
+   * and the word looks broken rather than airy. The rule that a large heading
+   * wants tighter tracking is written for Latin and simply does not transfer.
+   * Persian headings get their hierarchy from weight and size, which is what
+   * `--text-xl` and `font-black` are already doing.
+   *
+   * So: digits and Latin only. If a value can contain a Persian word, it does
+   * not get this class.
+   */
+  .numeral-display {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
   }
 }
 
-/* Accessibility: honour reduced-motion by disabling non-essential animation */
+/* Accessibility: honour reduced-motion by disabling non-essential animation.
+   This only reaches CSS animation — Motion writes inline styles frame by
+   frame and is unaffected, which is why `MotionConfig reducedMotion="user"`
+   wraps the tree in `main.tsx`. Both are needed; neither covers the other. */
 @media (prefers-reduced-motion: reduce) {
-  .page-transition, .fade-in, .fade-in-fast, .slide-in, .slide-in-drawer,
-  .dialog-enter, .toast-enter, .bounce-in, .page-enter {
+  .fade-in, .bounce-in {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
@@ -352,29 +425,9 @@ body {
   to   { opacity: 1; }
 }
 
-@keyframes fadeSlide {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(100%); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes slideInRtl {
-  from { opacity: 0; transform: translateX(-100%); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
 @keyframes fadeScale {
   from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
-}
-
-@keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Indeterminate top sync bar */
@@ -382,6 +435,38 @@ body {
   0%   { transform: translateX(-120%); }
   50%  { transform: translateX(120%); }
   100% { transform: translateX(320%); }
+}
+
+/**
+ * The other two accessibility preferences.
+ *
+ * `prefers-reduced-motion` was already honoured; these two were not, and they
+ * are the ones that matter for a surface built out of `backdrop-blur`. Fifteen
+ * translucent layers — every sticky header, both modal scrims, the toolbar —
+ * stayed glassy for a reader who had asked the operating system for less.
+ *
+ * Reduced transparency is not reduced contrast: the surface becomes opaque and
+ * keeps its colour. Increased contrast goes further and gives it a border to
+ * sit behind, because on a near-solid surface the shadow stops doing the work
+ * of separating the layer from the page.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .bg-card\/90, .bg-card\/95 { background-color: var(--card) !important; }
+  .bg-muted\/95 { background-color: var(--muted) !important; }
+}
+
+@media (prefers-contrast: more) {
+  [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--text-primary) !important;
+  }
+  .bg-card\/90, .bg-card\/95 { background-color: var(--card) !important; }
+  .bg-muted\/95 { background-color: var(--muted) !important; }
 }
 
 /* Range slider thumb - updated with new colors */

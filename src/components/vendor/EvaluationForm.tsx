@@ -4,6 +4,7 @@ import { Archive, CheckCircle } from 'lucide-react';
 import { getScoreColorClass } from '../../components/ScoreBar';
 import { ScoringGuide } from '../../components/ScoringGuide';
 import { Scores, User, Vendor } from '../../types';
+import { SUCCESS_HOLD_MS } from '../../constants/motion';
 import { calculateOverallScore } from '../../utils/vendorUtils';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
 import { calculateDeptAverage, getRawScoreValue } from '../../utils/scoreUtils';
@@ -78,85 +79,92 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
   };
 
 
+  /**
+   * The 600ms `setTimeout` that used to wrap this whole body is gone.
+   *
+   * It was not waiting for anything — `onUpdateVendor` is fired inside it and
+   * never awaited — so it was a spinner shown on a timer, after which a
+   * success screen sat for another second: 1.6 seconds of manufactured waiting
+   * on top of however long the request actually took. Latency the interface
+   * invents is the one kind there is no excuse for.
+   */
   const handleSave = () => {
     setIsSaving(true);
+
+    const prevScores = vendor.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
+    const submittedScores = {
+      commercial: calculateDeptAverage('commercial', scores.commercial),
+      qa: calculateDeptAverage('qa', scores.qa),
+      planning: calculateDeptAverage('planning', scores.planning),
+      finance: calculateDeptAverage('finance', scores.finance)
+    };
+
+    const effectiveModifiedDepts = { ...modifiedDepts };
+    visibleFormLayout.forEach(dept => {
+      effectiveModifiedDepts[dept.id] = true;
+    });
+
+    const finalScores = {
+      commercial: effectiveModifiedDepts.commercial ? submittedScores.commercial : (prevScores.commercial || 0),
+      qa: effectiveModifiedDepts.qa ? submittedScores.qa : (prevScores.qa || 0),
+      planning: effectiveModifiedDepts.planning ? submittedScores.planning : (prevScores.planning || 0),
+      finance: effectiveModifiedDepts.finance ? submittedScores.finance : (prevScores.finance || 0)
+    };
+
+    const finalRawScores = {
+      commercial: effectiveModifiedDepts.commercial ? scores.commercial : vendor.rawScores?.commercial,
+      qa: effectiveModifiedDepts.qa ? scores.qa : vendor.rawScores?.qa,
+      planning: effectiveModifiedDepts.planning ? scores.planning : vendor.rawScores?.planning,
+      finance: effectiveModifiedDepts.finance ? scores.finance : vendor.rawScores?.finance
+    };
+
+    const isFullyScored = finalScores.commercial > 0 && finalScores.qa > 0 && finalScores.planning > 0 && finalScores.finance > 0;
     
-    setTimeout(() => {
-      const prevScores = vendor.scores || { commercial: 0, qa: 0, planning: 0, finance: 0 };
-      const submittedScores = {
-        commercial: calculateDeptAverage('commercial', scores.commercial),
-        qa: calculateDeptAverage('qa', scores.qa),
-        planning: calculateDeptAverage('planning', scores.planning),
-        finance: calculateDeptAverage('finance', scores.finance)
-      };
+    let grade = vendor.grade;
+    let pStatus = vendor.status;
+    const pCategory = vendor.category;
 
-      const effectiveModifiedDepts = { ...modifiedDepts };
-      visibleFormLayout.forEach(dept => {
-        effectiveModifiedDepts[dept.id] = true;
-      });
-
-      const finalScores = {
-        commercial: effectiveModifiedDepts.commercial ? submittedScores.commercial : (prevScores.commercial || 0),
-        qa: effectiveModifiedDepts.qa ? submittedScores.qa : (prevScores.qa || 0),
-        planning: effectiveModifiedDepts.planning ? submittedScores.planning : (prevScores.planning || 0),
-        finance: effectiveModifiedDepts.finance ? submittedScores.finance : (prevScores.finance || 0)
-      };
-
-      const finalRawScores = {
-        commercial: effectiveModifiedDepts.commercial ? scores.commercial : vendor.rawScores?.commercial,
-        qa: effectiveModifiedDepts.qa ? scores.qa : vendor.rawScores?.qa,
-        planning: effectiveModifiedDepts.planning ? scores.planning : vendor.rawScores?.planning,
-        finance: effectiveModifiedDepts.finance ? scores.finance : vendor.rawScores?.finance
-      };
-
-      const isFullyScored = finalScores.commercial > 0 && finalScores.qa > 0 && finalScores.planning > 0 && finalScores.finance > 0;
-      
-      let grade = vendor.grade;
-      let pStatus = vendor.status;
-      const pCategory = vendor.category;
-
-      if (isFullyScored) {
-        const overall = calculateOverallScore(finalScores);
-        if (overall! >= 80) {
-          grade = 'A';
-          pStatus = 'approved';
-        } else if (overall! >= 60) {
-          grade = 'B';
-          pStatus = 'approved';
-        } else if (overall! >= 40) {
-          grade = 'C';
-          pStatus = 'conditional';
-        } else {
-          grade = 'rejected';
-          pStatus = 'rejected';
-        }
+    if (isFullyScored) {
+      const overall = calculateOverallScore(finalScores);
+      if (overall! >= 80) {
+        grade = 'A';
+        pStatus = 'approved';
+      } else if (overall! >= 60) {
+        grade = 'B';
+        pStatus = 'approved';
+      } else if (overall! >= 40) {
+        grade = 'C';
+        pStatus = 'conditional';
+      } else {
+        grade = 'rejected';
+        pStatus = 'rejected';
       }
+    }
 
-      const statusMapList = { approved: 'تایید شده', conditional: 'تایید مشروط', rejected: 'مردود', new: 'جدید' };
-      const newLog = {
-        id: 'log_' + Math.random().toString(36).substring(2, 8),
-        action: `ثبت ارزیابی نهایی سورس "${vendor.material}" (${vendor.name}) - گرید نهایی: [Grade ${grade}]، وضعیت جدید: [${statusMapList[pStatus] || pStatus}] (امتیازات: آزمایشگاهی: ${finalScores.qa || 0}، بازرگانی: ${finalScores.commercial || 0}، برنامه‌ریزی: ${finalScores.planning || 0}، مالی: ${finalScores.finance || 0})`,
-        date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
-        user: currentUser?.name || 'کاربر سیستم'
-      };
+    const statusMapList = { approved: 'تایید شده', conditional: 'تایید مشروط', rejected: 'مردود', new: 'جدید' };
+    const newLog = {
+      id: 'log_' + Math.random().toString(36).substring(2, 8),
+      action: `ثبت ارزیابی نهایی سورس "${vendor.material}" (${vendor.name}) - گرید نهایی: [Grade ${grade}]، وضعیت جدید: [${statusMapList[pStatus] || pStatus}] (امتیازات: آزمایشگاهی: ${finalScores.qa || 0}، بازرگانی: ${finalScores.commercial || 0}، برنامه‌ریزی: ${finalScores.planning || 0}، مالی: ${finalScores.finance || 0})`,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم'
+    };
 
-      onSave({
-        ...vendor,
-        status: pStatus,
-        grade: grade,
-        category: pCategory,
-        scores: finalScores,
-        rawScores: finalRawScores,
-        lastAudit: isFullyScored ? new Date().toLocaleDateString('fa-IR') : vendor.lastAudit,
-        activityLogs: [...(vendor.activityLogs || []), newLog]
-      }, null);
+    onSave({
+      ...vendor,
+      status: pStatus,
+      grade: grade,
+      category: pCategory,
+      scores: finalScores,
+      rawScores: finalRawScores,
+      lastAudit: isFullyScored ? new Date().toLocaleDateString('fa-IR') : vendor.lastAudit,
+      activityLogs: [...(vendor.activityLogs || []), newLog]
+    }, null);
 
-      setIsSaving(false);
-      setIsSuccess(true);
-      setTimeout(() => {
-        onClose();
-      }, 1000);
-    }, 600);
+    setIsSaving(false);
+    setIsSuccess(true);
+    setTimeout(() => {
+      onClose();
+    }, SUCCESS_HOLD_MS);
   };
 
   if (isSuccess) {

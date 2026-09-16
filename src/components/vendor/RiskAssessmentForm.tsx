@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle, ShieldAlert, X } from 'lucide-react';
 import { RiskAssessmentData, User, Vendor } from '../../types';
+import { SUCCESS_HOLD_MS } from '../../constants/motion';
 import { Button } from '../ui/button';
 import { FmeaService } from '../../utils/fmeaService';
 import { calculateOverallScore } from '../../utils/vendorUtils';
@@ -40,7 +41,7 @@ function RiskHeatmap({ criticality, probability, detectability }: { criticality:
                 return (
                   <div
                     key={`${c}-${p}`}
-                    className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-all ${cellColor(c, p)} ${
+                    className={`relative aspect-square rounded-md border flex items-center justify-center text-xs font-mono font-bold transition-decor ${cellColor(c, p)} ${
                       active ? 'ring-2 ring-ring scale-105 z-10 shadow-lg' : 'opacity-90'
                     }`}
                     title={`Criticality ${c} × Probability ${p} = RPN(2D) ${c * p}`}
@@ -162,7 +163,7 @@ export function RiskAssessmentForm({ vendor, onSave, onClose, currentUser, onDir
     setIsSuccess(true);
     setTimeout(() => {
       onClose();
-    }, 1000);
+    }, SUCCESS_HOLD_MS);
   };
 
   if (isSuccess) {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ENTER, EXIT } from '../../constants/motion';
 import type { BusinessPartner, Category, Material, User, Vendor } from '../../types';
 import { can, categoryPermission, VIEW_PERMISSIONS, type Permission } from '../../utils/permissions';
 import type { TaskKey } from '../../utils/navRoutes';
@@ -258,30 +259,30 @@ export function renderRoutes(ctx: RouteContext) {
       content = <VendorDetail vendors={vendors} vendor={selectedVendor} onBack={goBack} onSave={handleUpdateVendor} onDelete={handleDeleteVendor} currentUser={currentUser} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} registerNavGuard={registerNavGuard} onEditVendor={() => openSourceForm('edit')} />;
     } else {
       /*
-       * One entry per page, instead of a chain of ten `else if` branches.
-       *
-       * The chain was 200 lines and every branch repeated the same three
-       * decisions in its own words: which key the transition animates on,
-       * which permission opens the page, and what to draw when it does not.
-       * Written as a table those decisions line up and can be read down a
-       * column — and a page added without a permission is now visibly a page
-       * added without a permission.
-       *
-       * The permission is `VIEW_PERMISSIONS`, the same table the sidebar, the
-       * command palette and the server read (rule 14). Nothing here is a
-       * second opinion about who may see what.
+     * One entry per page, instead of a chain of ten `else if` branches.
+     *
+     * The chain was 200 lines and every branch repeated the same three
+     * decisions in its own words: which key the transition animates on,
+     * which permission opens the page, and what to draw when it does not.
+     * Written as a table those decisions line up and can be read down a
+     * column — and a page added without a permission is now visibly a page
+     * added without a permission.
+     *
+     * The permission is `VIEW_PERMISSIONS`, the same table the sidebar, the
+     * command palette and the server read (rule 14). Nothing here is a
+     * second opinion about who may see what.
        */
       const DASHBOARD = (
         <HomeView vendors={vendors} onNavigate={navigate} onSelectVendor={handleSelectVendor} onAddVendor={handleAddVendor} currentUser={currentUser} onDownloadBackup={handleDownloadBackup} materials={materials} onAddMaterial={handleAddMaterial} partners={businessPartners} onAddPartner={handleAddBusinessPartner} onOpenSourceForm={() => openSourceForm('create')} />
       );
 
       /**
-       * The two views the server answers for.
-       *
-       * Both read their rows from `GET /api/vendors?view=…`, so the client
-       * check is the UX half of a real answer: `denied` is the server's, and
-       * `checking` holds the page back until it arrives rather than drawing it
-       * and snatching it away (rule 14).
+     * The two views the server answers for.
+     *
+     * Both read their rows from `GET /api/vendors?view=…`, so the client
+     * check is the UX half of a real answer: `denied` is the server's, and
+     * `checking` holds the page back until it arrives rather than drawing it
+     * and snatching it away (rule 14).
        */
       const serverGated = (denial: React.ReactNode, page: React.ReactNode) =>
         viewAccess === 'denied' ? denial
@@ -411,14 +412,33 @@ export function renderRoutes(ctx: RouteContext) {
       }
     }
 
+    /* Two things changed here, and both were costing the user time.
+     *
+     * `mode="wait"` holds the incoming page until the outgoing one has
+     * finished leaving, so a symmetric 250ms pair meant half a second of
+     * empty screen on every single navigation — on an internal network where
+     * the data itself arrives in tens of milliseconds, nearly all of the
+     * latency the user felt was this. Entrances are watched and exits are
+     * not, so the exit is now roughly half the entrance and runs on the
+     * mirrored curve: the page leaves along the path the next one arrives
+     * by, and the pair totals ~320ms instead of ~500ms.
+     *
+     * The `filter: blur()` is gone. It animated a non-composited property
+     * across the entire page — a full re-raster every frame, worst exactly
+     * where the page is largest — and, because any `filter` other than
+     * `none` establishes both a containing block for `position: fixed` and a
+     * stacking context, it is also what made a hand-rolled `fixed inset-0`
+     * overlay inside a view lay itself out against this box instead of the
+     * viewport. Rule 8 of CLAUDE.md (everything goes through `FormModal`)
+     * still stands on its own merits — portal, focus trap, Escape, symmetric
+     * exit — but it is no longer propping up a blur that bought nothing. */
     return (
       <AnimatePresence mode="wait">
         <motion.div
           key={keyName}
-          initial={{ opacity: 0, y: 10, filter: 'blur(2px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: -10, filter: 'blur(2px)' }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0, transition: ENTER }}
+          exit={{ opacity: 0, y: -6, transition: EXIT }}
           className="w-full h-full"
         >
           {/* The split-out pages arrive here. The fallback is deliberately

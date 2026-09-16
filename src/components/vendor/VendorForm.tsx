@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Building, Building2, CheckCircle, Handshake, Info, Plus, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
+import { SUCCESS_HOLD_MS } from '../../constants/motion';
 import { FormModal } from '../../components/FormModal';
 import { MaterialSelector } from '../../components/MaterialSelector';
 import { PartnerSelector } from '../../components/PartnerSelector';
@@ -526,7 +527,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
     setIsSuccess(true);
     setTimeout(() => {
       (onSaved ?? onClose)(saved || vendorContext);
-    }, 1000);
+    }, SUCCESS_HOLD_MS);
   };
 
   if (isSuccess) {
@@ -583,7 +584,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                       key={opt.key}
                       type="button"
                       onClick={() => { setNewPartnerType(opt.key); setNewSupplierTab('general'); setNewPartnerError(null); }}
-                      className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-decor cursor-pointer ${
                         newPartnerType === opt.key ? opt.on : 'bg-muted border-border text-muted-foreground hover:bg-accent'
                       }`}
                     >
@@ -605,7 +606,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <button
                     type="button"
                     onClick={() => setNewSupplierTab('general')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-decor ${
                       newSupplierTab === 'general' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
@@ -614,7 +615,7 @@ export function VendorForm({ onClose, onSave, categoryId, existingVendor, curren
                   <button
                     type="button"
                     onClick={() => setNewSupplierTab('evaluation')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-decor flex items-center gap-1.5 ${
                       newSupplierTab === 'evaluation' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
                     }`}
                   >
