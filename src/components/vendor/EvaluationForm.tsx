@@ -147,7 +147,6 @@ export function EvaluationForm({ vendor, onSave, onClose, currentUser, onDirtyCh
         category: pCategory,
         scores: finalScores,
         rawScores: finalRawScores,
-        lastAudit: isFullyScored ? new Date().toLocaleDateString('fa-IR') : vendor.lastAudit,
         activityLogs: [...(vendor.activityLogs || []), newLog]
       }, null);
 

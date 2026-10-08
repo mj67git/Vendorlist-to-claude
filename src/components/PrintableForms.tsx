@@ -12,7 +12,7 @@ import { criterionCell, departmentNote, earnedCell } from '../utils/printableSco
 import { getDisplayCountry } from '../utils/vendorUtils';
 import { categoryLabels } from '../constants/categories';
 import { describeSampleStatus, isSampleRecord } from '../utils/sampleStatus';
-import { BLACKLIST_SCORE_FLOOR, describeRejection, isVendorRejected } from '../utils/vendorState';
+import { BLACKLIST_SCORE_FLOOR, describeRejection, isVendorRejected, latestScoreEvaluationLog } from '../utils/vendorState';
 import { formatLogTimestamp, toJalaliDisplay } from '../utils/dateDisplay';
 import { selectionForVendor } from '../utils/sourceSelection';
 import { describeRankForRecord, describeVendorRank } from '../utils/vendorRank';
@@ -20,6 +20,17 @@ import { formatSelectionDate, type SourceSelectionRecord } from '../utils/source
 import { getScoreColorClass, getSRIColorClass } from './ScoreBar';
 // @ts-expect-error — the bundler resolves this asset import; TypeScript does not.
 import temadLogo from '../assets/logo.png';
+
+/**
+ * The day of the most recent departmental scoring, from the activity log the
+ * scoring form writes on every save. `lastAudit` is the licence issue date the
+ * user typed on the source form, so it cannot answer this. «-» when the source
+ * has never been scored.
+ */
+function lastEvaluationDate(vendor: Vendor): string {
+  const stamp = formatLogTimestamp(latestScoreEvaluationLog(vendor)?.date);
+  return stamp ? stamp.split(/\s*[·،,]\s*/)[0] : '-';
+}
 
 /*
  * `getRawScoreValue` is gone. It returned 5 — full marks — for any criterion
@@ -308,7 +319,8 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
 
   const finalProductStr = matItem?.finalProduct || 'ثبت‌نشده';
   const casStr = vendor.cas && vendor.cas.toLowerCase() !== 'n/a' && vendor.cas.toLowerCase() !== 'unknown' ? vendor.cas : (matItem?.cas || '-');
-  const regDateStr = toJalaliDisplay(vendor.registrationDate || vendor.lastAudit);
+  const regDateStr = toJalaliDisplay(vendor.lastAudit);
+  const evalDateStr = lastEvaluationDate(vendor);
 
   const statusLabel = vendor.status === 'approved' ? 'نمونه تایید شده (Approved Sample)' :
                       vendor.status === 'conditional' ? 'نمونه تایید مشروط (Conditional)' :
@@ -429,7 +441,7 @@ export function PrintableSampleForm({ vendor, onBack, partners = [], materials =
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">تاریخ ارزیابی:</span>
-                      <span className="font-bold text-xs font-mono">{toJalaliDisplay(vendor.lastAudit || vendor.registrationDate)}</span>
+                      <span className="font-bold text-xs font-mono">{evalDateStr}</span>
                    </div>
                 </div>
              </div>
@@ -629,7 +641,8 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
 
   const finalProductStr = matItem?.finalProduct || 'ثبت‌نشده';
   const casStr = vendor.cas || matItem?.cas || 'N/A';
-  const regDateStr = toJalaliDisplay(vendor.registrationDate || vendor.lastAudit);
+  const regDateStr = toJalaliDisplay(vendor.lastAudit);
+  const evalDateStr = lastEvaluationDate(vendor);
 
   const overall = calculateOverallScore(vendor.scores, true);
 
@@ -815,7 +828,7 @@ export function PrintableEvaluationForm({ vendor, onBack, partners = [], materia
                    </div>
                    <div className="w-1/4 p-2.5 flex flex-col items-center justify-center text-center">
                       <span className="text-slate-500 font-light mb-1 text-[11px]">تاریخ ارزیابی:</span>
-                      <span className="font-bold text-xs font-mono">{toJalaliDisplay(vendor.lastAudit || vendor.registrationDate)}</span>
+                      <span className="font-bold text-xs font-mono">{evalDateStr}</span>
                    </div>
                 </div>
              </div>
