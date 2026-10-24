@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Activity, AlertCircle, AlertTriangle, Building2, CheckCircle, ChevronLeft, ChevronRight, ClipboardCheck, DollarSign, ExternalLink, Factory, FileText, Globe, Handshake, History, Info, Mail, MapPin, Microscope, Pencil, Phone, Plus, ShieldAlert, Trash2, User as UserIcon } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '../../components/ui/button';
@@ -7,13 +7,13 @@ import { GRADE_LABELS } from '../../utils/sopEvaluation';
 import { GradeBadge } from '../../components/GradeBadge';
 import { getScoreColorClass, getScoreColorConfig } from '../../components/ScoreBar';
 import { ScoreCard } from '../../components/ScoringGuide';
-import { ShamsiDatePicker } from '../../components/ShamsiDatePicker';
 import { authFetch } from '../../services/authFetch';
 import { AnalysisRecord, BusinessPartner, Material, Status, User, Vendor } from '../../types';
 import { Badge } from '../ui/badge';
 import { calculateOverallScore, checkLicenseExpiry } from '../../utils/vendorUtils';
 import { formatLogTimestamp, toJalaliDisplay } from '../../utils/dateDisplay';
 import { describeSampleStatus, isSampleRecord } from '../../utils/sampleStatus';
+import { AnalysisRecordForm, AnalysisDecision, AnalysisFormValues, emptyAnalysisValues } from './AnalysisRecordForm';
 import { EvaluationForm } from './EvaluationForm';
 import { RiskAssessmentForm } from './RiskAssessmentForm';
 import { FORM_LAYOUT } from '../../constants/evaluationLayout';
@@ -22,7 +22,6 @@ import { getRawScoreValue } from '../../utils/scoreUtils';
 import { formatLocation, resolveVendorPartner } from '../../utils/vendorPartner';
 import { ADMIN_REJECT_PREFIX, adminRejectionReason, describeRejection, isVendorRejected, SAMPLE_DECISION_PREFIX, sampleDecisionLog } from '../../utils/vendorState';
 import { can, canScoreDepartment, scorableDepartments } from '../../utils/permissions';
-import { Input, inputBaseClass } from '../../components/ui/input';
 import { cn } from '../../lib/utils';
 import { Textarea } from '../ui/textarea';
 
@@ -80,15 +79,20 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
   const evalStageIdx = evalStages.findIndex(s => s.id === evalStage);
   const showEvalWizard = evalStages.length >= 2;
 
-  const [showAddAnalysisForm, setShowAddAnalysisForm] = useState(false);
+  /**
+   * One form, one piece of state — recording a result and editing one are the
+   * same form in two modes, so they cannot be open at once and cannot drift
+   * apart. Before this, `showAddAnalysisForm` and an `editingAnalysisId` were
+   * independent, so the panel and a row-level editor could be open together,
+   * each with its own validation message.
+   */
+  type AnalysisFormState =
+    | { mode: 'add'; values: AnalysisFormValues }
+    | { mode: 'edit'; recordId: string; values: AnalysisFormValues };
+
+  const [analysisForm, setAnalysisForm] = useState<AnalysisFormState | null>(null);
   const [analysisSuccess, setAnalysisSuccess] = useState(false);
-  const [newAnalysis, setNewAnalysis] = useState({
-    date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]),
-    qcCode: '',
-    decision: 'Pass' as 'Pass' | 'Reject' | 'Approved Conditional',
-    deviationReason: 'None' as 'None' | 'NCR' | 'Deviation' | 'OOS' | 'CAPA' | 'OOT' | 'Complaint' | 'Other',
-    comments: ''
-  });
+  const analysisFormRef = useRef<HTMLDivElement>(null);
 
   /**
    * Laboratory records no longer move any status by themselves.
@@ -105,42 +109,120 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
     return { status: vendor.status, rejectionReasons: vendor.rejectionReasons || null };
   };
 
-  const handleAddAnalysisSubmit = (e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    if (!newAnalysis.date.trim()) {
-      setAddAnalysisError('تاریخ آزمایش را انتخاب کنید.');
+  const DECISION_LABELS: Record<AnalysisDecision, string> = {
+    Pass: 'قبول (Pass)',
+    Reject: 'مردود (Reject)',
+    'Approved Conditional': 'قبول مشروط (Approved Conditional)',
+  };
+
+  /** Same two rules for both modes — they used to be written out twice, with identical messages. */
+  const validateAnalysis = (values: AnalysisFormValues): string | null => {
+    if (!values.date.trim()) return 'تاریخ آزمایش را انتخاب کنید.';
+    if (!values.qcCode.trim()) return 'کد آزمایشگاهی (QC Code) را وارد کنید.';
+    return null;
+  };
+
+  const openAddAnalysisForm = () => {
+    setAnalysisError(null);
+    setAnalysisSuccess(false);
+    setConfirmDeleteAnalysisId(null);
+    setAnalysisForm({ mode: 'add', values: emptyAnalysisValues() });
+  };
+
+  /**
+   * The panel lives above the table, so a row's edit button has to bring it
+   * into view — otherwise the click looks like it did nothing on a source with
+   * a long history.
+   */
+  const editAnalysisRecord = (record: AnalysisRecord) => {
+    setAnalysisError(null);
+    setAnalysisSuccess(false);
+    setConfirmDeleteAnalysisId(null);
+    setAnalysisForm({
+      mode: 'edit',
+      recordId: record.id,
+      values: {
+        date: record.date || '',
+        qcCode: record.qcCode,
+        decision: record.decision,
+        deviationReason: record.deviationReason,
+        comments: record.comments || '',
+      },
+    });
+    // After the panel has mounted, not before.
+    requestAnimationFrame(() => {
+      analysisFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  };
+
+  const closeAnalysisForm = () => {
+    setAnalysisForm(null);
+    setAnalysisError(null);
+    setAnalysisSuccess(false);
+  };
+
+  /**
+   * One save path. The mode decides two things and nothing else: whether the
+   * record is appended or replaced, and which sentence goes into the activity
+   * log. The ordering around it — derive the QC outcome, then hand the whole
+   * vendor to `onSave` — is the same as it always was.
+   */
+  const submitAnalysisForm = () => {
+    if (!analysisForm) return;
+
+    const { values } = analysisForm;
+    const message = validateAnalysis(values);
+    if (message) {
+      setAnalysisError(message);
       return;
     }
-    if (!newAnalysis.qcCode.trim()) {
-      setAddAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
-      return;
+    setAnalysisError(null);
+
+    const existing = vendor.analysisRecords || [];
+    let updatedRecords: AnalysisRecord[];
+    let logAction: string;
+
+    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(existing);
+    const decisionLabel = DECISION_LABELS[values.decision] || values.decision;
+
+    if (analysisForm.mode === 'add') {
+      const record: AnalysisRecord = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).substring(2, 9),
+        date: values.date,
+        qcCode: values.qcCode.trim(),
+        decision: values.decision,
+        deviationReason: values.deviationReason,
+        comments: values.comments.trim(),
+        recordedBy: currentUser ? currentUser.name : 'کیفیت / سیستم',
+      };
+      updatedRecords = [...existing, record];
+      const movedToRejected = finalStatus === 'rejected' && vendor.status !== 'rejected';
+      logAction =
+        `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionLabel}] (کد QC: ${record.qcCode})` +
+        (movedToRejected ? ' — وضعیت سورس به «مردود» تغییر کرد و به لیست سیاه منتقل شد' : '');
+    } else {
+      const recordId = analysisForm.recordId;
+      updatedRecords = existing.map(r => r.id === recordId ? {
+        ...r,
+        date: values.date,
+        qcCode: values.qcCode.trim(),
+        decision: values.decision,
+        deviationReason: values.deviationReason,
+        comments: values.comments.trim(),
+        // Kept deliberately: who last touched a laboratory record is part of
+        // the GxP history, not decoration.
+        recordedBy: currentUser ? `${currentUser.name} (ویرایشگر)` : r.recordedBy,
+      } : r);
+      logAction = `ویرایش نتیجه آزمایش برای سورس "${vendor.material}" (${vendor.name}) - تصمیم جدید: [${decisionLabel}] (کد QC: ${values.qcCode.trim()})`;
     }
-    setAddAnalysisError(null);
 
-    const record = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
-      date: newAnalysis.date,
-      qcCode: newAnalysis.qcCode.trim(),
-      decision: newAnalysis.decision,
-      deviationReason: newAnalysis.deviationReason,
-      comments: newAnalysis.comments.trim(),
-      recordedBy: currentUser ? currentUser.name : 'کیفیت / سیستم'
-    };
-
-    const updatedRecords = [...(vendor.analysisRecords || []), record];
-
-    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
-    const statusChangedToRejected = finalStatus === 'rejected' && vendor.status !== 'rejected';
-
-    const decisionMapList = { Pass: 'قبول (Pass)', Reject: 'مردود (Reject)', 'Approved Conditional': 'قبول مشروط (Approved Conditional)' };
     const newLog = {
       id: 'log_' + Math.random().toString(36).substring(2, 8),
-      action: `ثبت نتیجه آزمایش جدید برای سورس "${vendor.material}" (${vendor.name}) - تصمیم: [${decisionMapList[record.decision] || record.decision}] (کد QC: ${record.qcCode})${statusChangedToRejected ? ' — وضعیت سورس به «مردود» تغییر کرد و به لیست سیاه منتقل شد' : ''}`,
-      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
-      user: currentUser?.name || 'کاربر سیستم'
+      action: logAction,
+      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+      user: currentUser?.name || 'کاربر سیستم',
     };
 
     onSave({
@@ -148,100 +230,17 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
       status: finalStatus,
       rejectionReasons: derivedReasons,
       analysisRecords: updatedRecords,
-      activityLogs: [...(vendor.activityLogs || []), newLog]
+      activityLogs: [...(vendor.activityLogs || []), newLog],
     }, null);
 
     setAnalysisSuccess(true);
-
     setTimeout(() => {
       setAnalysisSuccess(false);
-      setShowAddAnalysisForm(false);
-      setNewAnalysis({
-        date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]),
-        qcCode: '',
-        decision: 'Pass',
-        deviationReason: 'None',
-        comments: ''
-      });
+      setAnalysisForm(null);
     }, 1000);
   };
 
-  const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);
-  const [editingAnalysis, setEditingAnalysis] = useState<{
-    date: string;
-    qcCode: string;
-    decision: 'Pass' | 'Reject' | 'Approved Conditional';
-    deviationReason: 'None' | 'NCR' | 'Deviation' | 'OOS' | 'CAPA' | 'OOT' | 'Complaint' | 'Other';
-    comments: string;
-  } | null>(null);
   const [confirmDeleteAnalysisId, setConfirmDeleteAnalysisId] = useState<string | null>(null);
-
-   const handleEditAnalysisStart = (record: AnalysisRecord) => {
-    setEditAnalysisError(null);
-    setEditingAnalysisId(record.id);
-    setEditingAnalysis({
-      date: record.date || '',
-      qcCode: record.qcCode,
-      decision: record.decision,
-      deviationReason: record.deviationReason,
-      comments: record.comments || ''
-    });
-    setConfirmDeleteAnalysisId(null);
-  };
-
-  const handleEditAnalysisCancel = () => {
-    setEditingAnalysisId(null);
-    setEditingAnalysis(null);
-    setEditAnalysisError(null);
-  };
-
-  const handleEditAnalysisSave = (recordId: string) => {
-    if (!editingAnalysis || !editingAnalysis.date.trim()) {
-      setEditAnalysisError('تاریخ آزمایش را انتخاب کنید.');
-      return;
-    }
-    if (!editingAnalysis.qcCode.trim()) {
-      setEditAnalysisError('کد آزمایشگاهی (QC Code) را وارد کنید.');
-      return;
-    }
-    setEditAnalysisError(null);
-
-    const updatedRecords = (vendor.analysisRecords || []).map(r => {
-      if (r.id === recordId) {
-        return {
-          ...r,
-          date: editingAnalysis.date,
-          qcCode: editingAnalysis.qcCode.trim(),
-          decision: editingAnalysis.decision,
-          deviationReason: editingAnalysis.deviationReason,
-          comments: editingAnalysis.comments.trim(),
-          recordedBy: currentUser ? `${currentUser.name} (ویرایشگر)` : r.recordedBy
-        };
-      }
-      return r;
-    });
-
-    const decisionMapList = { Pass: 'قبول (Pass)', Reject: 'مردود (Reject)', 'Approved Conditional': 'قبول مشروط (Approved Conditional)' };
-    const newLog = {
-      id: 'log_' + Math.random().toString(36).substring(2, 8),
-      action: `ویرایش نتیجه آزمایش برای سورس "${vendor.material}" (${vendor.name}) - تصمیم جدید: [${decisionMapList[editingAnalysis.decision] || editingAnalysis.decision}] (کد QC: ${editingAnalysis.qcCode})`,
-      date: new Date().toLocaleString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' }),
-      user: currentUser?.name || 'کاربر سیستم'
-    };
-
-    const { status: finalStatus, rejectionReasons: derivedReasons } = deriveQcOutcome(updatedRecords);
-
-    onSave({
-      ...vendor,
-      status: finalStatus,
-      rejectionReasons: derivedReasons,
-      analysisRecords: updatedRecords,
-      activityLogs: [...(vendor.activityLogs || []), newLog]
-    }, 'نتیجه آزمایش با موفقیت ویرایش شد!');
-
-    setEditingAnalysisId(null);
-    setEditingAnalysis(null);
-  };
 
   const handleDeleteAnalysis = (recordId: string) => {
     const updatedRecords = (vendor.analysisRecords || []).filter(r => r.id !== recordId);
@@ -267,13 +266,14 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
 
   // Admin manual decision for sources/suppliers (not samples): reject → Black List, or restore.
   /**
-   * Validation messages for the laboratory records, shown next to the control
-   * that is missing. These were native alert()s: they blocked the interface,
-   * ignored the page's direction and theme, and once dismissed left no sign of
-   * which field was at fault.
+   * The validation message for the laboratory form, shown in the panel's own
+   * error bar. These were native alert()s: they blocked the interface, ignored
+   * the page's direction and theme, and once dismissed left no sign of which
+   * field was at fault. There were then two of them — one per mode, with the
+   * same two sentences — and the edit one was rendered inside the «عملیات»
+   * table cell at `text-2xs`, where nobody reads it.
    */
-  const [addAnalysisError, setAddAnalysisError] = useState<string | null>(null);
-  const [editAnalysisError, setEditAnalysisError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectDecisionReason, setRejectDecisionReason] = useState('');
@@ -1531,7 +1531,7 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
             <Button
               id="add-analysis-record-btn"
               size="sm"
-              onClick={() => setShowAddAnalysisForm(!showAddAnalysisForm)}
+              onClick={() => (analysisForm?.mode === 'add' ? closeAnalysisForm() : openAddAnalysisForm())}
               className="bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
             >
               <Plus />
@@ -1539,131 +1539,19 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
             </Button>
           </div>
 
-          {/* Inline Form to add laboratory record */}
-          {showAddAnalysisForm && (
-            <div id="add-analysis-form" className="mb-6 p-6 rounded-2xl border border-indigo-100 dark:border-indigo-800 bg-indigo-50/25 dark:bg-indigo-950/30 space-y-4">
-              {analysisSuccess ? (
-                <div className="flex items-center justify-center gap-3 py-8 px-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-800 dark:text-emerald-300 font-bold text-sm fade-in">
-                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 bounce-in" />
-                  <span>سابقه آزمایش با موفقیت ثبت گردید.</span>
-                </div>
-              ) : (
-                <>
-                  <div className="text-sm font-bold text-indigo-950 dark:text-indigo-300 flex items-center gap-1.5 pb-2 border-b border-indigo-100 dark:border-indigo-800">
-                    <Microscope className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>فرم ثبت نتایج و سوابق آنالیز ماده</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Date */}
-                    <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">تاریخ آزمایش <span className="text-red-500 dark:text-red-400">*</span></label>
-                      <ShamsiDatePicker
-                        value={newAnalysis.date}
-                        onChange={(date) => setNewAnalysis({ ...newAnalysis, date })}
-                        placeholder="YYYY/MM/DD"
-                      />
-                    </div>
-
-                    {/* QC Code */}
-                    <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">کد آزمایشگاهی / QC Code <span className="text-red-500 dark:text-red-400">*</span></label>
-                      <Input
-                        id="new-qc-code-input"
-                        type="text"
-                        required
-                        value={newAnalysis.qcCode}
-                        onChange={e => setNewAnalysis({ ...newAnalysis, qcCode: e.target.value })}
-                        className="w-full font-mono text-left"
-                        placeholder="مثال: QC-1405-102"
-                        dir="ltr"
-                      />
-                    </div>
-
-                    {/* Final Decision */}
-                    <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">نتیجه نهایی (Decision)</label>
-                      <select
-                        id="new-decision-select"
-                        value={newAnalysis.decision}
-                        onChange={e => setNewAnalysis({ ...newAnalysis, decision: e.target.value as any })}
-                        className={cn(inputBaseClass, 'w-full font-medium')}
-                      >
-                        <option value="Pass">Pass</option>
-                        <option value="Approved Conditional">Approved Conditional</option>
-                        <option value="Reject">Reject</option>
-                      </select>
-                    </div>
-
-                    {/* Deviation Reason / regulatory */}
-                    <div>
-                      <label className="block text-muted-foreground font-semibold text-xs mb-1.5">وضعیت انحراف</label>
-                      <select
-                        id="new-deviation-select"
-                        value={newAnalysis.deviationReason}
-                        onChange={e => setNewAnalysis({ ...newAnalysis, deviationReason: e.target.value as any })}
-                        className={cn(inputBaseClass, 'w-full font-medium')}
-                      >
-                        <option value="None">None</option>
-                        <option value="NCR">NCR</option>
-                        <option value="Deviation">Deviation</option>
-                        <option value="OOS">OOS</option>
-                        <option value="CAPA">CAPA</option>
-                        <option value="OOT">OOT</option>
-                        <option value="Complaint">Complaint</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Comments */}
-                  <div>
-                    <label className="block text-muted-foreground font-semibold text-xs mb-1.5">توضیحات و گزارش آنالیز (Comments)</label>
-                    <Textarea
-                      id="new-comments-textarea"
-                      value={newAnalysis.comments}
-                      onChange={e => setNewAnalysis({ ...newAnalysis, comments: e.target.value })}
-                      rows={3}
-                      className="bg-card"
-                      placeholder="گزارش دقیق آنالیز، درصد خلوص، ناخالصی‌ها، تطابق آزمون‌های فیزیکوشیمیایی یا میکروبیولوژی با مراجع فارماکوپه..."
-                    />
-                  </div>
-
-                  {addAnalysisError && (
-                    <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{addAnalysisError}</span>
-                    </div>
-                  )}
-
-                  {/* Action buttons */}
-                  <div className="flex justify-end gap-3 pt-2">
-                    <Button
-                      id="cancel-analysis-btn"
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setAddAnalysisError(null);
-                        setShowAddAnalysisForm(false);
-                        setNewAnalysis({ date: new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replace(/[۰-۹]/g, c => '0123456789'[c.charCodeAt(0) - 1776]), qcCode: '', decision: 'Pass', deviationReason: 'None', comments: '' });
-                      }}
-                      className="font-bold text-muted-foreground"
-                    >
-                      انصراف
-                    </Button>
-                    <Button
-                      id="submit-analysis-btn"
-                      type="button"
-                      size="sm"
-                      onClick={handleAddAnalysisSubmit}
-                      className="px-4 bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-600/20 font-bold"
-                    >
-                      ثبت آزمایش در سابقه سورس
-                    </Button>
-                  </div>
-                </>
-              )}
+          {/* The one laboratory form — `mode` is the only difference between
+              recording a result and editing one (see AnalysisRecordForm). */}
+          {analysisForm && (
+            <div ref={analysisFormRef}>
+              <AnalysisRecordForm
+                mode={analysisForm.mode}
+                values={analysisForm.values}
+                onChange={values => setAnalysisForm({ ...analysisForm, values })}
+                onSubmit={submitAnalysisForm}
+                onCancel={closeAnalysisForm}
+                error={analysisError}
+                success={analysisSuccess}
+              />
             </div>
           )}
 
@@ -1911,192 +1799,112 @@ export function VendorDetail({ vendor, vendors, onBack, onSave, onDelete, curren
                 <tbody className="divide-y divide-border">
                   {[...vendor.analysisRecords].reverse().map((record, index) => {
                     const rowNumber = vendor.analysisRecords!.length - index;
-                    const isEditingThis = editingAnalysisId === record.id;
+                    // The row no longer turns into a form; it only says which
+                    // record the panel above is currently editing.
+                    const isEditingThis =
+                      analysisForm?.mode === 'edit' && analysisForm.recordId === record.id;
                     const isDeletingThis = confirmDeleteAnalysisId === record.id;
 
                     return (
                       <tr key={record.id || index} className={`${isEditingThis ? 'bg-indigo-50/30 dark:bg-indigo-950/30' : 'hover:bg-accent/50'} transition-all`}>
                         <td className="py-3 px-3 text-center font-mono text-muted-foreground font-semibold">{rowNumber}</td>
+
+                        {/* Date */}
                         <td className="py-3 px-3">
-                          {isEditingThis ? (
-                            <div className="w-40 mx-auto">
-                              <ShamsiDatePicker
-                                value={editingAnalysis?.date || ''}
-                                onChange={date => setEditingAnalysis({ ...editingAnalysis!, date })}
-                                placeholder="YYYY/MM/DD"
-                              />
-                            </div>
-                          ) : (
-                            <div className="font-mono text-muted-foreground" dir="ltr">{record.date}</div>
-                          )}
+                          <div className="font-mono text-muted-foreground" dir="ltr">{record.date}</div>
                         </td>
-                        
+
                         {/* QC Code */}
                         <td className="py-3 px-3">
-                          {isEditingThis ? (
-                            <Input
-                              type="text"
-                              value={editingAnalysis?.qcCode || ''}
-                              onChange={e => setEditingAnalysis({ ...editingAnalysis!, qcCode: e.target.value })}
-                              className="font-mono text-center w-full"
-                              dir="ltr"
-                            />
-                          ) : (
-                            <span className="font-bold text-foreground font-mono tracking-wide" dir="ltr">{record.qcCode}</span>
-                          )}
+                          <span className="font-bold text-foreground font-mono tracking-wide" dir="ltr">{record.qcCode}</span>
                         </td>
 
                         {/* Decision */}
                         <td className="py-3 px-3 font-mono">
-                          {isEditingThis ? (
-                            <select
-                              value={editingAnalysis?.decision || 'Pass'}
-                              onChange={e => setEditingAnalysis({ ...editingAnalysis!, decision: e.target.value as any })}
-                              className={cn(inputBaseClass, 'w-full text-right font-medium')}
-                            >
-                              <option value="Pass">Pass</option>
-                              <option value="Approved Conditional">Approved Conditional</option>
-                              <option value="Reject">Reject</option>
-                            </select>
-                          ) : (
-                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-bold ${
-                              record.decision === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
-                              record.decision === 'Approved Conditional' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-[#3b82f6] border border-blue-200 dark:border-blue-800' :
-                              'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${record.decision === 'Pass' ? 'bg-emerald-500 animate-pulse' : record.decision === 'Approved Conditional' ? 'bg-blue-500' : 'bg-rose-500'}`} />
-                              <span>{record.decision === 'Pass' ? 'قبول (Pass)' : record.decision === 'Approved Conditional' ? 'قبول مشروط' : 'مردود (Reject)'}</span>
-                            </span>
-                          )}
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-2xs font-bold ${
+                            record.decision === 'Pass' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
+                            record.decision === 'Approved Conditional' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-[#3b82f6] border border-blue-200 dark:border-blue-800' :
+                            'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${record.decision === 'Pass' ? 'bg-emerald-500 animate-pulse' : record.decision === 'Approved Conditional' ? 'bg-blue-500' : 'bg-rose-500'}`} />
+                            <span>{record.decision === 'Pass' ? 'قبول (Pass)' : record.decision === 'Approved Conditional' ? 'قبول مشروط' : 'مردود (Reject)'}</span>
+                          </span>
                         </td>
 
-                          {/* Deviation */}
-                          <td className="py-3 px-3 font-mono">
-                            {isEditingThis ? (
-                              <select
-                                value={editingAnalysis?.deviationReason || 'None'}
-                                onChange={e => setEditingAnalysis({ ...editingAnalysis!, deviationReason: e.target.value as any })}
-                                className={cn(inputBaseClass, 'w-full text-right font-medium')}
+                        {/* Deviation */}
+                        <td className="py-3 px-3 font-mono">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-bold tracking-wide ${
+                            record.deviationReason === 'None' ? 'bg-muted text-muted-foreground' :
+                            record.deviationReason === 'NCR' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800' :
+                            record.deviationReason === 'Deviation' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                            record.deviationReason === 'OOS' ? 'bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-300 border border-red-300 dark:border-red-800' :
+                            record.deviationReason === 'CAPA' ? 'bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800' :
+                            record.deviationReason === 'OOT' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
+                            'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                          }`}>
+                            {record.deviationReason}
+                          </span>
+                        </td>
+
+                        {/* Comments */}
+                        <td className="py-3 px-3 max-w-sm">
+                          <span className="text-muted-foreground leading-relaxed font-light">{record.comments || 'فاقد توضیحات تکمیلی'}</span>
+                        </td>
+
+                        {/* RecordedBy */}
+                        <td className="py-3 px-3 text-muted-foreground font-semibold">
+                          {record.recordedBy}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-3 text-center">
+                          {isDeletingThis ? (
+                            <div className="flex items-center justify-center gap-1.5" dir="ltr">
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteAnalysis(record.id)}
+                                className="h-7 px-2 font-bold text-2xs"
+                                title="تایید حذف"
                               >
-                                <option value="None">None</option>
-                                <option value="NCR">NCR</option>
-                                <option value="Deviation">Deviation</option>
-                                <option value="OOS">OOS</option>
-                                <option value="CAPA">CAPA</option>
-                                <option value="OOT">OOT</option>
-                                <option value="Complaint">Complaint</option>
-                                <option value="Other">Other</option>
-                              </select>
-                            ) : (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-bold tracking-wide ${
-                                record.deviationReason === 'None' ? 'bg-muted text-muted-foreground' :
-                                record.deviationReason === 'NCR' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800' :
-                                record.deviationReason === 'Deviation' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                                record.deviationReason === 'OOS' ? 'bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-300 border border-red-300 dark:border-red-800' :
-                                record.deviationReason === 'CAPA' ? 'bg-teal-50 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800' :
-                                record.deviationReason === 'OOT' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
-                                'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                              }`}>
-                                {record.deviationReason}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Comments */}
-                          <td className="py-3 px-3 max-w-sm">
-                            {isEditingThis ? (
-                              <Textarea
-                                rows={2}
-                                value={editingAnalysis?.comments || ''}
-                                onChange={e => setEditingAnalysis({ ...editingAnalysis!, comments: e.target.value })}
-                                className="min-h-0 px-2 py-1 text-xs bg-card leading-normal"
-                                placeholder="توضیحات..."
-                              />
-                            ) : (
-                              <span className="text-muted-foreground leading-relaxed font-light">{record.comments || 'فاقد توضیحات تکمیلی'}</span>
-                            )}
-                          </td>
-
-                          {/* RecordedBy */}
-                          <td className="py-3 px-3 text-muted-foreground font-semibold">
-                            {record.recordedBy}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3 px-3 text-center">
-                            {isEditingThis && editAnalysisError && (
-                              <div role="alert" className="mb-1.5 text-2xs font-bold text-rose-600 dark:text-rose-400 whitespace-normal">
-                                {editAnalysisError}
-                              </div>
-                            )}
-                            {isEditingThis ? (
-                              <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <Button
-                                  variant="success"
-                                  size="sm"
-                                  onClick={() => handleEditAnalysisSave(record.id)}
-                                  className="h-7 px-2 font-bold text-2xs"
-                                  title="ذخیره"
-                                >
-                                  ذخیره
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={handleEditAnalysisCancel}
-                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
-                                  title="انصراف"
-                                >
-                                  انصراف
-                                </Button>
-                              </div>
-                            ) : isDeletingThis ? (
-                              <div className="flex items-center justify-center gap-1.5" dir="ltr">
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => handleDeleteAnalysis(record.id)}
-                                  className="h-7 px-2 font-bold text-2xs"
-                                  title="تایید حذف"
-                                >
-                                  حذف قطعی
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => setConfirmDeleteAnalysisId(null)}
-                                  className="h-7 px-2 text-muted-foreground font-bold text-2xs"
-                                  title="لغو"
-                                >
-                                  لغو
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center gap-1" dir="ltr">
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  onClick={() => handleEditAnalysisStart(record)}
-                                  className="text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40"
-                                  title="ویرایش"
-                                >
-                                  <Pencil />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  onClick={() => setConfirmDeleteAnalysisId(record.id)}
-                                  className="text-rose-600 dark:text-rose-300 hover:text-rose-800 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-900/40"
-                                  title="حذف"
-                                >
-                                  <Trash2 />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                حذف قطعی
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setConfirmDeleteAnalysisId(null)}
+                                className="h-7 px-2 text-muted-foreground font-bold text-2xs"
+                                title="لغو"
+                              >
+                                لغو
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1" dir="ltr">
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => editAnalysisRecord(record)}
+                                className="text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40"
+                                title="ویرایش"
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => setConfirmDeleteAnalysisId(record.id)}
+                                className="text-rose-600 dark:text-rose-300 hover:text-rose-800 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-900/40"
+                                title="حذف"
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>
