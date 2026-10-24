@@ -4,6 +4,7 @@ import { ApiWriteError, authFetch, authWrite, isLocalMode } from '../services/au
 import { fetchAllVendors } from '../services/vendorPages';
 import { isAllowedVendor, normalizeAndCleanVendor } from '../utils/vendorNormalize';
 import { appendLocalAudit } from '../services/localAudit';
+import { buildVendorSections } from './vendorSectionDelta';
 import { isVendorRejected } from '../utils/vendorState';
 import type { UseToast } from '../hooks/useToast';
 
@@ -135,34 +136,6 @@ export function createVendorWrites(deps: VendorWriteDeps) {
       return;
     }
   
-    // Determine fine-grained delta adjustments for API Splitting
-    const contactChanged = original.contactInfo !== normalized.contactInfo || original.lastAudit !== normalized.lastAudit || original.ircExpiryDate !== normalized.ircExpiryDate;
-    const scoresChanged = JSON.stringify(original.scores) !== JSON.stringify(normalized.scores) || 
-                          JSON.stringify(original.rawScores) !== JSON.stringify(normalized.rawScores) || 
-                          JSON.stringify(original.rejectionReasons) !== JSON.stringify(normalized.rejectionReasons);
-    const logsChanged = JSON.stringify(original.activityLogs) !== JSON.stringify(normalized.activityLogs);
-    const analysisChanged = JSON.stringify(original.analysisRecords) !== JSON.stringify(normalized.analysisRecords);
-    const riskChanged = JSON.stringify(original.riskAssessment) !== JSON.stringify(normalized.riskAssessment);
-    
-    const profileChanged = original.material !== normalized.material ||
-                           original.materialEn !== normalized.materialEn ||
-                           original.cas !== normalized.cas ||
-                           original.irc !== normalized.irc ||
-                           original.ircExpiryDate !== normalized.ircExpiryDate ||
-                           original.name !== normalized.name ||
-                           original.nameEn !== normalized.nameEn ||
-                           original.country !== normalized.country ||
-                           original.grade !== normalized.grade ||
-                           original.status !== normalized.status ||
-                           original.isSample !== normalized.isSample ||
-                           original.initialSampleStatus !== normalized.initialSampleStatus ||
-                           // The partner link was missing from both the change
-                           // check and the payload, so re-pointing a source at a
-                           // different company was never sent to the server: the
-                           // name changed and the link silently did not.
-                           (original.manufacturerId || null) !== (normalized.manufacturerId || null) ||
-                           (original.supplierId || null) !== (normalized.supplierId || null);
-  
     /*
      * One request carrying only the parts that changed.
      *
@@ -180,60 +153,14 @@ export function createVendorWrites(deps: VendorWriteDeps) {
      * still computed separately — an untouched part is left out of the payload
      * and is not written — and the server still records one audit row per part
      * that actually changed.
+     *
+     * Which fields belong to which part lives in `vendorSectionDelta.ts`, where
+     * the comparison and the payload sit next to each other: they were forty
+     * lines apart here, and `category` and `materialId` ended up in neither.
      */
-    const sections: Record<string, unknown> = {};
-  
-    if (profileChanged) {
-      sections.profile = {
-        material: normalized.material,
-        materialEn: normalized.materialEn,
-        cas: normalized.cas,
-        irc: normalized.irc,
-        ircExpiryDate: normalized.ircExpiryDate,
-        name: normalized.name,
-        nameEn: normalized.nameEn,
-        country: normalized.country,
-        grade: normalized.grade,
-        status: normalized.status,
-        isSample: normalized.isSample,
-        initialSampleStatus: normalized.initialSampleStatus,
-        manufacturerId: normalized.manufacturerId ?? null,
-        supplierId: normalized.supplierId ?? null,
-      };
-    }
-  
-    if (contactChanged) {
-      sections.contact = {
-        contactInfo: normalized.contactInfo,
-        lastAudit: normalized.lastAudit,
-        ircExpiryDate: normalized.ircExpiryDate,
-      };
-    }
-  
-    if (scoresChanged) {
-      sections.scores = {
-        scores: normalized.scores,
-        rawScores: normalized.rawScores,
-        rejectionReasons: normalized.rejectionReasons,
-      };
-    }
-  
-    // The analysis part carries the activity log with it, the way the old
-    // `/analysis` endpoint did; the log is only sent on its own when nothing
-    // about the laboratory results changed.
-    if (analysisChanged) {
-      sections.analysis = {
-        analysisRecords: normalized.analysisRecords,
-        activityLogs: normalized.activityLogs,
-      };
-    } else if (logsChanged) {
-      sections.logs = { activityLogs: normalized.activityLogs };
-    }
-  
-    if (riskChanged) {
-      sections.risk = { riskAssessment: normalized.riskAssessment };
-    }
-  
+    const sections: Record<string, unknown> =
+      buildVendorSections(original as Vendor, normalized as Vendor) as Record<string, unknown>;
+
     if (Object.keys(sections).length === 0) return;
   
     /*
