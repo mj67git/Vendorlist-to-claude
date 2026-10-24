@@ -47,7 +47,7 @@ const source = (records: AnalysisRecord[] = [record]): Vendor =>
     analysisRecords: records,
   } as unknown as Vendor);
 
-const show = (v: Vendor, onSave = () => {}) =>
+const show = (v: Vendor, onSave: (vendor: Vendor) => void = () => {}) =>
   render(
     <VendorDetail
       vendor={v}
